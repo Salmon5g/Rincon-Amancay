@@ -2,11 +2,11 @@
 
 Actualización de implementación local: ver ../docs/permisos-locales.md. La ficha pública añade habilitada y mostrarPrecios, mantenidos por servidor. Las reglas locales ya permiten el subconjunto allí descrito; las menciones a reglas cerradas más abajo describen el estado inicial y siguen aplicando a la nube. No se ha desplegado este incremento.
 
-8 de octubre de 2026. Primer acuerdo técnico propuesto para web, Android y backend, basado en el modelo provisional anterior. Pendiente de revisión del grupo y terreno. No es una implementación ni cubre todavía productos, ventas o ferias.
+8 de octubre de 2026. Acuerdo técnico provisional para web, Android y backend, pendiente de revisión del grupo y terreno. La implementación local del alta administrativa y sus límites se describen en 06-alta-emprendedoras.md; publicación e imágenes en los contratos 03–05. Este documento no cubre ventas o ferias.
 
 ## Convenciones
 
-Acuerdo confirmado por el usuario: explorar tiendas y productos publicados sin iniciar sesión, tanto en web como en modo comprador Android. Para las funciones privadas se usará inicialmente correo y contraseña, junto a permisos por cuenta. Esta navegación pública no requiere Firebase Anonymous Authentication. Las lecturas públicas siguen pendientes de implementar y probar; las reglas actuales continúan cerradas.
+Acuerdo confirmado por el usuario: explorar tiendas y productos publicados sin iniciar sesión, tanto en web como en modo comprador Android. Para las funciones privadas se usará inicialmente correo y contraseña, junto a permisos por cuenta. Esta navegación pública no requiere Firebase Anonymous Authentication. Las lecturas públicas están probadas en emuladores; la nube continúa cerrada.
 
 Habilitar correo/contraseña permite técnicamente registrar identidades mediante el SDK; una identidad creada no recibe automáticamente un rol ni una tienda. El alta y asignación de emprendedoras seguirá siendo administrativa según el modelo. Nunca confiar solo en ocultar el botón de registro: el backend y las reglas deben exigir los accesos autorizados. El flujo de alta de compradores se concretará antes de implementarlo.
 
@@ -39,7 +39,7 @@ El borrador de ejemplo tiene los campos mínimos completos. El procedimiento de 
 
 La ficha privada es la fuente de edición. La pública es una proyección controlada, nunca una copia automática de todo el documento privado. No incluye propietarioUid, roles, correo de acceso, configuración ni ventas. Una tienda borrador no tiene vista pública.
 
-No se ha implementado la publicación. El bloqueo de lecturas al desactivar cuentas, la retirada de imágenes y la coordinación de cambios quedan pendientes. No habilitar contenido real hasta resolverlos. La primera conexión podrá usar una ficha ficticia aislada con acceso expresamente autorizado.
+Publicación/retiro están implementados localmente. La desactivación administrativa coordinada de cuentas sigue pendiente. No habilitar contenido real hasta resolver esa coordinación y preparar el despliegue.
 
 ## Permisos a implementar
 
@@ -53,7 +53,7 @@ No se ha implementado la publicación. El bloqueo de lecturas al desactivar cuen
 
 La propietaria no modifica roles, estado administrativo, tiendaId, propietarioUid ni creadoEn. El administrador de la aplicación no recibe lectura general de tiendas privadas o ventas. Los accesos técnicos de consola/SDK Admin requieren controles adicionales y no quedan limitados por las mismas reglas cliente.
 
-Elegir un modo en pantalla no otorga permisos. Si falta accesos o está desactivado, no habilitar gestión. Las reglas del repositorio siguen cerradas: esta tabla todavía no concede ningún acceso.
+Elegir un modo en pantalla no otorga permisos. Si falta accesos o está desactivado, no habilitar gestión. Las reglas locales implementan los permisos descritos en ../docs/permisos-locales.md; no se han desplegado.
 
 ## Criterios pendientes de prueba
 
@@ -64,4 +64,4 @@ Elegir un modo en pantalla no otorga permisos. Si falta accesos o está desactiv
 5. Web y Android resuelven la misma tiendaId para el mismo UID.
 6. El administrador no obtiene acceso al historial de ventas por su rol.
 
-Estos son criterios para la implementación, no pruebas ejecutadas.
+Los contratos 03–06 y ../docs/permisos-locales.md detallan los criterios ya probados localmente. No hay aún pruebas de integración con una aplicación Android.

@@ -23,7 +23,7 @@ Firebase incluyó @grpc/grpc-js ~1.9.0 con avisos altos de npm audit. Se añadi�
 
 Avance local posterior: ver emuladores.md. Authentication y Firestore se ejecutaron con demo-rincon-amancay, se cargaron 29 documentos ficticios y se verificaron la repetición de carga y denegaciones iniciales. La base en la nube no recibió datos ni cambios de reglas. La auditoría de la CLI local es independiente de la auditoría de web/.
 
-- Implementar flujo de cuentas, asignación de roles y sesión con el proveedor correo/contraseña ya habilitado.
+- Alta administrativa y sesión probadas localmente: ../contratos/06-alta-emprendedoras.md. Quedan pendientes invitaciones, registro de compradores y desactivación coordinada para producción.
 - Registrar Android cuando el equipo tenga su applicationId definitivo. Una app con ambos modos, no registros distintos por rol.
 - Integrar el módulo de conexión en un plugin Nuxt cliente cuando se inicialice Nuxt. No se han creado pantallas ni un proyecto Nuxt ejecutable.
 - Ampliar reglas y pruebas con cada operación nueva. Ya hay permisos específicos de Firestore y Storage probados localmente.

@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Auth } from 'firebase-admin/auth';
 import { ErrorOperacion } from '../modules/publicacion.ts';
 import type { crearPublicacion, Accion, Solicitud } from '../modules/publicacion.ts';
+import type { crearCuentas } from '../modules/cuentas.ts';
 
 const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'];
 const status: Record<string, number> = {
@@ -19,7 +20,7 @@ function json(res: ServerResponse, code: number, data: unknown) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(data));
 }
-async function body(req: IncomingMessage, accion: Accion): Promise<Solicitud> {
+async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') throw new ErrorHttp(415, 'tipo-no-admitido', 'Usar application/json.');
   if (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity') throw new ErrorHttp(415, 'tipo-no-admitido', 'No se admite contenido comprimido.');
   const chunks: Buffer[] = []; let size = 0;
@@ -33,13 +34,16 @@ async function body(req: IncomingMessage, accion: Accion): Promise<Solicitud> {
   catch { throw new ErrorHttp(400, 'datos-invalidos', 'JSON inválido.'); }
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ErrorHttp(400, 'datos-invalidos', 'Se requiere un objeto.');
   const data = input as Record<string, unknown>;
+  return data;
+}
+function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): Solicitud {
   const required = ['tiendaId', 'operacionId', 'versionEsperada', ...(accion.endsWith('Producto') ? ['productoId'] : [])];
   if (Object.keys(data).some(k => !required.includes(k)) || required.some(k => typeof data[k] !== 'string')) throw new ErrorHttp(400, 'datos-invalidos', 'Campos ausentes o no permitidos. No enviar uid ni roles.');
   if (!/^[0-9]{1,12}:[0-9]{1,9}$/.test(data.versionEsperada as string)) throw new ErrorHttp(400, 'datos-invalidos', 'Versión inválida.');
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>) {
   const origins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000']);
   const server = createServer(async (req, res) => {
     try {
@@ -48,7 +52,8 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: 'emulador', proyecto: 'demo-rincon-amancay' });
       const action = req.url?.match(/^\/api\/v1\/(publicarTienda|retirarTienda|publicarProducto|retirarProducto)$/)?.[1] as Accion | undefined;
-      if (!action || !acciones.includes(action)) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;
+      if (!esAlta && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' });
         return res.end();
@@ -65,8 +70,8 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         }
         throw new ErrorHttp(503, 'autenticacion-no-disponible', 'No se pudo comprobar la sesión.');
       }
-      const input = await body(req, action);
-      const result = await ejecutar(action, { uid }, input);
+      const input = await body(req);
+      const result = esAlta ? await alta!({uid}, input) : await ejecutar(action!, { uid }, solicitudPublicacion(input, action!));
       json(res, 200, { datos: result });
     } catch (error) {
       if (res.destroyed) return;

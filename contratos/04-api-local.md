@@ -33,7 +33,7 @@ El cliente inicia sesión con Firebase Authentication y obtiene un ID token con 
 
 El emulador de Auth emite tokens sin firma criptográfica de producción; el Admin SDK los acepta únicamente con FIREBASE_AUTH_EMULATOR_HOST. El adaptador fuerza localhost, proyecto demo y rechaza NODE_ENV=production. Esta comprobación local no demuestra la verificación de firmas reales ni configura HTTPS. Para producción se necesita otro adaptador seguro, credenciales administradas y despliegue HTTPS, sin variables de emulador.
 
-No hay endpoint de registro ni altas automáticas de roles. Las pruebas crean cuentas temporales solo en Auth local, inician sesión con correo/contraseña, comprueban peticiones y eliminan sus propias cuentas al terminar. Los UID de la carga ficticia no quedan convertidos en cuentas de acceso reutilizables.
+El endpoint administrativo altaEmprendedora asigna rol y tienda a una identidad existente; ver 06-alta-emprendedoras.md. No hay registro automático con privilegios. Las pruebas crean cuentas temporales solo en Auth local y las eliminan al terminar. Para cuentas reutilizables existe npm run cuentas:demo; no convierte los UID del fixture en cuentas.
 
 ## Estados HTTP
 
@@ -55,7 +55,7 @@ Orígenes web locales permitidos: http://localhost:3000 y http://127.0.0.1:3000.
 
 Las cuatro operaciones están conectadas a los emuladores. Publicar productos comprueba los objetos de Storage según 05-imagenes-storage.md: sin imágenes o con referencias inválidas responde 422; si Storage no está disponible responde 503. Las pruebas HTTP usan el verificador de Storage; las pruebas aisladas del módulo usan un sustituto.
 
-Sin alta de cuentas, procesamiento completo de imágenes, ventas, límites de tasa de producción ni despliegue. No se abre Firestore en la nube.
+Sin invitaciones/registro de producción, procesamiento completo de imágenes, ventas, límites de tasa de producción ni despliegue. No se abre Firestore en la nube.
 
 ## Verificación
 

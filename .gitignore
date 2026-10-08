@@ -32,3 +32,4 @@ Thumbs.db
 *-debug.log
 *-debug.*.log
 emulator-data/
+.local/

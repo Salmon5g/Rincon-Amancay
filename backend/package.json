@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts",
+    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts tests/cuentas.test.ts",
     "dev": "node src/server.ts",
-    "test:api": "node --test tests/api.test.ts"
+    "test:api": "node --test tests/api.test.ts",
+    "test:cuentas": "node --test tests/cuentas.test.ts",
+    "cuentas:demo": "node scripts/cuentas-demo.ts"
   },
   "dependencies": { "firebase-admin": "14.5.0" },
   "devDependencies": { "typescript": "5.9.3", "@types/node": "^24.0.0" },

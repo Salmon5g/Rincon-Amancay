@@ -1,6 +1,6 @@
 # Acuerdos compartidos de datos
 
-Acuerdos disponibles: [cuentas y tiendas](01-cuentas-tiendas.md), [catálogo](02-catalogo-local.md), [publicación](03-publicacion.md), [API local](04-api-local.md) e [imágenes](05-imagenes-storage.md). Los tres últimos describen operaciones implementadas y probadas localmente con sus límites; no son un backend completo desplegado.
+Acuerdos disponibles: [cuentas y tiendas](01-cuentas-tiendas.md), [catálogo](02-catalogo-local.md), [publicación](03-publicacion.md), [API local](04-api-local.md), [imágenes](05-imagenes-storage.md) y [alta de emprendedoras](06-alta-emprendedoras.md). Los contratos 03–06 describen operaciones implementadas y probadas localmente con sus límites; no son un backend completo desplegado.
 
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
 

@@ -4,7 +4,7 @@ Implementado el módulo TypeScript de publicación/retiro y una API HTTP autenti
 
 src/config/ inicializará las conexiones de servidor; src/modules/ agrupará casos de uso por negocio; src/shared/ contendrá autorización y errores comunes. tests/ comprobará permisos y consistencia.
 
-Contrato: ../contratos/03-publicacion.md. Alta de cuentas, ventas y actualización de stock siguen pendientes.
+Contratos: ../contratos/03-publicacion.md y ../contratos/06-alta-emprendedoras.md. Implementada alta administrativa de rol y tienda para una identidad existente; npm run cuentas:demo crea identidades de práctica. Invitaciones de producción, ventas y actualización de stock siguen pendientes.
 
 ## Ejecutar
 
