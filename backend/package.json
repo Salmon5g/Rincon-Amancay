@@ -1,0 +1,15 @@
+{
+  "name": "rincon-amancay-backend-local",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts",
+    "dev": "node src/server.ts",
+    "test:api": "node --test tests/api.test.ts"
+  },
+  "dependencies": { "firebase-admin": "14.5.0" },
+  "devDependencies": { "typescript": "5.9.3", "@types/node": "^24.0.0" },
+  "engines": { "node": ">=24.15.0" },
+  "overrides": { "@grpc/grpc-js": "1.14.5" }
+}

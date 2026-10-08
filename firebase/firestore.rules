@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function active(uid) {
+      return get(/databases/$(database)/documents/accesos/$(uid)).data.estado == 'activo';
+    }
+    function hasRole(uid, role) {
+      return active(uid) && role in get(/databases/$(database)/documents/accesos/$(uid)).data.roles;
+    }
+    function admin() { return signedIn() && hasRole(request.auth.uid, 'administrador'); }
+    function owner(tiendaId) {
+      return signedIn() && hasRole(request.auth.uid, 'emprendedora')
+        && get(/databases/$(database)/documents/accesos/$(request.auth.uid)).data.tiendaId == tiendaId
+        && get(/databases/$(database)/documents/tiendasPrivadas/$(tiendaId)).data.propietarioUid == request.auth.uid;
+    }
+    function publicStore(tiendaId) {
+      let store = get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data;
+      return store.estadoPublicacion == 'publicado' && store.habilitada == true;
+    }
+    function publicProduct(tiendaId, productoId) {
+      let product = get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data;
+      return publicStore(tiendaId) && product.estadoPublicacion == 'publicado';
+    }
+    // Hasta implementar la retirada coordinada de precios, una política de
+    // precios ocultos bloquea todo el catálogo derivado (falla de forma cerrada).
+    function visiblePrices(tiendaId) {
+      return get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data.mostrarPrecios == true;
+    }
+    match /usuarios/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow update: if signedIn() && request.auth.uid == uid && active(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombreMostrar', 'actualizadoEn'])
+        && request.resource.data.nombreMostrar is string
+        && request.resource.data.nombreMostrar.size() > 0
+        && request.resource.data.nombreMostrar.size() <= 100
+        && request.resource.data.actualizadoEn == request.time;
+    }
+    match /accesos/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid) || admin();
+      allow list: if admin();
+    }
+    match /emprendedoras/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid && active(uid)) || admin();
+      allow list: if admin();
+    }
+    match /tiendasPrivadas/{tiendaId} {
+      allow get: if owner(tiendaId);
+      // Cambios solo en el borrador privado; publicar requiere servidor.
+      allow update: if owner(tiendaId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'descripcion', 'actualizadoEn'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() > 0 && request.resource.data.nombre.size() <= 120
+        && request.resource.data.descripcion is string && request.resource.data.descripcion.size() <= 2000
+        && request.resource.data.actualizadoEn == request.time;
+      match /configuracion/general { allow get: if owner(tiendaId); }
+      match /productos/{productoId} {
+        allow read: if owner(tiendaId);
+        match /variantes/{varianteId} { allow read: if owner(tiendaId); }
+      }
+    }
+    match /tiendasPublicas/{tiendaId} {
+      allow read: if resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true;
+      match /productos/{productoId} {
+        allow read: if resource.data.estadoPublicacion == 'publicado'
+          && publicStore(tiendaId) && visiblePrices(tiendaId);
+        match /variantes/{varianteId} {
+          allow read: if publicProduct(tiendaId, productoId) && visiblePrices(tiendaId)
+            && resource.data.activa == true;
+        }
+      }
+    }
+    match /sectores/{id} { allow read: if resource.data.activo == true; }
+    match /categorias/{id} { allow read: if resource.data.activo == true; }
+    match /tiposEmprendimiento/{id} { allow read: if resource.data.activo == true; }
+    match /tiposProducto/{id} {
+      allow read: if resource.data.activo == true;
+      match /versiones/{version} {
+        allow read: if get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true;
+      }
+    }
+    // Altas, roles, publicaciones, stock, ventas y módulos no implementados
+    // no admiten escrituras de cliente; ni siquiera por rol administrador.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "versionContrato": "0.1",
+  "soloDemostracion": true,
+  "nota": "Ejemplo parcial, no exportación Firebase ni datos listos para importar. Las identidades Authentication, el administrador y los catálogos referenciados no están creados. Fechas ISO ilustrativas: convertir a Timestamp. La tienda es borrador, sin vista pública.",
+  "documentos": [
+    {
+      "ruta": "usuarios/u_emprendedora_demo",
+      "datos": {
+        "nombreMostrar": "Emprendedora de prueba",
+        "creadoEn": "2026-10-08T12:00:00Z",
+        "actualizadoEn": "2026-10-08T12:00:00Z"
+      }
+    },
+    {
+      "ruta": "accesos/u_emprendedora_demo",
+      "datos": {
+        "roles": [
+          "emprendedora"
+        ],
+        "estado": "activo",
+        "tiendaId": "t_demo_01",
+        "creadoEn": "2026-10-08T12:00:00Z",
+        "actualizadoEn": "2026-10-08T12:00:00Z"
+      }
+    },
+    {
+      "ruta": "emprendedoras/u_emprendedora_demo",
+      "datos": {
+        "tiendaId": "t_demo_01",
+        "creadaPor": "u_admin_demo",
+        "creadoEn": "2026-10-08T12:00:00Z",
+        "actualizadoEn": "2026-10-08T12:00:00Z"
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01",
+      "datos": {
+        "propietarioUid": "u_emprendedora_demo",
+        "nombre": "Tejidos de ejemplo",
+        "descripcion": "Tienda ficticia para coordinar el desarrollo",
+        "tipoEmprendimientoId": "artesania_demo",
+        "sectorId": "sector_demo",
+        "estadoPublicacion": "borrador",
+        "creadoEn": "2026-10-08T12:00:00Z",
+        "actualizadoEn": "2026-10-08T12:00:00Z"
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/configuracion/general",
+      "datos": {
+        "mostrarPrecios": true,
+        "historialVentasActivo": false,
+        "formaContacto": "formulario",
+        "creadoEn": "2026-10-08T12:00:00Z",
+        "actualizadoEn": "2026-10-08T12:00:00Z"
+      }
+    }
+  ]
+}

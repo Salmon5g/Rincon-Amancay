@@ -1,0 +1,1 @@
+publicacion.test.ts prueba publicación/retiro, permisos, proyecciones, reintentos, concurrencia y variantes en el emulador. Ejecutar npm test desde backend/. Stock de ventas y autenticación real de API siguen pendientes.

@@ -1,0 +1,19 @@
+{
+  "name": "rincon-amancay-firebase-local",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "emulators": "firebase emulators:start --only firestore,auth --project demo-rincon-amancay --config ../firebase.json",
+    "seed": "node scripts/seed.mjs",
+    "check": "firebase emulators:exec --only firestore,auth --project demo-rincon-amancay --config ../firebase.json \"node scripts/check.mjs && node tests/permisos.mjs\"",
+    "test:rules": "node tests/permisos.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.0.0",
+    "firebase-tools": "15.33.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.5"
+  }
+}

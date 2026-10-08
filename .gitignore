@@ -1,0 +1,34 @@
+# Dependencias y compilación
+node_modules/
+.nuxt/
+.output/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Configuración local y credenciales
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+*serviceAccount*.json
+*service-account*.json
+*.pem
+*.key
+*.jks
+*.keystore
+
+# Android y sistema
+.gradle/
+.idea/
+local.properties
+.DS_Store
+Thumbs.db
+
+# Firebase local
+.firebase/
+*-debug.log
+*-debug.*.log
+emulator-data/

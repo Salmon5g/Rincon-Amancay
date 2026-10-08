@@ -1,0 +1,1 @@
+permisos.mjs contiene las pruebas del primer incremento con sesiones simuladas y datos ficticios. Desde firebase/, con emuladores iniciados: npm run test:rules. Ver ../../docs/permisos-locales.md para alcance, límites y consultas. No son pruebas de inicio de sesión real ni de todas las operaciones futuras.

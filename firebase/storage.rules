@@ -1,0 +1,9 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Base cerrada: pendiente implementar y probar los permisos acordados.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

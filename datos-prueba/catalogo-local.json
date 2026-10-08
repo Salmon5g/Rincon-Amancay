@@ -1,0 +1,565 @@
+{
+  "proyecto": "demo-rincon-amancay",
+  "soloEmulador": true,
+  "version": 1,
+  "nota": "Instantánea local ficticia. UID sin identidades Authentication; fotos vacías por excepción exclusiva de fixture. No ejecuta ni valida publicación real. No importar a la nube.",
+  "documentos": [
+    {
+      "ruta": "sectores/sector_demo",
+      "datos": {
+        "nombre": "Sector de prueba",
+        "activo": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposEmprendimiento/mixto_demo",
+      "datos": {
+        "nombre": "Emprendimiento mixto de prueba",
+        "activo": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "categorias/vestuario",
+      "datos": {
+        "nombre": "Vestuario",
+        "activo": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "categorias/alimentos",
+      "datos": {
+        "nombre": "Alimentos",
+        "activo": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "categorias/plantas",
+      "datos": {
+        "nombre": "Plantas",
+        "activo": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposProducto/tejido",
+      "datos": {
+        "nombre": "Tejido",
+        "activo": true,
+        "versionActual": 1,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposProducto/tejido/versiones/1",
+      "datos": {
+        "version": 1,
+        "campos": [
+          {
+            "clave": "material",
+            "etiqueta": "material",
+            "tipo": "texto",
+            "obligatorio": false
+          },
+          {
+            "clave": "cuidados",
+            "etiqueta": "cuidados",
+            "tipo": "texto",
+            "obligatorio": false
+          }
+        ],
+        "opcionesVariante": [
+          "talla",
+          "color"
+        ],
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposProducto/alimento",
+      "datos": {
+        "nombre": "Alimento",
+        "activo": true,
+        "versionActual": 1,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposProducto/alimento/versiones/1",
+      "datos": {
+        "version": 1,
+        "campos": [
+          {
+            "clave": "ingredientes",
+            "etiqueta": "ingredientes",
+            "tipo": "texto",
+            "obligatorio": false
+          },
+          {
+            "clave": "alergenos",
+            "etiqueta": "alergenos",
+            "tipo": "texto",
+            "obligatorio": false
+          },
+          {
+            "clave": "presentacion",
+            "etiqueta": "presentacion",
+            "tipo": "texto",
+            "obligatorio": false
+          }
+        ],
+        "opcionesVariante": [],
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposProducto/planta",
+      "datos": {
+        "nombre": "Planta",
+        "activo": true,
+        "versionActual": 1,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiposProducto/planta/versiones/1",
+      "datos": {
+        "version": 1,
+        "campos": [
+          {
+            "clave": "especie",
+            "etiqueta": "especie",
+            "tipo": "texto",
+            "obligatorio": false
+          },
+          {
+            "clave": "cuidados",
+            "etiqueta": "cuidados",
+            "tipo": "texto",
+            "obligatorio": false
+          },
+          {
+            "clave": "tamanoMaceta",
+            "etiqueta": "tamanoMaceta",
+            "tipo": "texto",
+            "obligatorio": false
+          }
+        ],
+        "opcionesVariante": [],
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "usuarios/u_admin_demo",
+      "datos": {
+        "nombreMostrar": "Administración ficticia",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "accesos/u_admin_demo",
+      "datos": {
+        "roles": [
+          "administrador"
+        ],
+        "estado": "activo",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "usuarios/u_emprendedora_demo",
+      "datos": {
+        "nombreMostrar": "Emprendedora ficticia",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "accesos/u_emprendedora_demo",
+      "datos": {
+        "roles": [
+          "emprendedora"
+        ],
+        "estado": "activo",
+        "tiendaId": "t_demo_01",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "emprendedoras/u_emprendedora_demo",
+      "datos": {
+        "tiendaId": "t_demo_01",
+        "creadaPor": "u_admin_demo",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01",
+      "datos": {
+        "nombre": "Feria de ejemplo — tienda ficticia",
+        "descripcion": "Datos locales de prueba, no un negocio real.",
+        "tipoEmprendimientoId": "mixto_demo",
+        "sectorId": "sector_demo",
+        "estadoPublicacion": "publicado",
+        "propietarioUid": "u_emprendedora_demo",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/configuracion/general",
+      "datos": {
+        "mostrarPrecios": true,
+        "historialVentasActivo": false,
+        "formaContacto": "formulario",
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPublicas/t_demo_01",
+      "datos": {
+        "nombre": "Feria de ejemplo — tienda ficticia",
+        "descripcion": "Datos locales de prueba, no un negocio real.",
+        "tipoEmprendimientoId": "mixto_demo",
+        "sectorId": "sector_demo",
+        "estadoPublicacion": "publicado",
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "habilitada": true,
+        "mostrarPrecios": true
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/productos/p_gorro_01",
+      "datos": {
+        "nombre": "Gorro de lana",
+        "descripcion": "Producto ficticio para pruebas locales.",
+        "tipoProductoId": "tejido",
+        "versionTipoProducto": 1,
+        "categoriaId": "vestuario",
+        "imagenes": [],
+        "atributosEspecificos": {
+          "material": "Lana",
+          "cuidados": "Lavado a mano"
+        },
+        "tieneVariantes": true,
+        "moneda": "CLP",
+        "unidadVenta": "unidad",
+        "modalidad": "regular",
+        "estadoPublicacion": "publicado",
+        "pasoCantidad": 1,
+        "manejaStock": true,
+        "alAgotarse": "mostrar_agotado",
+        "disponible": true,
+        "piezaUnicaVendida": false,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPublicas/t_demo_01/productos/p_gorro_01",
+      "datos": {
+        "nombre": "Gorro de lana",
+        "descripcion": "Producto ficticio para pruebas locales.",
+        "tipoProductoId": "tejido",
+        "versionTipoProducto": 1,
+        "categoriaId": "vestuario",
+        "imagenes": [],
+        "atributosEspecificos": {
+          "material": "Lana",
+          "cuidados": "Lavado a mano"
+        },
+        "tieneVariantes": true,
+        "moneda": "CLP",
+        "unidadVenta": "unidad",
+        "modalidad": "regular",
+        "estadoPublicacion": "publicado",
+        "estadoDisponibilidad": "disponible",
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/productos/p_gorro_01/variantes/v_azul_m",
+      "datos": {
+        "opciones": {
+          "talla": "M",
+          "color": "azul"
+        },
+        "precio": 8000,
+        "stock": 3,
+        "activa": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPublicas/t_demo_01/productos/p_gorro_01/variantes/v_azul_m",
+      "datos": {
+        "opciones": {
+          "talla": "M",
+          "color": "azul"
+        },
+        "precio": 8000,
+        "estadoDisponibilidad": "disponible",
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "activa": true
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/productos/p_gorro_01/variantes/v_rojo_m",
+      "datos": {
+        "opciones": {
+          "talla": "M",
+          "color": "rojo"
+        },
+        "precio": 8500,
+        "stock": 1,
+        "activa": true,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPublicas/t_demo_01/productos/p_gorro_01/variantes/v_rojo_m",
+      "datos": {
+        "opciones": {
+          "talla": "M",
+          "color": "rojo"
+        },
+        "precio": 8500,
+        "estadoDisponibilidad": "disponible",
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "activa": true
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/productos/p_alfajor_01",
+      "datos": {
+        "nombre": "Caja de alfajores",
+        "descripcion": "Producto ficticio para pruebas locales.",
+        "tipoProductoId": "alimento",
+        "versionTipoProducto": 1,
+        "categoriaId": "alimentos",
+        "imagenes": [],
+        "atributosEspecificos": {
+          "ingredientes": "Harina, leche, huevo",
+          "alergenos": "Gluten, leche, huevo",
+          "presentacion": "Caja de 6 unidades"
+        },
+        "tieneVariantes": false,
+        "moneda": "CLP",
+        "unidadVenta": "unidad",
+        "modalidad": "a_pedido",
+        "estadoPublicacion": "publicado",
+        "pasoCantidad": 1,
+        "manejaStock": false,
+        "alAgotarse": "mostrar_agotado",
+        "disponible": true,
+        "piezaUnicaVendida": false,
+        "precioBase": 4500,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPublicas/t_demo_01/productos/p_alfajor_01",
+      "datos": {
+        "nombre": "Caja de alfajores",
+        "descripcion": "Producto ficticio para pruebas locales.",
+        "tipoProductoId": "alimento",
+        "versionTipoProducto": 1,
+        "categoriaId": "alimentos",
+        "imagenes": [],
+        "atributosEspecificos": {
+          "ingredientes": "Harina, leche, huevo",
+          "alergenos": "Gluten, leche, huevo",
+          "presentacion": "Caja de 6 unidades"
+        },
+        "tieneVariantes": false,
+        "moneda": "CLP",
+        "unidadVenta": "unidad",
+        "modalidad": "a_pedido",
+        "estadoPublicacion": "publicado",
+        "estadoDisponibilidad": "a_pedido",
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "precioBase": 4500
+      }
+    },
+    {
+      "ruta": "tiendasPrivadas/t_demo_01/productos/p_planta_01",
+      "datos": {
+        "nombre": "Planta en maceta",
+        "descripcion": "Producto ficticio para pruebas locales.",
+        "tipoProductoId": "planta",
+        "versionTipoProducto": 1,
+        "categoriaId": "plantas",
+        "imagenes": [],
+        "atributosEspecificos": {
+          "especie": "Suculenta de ejemplo",
+          "cuidados": "Luz indirecta",
+          "tamanoMaceta": "10 cm"
+        },
+        "tieneVariantes": false,
+        "moneda": "CLP",
+        "unidadVenta": "unidad",
+        "modalidad": "regular",
+        "estadoPublicacion": "publicado",
+        "pasoCantidad": 1,
+        "manejaStock": true,
+        "alAgotarse": "mostrar_agotado",
+        "disponible": true,
+        "piezaUnicaVendida": false,
+        "precioBase": 3000,
+        "stock": 4,
+        "creadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    {
+      "ruta": "tiendasPublicas/t_demo_01/productos/p_planta_01",
+      "datos": {
+        "nombre": "Planta en maceta",
+        "descripcion": "Producto ficticio para pruebas locales.",
+        "tipoProductoId": "planta",
+        "versionTipoProducto": 1,
+        "categoriaId": "plantas",
+        "imagenes": [],
+        "atributosEspecificos": {
+          "especie": "Suculenta de ejemplo",
+          "cuidados": "Luz indirecta",
+          "tamanoMaceta": "10 cm"
+        },
+        "tieneVariantes": false,
+        "moneda": "CLP",
+        "unidadVenta": "unidad",
+        "modalidad": "regular",
+        "estadoPublicacion": "publicado",
+        "estadoDisponibilidad": "disponible",
+        "actualizadoEn": {
+          "$timestamp": "2026-10-08T12:00:00Z"
+        },
+        "precioBase": 3000
+      }
+    }
+  ]
+}
