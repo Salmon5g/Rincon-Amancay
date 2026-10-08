@@ -1,9 +1,34 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Base cerrada: pendiente implementar y probar los permisos acordados.
-    match /{allPaths=**} {
-      allow read, write: if false;
+    function owner(tiendaId) {
+      let access = firestore.get(/databases/(default)/documents/accesos/$(request.auth.uid)).data;
+      let store = firestore.get(/databases/(default)/documents/tiendasPrivadas/$(tiendaId)).data;
+      return request.auth != null && access.estado == 'activo'
+        && 'emprendedora' in access.roles && access.tiendaId == tiendaId
+        && store.propietarioUid == request.auth.uid;
     }
+    function published(tiendaId, productoId, archivo) {
+      let store = firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)).data;
+      let product = firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data;
+      return store.estadoPublicacion == 'publicado' && store.habilitada == true && store.mostrarPrecios == true
+        && product.estadoPublicacion == 'publicado'
+        && ('tiendas/' + tiendaId + '/productos/' + productoId + '/' + archivo) in product.imagenes;
+    }
+    match /tiendas/{tiendaId}/productos/{productoId}/{archivo} {
+      allow get: if (request.auth != null && owner(tiendaId)) || published(tiendaId, productoId, archivo);
+      allow create: if resource == null && request.auth != null && owner(tiendaId)
+        && firestore.exists(/databases/(default)/documents/tiendasPrivadas/$(tiendaId)/productos/$(productoId))
+        && archivo.matches('[a-zA-Z0-9_-]{1,128}\\.(jpg|png|webp)')
+        && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentEncoding == null
+        && request.resource.metadata.keys().hasOnly([])
+        && ((archivo.matches('.*\\.jpg') && request.resource.contentType == 'image/jpeg')
+          || (archivo.matches('.*\\.png') && request.resource.contentType == 'image/png')
+          || (archivo.matches('.*\\.webp') && request.resource.contentType == 'image/webp'));
+      // Objetos inmutables. Eliminación y limpieza mediante servidor, pendientes.
+      allow update, delete, list: if false;
+    }
+    match /{allPaths=**} { allow read, write: if false; }
   }
 }

@@ -1,10 +1,10 @@
 # Acuerdos compartidos de datos
 
-Primer bloque disponible para revisión: [cuentas y tiendas](01-cuentas-tiendas.md). Ejemplo ilustrativo en ../datos-prueba/cuentas-tiendas.json. No se han implementado aún las validaciones o permisos descritos.
+Acuerdos disponibles: [cuentas y tiendas](01-cuentas-tiendas.md), [catálogo](02-catalogo-local.md), [publicación](03-publicacion.md), [API local](04-api-local.md) e [imágenes](05-imagenes-storage.md). Los tres últimos describen operaciones implementadas y probadas localmente con sus límites; no son un backend completo desplegado.
 
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
 
-Se conserva el modelo provisional previamente trabajado; esta carpeta no lo reemplaza ni inventa otro. Esos documentos siguen separados hasta que el usuario decida incorporarlos. No hay contratos implementados en esta estructura inicial.
+Se conserva el modelo provisional previamente trabajado; esta carpeta no lo reemplaza. Los documentos anteriores siguen separados hasta que el usuario decida incorporarlos.
 
 Las especificaciones deben poder leerse desde Kotlin y TypeScript, por ejemplo Markdown y ejemplos JSON ficticios. Cada cliente implementará sus propios tipos. Usar archivos compartidos TypeScript no valida por sí solo los datos de Firestore ni sirve como modelo Kotlin.
 

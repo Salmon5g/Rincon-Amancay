@@ -1,13 +1,13 @@
 # Configuración Firebase
 
-Estado actual: firestore.rules incorpora un primer incremento de permisos probado solo localmente; ver ../docs/permisos-locales.md. Storage sigue cerrado. Las referencias de abajo a denegación total de Firestore corresponden a la nube y al estado inicial, no a las reglas locales actuales.
+Entorno local: reglas de Firestore por rol y reglas de Storage para imágenes de productos. Consultar ../docs/permisos-locales.md y ../contratos/05-imagenes-storage.md.
 
-Ya hay herramientas locales en package.json. Ver [guía de emuladores](../docs/emuladores.md) para instalar, cargar la instantánea ficticia y ejecutar las comprobaciones. Los comandos fijan demo-rincon-amancay, separado del proyecto real.
+Desde esta carpeta, npm ci instala las herramientas; npm run emulators inicia Authentication (9099), Firestore (8080) y Storage (9199), con interfaz en http://127.0.0.1:4000. Todos escuchan en 127.0.0.1 y usan demo-rincon-amancay.
 
-firestore.rules y storage.rules parten cerradas: ningún cliente puede leer o escribir. No son las reglas de negocio terminadas. El acceso por SDK de servidor requiere controles propios. Firestore ya se creó desde la consola con reglas equivalentes de denegación total; Storage no se ha provisionado.
+npm run seed carga 29 documentos ficticios. npm run test:rules y npm run test:storage comprueban las reglas contra emuladores activos, en ese orden y sin ejecutar otras suites simultáneas. npm run check inicia los emuladores, ejecuta la carga/comprobaciones y ambas suites de reglas, y luego solicita su cierre; usarlo con los puertos libres.
 
-firestore.indexes.json está vacío; agregar índices según consultas reales acordadas. Las colecciones no se crean añadiendo carpetas aquí.
+La nube está separada: Firestore real conserva la denegación total y Storage no se ha provisionado. No hay despliegue ni configuración de Hosting/Functions. Los SDK Admin requieren autorización en el backend porque no aplican las reglas de cliente.
 
-firebase.json, en la raíz, referencia estos archivos y reserva puertos locales para Authentication, Firestore y Storage. .firebaserc define development = rincon-amancay; los comandos locales usan explícitamente demo-rincon-amancay. No hay configuración Hosting o Functions. Authentication y Firestore se probaron localmente, junto con la carga ficticia y denegaciones de acceso iniciales. Storage y los permisos por rol siguen pendientes.
+firebase.json referencia reglas, índices y puertos. .firebaserc define development = rincon-amancay, pero los comandos locales fijan explícitamente demo-rincon-amancay. firestore.indexes.json sigue vacío; añadir índices según las consultas acordadas.
 
-Los contratos de documentos y permisos irán en contratos/. Las imágenes reales se almacenarán en Storage, no en este repositorio.
+Las fotos se almacenan en Storage; los documentos guardan sus rutas. No guardar archivos de usuarios ni credenciales en este repositorio.

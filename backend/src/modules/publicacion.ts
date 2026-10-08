@@ -4,7 +4,7 @@ import type { Firestore, DocumentData, DocumentReference, Transaction } from 'fi
 
 export type Accion = 'publicarTienda' | 'retirarTienda' | 'publicarProducto' | 'retirarProducto';
 export type Solicitud = { tiendaId: string; productoId?: string; operacionId: string; versionEsperada: string };
-// Esta identidad debe provenir del token verificado por el futuro transporte,
+// Esta identidad debe provenir del token verificado por la API,
 // nunca de un campo uid recibido en el cuerpo del cliente.
 export type IdentidadVerificada = { uid: string };
 export class ErrorOperacion extends Error {
@@ -41,7 +41,7 @@ async function hijos(tx: Transaction, ref: DocumentReference, nombre: string) {
   return result.docs;
 }
 
-export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string, tiendaId: string) => Promise<boolean>) {
+export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string, tiendaId: string, productoId: string) => Promise<boolean>) {
   return async function ejecutar(accion: Accion, identidad: IdentidadVerificada, solicitud: Solicitud) {
     exigir(['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'].includes(accion), 'datos-invalidos', 'Acción inválida.');
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
@@ -111,7 +111,8 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const category = await tx.get(db.doc(`categorias/${data.categoriaId}`));
           exigir(type.data()?.activo === true && definition.exists && category.data()?.activo === true, 'datos-invalidos', 'Tipo, versión o categoría inexistentes/inactivos.');
           exigir(Array.isArray(data.imagenes) && data.imagenes.length >= 1 && data.imagenes.length <= 5, 'imagen-requerida', 'Se requiere entre una y cinco imágenes autorizadas.');
-          for (const image of data.imagenes) exigir(typeof image === 'string' && await imagenAutorizada(image, solicitud.tiendaId), 'imagen-no-autorizada', 'Imagen no validada.');
+          exigir(new Set(data.imagenes).size === data.imagenes.length, 'datos-invalidos', 'No repetir imágenes.');
+          for (const image of data.imagenes) exigir(typeof image === 'string' && await imagenAutorizada(image, solicitud.tiendaId, solicitud.productoId!), 'imagen-no-autorizada', 'Imagen no validada.');
           const attrs: DocumentData = {};
           for (const field of definition.data()!.campos) {
             const input = data.atributosEspecificos?.[field.clave];

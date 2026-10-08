@@ -1,6 +1,6 @@
 # Rincón Amancay — estructura inicial
 
-Base local para revisar en VS Code. No incluye la web de demostración anterior. Se registró la app web en Firebase y se creó Firestore con reglas cerradas. web/ ya incluye el SDK y una prueba de comunicación sin sesión; aún no hay interfaz Nuxt, app Android compilable ni operaciones de servidor. Estado detallado en docs/firebase-desarrollo.md.
+Base compartida para trabajar en VS Code. Incluye API autenticada de publicación/retiro, reglas de permisos y validación básica de imágenes, probadas en emuladores de Auth, Firestore y Storage. web/ contiene el SDK; todavía no hay interfaz Nuxt ni app Android compilable. La nube mantiene Firestore cerrado y no tiene Storage provisionado. Estado detallado en docs/firebase-desarrollo.md.
 
 ## Abrir en Visual Studio Code
 
@@ -38,12 +38,12 @@ rincon-amancay-estructura/
 
 Avance local: ya están disponibles los emuladores y una carga reproducible de 29 documentos ficticios. Ver [guía de ejecución y pruebas](docs/emuladores.md). Esta carga no se ha enviado al proyecto real; los siguientes puntos conservan el plan general.
 
-1. Revisar esta estructura, añadida al clon local del grupo que solo contenía .git. Todos los archivos están pendientes de revisión y commit por el usuario.
+1. Revisar los avances locales y sus commits antes de compartirlos con el grupo.
 2. Pasar los acuerdos aprobados del modelo provisional a contratos/. Los documentos anteriores siguen fuera del repositorio hasta que el usuario decida incorporarlos.
 3. Preparar Firebase de desarrollo y la primera conexión de web y Android.
-4. Implementar y probar permisos por recurso. Las reglas iniciales aquí deniegan todos los accesos de clientes.
-5. Elegir el servicio para operaciones privilegiadas y preparar su entorno ejecutable. Cloud Functions es una posibilidad pendiente de evaluar, no una decisión tomada.
+4. Completar altas de cuentas, gestión de productos y stock. Los permisos y operaciones implementados se describen en contratos/03-publicacion.md, contratos/04-api-local.md y contratos/05-imagenes-storage.md.
+5. Elegir el alojamiento del backend, completar el procesamiento de imágenes y evaluar costos antes del despliegue. Cloud Functions es una posibilidad pendiente de evaluar.
 
-web/ tiene package.json y package-lock.json para la conexión Firebase; ver su README para instalar y comprobar. No hay npm run dev todavía. Android y backend tendrán sus propios entornos al inicializarse. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
+web/ tiene package.json y package-lock.json para la conexión Firebase; no tiene npm run dev todavía. backend/ sí dispone de npm run dev y pruebas automatizadas. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 
-Se conserva la configuración Git existente del clon. No se hicieron commits, push ni cambios a sus remotos. .firebaserc asocia el alias development al proyecto rincon-amancay. No se desplegó la web ni código de servidor. Los commits y push los realiza el usuario después de revisar.
+Se conserva la configuración Git existente del clon. Los avances se guardan en commits locales por autorización del usuario; el usuario realizará el push. No se modificaron remotos ni se desplegaron reglas, web o servidor. .firebaserc asocia development a rincon-amancay; los scripts de emuladores fijan demo-rincon-amancay.

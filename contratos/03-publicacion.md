@@ -1,6 +1,6 @@
 # Publicación y retiro — incremento local
 
-La API HTTP local verifica tokens contra Authentication en el emulador; consultar 04-api-local.md. El módulo permanece sin despliegue y la validación real de imágenes sigue pendiente.
+La API HTTP local verifica tokens contra Authentication en el emulador; consultar 04-api-local.md. Storage local comprueba los objetos según 05-imagenes-storage.md. El módulo permanece sin despliegue.
 
 ## Entrada y salida
 
@@ -30,7 +30,7 @@ La transacción detecta cambios concurrentes en sus lecturas. versionEsperada se
 - CLP y cantidades enteras por unidad. Pieza única exige una unidad y sin variantes. No se registran ventas.
 - Precio/stock en variantes si las hay; sin duplicación operativa en producto padre. Producto simple no conserva variantes privadas.
 - Campos públicos seleccionados explícitamente; atributos y opciones según tipo versionado. Los tipos de campo admitidos en este incremento son texto.
-- Se exige entre 1 y 5 referencias de imagen. El verificador real de Storage (existencia, propiedad, autorización y tipo de archivo) está pendiente. Las pruebas usan un sustituto, no verifican imágenes reales. La dependencia debe ser de lectura y tolerar reintentos; Storage no integra la transacción Firestore.
+- Se exige entre 1 y 5 referencias de imagen distintas. La API verifica ruta, existencia, tamaño, MIME y firma inicial de los objetos de Storage local. Las pruebas aisladas de negocio usan un sustituto; las HTTP usan Storage. Falta procesamiento completo de imágenes. La dependencia es de lectura y tolera reintentos; Storage no integra la transacción Firestore.
 - Publicar productos requiere mostrarPrecios=true en configuración privada y ficha pública. Consultar precio requiere el siguiente incremento. Publicar tienda con false mantiene su catálogo bloqueado por las reglas actuales.
 - Máximo 100 documentos por subcolección consultada y 200 cambios públicos por operación; al excederlos falla sin cambios. Catálogos grandes requerirán retirada por indicador y limpieza paginada.
 - Variantes agotadas con política ocultar se omiten. Si ninguna queda publicable, se rechaza publicar y debe solicitarse retirar explícitamente. No hay sincronización automática de stock.

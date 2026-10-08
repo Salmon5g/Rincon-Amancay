@@ -16,9 +16,9 @@ npm run typecheck
 npm test
 ```
 
-Solo se usa demo-rincon-amancay: Firestore en 127.0.0.1:8080 y Authentication en 127.0.0.1:9099. No requiere credenciales de servicio. Las pruebas reponen los documentos del fixture: no ejecutarlas simultáneamente con otras suites o ediciones manuales del mismo catálogo.
+Solo se usa demo-rincon-amancay: Firestore en 127.0.0.1:8080, Authentication en 127.0.0.1:9099 y Storage en 127.0.0.1:9199. No requiere credenciales de servicio. Las pruebas reponen los documentos del fixture: no ejecutarlas simultáneamente con otras suites o ediciones manuales del mismo catálogo.
 
-La API verifica el ID token Firebase con comprobación de revocación y pasa su UID al módulo. Rechaza uid/roles en el cuerpo. La función de autorización de imágenes es obligatoria; solo las pruebas la sustituyen. Storage real no está conectado y la API no habilita esa publicación sin el verificador real.
+La API verifica el ID token Firebase con comprobación de revocación y pasa su UID al módulo. Rechaza uid/roles en el cuerpo. La función de validación de imágenes conecta Storage local: ruta, existencia, tamaño, MIME y firma inicial; consultar ../contratos/05-imagenes-storage.md para sus límites. Las pruebas HTTP utilizan esa conexión; solo las pruebas aisladas de negocio la sustituyen.
 
-Verificado el 8 de octubre de 2026: TypeScript correcto; 16 casos de negocio y 23 casos de API pasados. La API comprueba tokens inválidos, vencidos y revocados, cuentas deshabilitadas, permisos, validación de solicitudes y operaciones autenticadas. Incluye permisos, campos privados, variantes, producto a pedido, imágenes inválidas, stock inválido, retiradas, idempotencia y concurrencia. npm audit del backend: 0 vulnerabilidades reportadas; no equivale a auditoría completa.
+Verificado el 8 de octubre de 2026: TypeScript correcto; 16 casos de negocio, 24 de API y 9 de imágenes pasados (52 incluyendo grupos padre). Incluye sesión, permisos, proyecciones, variantes, producto a pedido, imágenes inválidas, stock inválido, retiradas, idempotencia y concurrencia. Auditoría previa del backend: 0 vulnerabilidades reportadas; sin nuevas dependencias en este incremento. No equivale a auditoría completa.
 

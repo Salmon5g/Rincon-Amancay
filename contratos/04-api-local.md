@@ -53,14 +53,14 @@ No reintentar automáticamente 400/401/403/409 sin resolver la causa. Ante un fa
 
 Orígenes web locales permitidos: http://localhost:3000 y http://127.0.0.1:3000. Clientes sin Origin (p. ej. Android) pueden enviar solicitudes, pero necesitan igualmente token y permisos. CORS no sustituye autenticación. La API escucha únicamente en loopback; acceso desde un dispositivo físico requiere una configuración futura revisada.
 
-La publicación de productos no admite imágenes ficticias en esta API: si no hay imágenes responde 422 y si llega a validar una referencia responde 503 pendiente hasta integrar Storage. Publicar/retirar tiendas y retirar productos sí ejecutan las operaciones reales del emulador. La biblioteca conserva las pruebas de publicación de productos con un verificador de imágenes sustituido únicamente dentro de pruebas.
+Las cuatro operaciones están conectadas a los emuladores. Publicar productos comprueba los objetos de Storage según 05-imagenes-storage.md: sin imágenes o con referencias inválidas responde 422; si Storage no está disponible responde 503. Las pruebas HTTP usan el verificador de Storage; las pruebas aisladas del módulo usan un sustituto.
 
-Sin alta de cuentas, validación real de Storage, ventas, límites de tasa de producción ni despliegue. No se abre Firestore en la nube.
+Sin alta de cuentas, procesamiento completo de imágenes, ventas, límites de tasa de producción ni despliegue. No se abre Firestore en la nube.
 
 ## Verificación
 
 Con emuladores activos, desde backend/: npm run typecheck y npm test. Las suites se ejecutan en serie porque comparten el fixture. npm run test:api ejecuta solo HTTP/Auth. Reponen el catálogo ficticio, por lo que no deben ejecutarse durante ediciones manuales.
 
-23 casos HTTP/Auth aprobados y 16 casos del módulo de publicación aprobados. La suite HTTP cubre sesión real de emulador, permisos, revocación, cuenta deshabilitada, expiración, otro proyecto, suplantación por cuerpo, validación JSON, tamaño, CORS, errores y operaciones con reintentos.
+24 casos HTTP/Auth, 16 casos del módulo de publicación y 9 casos del verificador de imágenes aprobados (52 incluyendo grupos padre). La suite HTTP cubre sesión real de emulador, permisos, revocación, cuenta deshabilitada, expiración, otro proyecto, suplantación por cuerpo, validación JSON, tamaño, CORS, errores, publicación con Storage y reintentos.
 
 Fuentes: https://firebase.google.com/docs/auth/admin/verify-id-tokens y https://firebase.google.com/docs/emulator-suite/connect_auth

@@ -5,9 +5,10 @@ import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { setTimeout as esperar } from 'node:timers/promises';
 import { Timestamp } from 'firebase-admin/firestore';
-import { auth, db } from '../src/config/emulador.ts';
+import { auth, db, bucket } from '../src/config/emulador.ts';
 import { crearApi } from '../src/http/api.ts';
-import { crearPublicacion, ErrorOperacion, version } from '../src/modules/publicacion.ts';
+import { crearPublicacion, version } from '../src/modules/publicacion.ts';
+import { crearVerificadorImagenes } from '../src/modules/imagenes.ts';
 
 const fixture = JSON.parse(await readFile(new URL('../../datos-prueba/catalogo-local.json', import.meta.url), 'utf8'));
 function convert(x: any): any {
@@ -26,7 +27,8 @@ test('API con Firebase Authentication y Firestore locales', async t => {
   const receiptIds: string[] = [];
   const store = db.doc('tiendasPrivadas/t_demo_01');
   const access = db.doc(`accesos/${uid}`);
-  const server = crearApi(auth, crearPublicacion(db, async () => { throw new ErrorOperacion('pendiente', 'Storage no conectado.'); }));
+  const imagePath = `tiendas/t_demo_01/productos/p_gorro_01/${randomUUID()}.png`;
+  const server = crearApi(auth, crearPublicacion(db, crearVerificadorImagenes(bucket)));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}`;
@@ -95,9 +97,17 @@ test('API con Firebase Authentication y Firestore locales', async t => {
     await t.test('acceso Firestore desactivado devuelve 403',async()=>{
       await access.update({estado:'desactivado'}); await status(await post(await input()),403,'sin-permiso'); await access.update({estado:'activo'});
     });
-    await t.test('publicar producto no omite Storage pendiente',async()=>{
-      const p=store.collection('productos').doc('p_gorro_01'); await p.update({imagenes:['tiendas/t_demo_01/foto.webp']});
-      await status(await post({...await input(),productoId:'p_gorro_01',versionEsperada:version((await p.get()).data()!)},token,'publicarProducto'),503,'pendiente');
+    await t.test('publicar producto rechaza imagen inexistente',async()=>{
+      const p=store.collection('productos').doc('p_gorro_01'); await p.update({imagenes:[imagePath]});
+      await status(await post({...await input(),productoId:'p_gorro_01',versionEsperada:version((await p.get()).data()!)},token,'publicarProducto'),422,'imagen-no-autorizada');
+    });
+    await t.test('publicar producto con imagen de Storage mediante HTTP',async()=>{
+      await bucket.file(imagePath).save(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'), {resumable:false,metadata:{contentType:'image/png'}});
+      const p=store.collection('productos').doc('p_gorro_01');
+      const request={...await input(),productoId:'p_gorro_01',versionEsperada:version((await p.get()).data()!)};
+      await status(await post(request,token,'publicarProducto'),200);
+      await status(await post(request,token,'publicarProducto'),200);
+      assert.deepEqual((await db.doc('tiendasPublicas/t_demo_01/productos/p_gorro_01').get()).data()!.imagenes,[imagePath]);
     });
     await t.test('retirar producto mediante HTTP',async()=>{
       const p=store.collection('productos').doc('p_gorro_01');
@@ -118,6 +128,7 @@ test('API con Firebase Authentication y Firestore locales', async t => {
     await reset(); await access.delete();
     const batch=db.batch(); for(const id of receiptIds) batch.delete(store.collection('operacionesPublicacion').doc(id)); await batch.commit();
     await auth.deleteUser(uid).catch(e=>{ if(e.code!=='auth/user-not-found') throw e; });
+    await bucket.file(imagePath).delete({ignoreNotFound:true});
     await db.terminate();
   }
 });

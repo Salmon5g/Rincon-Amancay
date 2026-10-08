@@ -2,7 +2,7 @@
 
 ## Configurado y comprobado
 
-Backend local: cuatro operaciones de publicación/retiro y API HTTP autenticada contra emuladores implementadas y probadas; ver backend/README.md y contratos/04-api-local.md. No hay API desplegada ni integración Storage real. Las pruebas HTTP usan cuentas temporales de Auth local que se eliminan al terminar.
+Backend local: cuatro operaciones de publicación/retiro y API HTTP autenticada contra emuladores implementadas y probadas; ver ../backend/README.md y ../contratos/04-api-local.md. Incluye validación básica de objetos de Storage local; ver ../contratos/05-imagenes-storage.md. No hay API desplegada ni bucket en la nube. Las pruebas HTTP usan cuentas temporales de Auth local que se eliminan al terminar.
 
 Actualización local: reglas de catálogo público y permisos básicos incorporadas al emulador, con suite de sesiones simuladas. Ver permisos-locales.md. No se publicaron a la nube ni se crearon cuentas de prueba reales.
 
@@ -26,9 +26,9 @@ Avance local posterior: ver emuladores.md. Authentication y Firestore se ejecuta
 - Implementar flujo de cuentas, asignación de roles y sesión con el proveedor correo/contraseña ya habilitado.
 - Registrar Android cuando el equipo tenga su applicationId definitivo. Una app con ambos modos, no registros distintos por rol.
 - Integrar el módulo de conexión en un plugin Nuxt cliente cuando se inicialice Nuxt. No se han creado pantallas ni un proyecto Nuxt ejecutable.
-- Implementar reglas específicas y sus pruebas en emuladores antes de abrir lecturas o escrituras de negocio.
+- Ampliar reglas y pruebas con cada operación nueva. Ya hay permisos específicos de Firestore y Storage probados localmente.
 - Acordar una carga ficticia controlada para probar lecturas autorizadas desde web y Android.
 - Storage no está creado: que el SDK incluya storageBucket no confirma que exista un bucket utilizable.
 - Sin Hosting, Functions, nuevos usuarios, documentos, facturación Blaze ni publicación web. Analytics no se inicializó en el código cliente aunque la consola proporcionó measurementId.
 
-Los modelos y contratos locales no se importaron a Firestore. Sin commits ni push.
+El catálogo ficticio solo se cargó en Firestore local, nunca en la nube. Hay commits locales autorizados; el push queda a cargo del usuario.

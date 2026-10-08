@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts",
+    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts",
     "dev": "node src/server.ts",
     "test:api": "node --test tests/api.test.ts"
   },
