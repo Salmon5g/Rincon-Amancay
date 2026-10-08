@@ -4,6 +4,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { ErrorOperacion } from '../modules/publicacion.ts';
 import type { crearPublicacion, Accion, Solicitud } from '../modules/publicacion.ts';
 import type { crearCuentas } from '../modules/cuentas.ts';
+import type { crearProductos, AccionProducto } from '../modules/productos.ts';
 
 const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'];
 const status: Record<string, number> = {
@@ -43,7 +44,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>) {
   const origins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000']);
   const server = createServer(async (req, res) => {
     try {
@@ -53,7 +54,8 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: 'emulador', proyecto: 'demo-rincon-amancay' });
       const action = req.url?.match(/^\/api\/v1\/(publicarTienda|retirarTienda|publicarProducto|retirarProducto)$/)?.[1] as Accion | undefined;
       const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;
-      if (!esAlta && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto)$/)?.[1] as AccionProducto | undefined;
+      if (!esAlta && !accionProducto && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' });
         return res.end();
@@ -71,7 +73,9 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         throw new ErrorHttp(503, 'autenticacion-no-disponible', 'No se pudo comprobar la sesión.');
       }
       const input = await body(req);
-      const result = esAlta ? await alta!({uid}, input) : await ejecutar(action!, { uid }, solicitudPublicacion(input, action!));
+      const result = esAlta ? await alta!({uid}, input)
+        : accionProducto ? await productos!(accionProducto, {uid}, input)
+        : await ejecutar(action!, { uid }, solicitudPublicacion(input, action!));
       json(res, 200, { datos: result });
     } catch (error) {
       if (res.destroyed) return;

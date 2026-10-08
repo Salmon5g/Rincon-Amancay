@@ -10,4 +10,4 @@ Producto privado: nombre, descripcion, tipoProductoId, versionTipoProducto, cate
 
 La vista pública usa una lista explícita de campos del catálogo y estadoDisponibilidad (disponible, agotado o a_pedido). No contiene cantidades de stock, propietarioUid ni configuración privada. El ejemplo solo muestra precios visibles; ocultarlos deberá retirar también los importes de todas las variantes y derivados antes de permitir lecturas.
 
-Solo se prueban cantidades enteras y moneda CLP. Cantidades fraccionarias, agotados, piezas únicas vendidas, precios ocultos y cambios de modalidad siguen pendientes de implementación/pruebas. Tampoco hay servicio de publicación: las proyecciones del fixture son datos precargados para preparar ese trabajo.
+Solo se admiten cantidades enteras y moneda CLP. La creación/edición privada está implementada según 07-edicion-productos.md y la publicación según 03-publicacion.md. Se prueban agotados y piezas únicas iniciales; ventas, cantidades fraccionarias, precios ocultos y migración de modalidad siguen pendientes. Las proyecciones del fixture se precargan como un escenario de prueba.

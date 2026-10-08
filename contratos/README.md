@@ -2,6 +2,8 @@
 
 Acuerdos disponibles: [cuentas y tiendas](01-cuentas-tiendas.md), [catálogo](02-catalogo-local.md), [publicación](03-publicacion.md), [API local](04-api-local.md), [imágenes](05-imagenes-storage.md) y [alta de emprendedoras](06-alta-emprendedoras.md). Los contratos 03–06 describen operaciones implementadas y probadas localmente con sus límites; no son un backend completo desplegado.
 
+También está implementada la [creación y edición de productos y variantes](07-edicion-productos.md), con stock inicial y publicación explícita.
+
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
 
 Se conserva el modelo provisional previamente trabajado; esta carpeta no lo reemplaza. Los documentos anteriores siguen separados hasta que el usuario decida incorporarlos.
