@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test:local": "node --test tests/cliente-local.test.mjs",
     "check:firebase": "node --env-file=.env scripts/check-firebase.mjs"
   },
   "dependencies": {

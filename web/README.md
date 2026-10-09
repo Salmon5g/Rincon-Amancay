@@ -2,11 +2,13 @@
 
 Espacio para una única aplicación Nuxt + Vue + TypeScript. Ya incluye el SDK Firebase, un módulo de inicialización y una comprobación técnica sin pantallas. Nuxt y su interfaz todavía no están inicializados; no existe npm run dev.
 
-Con Node.js 24.15.0, desde web/: ejecutar `npm ci`, `npm run typecheck` y `npm run check:firebase`. Este último requiere .env y hace una lectura sin sesión que debe rechazarse mientras las reglas privadas permanezcan cerradas. No crea datos. No valida un flujo completo de inicio de sesión.
+Para el trabajo del equipo, comenzar por [la guía de integración local](../docs/integracion-equipos.md). app/lib/firebase-local.ts conecta los emuladores y app/lib/cliente-local.ts ofrece sesión, catálogo, imágenes y API. El plugin de ejemplo está en ejemplos/nuxt/. No requiere .env real. Con emuladores y API activos: npm run typecheck y npm run test:local. Este último requiere también las dependencias de backend/ instaladas y crea/elimina datos de prueba aislados. No ejecutar simultáneamente con otras suites.
 
-La configuración local está en .env, excluido de Git. Para otro equipo, copiar .env.example a .env y completar la configuración desde Firebase. Son parámetros del SDK cliente, no credenciales Admin. Su protección efectiva depende de reglas y autorización.
+La comprobación anterior contra la nube sigue disponible por separado: npm run check:firebase requiere .env y hace una lectura sin sesión que debe rechazarse mientras las reglas permanezcan cerradas. No crea datos ni valida login. No es necesaria para probar el cliente local.
 
-app/lib/firebase.ts centraliza app, auth y db. Al inicializar Nuxt, integrar esta función en un plugin .client.ts, declarar los campos en runtimeConfig.public y pasar la configuración desde useRuntimeConfig(). Las variables NUXT_PUBLIC del archivo .env no se conectan automáticamente a esta función. El script de comprobación sí las carga explícitamente. El tsconfig actual verifica solo este módulo y deberá integrarse con el tsconfig generado por Nuxt.
+La configuración del proyecto real está en .env, excluido de Git. .env.example sirve para esa conexión; no usarlo para los emuladores. Los parámetros SDK no son credenciales Admin; la protección efectiva depende de reglas y autorización.
+
+app/lib/firebase.ts conserva el inicializador del proyecto real. Antes de un despliegue habrá que definir su plugin y runtimeConfig; las variables NUXT_PUBLIC no se conectan automáticamente a esa función. El tsconfig actual comprueba los módulos app/lib/ y deberá integrarse con el generado por Nuxt. El plugin local se niega a iniciar una compilación de producción.
 
 app/plugins/ inicializará Firebase para el navegador; app/repositories/ reunirá las consultas y llamadas al backend; app/types/ contendrá los tipos derivados del contrato común. Nunca incluir Firebase Admin SDK o credenciales de servidor en el navegador.
 
