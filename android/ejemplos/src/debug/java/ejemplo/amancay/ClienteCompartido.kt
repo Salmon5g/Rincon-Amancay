@@ -10,7 +10,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.IOException
 
-class ClienteLocal(private val servicios: ConexionLocal.Servicios) {
+// Cliente compartido: misma superficie que ClienteLocal, pero contra el proyecto
+// real y la API HTTPS. `apiBase` debe terminar en /api/v1/.
+class ClienteCompartido(private val servicios: ConexionCompartida.Servicios, apiBase: String) {
+    private val api = if (apiBase.endsWith("/")) apiBase else "$apiBase/"
     private val operaciones = setOf("publicarTienda", "retirarTienda", "publicarProducto", "retirarProducto",
         "altaEmprendedora", "crearProducto", "editarProducto", "ajustarStock", "desactivarEmprendedora", "registrarComprador", "invitarEmprendedora", "consultarInvitacion",
         "aceptarInvitacion", "cancelarInvitacion", "reactivarEmprendedora")
@@ -67,7 +70,7 @@ class ClienteLocal(private val servicios: ConexionLocal.Servicios) {
         val bytes = solicitud.toString().toByteArray(Charsets.UTF_8)
         require(bytes.size <= 16384) { "Máximo 16 KiB" }
         return withContext(Dispatchers.IO) {
-            val connection = URL(ConexionLocal.API + operacion).openConnection() as HttpURLConnection
+            val connection = URL(api + operacion).openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "POST"
                 connection.instanceFollowRedirects = false

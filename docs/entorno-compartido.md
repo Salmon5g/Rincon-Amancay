@@ -36,8 +36,8 @@ Propongo **una alerta inicial de US$5 al mes**, con avisos al 50%, 80% y 100%, p
 1. **Cuentas:** desactivar/reactivar ya usa una reserva persistente en `ejecucionesCuentas/{uid}` además de una cola por UID, de modo que dos instancias no reservan la misma cuenta a la vez (probado con una carrera concurrente). Queda pendiente la recuperación de reservas huérfanas: la reserva no vence y un proceso que muera entre fases exige revisión técnica, porque Auth no ofrece un *fencing token*. Antes de la nube falta probar la terminación entre fases con dos procesos reales y definir ese procedimiento. [Configuración del máximo de instancias](https://docs.cloud.google.com/run/docs/configuring/max-instances).
 2. **Servidor:** agregar un adaptador compartido con credenciales del entorno (ADC), proyecto/bucket explícitos, rechazo de variables de emuladores y escucha en `0.0.0.0:$PORT`. El servidor actual continúa ligado al emulador y rechaza producción. No empaquetarlo y desplegarlo como está.
 3. **Contenedor:** preparar y probar Node 24 y Sharp en Linux con instalación por lockfile, usuario sin privilegios y exclusión de .env, credenciales, .local y datos de prueba. Docker y gcloud no se encontraron en PATH en esta revisión; no se probó ni construyó una imagen.
-4. **Clientes:** implementar adaptadores compartidos separados de los locales. Completar URL API, bucket confirmado, orígenes web y applicationId Android. Los adaptadores locales siguen rechazando proyectos reales por diseño.
-5. **Operación:** límites de peticiones/procesamiento de fotos, observabilidad sin datos sensibles, creación del primer administrador y entrega real de invitaciones. No ejecutar cuentas:demo ni seed local contra la nube.
+4. **Clientes:** los adaptadores compartidos ya existen separados de los locales — web `cliente-compartido.ts` (sobre `cliente-base.ts`, proyecto real + API HTTPS) y Android `ConexionCompartida.kt`/`ClienteCompartido.kt` — y se verificaron los locales (18 tests) y `typecheck`. Falta la URL de API y el applicationId Android; el cliente local y el compartido rechazan sus proyectos opuestos por diseño.
+5. **Operación:** límites de peticiones/procesamiento de fotos, observabilidad sin datos sensibles, entrega real de invitaciones y revisión de plantillas de Auth. La creación del primer administrador ya tiene herramienta (`npm --prefix backend run admin:compartido` con ADC y `--confirmar`), todavía sin ejecutar. No ejecutar cuentas:demo ni seed local contra la nube.
 
 La configuración HTTP ya permite inyectar proyecto, entorno y orígenes exactos sin cambiar los valores locales. Se probaron salud, CORS y rechazo de solicitudes sin token; esto **no inicializa Firebase real** ni resuelve los bloqueos anteriores.
 
@@ -72,6 +72,19 @@ docker run --rm -p 8080:8080 \
 ```
 
 Falta construir en Linux, verificar el binario nativo de Sharp, revisar el tamaño de la imagen y probar la terminación por SIGTERM que ya espera el servidor compartido.
+
+## Primer administrador (procedimiento propuesto)
+
+`backend/scripts/admin-compartido.ts` crea la primera cuenta administradora real usando Application Default Credentials. Rechaza emuladores y `GOOGLE_APPLICATION_CREDENTIALS`, exige el proyecto `rincon-amancay` y `--confirmar`, no modifica identidades existentes y revierte lo creado si falla. Genera el enlace de configuración de contraseña (un solo uso) sin escribir credenciales en disco.
+
+```sh
+cd backend
+$env:AMANCAY_ENTORNO='compartido'; $env:AMANCAY_PROJECT_ID='rincon-amancay'
+$env:AMANCAY_ADMIN_EMAIL='<correo real>'; $env:AMANCAY_ADMIN_NOMBRE='<nombre>'
+npm run admin:compartido -- --confirmar
+```
+
+Requiere facturación/ADC resueltos y reglas desplegadas; todavía no se ejecutó. Las plantillas de Auth y la entrega de invitaciones se revisan al desplegar.
 
 ## Archivos revisables
 

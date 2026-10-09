@@ -5,7 +5,7 @@ Ejemplos para integrar en el futuro módulo Android. No hay Gradle, applicationI
 ## Preparación
 
 1. Iniciar API y emuladores en el computador según ../../docs/integracion-equipos.md.
-2. Crear/usar el proyecto Android del equipo y copiar src/debug/ al src/debug/ de su módulo app, combinando el manifest con el existente. Mantener estos adaptadores fuera de release.
+2. Crear/usar el proyecto Android del equipo y copiar los adaptadores locales (ConexionLocal.kt y ClienteLocal.kt) a su src/debug/, combinando el manifest con el existente. Los archivos compartidos (ConexionCompartida.kt, ClienteCompartido.kt y ErrorApi.kt) van a src/main/, porque src/main no puede ver src/debug. Mantener el adaptador local fuera de release.
 3. Agregar las dependencias principales Firebase Auth, Firestore y Storage, además de coroutines Android y coroutines-play-services para Task.await. Las dependencias Firebase se alinean con BoM; no usar los módulos antiguos -ktx.
 
 Referencia de versiones de las páginas oficiales consultadas: Firebase BoM 35.0.0 y coroutines 1.11.0. Alinear con Kotlin, AGP, SDK y catálogo de versiones del proyecto antes de sincronizar. Esto no sustituye la compilación del equipo:
@@ -89,6 +89,26 @@ cliente.llamar("registrarComprador", JSONObject().put("nombreMostrar", nombreMos
 ```
 
 No se han creado pantallas ni manejadores de enlaces Android. El ejemplo sigue pendiente de compilación en el proyecto del equipo. En desarrollo Auth simula los correos; las invitaciones se entregan por su identificador.
+
+## Conexión compartida (proyecto real)
+
+`ConexionCompartida`, `ClienteCompartido` y `ErrorApi` (error común a ambos clientes) apuntan al proyecto `rincon-amancay` y a la API HTTPS desplegada; no usan emuladores. Copiarlos al `src/main/` del proyecto del equipo (no a `debug`) y aportar la `Configuracion` desde ese proyecto:
+
+```kotlin
+val config = ConexionCompartida.Configuracion(
+    projectId = "rincon-amancay",
+    applicationId = "<applicationId del equipo>",   // pendiente de registrar
+    apiKey = "<API key de la app Android en Firebase>",
+    storageBucket = "rincon-amancay.firebasestorage.app",
+    apiUrl = "<URL HTTPS de Cloud Run>",            // pendiente de desplegar
+)
+val cliente = ClienteCompartido(
+    servicios = ConexionCompartida.obtener(context.applicationContext, config),
+    apiBase = "${config.apiUrl}/api/v1/",
+)
+```
+
+Requiere registrar la app Android y `google-services.json` (o `FirebaseOptions`) del equipo. Storage y Cloud Run exigen activar Blaze; el bucket todavía no existe. Estos archivos no se compilaron ni probaron.
 
 ## Disponibilidad e imágenes públicas
 
