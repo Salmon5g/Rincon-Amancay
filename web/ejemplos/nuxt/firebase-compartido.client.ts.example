@@ -1,0 +1,26 @@
+// Copiar a app/plugins/firebase-compartido.client.ts cuando exista Nuxt y la API desplegada.
+// Solo cliente: obtiene la configuración pública desde runtimeConfig.
+//
+// Define en nuxt.config.ts (o sobreescribe con NUXT_PUBLIC_* en .env):
+//   runtimeConfig: {
+//     public: {
+//       firebaseApiKey: '', firebaseAuthDomain: '', firebaseProjectId: '',
+//       firebaseStorageBucket: '', firebaseMessagingSenderId: '', firebaseAppId: '',
+//       apiUrl: '', // URL HTTPS del servicio Cloud Run, sin /api/v1/
+//     },
+//   }
+import { obtenerFirebaseCliente } from '~/lib/firebase';
+import { crearClienteCompartido } from '~/lib/cliente-compartido';
+
+export default defineNuxtPlugin(() => {
+  const publico = useRuntimeConfig().public;
+  const firebase = obtenerFirebaseCliente({
+    apiKey: publico.firebaseApiKey,
+    authDomain: publico.firebaseAuthDomain,
+    projectId: publico.firebaseProjectId,
+    storageBucket: publico.firebaseStorageBucket,
+    messagingSenderId: publico.firebaseMessagingSenderId,
+    appId: publico.firebaseAppId,
+  });
+  return { provide: { amancay: crearClienteCompartido(firebase, { apiUrl: publico.apiUrl }) } };
+});

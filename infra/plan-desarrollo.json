@@ -1,13 +1,34 @@
 {
   "estado": "propuesta_no_desplegable",
   "fechaRevision": "2026-10-09",
+  "fechaVerificacionConsola": "2026-10-09",
   "proyecto": "rincon-amancay",
+  "numeroProyecto": "980190819335",
+  "planActual": "Spark",
   "regionPropuesta": "southamerica-west1",
-  "bucketConfirmado": null,
+  "regionConfirmada": "southamerica-west1",
+  "firestore": {
+    "base": "(default)",
+    "region": "southamerica-west1",
+    "estado": "lista_reglas_no_desplegadas"
+  },
+  "webApp": {
+    "nombre": "rincon-amancay-web",
+    "appId": "1:980190819335:web:944ac61168ac9c7ad5a6a2",
+    "authDomain": "rincon-amancay.firebaseapp.com"
+  },
+  "auth": {
+    "correoContrasena": "habilitado",
+    "dominiosAutorizados": ["localhost", "rincon-amancay.firebaseapp.com", "rincon-amancay.web.app"]
+  },
+  "bucketConfirmado": "rincon-amancay.firebasestorage.app",
+  "storageEstado": "requiere_activar_blaze_no_creado",
   "apiUrlConfirmada": null,
   "androidApplicationId": null,
+  "origenesWebConfirmados": ["http://localhost:3000", "http://127.0.0.1:3000"],
   "cloudRun": {
     "nombrePropuesto": "amancay-api-dev",
+    "regionPropuesta": "southamerica-west1",
     "cpu": 1,
     "memoriaGiB": 1,
     "minInstancias": 0,
@@ -30,9 +51,9 @@
     "segundosPorImagen": 0.5
   },
   "bloqueosTecnicos": [
-    "Coordinación distribuida y recuperación de operaciones de cuenta pendientes",
-    "Adaptador servidor ADC, arranque cloud y prueba de contenedor Linux",
-    "Conexiones compartidas para clientes y sus orígenes CORS definitivos",
+    "Recuperación de reservas de cuenta huérfanas y prueba de terminación entre fases con dos procesos reales",
+    "Activación de Blaze y creación del bucket; despliegue del contenedor Linux y del servicio de API",
+    "URL de API y orígenes CORS definitivos; registro de la aplicación Android cuando el equipo defina su applicationId",
     "Control de abuso, límites de procesamiento y observabilidad",
     "Primer administrador e invitaciones reales mediante un procedimiento revisado"
   ]

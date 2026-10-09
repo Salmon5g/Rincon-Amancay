@@ -33,6 +33,8 @@ Avance local posterior: ver emuladores.md. Authentication y Firestore se ejecuta
 
 El catálogo ficticio solo se cargó en Firestore local, nunca en la nube. Hay commits locales autorizados; el push queda a cargo del usuario.
 
-## Preparación del 9 de octubre
+## Verificación de consola — 9 de octubre de 2026
 
-Ver [entorno compartido](entorno-compartido.md). Se prepararon propuesta y configuración HTTP validada. La consola real no se volvió a inspeccionar; los estados anteriores son el último registro, no una verificación actual. No se activó facturación ni se desplegaron recursos.
+Se revisó la consola del proyecto `rincon-amancay`: plan **Spark**, sin facturación. Se confirmó la app web `rincon-amancay-web` (appId 1:980190819335:web:944ac61168ac9c7ad5a6a2) y su configuración SDK, que coincide con web/.env y .env.example. Authentication con correo/contraseña habilitado y dominios autorizados `localhost`, `rincon-amancay.firebaseapp.com` y `rincon-amancay.web.app`. Firestore base (default) en `southamerica-west1`, lista y sin reglas desplegadas. **Storage no está creado**: la consola indica que requiere Blaze; el nombre `rincon-amancay.firebasestorage.app` solo aparece en la configuración del SDK.
+
+La lectura real sin sesión (`npm run check:firebase` en web/) respondió permission-denied, confirmando comunicación y rechazo. No se crearon usuarios, datos, bucket ni despliegues, y no se activó facturación. Ver [entorno compartido](entorno-compartido.md) para la propuesta y los bloqueos vigentes (activar Blaze, desplegar la API y registrar Android).

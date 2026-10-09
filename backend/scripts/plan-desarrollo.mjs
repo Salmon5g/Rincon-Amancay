@@ -13,5 +13,7 @@ console.log(`Escenario supuesto: ${fotos} fotos; ${almacenGiB.toFixed(2)} GiB al
 console.log(`Cómputo orientativo: ${(segundos*p.cloudRun.cpu).toFixed(0)} vCPU-s y ${(segundos*p.cloudRun.memoriaGiB).toFixed(0)} GiB-s; no incluye arranques, reintentos ni solapamientos.`);
 console.log(`Alerta de presupuesto propuesta: USD ${p.alertaPresupuestoUsdPropuesta}. No es una cotización ni un tope de gasto.`);
 console.log('Faltan tarifas regionales verificadas y consumos de Firestore, Auth, compilación, registro de imágenes y logs para calcular un total.');
-console.log('No se consultó la nube. Bucket, URL API y applicationId Android siguen por confirmar.');
+console.log(`Bucket: ${p.bucketConfirmado ?? 'por confirmar'} (${p.storageEstado ?? 'estado desconocido'}).`);
+console.log(`URL API: ${p.apiUrlConfirmada ?? 'por confirmar'}. applicationId Android: ${p.androidApplicationId ?? 'por confirmar'}.`);
+console.log('Esta lista es un estado registrado, no una verificación en vivo de la consola.');
 for(const bloqueo of p.bloqueosTecnicos)console.log(`PENDIENTE: ${bloqueo}`);

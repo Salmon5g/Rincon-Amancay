@@ -8,7 +8,7 @@ La comprobación anterior contra la nube sigue disponible por separado: npm run 
 
 La configuración del proyecto real está en .env, excluido de Git. .env.example sirve para esa conexión; no usarlo para los emuladores. Los parámetros SDK no son credenciales Admin; la protección efectiva depende de reglas y autorización.
 
-app/lib/firebase.ts conserva el inicializador del proyecto real. Antes de un despliegue habrá que definir su plugin y runtimeConfig; las variables NUXT_PUBLIC no se conectan automáticamente a esa función. El tsconfig actual comprueba los módulos app/lib/ y deberá integrarse con el generado por Nuxt. El plugin local se niega a iniciar una compilación de producción.
+app/lib/firebase.ts conserva el inicializador del proyecto real. app/lib/cliente-base.ts concentra la lógica del cliente web; cliente-local.ts (emuladores, rechaza el proyecto real) y cliente-compartido.ts (proyecto `rincon-amancay` + API HTTPS, rechaza el demo) la usan. Antes de un despliegue habrá que definir el plugin y runtimeConfig; las variables NUXT_PUBLIC no se conectan automáticamente. El ejemplo compartido está en ejemplos/nuxt/firebase-compartido.client.ts.example. El tsconfig actual comprueba los módulos app/lib/ y deberá integrarse con el generado por Nuxt. El plugin local se niega a iniciar una compilación de producción.
 
 app/plugins/ inicializará Firebase para el navegador; app/repositories/ reunirá las consultas y llamadas al backend; app/types/ contendrá los tipos derivados del contrato común. Nunca incluir Firebase Admin SDK o credenciales de servidor en el navegador.
 
