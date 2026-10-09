@@ -1,5 +1,7 @@
 # Conexión para los equipos — desarrollo local
 
+Atajo de inicio por rol (web comprador, web administrador, app comprador): [arranque por equipo](arranque-equipos.md).
+
 Punto de entrada para web comprador, web administrador y Android. Todos usan el mismo modelo, reglas y API del repositorio. En esta etapa cada computador ejecuta su propia instancia de emuladores: no comparte automáticamente sus datos con los otros computadores. Web y Android conectados al mismo computador sí ven los mismos datos.
 
 No se necesita una cuenta de consola Firebase para estas pruebas. No usar el correo del proyecto como cuenta compartida de la aplicación. No se desplegaron servicios ni se abrieron las reglas de la nube.
