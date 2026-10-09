@@ -30,3 +30,5 @@ La API verifica el ID token Firebase con comprobación de revocación y pasa su 
 
 Validación del incremento de cuentas: TypeScript, suite completa del backend, cliente web y reglas locales. Los resultados actuales se obtienen con los comandos de pruebas; el procesamiento de imágenes añade Sharp 0.35.5, fijado en el lockfile. Android permanece pendiente de compilación en el proyecto del equipo.
 
+
+Propuesta de nube: [entorno compartido](../docs/entorno-compartido.md). `npm run plan:desarrollo` genera un informe local del escenario; no conecta ni despliega. `src/config/http.ts` permite configurar CORS y metadatos de salud; el arranque sigue usando el emulador.

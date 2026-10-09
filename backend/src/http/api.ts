@@ -1,3 +1,5 @@
+import { validarConfigHttp, httpLocal } from '../config/http.ts';
+import type { ConfigHttp } from '../config/http.ts';
 import { accionesCuentas } from '../modules/ciclo-cuentas.ts';
 import type { crearCicloCuentas, AccionCuenta } from '../modules/ciclo-cuentas.ts';
 import { createServer } from 'node:http';
@@ -48,15 +50,16 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
-  const origins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000']);
+  const config=validarConfigHttp(configHttp);
+  const origins = new Set(config.origenes);
   const server = createServer(async (req, res) => {
     try {
       const origin = req.headers.origin;
       if (origin && !origins.has(origin)) throw new ErrorHttp(403, 'origen-no-permitido', 'Origen no permitido.');
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
-      if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: 'emulador', proyecto: 'demo-rincon-amancay' });
+      if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: config.entorno, proyecto: config.proyecto });
       const action = req.url?.match(/^\/api\/v1\/(publicarTienda|retirarTienda|publicarProducto|retirarProducto)$/)?.[1] as Accion | undefined;
       const accionCuenta = ciclo && accionesCuentas.find(a => req.url === `/api/v1/${a}`) as AccionCuenta | undefined;
       const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;

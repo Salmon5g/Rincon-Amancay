@@ -32,3 +32,7 @@ Avance local posterior: ver emuladores.md. Authentication y Firestore se ejecuta
 - Sin Hosting, Functions, nuevos usuarios, documentos, facturación Blaze ni publicación web. Analytics no se inicializó en el código cliente aunque la consola proporcionó measurementId.
 
 El catálogo ficticio solo se cargó en Firestore local, nunca en la nube. Hay commits locales autorizados; el push queda a cargo del usuario.
+
+## Preparación del 9 de octubre
+
+Ver [entorno compartido](entorno-compartido.md). Se prepararon propuesta y configuración HTTP validada. La consola real no se volvió a inspeccionar; los estados anteriores son el último registro, no una verificación actual. No se activó facturación ni se desplegaron recursos.

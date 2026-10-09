@@ -1,0 +1,39 @@
+{
+  "estado": "propuesta_no_desplegable",
+  "fechaRevision": "2026-10-09",
+  "proyecto": "rincon-amancay",
+  "regionPropuesta": "southamerica-west1",
+  "bucketConfirmado": null,
+  "apiUrlConfirmada": null,
+  "androidApplicationId": null,
+  "cloudRun": {
+    "nombrePropuesto": "amancay-api-dev",
+    "cpu": 1,
+    "memoriaGiB": 1,
+    "minInstancias": 0,
+    "maxInstanciasInicial": 1,
+    "concurrenciaInicial": 1,
+    "facturacion": "por_solicitud"
+  },
+  "alertaPresupuestoUsdPropuesta": 5,
+  "usoMensualSupuesto": {
+    "productos": 300,
+    "fotosPorProducto": 3,
+    "originalKiB": 1024,
+    "principalKiB": 200,
+    "miniaturaKiB": 30,
+    "descargasMiniaturas": 30000,
+    "descargasPrincipales": 5000,
+    "solicitudesApiSinImagenes": 3000,
+    "segundosPorSolicitud": 0.3,
+    "imagenesProcesadas": 900,
+    "segundosPorImagen": 0.5
+  },
+  "bloqueosTecnicos": [
+    "Coordinación distribuida y recuperación de operaciones de cuenta pendientes",
+    "Adaptador servidor ADC, arranque cloud y prueba de contenedor Linux",
+    "Conexiones compartidas para clientes y sus orígenes CORS definitivos",
+    "Control de abuso, límites de procesamiento y observabilidad",
+    "Primer administrador e invitaciones reales mediante un procedimiento revisado"
+  ]
+}

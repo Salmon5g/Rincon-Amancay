@@ -49,3 +49,5 @@ Avance local: ya están disponibles los emuladores y una carga reproducible de 2
 web/ tiene package.json y package-lock.json para la conexión Firebase; no tiene npm run dev todavía. backend/ sí dispone de npm run dev y pruebas automatizadas. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 
 Se conserva la configuración Git existente del clon. Los avances se guardan en commits locales por autorización del usuario; el usuario realizará el push. No se modificaron remotos ni se desplegaron reglas, web o servidor. .firebaserc asocia development a rincon-amancay; los scripts de emuladores fijan demo-rincon-amancay.
+
+Preparación del entorno compartido: [propuesta de arquitectura, consumo y pendientes](docs/entorno-compartido.md). El punto 4 está en preparación; todavía no hay despliegue.
