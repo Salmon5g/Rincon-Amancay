@@ -6,6 +6,8 @@ También está implementada la [creación y edición de productos y variantes](0
 
 Los [ajustes de stock](08-ajustes-stock.md) registran cambios con historial privado y retirada pública hasta republicar.
 
+La [desactivación de emprendedoras](09-desactivacion-cuentas.md) coordina el bloqueo de gestión, catálogo y Authentication, con reintentos para fallos parciales.
+
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
 
 Se conserva el modelo provisional previamente trabajado; esta carpeta no lo reemplaza. Los documentos anteriores siguen separados hasta que el usuario decida incorporarlos.

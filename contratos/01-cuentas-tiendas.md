@@ -39,7 +39,7 @@ El borrador de ejemplo tiene los campos mínimos completos. El procedimiento de 
 
 La ficha privada es la fuente de edición. La pública es una proyección controlada, nunca una copia automática de todo el documento privado. No incluye propietarioUid, roles, correo de acceso, configuración ni ventas. Una tienda borrador no tiene vista pública.
 
-Publicación/retiro están implementados localmente. La desactivación administrativa coordinada de cuentas sigue pendiente. No habilitar contenido real hasta resolver esa coordinación y preparar el despliegue.
+Publicación/retiro están implementados localmente. La desactivación administrativa coordinada se describe en 09-desactivacion-cuentas.md. Reactivación, reconciliación automática y despliegue siguen pendientes.
 
 ## Permisos a implementar
 

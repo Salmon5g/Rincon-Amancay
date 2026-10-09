@@ -34,7 +34,7 @@ La transacción detecta cambios concurrentes en sus lecturas. versionEsperada se
 - Publicar productos requiere mostrarPrecios=true en configuración privada y ficha pública. Consultar precio requiere el siguiente incremento. Publicar tienda con false mantiene su catálogo bloqueado por las reglas actuales.
 - Máximo 100 documentos por subcolección consultada y 200 cambios públicos por operación; al excederlos falla sin cambios. Catálogos grandes requerirán retirada por indicador y limpieza paginada.
 - Variantes agotadas con política ocultar se omiten. Si ninguna queda publicable, se rechaza publicar y debe solicitarse retirar explícitamente. No hay sincronización automática de stock.
-- Las reglas no controlan al SDK Admin: la API mantiene las verificaciones del módulo. Desactivación de cuentas y otras operaciones administrativas siguen pendientes.
+- Las reglas no controlan al SDK Admin: la API mantiene las verificaciones del módulo. La desactivación coordinada está implementada según 09-desactivacion-cuentas.md; reactivación y otras operaciones administrativas siguen pendientes.
 
 Probado solo en emulador. Sin API pública, Storage real ni despliegue; la nube sigue cerrada.
 

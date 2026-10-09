@@ -10,6 +10,8 @@ crearProducto y editarProducto gestionan fichas y variantes privadas según ../c
 
 ajustarStock registra reposiciones, pérdidas y correcciones según ../contratos/08-ajustes-stock.md. Se prueba con npm run test:stock; el cambio de saldo y la retirada pública son atómicos. El producto requiere republicación explícita. No registra ventas.
 
+desactivarEmprendedora bloquea gestión y catálogo antes de deshabilitar Auth; ver ../contratos/09-desactivacion-cuentas.md. npm run test:desactivacion prueba también fallos parciales y reintentos. No hay reactivación ni reconciliación automática.
+
 ## Ejecutar
 
 Requiere Node.js 24.15.0 o superior. Primero iniciar los emuladores desde firebase/ con npm run emulators. Desde backend/:

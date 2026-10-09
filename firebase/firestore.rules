@@ -40,6 +40,7 @@ service cloud.firestore {
       allow get: if (signedIn() && request.auth.uid == uid) || admin();
       allow list: if admin();
     }
+    match /desactivaciones/{operacionId} { allow read: if admin(); }
     match /emprendedoras/{uid} {
       allow get: if (signedIn() && request.auth.uid == uid && active(uid)) || admin();
       allow list: if admin();

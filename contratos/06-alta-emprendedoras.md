@@ -68,7 +68,7 @@ Los datos del emulador no persisten tras reiniciarlo. El JSON local puede quedar
 
 El flujo de invitación, recuperación/verificación de correo, alta de compradores y creación del primer administrador de producción siguen pendientes. Este incremento trabaja con identidades ya existentes; no manda correos ni gestiona contraseñas desde la API.
 
-Auth y Firestore no comparten transacción. Se comprueba Auth antes de escribir; una deshabilitación o eliminación simultánea de la identidad requiere coordinación/reconciliación futura. Desactivación administrativa coordinada, reasignación de tiendas, eliminación de cuentas y retención de comprobantes no están implementadas. No se considera este flujo listo para producción.
+Auth y Firestore no comparten transacción. Se comprueba Auth antes de escribir; una deshabilitación o eliminación externa simultánea de la identidad requiere reconciliación futura. La desactivación administrativa de una emprendedora asignada está implementada según 09-desactivacion-cuentas.md. Reasignación de tiendas, eliminación de cuentas y retención de comprobantes siguen pendientes. No se considera este flujo listo para producción.
 
 ## Pruebas
 
