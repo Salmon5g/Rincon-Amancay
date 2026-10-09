@@ -13,3 +13,5 @@ app/lib/firebase.ts conserva el inicializador del proyecto real. app/lib/cliente
 app/plugins/ inicializará Firebase para el navegador; app/repositories/ reunirá las consultas y llamadas al backend; app/types/ contendrá los tipos derivados del contrato común. Nunca incluir Firebase Admin SDK o credenciales de servidor en el navegador.
 
 El equipo web creará pages/, layouts/, components/ y assets/ al iniciar su interfaz. Comprador y administrador trabajarán aquí; no deben crear dos proyectos web independientes. Cuando corresponda, el área emprendedora también formará parte de esta web.
+
+`npm run test:unit` valida el adaptador compartido sin conectar a Firebase real. La URL compartida es un origen HTTPS (sin `/api/v1/`, parámetros ni fragmentos); el cliente agrega la ruta y rechaza HTTP también en localhost. Para desarrollo local usar el adaptador local. No instalar ambos plugins a la vez: uno solo proporciona `$amancay` por entorno. Resultados de pruebas y límites en [verificación de la base](../docs/verificacion-base.md).

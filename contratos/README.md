@@ -8,6 +8,8 @@ Los [ajustes de stock](08-ajustes-stock.md) registran cambios con historial priv
 
 La [desactivación de emprendedoras](09-desactivacion-cuentas.md) coordina el bloqueo de gestión, catálogo y Authentication, con reintentos para fallos parciales.
 
+El [ciclo de cuentas](10-ciclo-cuentas.md) define registro, invitaciones, recuperación de contraseña y reactivación. Las pantallas administrativas usan invitaciones; el alta directa del contrato 06 queda como apoyo técnico local. Las reservas interrumpidas tienen [procedimiento técnico](../docs/recuperacion-cuentas.md), fuera de las pantallas.
+
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
 
 Se conserva el modelo provisional previamente trabajado; esta carpeta no lo reemplaza. Los documentos anteriores siguen separados hasta que el usuario decida incorporarlos.

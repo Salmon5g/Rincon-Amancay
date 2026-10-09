@@ -8,7 +8,7 @@ No se necesita una cuenta de consola Firebase para estas pruebas. No usar el cor
 
 ## Arranque desde un clon del repositorio
 
-Requisitos usados: Node.js 24.15.0 o superior, npm y Java disponible en PATH (se probó con Java 25). Los comandos siguientes se ejecutan desde la raíz, en terminales separadas de VS Code. En PowerShell, usar npm.cmd si npm.ps1 está bloqueado.
+Requisitos usados: Node.js 24.15.0 o superior, npm y Java 21 o superior en PATH (se probó con Java 25). Los comandos siguientes se ejecutan desde la raíz, en terminales separadas de VS Code. En PowerShell, usar npm.cmd si npm.ps1 está bloqueado.
 
 ```powershell
 # Instalar una vez y repetir si cambian los lockfiles
@@ -40,7 +40,7 @@ Los emuladores pierden sus datos al reiniciarse. Un archivo de credenciales guar
 | Equipo | Qué integrar primero |
 |---|---|
 | Web comprador | Cliente local, consulta pública de tiendas/productos/variantes, imágenes y paginación. No requiere iniciar sesión. |
-| Web administrador | Sesión, lectura de accesos, altaEmprendedora y desactivarEmprendedora. El rol administrador no permite leer fichas privadas o ventas de emprendedoras. |
+| Web administrador | Sesión, lectura de accesos, invitar/cancelar invitación, desactivar/reactivar emprendedoras según contrato 10. El rol administrador no permite leer fichas privadas o ventas de emprendedoras. |
 | Web emprendedora | Sesión y acceso asignado, ficha privada, crear/editar productos, imágenes, publicación y ajustes de stock. |
 | Android comprador | Inicializador debug y las mismas consultas públicas. No inventar otro modelo o nombres de campos. |
 | Backend | Contratos, permisos, validaciones, operaciones privilegiadas y configuración de entorno. |
@@ -111,8 +111,8 @@ Ver ../android/ejemplos/README.md: inicialización debug, dependencias, red loca
 ## Escenario común para revisar juntos
 
 1. Comprador: consultar las tiendas y productos del fixture sin sesión. Sus imágenes están vacías; mostrar un placeholder de UI, no asumir una URL.
-2. Administradora: iniciar sesión con la cuenta local generada, llamar altaEmprendedora con solicitudAlta del archivo y conservar su operacionId para reintentos.
-3. Emprendedora: cerrar la sesión administrativa, iniciar con la candidata y comprobar que consultarAcceso devuelve su tiendaId.
+2. Administradora: iniciar sesión con la cuenta local generada e invitar al correo de la candidata usando los datos del contrato 10 y los catálogos activos. Conservar solicitud e invitacionId. Para una prueba técnica rápida también existe altaEmprendedora con solicitudAlta; esa ruta directa no es el flujo de pantallas.
+3. Destinataria: cerrar la sesión administrativa, iniciar con la candidata, verificar su correo con el enlace simulado y aceptar la invitación. Comprobar que consultarAcceso devuelve su tiendaId. Si se eligió el alta técnica directa del paso anterior, la tienda ya está asignada y no se acepta una segunda invitación.
 4. Publicar esa tienda; crear un producto siguiendo el contrato 07, subir/seleccionar su foto y publicarlo según contratos 03/05.
 5. Comprador: consultar esa tienda desde la web sin sesión y, cuando se integre Android, desde el mismo computador anfitrión. Verificar coincidencia de nombre, precio e imagen.
 6. Ajustar stock: conserva la ficha aprobada y actualiza su disponibilidad (contrato 11); solo los datos anteriores sin aprobación requieren republicar. Desactivar la cuenta: toda la tienda deja de ser pública.
@@ -127,7 +127,7 @@ Los adaptadores no reintentan escrituras automáticamente ni generan operacionId
 
 ## Verificación y límites
 
-Con API y emuladores listos: npm --prefix web run typecheck y npm --prefix web run test:local. La prueba usa los SDK cliente de Auth, Firestore y Storage contra la API local, crea IDs aislados y limpia sus datos. No requiere copiar credenciales. Necesita dependencias instaladas también en backend/ para preparar y limpiar fixtures exclusivamente desde el proceso de test; no importa Admin en código del navegador.
+Con API y emuladores listos: npm --prefix web run typecheck y npm --prefix web run test:local. La prueba usa los SDK cliente de Auth, Firestore y Storage contra la API local, crea IDs aislados y limpia sus datos. No requiere copiar credenciales. Necesita dependencias instaladas también en backend/ para preparar y limpiar fixtures exclusivamente desde el proceso de test; no importa Admin en código del navegador. `npm --prefix web run test:unit` prueba la configuración del adaptador compartido sin conectar a la nube. Resultados de esta revisión: [verificación de la base](verificacion-base.md).
 
 Se verificaron dieciséis casos de integración del cliente web (18 tests incluyendo los dos grupos padre), incluidos cuentas, copias procesadas y disponibilidad sin publicar borradores. No se probó una interfaz Nuxt ni un navegador móvil; la descarga getBlob es de navegador y el test Node verifica la lectura equivalente con getBytes. Android queda pendiente de integrar, compilar y probar con el proyecto del equipo.
 

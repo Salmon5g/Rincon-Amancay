@@ -1,6 +1,6 @@
 # Propuesta del entorno compartido — 9 de octubre de 2026
 
-Esta es una propuesta revisable, no un despliegue ni una autorización de gasto. La consola real no se inspeccionó en esta etapa: el último estado registrado es el del 8 de octubre en firebase-desarrollo.md. Los emuladores y sus datos ficticios siguen siendo el entorno ejecutable.
+Esta es una propuesta revisable, no un despliegue ni una autorización de gasto. El último estado de consola registrado es el del 9 de octubre en firebase-desarrollo.md. Los emuladores y sus datos ficticios siguen siendo el entorno ejecutable; esta revisión de código no modificó Firebase real.
 
 ## Decisión recomendada
 
@@ -33,9 +33,9 @@ Propongo **una alerta inicial de US$5 al mes**, con avisos al 50%, 80% y 100%, p
 
 ## Bloqueos técnicos encontrados
 
-1. **Cuentas:** desactivar/reactivar ya usa una reserva persistente en `ejecucionesCuentas/{uid}` además de una cola por UID, de modo que dos instancias no reservan la misma cuenta a la vez (probado con una carrera concurrente). Queda pendiente la recuperación de reservas huérfanas: la reserva no vence y un proceso que muera entre fases exige revisión técnica, porque Auth no ofrece un *fencing token*. Antes de la nube falta probar la terminación entre fases con dos procesos reales y definir ese procedimiento. [Configuración del máximo de instancias](https://docs.cloud.google.com/run/docs/configuring/max-instances).
-2. **Servidor:** agregar un adaptador compartido con credenciales del entorno (ADC), proyecto/bucket explícitos, rechazo de variables de emuladores y escucha en `0.0.0.0:$PORT`. El servidor actual continúa ligado al emulador y rechaza producción. No empaquetarlo y desplegarlo como está.
-3. **Contenedor:** preparar y probar Node 24 y Sharp en Linux con instalación por lockfile, usuario sin privilegios y exclusión de .env, credenciales, .local y datos de prueba. Docker y gcloud no se encontraron en PATH en esta revisión; no se probó ni construyó una imagen.
+1. **Cuentas:** reserva persistente y cola por UID implementadas. Hay herramienta de inspección/liberación con auditoría y [procedimiento de recuperación](recuperacion-cuentas.md). La prueba local termina un proceso Node y retoma la operación desde otro, con Auth simulado para controlar el corte. Antes de la nube validar el procedimiento en el entorno remoto, especialmente la detención de todas las instancias y las peticiones Auth en vuelo. La reserva no vence automáticamente.
+2. **Servidor:** `src/server-compartido.ts` ya existe: ADC, proyecto/bucket explícitos, rechazo de variables de emuladores, escucha en `0.0.0.0:$PORT` y cierre por señales. `npm run dev` mantiene el adaptador local; `npm run start:compartido` selecciona el real. La configuración está probada; el servicio real no está desplegado ni verificado.
+3. **Contenedor:** Dockerfile preparado para Node 24 y Sharp en Linux, lockfile, usuario sin privilegios y exclusión de .env/credenciales/datos. Docker y gcloud no se encontraron en PATH; la imagen sigue pendiente de construcción y prueba.
 4. **Clientes:** los adaptadores compartidos ya existen separados de los locales — web `cliente-compartido.ts` (sobre `cliente-base.ts`, proyecto real + API HTTPS) y Android `ConexionCompartida.kt`/`ClienteCompartido.kt` — y se verificaron los locales (18 tests) y `typecheck`. Falta la URL de API y el applicationId Android; el cliente local y el compartido rechazan sus proyectos opuestos por diseño.
 5. **Operación:** límites de peticiones/procesamiento de fotos, observabilidad sin datos sensibles, entrega real de invitaciones y revisión de plantillas de Auth. La creación del primer administrador ya tiene herramienta (`npm --prefix backend run admin:compartido` con ADC y `--confirmar`), todavía sin ejecutar. No ejecutar cuentas:demo ni seed local contra la nube.
 
@@ -50,7 +50,7 @@ Las reglas de Firebase controlan SDK cliente; el SDK Admin las omite y depende d
 ## Secuencia de preparación y revisión
 
 1. Revisar esta arquitectura y el escenario de consumo. Mantener todos los trabajos actuales en emuladores.
-2. Resolver la coordinación distribuida de cuentas y probar interrupciones/reintentos. Después preparar adaptador real y contenedor, conexiones cliente y permisos propuestos.
+2. Validar en remoto la recuperación de cuentas ya implementada; construir y probar el contenedor y los adaptadores existentes. Concretar permisos de servicio y probar los clientes integrados.
 3. Con esos cambios probados, entregar manifiesto, comandos concretos, permisos, recursos y estimación regional para revisión final. Solo entonces solicitar autorización de facturación/despliegue; no confundir aprobar la propuesta con activar Blaze.
 4. Tras autorización: confirmar estado de la consola, vincular facturación y avisos, crear bucket/servicio e identidad, desplegar reglas e índices revisados, API y datos ficticios controlados.
 5. Validar HTTPS, roles, fotos y una actualización desde dos clientes. La prueba de pantallas completas espera al desarrollo de Nuxt/Android; la conexión y los permisos pueden probarse antes.

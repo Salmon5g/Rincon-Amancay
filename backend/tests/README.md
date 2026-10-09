@@ -1,1 +1,3 @@
 Ejecutar npm test desde backend/ con Auth, Firestore y Storage locales iniciados. publicacion.test.ts comprueba negocio y concurrencia; api.test.ts verifica tokens del emulador y operaciones HTTP; imagenes.test.ts comprueba objetos de Storage; cuentas.test.ts verifica alta administrativa, relaciones y permisos con tokens del emulador. Las suites se ejecutan en serie; las de publicación reponen el catálogo ficticio. No prueban despliegue ni firmas de tokens de producción.
+
+`recuperacion-cuentas.test.ts` termina un proceso hijo en fase Auth simulada y retoma su operación desde otro proceso, sin publicar el catálogo. No reproduce peticiones en vuelo al servicio Auth real. Resultados, comandos y límites en [verificación de la base](../../docs/verificacion-base.md).

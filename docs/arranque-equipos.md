@@ -6,7 +6,7 @@ Guía corta para que los tres equipos empiecen **en local** sin depender de la n
 
 ## 0. Preparación común (una vez por computador)
 
-Requisitos: **Node.js 24.15.0 o superior**, npm y **Java en PATH**. En PowerShell, usar `npm.cmd` si `npm.ps1` está bloqueado.
+Requisitos: **Node.js 24.15.0 o superior**, npm y **Java 21 o superior en PATH** (verificado aquí con Java 25). En PowerShell, usar `npm.cmd` si `npm.ps1` está bloqueado.
 
 ```powershell
 # Desde la raíz del repositorio (solo la primera vez, o si cambian los lockfiles)
@@ -47,7 +47,10 @@ Reglas de convivencia:
 
 Un solo proyecto Nuxt para todos los perfiles. Al inicializar **Nuxt 4** en `web/`:
 
+Coordinar un único commit de inicialización entre ambos equipos web; luego desarrollar áreas separadas dentro de ese proyecto. Conservar `app/lib/`, ejemplos, pruebas, dependencias Firebase y scripts existentes: no sobrescribir la carpeta con una plantilla. Propuesta de rutas: `/` y `/tiendas/[tiendaId]` para comprador; `/admin` para administración. No existe aún una interfaz ejecutable ni `npm run dev` web. El responsable de la base Nuxt confirma el arranque antes de repartir componentes.
+
 1. Copiar `web/ejemplos/nuxt/firebase-local.client.ts.example` a `web/app/plugins/firebase-local.client.ts`.
+   Instalar solo ese plugin en esta etapa: el compartido también proporciona `$amancay` y no deben coexistir.
 2. Conservar la comprobación de tipos de `app/lib/` al adaptar el `tsconfig`.
 3. Correr la web en **localhost:3000** (la API rechaza otros orígenes por CORS).
 
@@ -74,19 +77,25 @@ Meta: catálogo público **sin sesión** (tiendas, productos, variantes, imágen
 
 ### 1b. Web administrador (primer incremento)
 
-Meta: sesión + lectura de accesos + `altaEmprendedora` y `desactivarEmprendedora`.
+Meta: sesión + lectura de accesos + invitación/cancelación de emprendedoras + desactivación/reactivación. El flujo de pantallas usa el [contrato 10](../contratos/10-ciclo-cuentas.md).
 
 - Credenciales de prueba: las genera `cuentas:demo` en `backend/.local/cuentas-<uuid>.json` (incluye la administradora y una candidata con `solicitudAlta`).
 - Iniciar sesión con `iniciarSesion(correo, clave)`; luego `consultarAcceso()`.
   - `consultarAcceso()` = `null` significa identidad **sin permisos**; no tratarla como administradora.
-- `altaEmprendedora` usa el objeto `solicitudAlta` del archivo de cuentas. Generar **un** `operacionId` por intención y **conservarlo** ante error o conexión perdida (no reintentar con uno nuevo).
+- `invitarEmprendedora` recibe correo y datos de tienda según contrato 10; conservar su `invitacionId`. En local se entrega manualmente a la destinataria de prueba, que verifica su correo y llama a `aceptarInvitacion`. No se envían invitaciones reales.
+- Comprobar acceso `estado === 'activo'` y que `roles` incluya `administrador` antes de mostrar gestión. La API y las reglas siguen verificando los permisos; ocultar un botón no los sustituye.
+- Generar **un** `operacionId` por intención y **conservar el cuerpo completo** ante error o conexión perdida.
+- `altaEmprendedora` y `solicitudAlta` quedan para la prueba técnica rápida con la candidata existente; no usarlos como formulario final de alta ni reemplazo de invitaciones.
 - El rol administrador **no** puede leer fichas privadas ni ventas de emprendedoras.
 - Al cerrar sesión, limpiar de la interfaz cualquier estado de gestión privada.
 
 ```ts
 await $amancay.iniciarSesion(correo, clave);
 const acceso = await $amancay.consultarAcceso();
-await $amancay.llamar('altaEmprendedora', { ...solicitudAlta, operacionId: crypto.randomUUID() });
+// Al confirmar una nueva invitación; formulario sigue exactamente contrato 10.
+const solicitud = { ...formularioInvitacion, operacionId: crypto.randomUUID() };
+const resultado = await $amancay.llamar('invitarEmprendedora', solicitud);
+// Conservar solicitud para reintentar; resultado.invitacionId para la aceptación.
 ```
 
 ## 2. Equipo app Android (modo comprador, primer incremento)
@@ -105,10 +114,12 @@ implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
 ```
 
-3. Copiar `android/ejemplos/src/debug/java/ejemplo/amancay/` (`ConexionLocal.kt`, `ClienteLocal.kt`, `ErrorApi.kt`) a `src/debug` del módulo app del equipo.
+3. Copiar `ConexionLocal.kt` y `ClienteLocal.kt` de `android/ejemplos/src/debug/java/ejemplo/amancay/` al `src/debug/java/<paquete>/` del módulo app. Copiar `ErrorApi.kt` desde `android/ejemplos/src/main/java/ejemplo/amancay/` a `src/main/java/<paquete>/`: lo usan ambos entornos. Cambiar el `package` de los tres archivos al namespace del equipo. Por ahora no copiar los adaptadores compartidos.
 4. Red: el emulador usa `10.0.2.2`; teléfono físico por USB usa `adb reverse` para 9099/8080/9199/8787.
 
-**No necesitan `applicationId` ni `google-services.json` para trabajar en local:** `ConexionLocal` usa opciones ficticias contra el emulador. Esos datos solo harán falta para la app real (nube, aún bloqueada).
+**La app sí necesita su `applicationId` de Gradle para compilar** (ejemplo de formato: `cl.equipo.amancay`). No necesita registrarse todavía en Firebase ni tener `google-services.json`: `ConexionLocal` usa un Firebase App ID ficticio. Para la nube se usará otro dato, `firebaseAppId` (`mobilesdk_app_id`, formato `1:…:android:…`), obtenido al registrar la app.
+
+Integrar el permiso INTERNET en el manifest principal para todas las variantes. La excepción de HTTP y `network_security_config.xml` van solo en debug según [el ejemplo Android](../android/ejemplos/README.md). El primer control del equipo es sincronizar Gradle, compilar debug y consultar las tiendas sin sesión. Los ejemplos Kotlin todavía no se han compilado en este repositorio.
 
 Uso desde una coroutine (comprador, sin sesión):
 
@@ -123,7 +134,15 @@ Ver `android/ejemplos/README.md` para manifiesto debug, red y manejo de errores.
 
 ## 3. Verificación conjunta
 
-Con los tres equipos en una misma máquina, seguir el **escenario común** de [integración de equipos](integracion-equipos.md#escenario-común-para-revisar-juntos): comprador consulta el fixture, administradora da de alta a la emprendedora, se publica tienda/producto/foto, y comprador ve la coincidencia de nombre, precio e imagen.
+Con los tres clientes conectados a los emuladores de una misma máquina, seguir el **escenario común** de [integración de equipos](integracion-equipos.md#escenario-común-para-revisar-juntos). No hace falta terminar las pantallas: basta una vista de catálogo y una acción de prueba. Las operaciones de emprendedora pueden comprobarse mediante los adaptadores mientras su interfaz no exista.
+
+## 4. Alcance provisional y mantenimiento
+
+Está disponible el catálogo por unidad entera en CLP, con campos específicos de texto y hasta 20 variantes por producto. `mostrarPrecios=false` bloquea productos; ajustes de stock no registran ventas. Cambiar tipo/modalidad de productos existentes requiere una migración futura. Ver [contrato 07](../contratos/07-edicion-productos.md) y [contrato 11](../contratos/11-disponibilidad-e-imagenes.md). Tras terreno se revisarán estos límites de forma coordinada, no con campos diferentes en cada cliente.
+
+Mapa, QR, voz, asistente, ventas y nuevas funciones necesitan sus propios acuerdos e implementación; no forman parte de este arranque. No asumir que un campo del modelo implica una operación terminada.
+
+Si una operación de cuentas queda reservada tras detenerse el servidor, avisar al responsable del backend. Solo él sigue [recuperación técnica](recuperacion-cuentas.md); las pantallas conservan la solicitud y muestran su estado pendiente.
 
 ## Errores comunes
 

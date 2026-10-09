@@ -14,6 +14,6 @@ console.log(`Cómputo orientativo: ${(segundos*p.cloudRun.cpu).toFixed(0)} vCPU-
 console.log(`Alerta de presupuesto propuesta: USD ${p.alertaPresupuestoUsdPropuesta}. No es una cotización ni un tope de gasto.`);
 console.log('Faltan tarifas regionales verificadas y consumos de Firestore, Auth, compilación, registro de imágenes y logs para calcular un total.');
 console.log(`Bucket: ${p.bucketConfirmado ?? 'por confirmar'} (${p.storageEstado ?? 'estado desconocido'}).`);
-console.log(`URL API: ${p.apiUrlConfirmada ?? 'por confirmar'}. applicationId Android: ${p.androidApplicationId ?? 'por confirmar'}.`);
+console.log(`URL API: ${p.apiUrlConfirmada ?? 'por confirmar'}. applicationId Gradle: ${p.androidApplicationId ?? 'por confirmar'}. Firebase App ID Android (mobilesdk_app_id): ${p.androidFirebaseAppId ?? 'por confirmar'}.`);
 console.log('Esta lista es un estado registrado, no una verificación en vivo de la consola.');
 for(const bloqueo of p.bloqueosTecnicos)console.log(`PENDIENTE: ${bloqueo}`);

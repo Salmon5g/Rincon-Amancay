@@ -1,1 +1,1 @@
-Inicialización de SDK de servidor y lectura de configuración. Nunca copiar claves privadas al código. Pendiente de elegir runtime y proveedor.
+Configuración del servidor Node. `emulador.ts` fija el proyecto demo y hosts locales; `compartido.ts` valida el proyecto real y ADC para la entrada compartida propuesta en Cloud Run; `http.ts` valida CORS y entorno. No copiar claves privadas al código. El servidor remoto todavía no está desplegado.

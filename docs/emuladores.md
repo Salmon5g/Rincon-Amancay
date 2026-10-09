@@ -1,5 +1,7 @@
 # Firebase local: primer catálogo de prueba
 
+Esta página conserva el detalle del fixture y verificaciones iniciales. Para los resultados actuales y alcance de cada plataforma, ver [verificación de la base](verificacion-base.md).
+
 El catálogo publicado es legible sin sesión en el emulador y las rutas privadas siguen permisos por rol. Storage local admite imágenes según ../contratos/05-imagenes-storage.md. La nube sigue cerrada.
 
 ## Ejecutar
@@ -36,7 +38,7 @@ datos-prueba/catalogo-local.json es la instantánea ejecutable local: 29 documen
 - Planta: sin variantes, precioBase y stock en producto.
 - Las vistas públicas no contienen propietarioUid ni stock exacto. Los precios están visibles porque mostrarPrecios es true en esta instantánea.
 
-Los ejemplos anteriores en cuentas-tiendas.json siguen siendo ilustrativos y no se cargan: muestran una tienda borrador. catalogo-local.json representa otro escenario, publicado, exclusivamente local. Los UID de sus perfiles no tienen cuentas Authentication creadas todavía; no hay usuarios ni contraseñas de prueba disponibles para iniciar sesión.
+Los ejemplos de cuentas-tiendas.json son ilustrativos y no se cargan: muestran una tienda borrador. catalogo-local.json representa otro escenario publicado. Los UID del fixture no son cuentas Authentication para login: ejecutar `npm --prefix backend run cuentas:demo` desde la raíz para crear una administradora y candidata con sus propios UID y credenciales locales en `backend/.local/`, según la guía de arranque.
 
 ## Límites de este incremento
 

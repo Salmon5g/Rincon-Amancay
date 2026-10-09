@@ -1,1 +1,1 @@
-Inicialización futura del SDK cliente Firebase. Compartida por todas las áreas web. Sin configuración real todavía.
+Instalar aquí un único plugin Firebase al inicializar Nuxt. Los ejemplos están en `web/ejemplos/nuxt/`: usar el local para el arranque actual; el compartido se reserva para el futuro entorno remoto. Ambos proporcionan `$amancay`; no instalar ambos simultáneamente. Todas las áreas web reutilizan ese cliente.

@@ -25,6 +25,7 @@
   "storageEstado": "requiere_activar_blaze_no_creado",
   "apiUrlConfirmada": null,
   "androidApplicationId": null,
+  "androidFirebaseAppId": null,
   "origenesWebConfirmados": ["http://localhost:3000", "http://127.0.0.1:3000"],
   "cloudRun": {
     "nombrePropuesto": "amancay-api-dev",
@@ -51,7 +52,7 @@
     "segundosPorImagen": 0.5
   },
   "bloqueosTecnicos": [
-    "Recuperación de reservas de cuenta huérfanas y prueba de terminación entre fases con dos procesos reales",
+    "Validar en remoto el procedimiento de recuperación ya probado con procesos locales y Auth simulado; resolver peticiones Auth en vuelo antes de liberar",
     "Activación de Blaze y creación del bucket; despliegue del contenedor Linux y del servicio de API",
     "URL de API y orígenes CORS definitivos; registro de la aplicación Android cuando el equipo defina su applicationId",
     "Control de abuso, límites de procesamiento y observabilidad",

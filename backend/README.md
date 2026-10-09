@@ -1,8 +1,8 @@
 # Operaciones de servidor
 
-Implementado el módulo TypeScript de publicación/retiro y una API HTTP autenticada local en src/http/api.ts. Arranque con npm run dev, puerto 8787, solo emuladores. Ver ../contratos/04-api-local.md. Sin despliegue; falta elegir alojamiento y evaluar costos.
+API HTTP autenticada en `src/http/api.ts` con publicación, cuentas, productos, stock e imágenes. `npm run dev` inicia `src/server.ts` en puerto 8787, solo emuladores. La entrada `src/server-compartido.ts` y Dockerfile están preparados para la propuesta Cloud Run; no están desplegados. Ver [arranque de equipos](../docs/arranque-equipos.md).
 
-src/config/ inicializará las conexiones de servidor; src/modules/ agrupará casos de uso por negocio; src/shared/ contendrá autorización y errores comunes. tests/ comprobará permisos y consistencia.
+`src/config/` separa conexiones y configuración HTTP; `src/modules/` implementa operaciones por función; `src/montar-api.ts` conecta módulos y servidor. `tests/` comprueba permisos y consistencia. `src/shared/` queda reservado para futuras utilidades comunes.
 
 Contratos: ../contratos/03-publicacion.md y ../contratos/06-alta-emprendedoras.md. Implementada alta administrativa de rol y tienda para una identidad existente; npm run cuentas:demo crea identidades de práctica. Invitaciones de producción y ventas siguen pendientes. Disponibilidad e imágenes procesadas: contrato 11.
 
@@ -12,7 +12,7 @@ ajustarStock registra reposiciones, pérdidas y correcciones según ../contratos
 
 desactivarEmprendedora bloquea gestión y catálogo antes de deshabilitar Auth; ver ../contratos/09-desactivacion-cuentas.md. npm run test:desactivacion prueba también fallos parciales y reintentos. Reactivación local disponible en el contrato 10; la reconciliación automática sigue pendiente.
 
-El ciclo de cuentas (registro comprador, invitaciones, verificación/recuperación y reactivación) se describe en [contrato 10](../contratos/10-ciclo-cuentas.md). Probar con npm run test:ciclo. Ejecutar una sola instancia de la API local: las fases de Auth se serializan por UID dentro de este proceso.
+El ciclo de cuentas se describe en [contrato 10](../contratos/10-ciclo-cuentas.md). Probar con `npm run test:ciclo`. Hay cola por UID y reserva Firestore persistente para excluir procesos concurrentes. La API local usa una instancia por su puerto fijo. Reservas huérfanas: `npm run cuentas:recuperar` siguiendo [el procedimiento técnico](../docs/recuperacion-cuentas.md); no se recuperan automáticamente por tiempo.
 
 ## Ejecutar
 
@@ -31,4 +31,4 @@ La API verifica el ID token Firebase con comprobación de revocación y pasa su 
 Validación del incremento de cuentas: TypeScript, suite completa del backend, cliente web y reglas locales. Los resultados actuales se obtienen con los comandos de pruebas; el procesamiento de imágenes añade Sharp 0.35.5, fijado en el lockfile. Android permanece pendiente de compilación en el proyecto del equipo.
 
 
-Propuesta de nube: [entorno compartido](../docs/entorno-compartido.md). `npm run plan:desarrollo` genera un informe local del escenario; no conecta ni despliega. `src/config/http.ts` permite configurar CORS y metadatos de salud; el arranque sigue usando el emulador.
+Propuesta de nube: [entorno compartido](../docs/entorno-compartido.md). `npm run plan:desarrollo` genera un informe local; no conecta ni despliega. `npm run start:compartido` exige la configuración explícita y ADC del entorno real. No usarlo para el arranque del equipo. Resultados y límites de comprobación: [verificación de la base](../docs/verificacion-base.md).

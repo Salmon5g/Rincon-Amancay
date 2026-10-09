@@ -21,7 +21,7 @@ Los SDK de servidor pueden omitir las reglas de Firestore: la autorización debe
 
 Firebase comprende servicios administrados, reglas e índices, además del eventual código de servidor. backend/ no significa un servidor distinto para cada perfil. No habrá un backend web y otro Android.
 
-El lugar de ejecución del servidor está pendiente. Si se elige Cloud Functions, firebase.json podrá apuntar a backend/ como fuente; no es obligatorio llamarlo functions/. No se incorporan Express, Sequelize, SQL ni un ORM por imitación del ejemplo.
+La propuesta de ejecución remota es Cloud Run: existen entrada compartida y Dockerfile, pendientes de construcción y despliegue según [entorno compartido](entorno-compartido.md). La API local sigue siendo el entorno de arranque de los equipos. No se incorporan Express, Sequelize, SQL ni un ORM por imitación del ejemplo.
 
 Referencias oficiales consultadas:
 - https://firebase.google.com/docs/emulator-suite/install_and_configure

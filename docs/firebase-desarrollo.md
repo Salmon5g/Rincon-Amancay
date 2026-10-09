@@ -31,7 +31,7 @@ Avance local posterior: ver emuladores.md. Authentication y Firestore se ejecuta
 - Storage no está creado: que el SDK incluya storageBucket no confirma que exista un bucket utilizable.
 - Sin Hosting, Functions, nuevos usuarios, documentos, facturación Blaze ni publicación web. Analytics no se inicializó en el código cliente aunque la consola proporcionó measurementId.
 
-El catálogo ficticio solo se cargó en Firestore local, nunca en la nube. Hay commits locales autorizados; el push queda a cargo del usuario.
+El catálogo ficticio solo se cargó en Firestore local, nunca en la nube. Compartir los commits en Git no despliega Firebase.
 
 ## Verificación de consola — 9 de octubre de 2026
 

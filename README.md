@@ -1,6 +1,6 @@
-# Rincón Amancay — estructura inicial
+# Rincón Amancay — base compartida de desarrollo
 
-Base compartida para trabajar en VS Code. Incluye API autenticada de publicación/retiro, reglas de permisos y validación básica de imágenes, probadas en emuladores de Auth, Firestore y Storage. web/ contiene el SDK; todavía no hay interfaz Nuxt ni app Android compilable. La nube mantiene Firestore cerrado y no tiene Storage provisionado. Estado detallado en docs/firebase-desarrollo.md.
+Base compartida para web administrador, web comprador y app comprador. Incluye API autenticada, ciclo de cuentas, productos, stock con historial, publicación e imágenes procesadas, reglas y pruebas en emuladores. **Empezar por [arranque por equipo](docs/arranque-equipos.md)**. Todavía no hay interfaz Nuxt ni app Android compilable; los equipos las integran sobre estos contratos. El entorno remoto no está desplegado. Estado técnico y verificaciones en [verificación de la base](docs/verificacion-base.md).
 
 ## Abrir en Visual Studio Code
 
@@ -38,16 +38,16 @@ rincon-amancay-estructura/
 
 ## Qué hacemos ahora
 
-Avance local: ya están disponibles los emuladores y una carga reproducible de 29 documentos ficticios. Ver [guía de ejecución y pruebas](docs/emuladores.md). Esta carga no se ha enviado al proyecto real; los siguientes puntos conservan el plan general.
+Hay emuladores, datos ficticios y adaptadores de integración. La documentación de [contratos](contratos/README.md) es el acuerdo común de campos y permisos; los documentos provisionales previos permanecen fuera del repositorio. Los próximos pasos son:
 
-1. Revisar los avances locales y sus commits antes de compartirlos con el grupo.
-2. Pasar los acuerdos aprobados del modelo provisional a contratos/. Los documentos anteriores siguen fuera del repositorio hasta que el usuario decida incorporarlos.
-3. Preparar Firebase de desarrollo y la primera conexión de web y Android.
-4. Completar invitaciones/registro de producción y la integración de clientes. El alta administrativa local está descrita en contratos/06-alta-emprendedoras.md; productos y variantes en contratos/07-edicion-productos.md. Los ajustes de stock están implementados según contratos/08-ajustes-stock.md y la desactivación coordinada según contratos/09-desactivacion-cuentas.md. Registro, invitaciones y reactivación locales están implementados en [contrato 10](contratos/10-ciclo-cuentas.md). Reconciliación automática, correos reales y despliegue siguen pendientes.
-5. Elegir el alojamiento del backend y evaluar costos antes del despliegue. El procesamiento local de imágenes y la disponibilidad sincronizada están implementados en [contrato 11](contratos/11-disponibilidad-e-imagenes.md). Cloud Functions es una posibilidad pendiente de evaluar.
+1. Inicializar una sola base Nuxt entre ambos equipos web y el proyecto Gradle del equipo Android, conservando adaptadores, pruebas y contratos.
+2. Integrar catálogo sin sesión, gestión administrativa por invitaciones y manejo de errores según la guía de arranque.
+3. Probar una modificación visible desde web y Android conectados al mismo computador; no requiere terminar las pantallas.
+4. Revisar el modelo tras terreno y coordinar cambios de campos y migraciones con ambos clientes. Los límites actuales están expresos en la guía y contratos.
+5. Preparar y validar el entorno remoto antes de desplegar. Hay adaptador compartido y contenedor propuesto para Cloud Run; quedan permisos, construcción del contenedor, costos, entrega real de invitaciones y validación operativa. Recuperación técnica de cuentas disponible en [este procedimiento](docs/recuperacion-cuentas.md); no hay reconciliación automática.
 
 web/ tiene package.json y package-lock.json para la conexión Firebase; no tiene npm run dev todavía. backend/ sí dispone de npm run dev y pruebas automatizadas. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 
-Se conserva la configuración Git existente del clon. Los avances se guardan en commits locales por autorización del usuario; el usuario realizará el push. No se modificaron remotos ni se desplegaron reglas, web o servidor. .firebaserc asocia development a rincon-amancay; los scripts de emuladores fijan demo-rincon-amancay.
+Se conserva la configuración Git del clon. Compartir cambios mediante commits y push no despliega servicios. No se desplegaron reglas, web o servidor. `.firebaserc` asocia development a rincon-amancay; los scripts locales fijan demo-rincon-amancay.
 
-Preparación del entorno compartido: [propuesta de arquitectura, consumo y pendientes](docs/entorno-compartido.md). El punto 4 está en preparación; todavía no hay despliegue.
+Preparación del entorno compartido: [propuesta de arquitectura, consumo y pendientes](docs/entorno-compartido.md). Todavía no hay despliegue.
