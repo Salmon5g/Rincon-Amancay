@@ -46,7 +46,7 @@ export function crearDesactivacion(db: Firestore, auth: Pick<Auth,'updateUser'|'
         const [store,profile,publicStore]=await tx.getAll(shop,db.doc(`emprendedoras/${uid}`),pub);
         exigir(store.data()?.propietarioUid===uid && profile.data()?.tiendaId===a.tiendaId,'conflicto','La propiedad de la tienda no coincide.');
         const now=FieldValue.serverTimestamp();
-        const state={firma,uidDestino:uid,tiendaId:a.tiendaId,operacionId,motivo:d.motivo,realizadaPor:identidad.uid,estado:'pendienteAuth',creadoEn:now,actualizadoEn:now};
+        const state={firma,uidDestino:uid,tiendaId:a.tiendaId,operacionId,motivo:d.motivo,solicitud:d,realizadaPor:identidad.uid,estado:'pendienteAuth',creadoEn:now,actualizadoEn:now};
         tx.update(target,{estado:'desactivado',operacionCuentaPendiente:receipt.path,actualizadoEn:now});
         if(publicStore.exists) tx.update(pub,{habilitada:false,actualizadoEn:now});
         tx.create(receipt,state);

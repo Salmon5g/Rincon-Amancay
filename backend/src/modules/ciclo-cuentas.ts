@@ -113,7 +113,7 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
           const [shop,profile,publicShop]=await tx.getAll(db.doc(`tiendasPrivadas/${a.tiendaId}`),db.doc(`emprendedoras/${destino}`),pub);
           exigir(shop.data()?.propietarioUid===destino && profile.data()?.tiendaId===a.tiendaId,'conflicto','La propiedad de la tienda no coincide.');
           const now=FieldValue.serverTimestamp();
-          const state={firma,uidDestino:destino,tiendaId:a.tiendaId,estado:'pendienteAuth',operacionId:d.operacionId,motivo:d.motivo,realizadaPor:uid,creadoEn:now};
+          const state={firma,uidDestino:destino,tiendaId:a.tiendaId,estado:'pendienteAuth',operacionId:d.operacionId,motivo:d.motivo,solicitud:d,realizadaPor:uid,creadoEn:now};
           tx.update(target,{operacionCuentaPendiente:receipt.path,actualizadoEn:now});
           if(publicShop.exists) tx.update(pub,{habilitada:false,actualizadoEn:now});
           tx.create(receipt,state);return state;

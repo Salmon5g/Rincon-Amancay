@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, getDocs, collection, query, where, updateDoc, setDoc, deleteDoc, serverTimestamp, setLogLevel, writeBatch } from 'firebase/firestore';
 import { seed } from '../scripts/seed.mjs';
@@ -17,6 +18,7 @@ const store = 'tiendasPrivadas/t_demo_01';
 const pub = 'tiendasPublicas/t_demo_01';
 const product = '/productos/p_gorro_01';
 const variant = product + '/variantes/v_azul_m';
+const tecnicos = [`ejecucionesCuentas/${randomUUID()}`, `recuperacionesCuentas/${randomUUID()}`];
 let count = 0;
 async function check(name, action) { await action(); count++; console.log(`OK ${count}: ${name}`); }
 const read = (db, path) => getDoc(doc(db, path));
@@ -55,6 +57,17 @@ try {
   await check('administrador lee metadatos de emprendedora', () => assertSucceeds(read(admin, 'emprendedoras/u_emprendedora_demo')));
   await check('administrador no lee tienda privada', () => assertFails(read(admin, store)));
   await check('administrador no lee ventas', () => assertFails(read(admin, store + '/ventas/ejemplo')));
+  for (const ruta of tecnicos) {
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), ruta), { uid: 'u_emprendedora_demo', operador: 'prueba' }));
+    await check(`${ruta.split('/')[0]} solo accesible por herramienta técnica`, async () => {
+      for (const cliente of [visitor, owner, admin]) {
+        await assertFails(read(cliente, ruta));
+        await assertFails(getDocs(collection(cliente, ruta.split('/')[0])));
+        await assertFails(setDoc(doc(cliente, ruta), { uid: 'otro' }));
+        await assertFails(deleteDoc(doc(cliente, ruta)));
+      }
+    });
+  }
   await check('propietaria actualiza su nombre con fecha de servidor', () => assertSucceeds(change(owner, 'usuarios/u_emprendedora_demo', { nombreMostrar: 'Nombre de prueba', actualizadoEn: serverTimestamp() })));
   await check('no agrega rol en perfil', () => assertFails(change(owner, 'usuarios/u_emprendedora_demo', { roles: ['administrador'], actualizadoEn: serverTimestamp() })));
   await check('no modifica sus permisos', () => assertFails(change(owner, 'accesos/u_emprendedora_demo', { roles: ['administrador'] })));
@@ -85,6 +98,7 @@ try {
   await check('ocultar precios bloquea proyección antigua con importes', () => assertFails(read(visitor, pub + product)));
   console.log(`PASARON ${count} casos de permisos locales.`);
 } finally {
+  for (const ruta of tecnicos) await env.withSecurityRulesDisabled(ctx => deleteDoc(doc(ctx.firestore(), ruta)));
   await env.withSecurityRulesDisabled(ctx => deleteDoc(doc(ctx.firestore(), 'accesos/u_otra_propietaria_test')));
   await seed();
   await env.cleanup();

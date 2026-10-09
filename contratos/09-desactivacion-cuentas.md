@@ -24,11 +24,11 @@ Solo admite cuentas con rol emprendedora y sin rol administrador. No permite des
 1. En una transacción Firestore, comprobar permisos y versión, poner accesos.estado=desactivado, actualizar su fecha y poner habilitada=false en la tienda pública si existe. Crear un comprobante con estado pendienteAuth y reservar su ruta en accesos.operacionCuentaPendiente. No se crea ficha pública si no existía.
 2. Fuera de la transacción, deshabilitar la identidad Authentication y revocar sus refresh tokens. Después marcar el comprobante completada y quitar la reserva. Si la identidad ya no existe, completar con autenticacion=ausente: los datos quedan igualmente bloqueados.
 
-Authentication y Firestore no comparten transacción. Un fallo temporal de la segunda fase devuelve 503, code pendiente, con un mensaje que indica que la gestión y el catálogo ya se bloquearon. Repetir la misma solicitud, con el mismo operacionId y versionEsperada original, completa el trabajo. No se revierte el bloqueo de Firestore ante un fallo de Auth. Una interrupción del proceso entre fases se recupera por ese mismo reintento.
+Authentication y Firestore no comparten transacción. Un fallo temporal de la segunda fase devuelve 503, code pendiente, con un mensaje que indica que la gestión y el catálogo ya se bloquearon. Repetir la misma solicitud, con el mismo operacionId y versionEsperada original, completa el trabajo. No se revierte el bloqueo de Firestore ante un fallo de Auth. Si murió el proceso y quedó una reserva en ejecucionesCuentas, el responsable debe seguir primero [recuperación técnica](../docs/recuperacion-cuentas.md); reintentar por sí solo no libera esa reserva.
 
 Una operación completada devuelve su resultado guardado sin repetir Auth ni modificar fechas. Es un comprobante histórico, no una consulta del estado actual. Cambiar datos conservando el ID produce 409. Se vuelve a comprobar que quien reintenta sea una administradora activa. Si la cuenta cambió de estado/asignación durante una operación pendiente, se pide revisión en lugar de continuar ciegamente.
 
-No hay un trabajador automático que termine operaciones pendientes. La web administrativa deberá mostrar las pendientes y permitir reintento. Si la administradora original pierde permisos, hace falta revisión técnica: una operación nueva no puede saltarse la reserva pendiente. No modificarla directamente desde el cliente. Desactivación y reactivación comparten una cola por UID en el único proceso local; consultar los límites de concurrencia del contrato 10.
+No hay un trabajador automático que termine operaciones pendientes. La web administrativa deberá mostrar las pendientes y permitir reintento, sin bucles automáticos ante una reserva huérfana. Si la administradora original pierde permisos, hace falta revisión técnica: una operación nueva no puede saltarse la reserva pendiente. No modificarla directamente desde el cliente. Desactivación y reactivación comparten cola por UID y reserva persistente que excluye otros procesos; consultar el contrato 10.
 
 Respuesta 200:
 
@@ -48,7 +48,7 @@ Deshabilitar Authentication y revocar tokens complementa el bloqueo de datos; no
 
 ## Registro administrativo
 
-`desactivaciones/{administradoraUid}_{operacionId}` contiene uidDestino, tiendaId, operacionId, motivo, realizadaPor, estado, creadoEn, actualizadoEn, firma interna y resultado al completar. Solo administradores activos pueden leer/listar estos documentos; ningún cliente puede crearlos, modificarlos o borrarlos. Las herramientas técnicas con SDK Admin siguen requiriendo controles operativos.
+`desactivaciones/{administradoraUid}_{operacionId}` contiene uidDestino, tiendaId, operacionId, motivo, realizadaPor, estado, creadoEn, actualizadoEn, firma interna y resultado al completar. Los comprobantes nuevos incluyen solicitud con el cuerpo validado original para retomar interrupciones. Solo administradores activos pueden leer/listar estos documentos; ningún cliente puede crearlos, modificarlos o borrarlos. Las herramientas técnicas con SDK Admin siguen requiriendo controles operativos.
 
 Para una primera vista de pendientes, consultar desactivaciones con estado==pendienteAuth y un límite de 50. Si se agrega orden por fecha u otros filtros, definir y probar el índice compuesto. La retención de estos registros y la reconciliación automática están pendientes.
 
@@ -56,4 +56,4 @@ Para una primera vista de pendientes, consultar desactivaciones con estado==pend
 
 Con emuladores activos, desde backend/: npm run typecheck y npm run test:desactivacion. 15 casos (16 incluyendo grupo padre) cubren autorización, estados, propiedad, versiones, fallos simulados de Auth/revocación, reintentos, privacidad administrativa, lecturas de Firestore/Storage y publicación concurrente. Auth y los datos son reales del emulador; solo la interrupción de las llamadas a Auth se simula.
 
-La reactivación local está implementada en 10-ciclo-cuentas.md. No habilitar manualmente la tienda ni el acceso con una operación pendiente. Antes de producción se requieren coordinación entre instancias del servidor, seguimiento de pendientes, políticas administrativas y despliegue seguro. No se modificó ninguna cuenta de Firebase real.
+La reactivación local está implementada en 10-ciclo-cuentas.md. No habilitar manualmente la tienda ni el acceso con una operación pendiente. La coordinación y recuperación local están implementadas; antes de producción falta validarlas contra las instancias y servicios remotos, concretar seguimiento y políticas administrativas y desplegar. No se modificó ninguna cuenta de Firebase real.
