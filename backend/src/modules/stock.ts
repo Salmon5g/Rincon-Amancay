@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
-import { ErrorOperacion, version } from './publicacion.ts';
+import { ErrorOperacion, version, estado } from './publicacion.ts';
 
 function exigir(ok: unknown, code: string, message: string): asserts ok {
   if (!ok) throw new ErrorOperacion(code, message);
@@ -29,7 +29,7 @@ export function crearStock(db: Firestore) {
     const receipt=store.collection('operacionesStock').doc(d.operacionId as string);
     const history=store.collection('movimientosStock').doc(d.operacionId as string);
     return db.runTransaction(async tx=>{
-      const [access,shop,p,previous,current,publicProduct,movement]=await tx.getAll(db.doc(`accesos/${identidad.uid}`),store,product,receipt,target,pub,history);
+      const [access,shop,p,previous,current,publicProduct,movement,aprobacion,publicShop]=await tx.getAll(db.doc(`accesos/${identidad.uid}`),store,product,receipt,target,pub,history,product.collection('publicacion').doc('vigente'),db.doc(`tiendasPublicas/${d.tiendaId}`));
       const a=access.data();
       exigir(a?.estado==='activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId===d.tiendaId && shop.data()?.propietarioUid===identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
       if(previous.exists) {
@@ -50,13 +50,44 @@ export function crearStock(db: Firestore) {
       if(data.modalidad==='pieza_unica') exigir(!data.tieneVariantes && stockNuevo<=1,'conflicto','Una pieza única solo admite cero o una unidad.');
       const publicVariants=await tx.get(pub.collection('variantes').limit(101));
       exigir(publicVariants.size<=100,'limite-local','Demasiadas variantes públicas; no se aplicó el ajuste.');
-      const requiereRepublicar=publicProduct.exists || !publicVariants.empty || data.estadoPublicacion==='publicado';
+      const aprobada=aprobacion.data();
+      const sincronizar=aprobada?.schema===1 && aprobada.cicloCatalogo===(shop.data()?.cicloCatalogo??0) && shop.data()?.estadoPublicacion==='publicado' && publicShop.exists && data.estadoPublicacion==='publicado';
+      const requiereRepublicar=!sincronizar && (publicProduct.exists || !publicVariants.empty || data.estadoPublicacion==='publicado');
+      const publicarVariantes: {id:string;data:FirebaseFirestore.DocumentData}[]=[];
+      let proyeccion:FirebaseFirestore.DocumentData|null=null;
+      if(sincronizar) {
+        const policy=aprobada.politica;
+        exigir(policy && ['regular','a_pedido','pieza_unica'].includes(policy.modalidad) && typeof policy.manejaStock==='boolean' && ['mostrar_agotado','ocultar','pasar_a_pedido'].includes(policy.alAgotarse),'conflicto','Publicación aprobada inconsistente.');
+        const base=aprobada.producto;
+        exigir(base && base.tieneVariantes===data.tieneVariantes,'conflicto','La estructura publicada cambió.');
+        if(base.tieneVariantes) {
+          const ids=Object.keys(aprobada.variantes);
+          exigir(ids.length>0 && ids.length<=100 && ids.every(id),'conflicto','Variantes aprobadas inválidas.');
+          const saldos=await tx.getAll(...ids.map(key=>product.collection('variantes').doc(key)));
+          const states:string[]=[];
+          for(const saldo of saldos) {
+            exigir(saldo.exists,'conflicto','Falta una variante aprobada; revisar la publicación.');
+            const disponibilidad=estado(policy,saldo.id===d.varianteId?stockNuevo:saldo.data()!.stock);
+            if(!disponibilidad)continue;
+            states.push(disponibilidad);
+            publicarVariantes.push({id:saldo.id,data:{...aprobada.variantes[saldo.id],estadoDisponibilidad:disponibilidad}});
+          }
+          if(states.length) proyeccion={...base,estadoDisponibilidad:states.includes('disponible')?'disponible':states.includes('a_pedido')?'a_pedido':'agotado'};
+        } else {
+          const disponibilidad=estado(policy,stockNuevo);
+          if(disponibilidad) proyeccion={...base,estadoDisponibilidad:disponibilidad};
+        }
+      }
       const now=FieldValue.serverTimestamp();
       if(d.varianteId) tx.update(target,{stock:stockNuevo,actualizadoEn:now});
       tx.update(product,{actualizadoEn:now,...(!d.varianteId?{stock:stockNuevo}:{}),...(requiereRepublicar?{estadoPublicacion:'archivado'}:{})});
-      tx.delete(pub);for(const variant of publicVariants.docs) tx.delete(variant.ref);
-      const resultado={operacionId:d.operacionId as string,stockAnterior,stockNuevo,requiereRepublicar};
-      tx.create(history,{productoId:d.productoId,...(d.varianteId?{varianteId:d.varianteId}:{}),cantidad:d.cantidad,motivo:d.motivo,...(d.nota?{nota:d.nota}:{}),stockAnterior,stockNuevo,realizadoPor:identidad.uid,creadoEn:now,retiradoDelCatalogo:requiereRepublicar});
+      const nuevas=new Set(publicarVariantes.map(v=>v.id));
+      for(const variant of publicVariants.docs) if(!nuevas.has(variant.id))tx.delete(variant.ref);
+      for(const variant of publicarVariantes)tx.set(pub.collection('variantes').doc(variant.id),{...variant.data,actualizadoEn:now});
+      if(proyeccion)tx.set(pub,{...proyeccion,actualizadoEn:now});else tx.delete(pub);
+      const actualizacionCatalogo=sincronizar?(proyeccion?'actualizado':'oculto'):(requiereRepublicar?'requiere_republicar':'sin_publicacion');
+      const resultado={operacionId:d.operacionId as string,stockAnterior,stockNuevo,requiereRepublicar,actualizacionCatalogo};
+      tx.create(history,{productoId:d.productoId,...(d.varianteId?{varianteId:d.varianteId}:{}),cantidad:d.cantidad,motivo:d.motivo,...(d.nota?{nota:d.nota}:{}),stockAnterior,stockNuevo,realizadoPor:identidad.uid,creadoEn:now,retiradoDelCatalogo:publicProduct.exists && !proyeccion,actualizacionCatalogo});
       tx.create(receipt,{firma,resultado,creadoEn:now});
       return resultado;
     });

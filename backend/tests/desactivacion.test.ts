@@ -12,7 +12,7 @@ test('desactivación coordinada, permisos y recuperación',async t=>{
   const adminUid='admin_'+randomUUID(),uid='empr_'+randomUUID(),tiendaId='t_'+randomUUID();
   const access=db.doc(`accesos/${uid}`),actor=db.doc(`accesos/${adminUid}`);
   const store=db.doc(`tiendasPrivadas/${tiendaId}`),pub=db.doc(`tiendasPublicas/${tiendaId}`);
-  const imagePath=`tiendas/${tiendaId}/productos/p/foto.png`;
+  const imagePath=`catalogo/${tiendaId}/productos/p/foto.webp`;
   const imageUrl=`http://127.0.0.1:9199/v0/b/demo-rincon-amancay.appspot.com/o/${encodeURIComponent(imagePath)}?alt=media`;
   const receipts=new Set<string>();const tokens:Record<string,string>={};
   let failure:'none'|'update'|'revoke'='none';

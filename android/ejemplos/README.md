@@ -89,3 +89,7 @@ cliente.llamar("registrarComprador", JSONObject().put("nombreMostrar", nombreMos
 ```
 
 No se han creado pantallas ni manejadores de enlaces Android. El ejemplo sigue pendiente de compilación en el proyecto del equipo. En desarrollo Auth simula los correos; las invitaciones se entregan por su identificador.
+
+## Disponibilidad e imágenes públicas
+
+Consultar [contrato 11](../../contratos/11-disponibilidad-e-imagenes.md): el catálogo entrega imagenes WebP y miniaturas alineadas; los originales son privados. Ajustar stock no publica el borrador. La pantalla debe releer o escuchar Firestore para reflejar la nueva disponibilidad.

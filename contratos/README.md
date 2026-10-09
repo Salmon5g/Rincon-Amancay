@@ -4,7 +4,7 @@ Acuerdos disponibles: [cuentas y tiendas](01-cuentas-tiendas.md), [catálogo](02
 
 También está implementada la [creación y edición de productos y variantes](07-edicion-productos.md), con stock inicial y publicación explícita.
 
-Los [ajustes de stock](08-ajustes-stock.md) registran cambios con historial privado y retirada pública hasta republicar.
+Los [ajustes de stock](08-ajustes-stock.md) registran cambios con historial privado y disponibilidad sincronizada desde la ficha aprobada. Ver [disponibilidad e imágenes](11-disponibilidad-e-imagenes.md) para compatibilidad con datos antiguos y procesamiento de fotos.
 
 La [desactivación de emprendedoras](09-desactivacion-cuentas.md) coordina el bloqueo de gestión, catálogo y Authentication, con reintentos para fallos parciales.
 

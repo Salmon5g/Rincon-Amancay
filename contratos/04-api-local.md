@@ -25,7 +25,7 @@ Todos son POST y requieren Content-Type: application/json y Authorization: Beare
 
 Rutas adicionales autenticadas: altaEmprendedora (contrato 06), crearProducto y editarProducto (contrato 07). Tienen sus propios cuerpos y conservan las comprobaciones de sesión y límites HTTP de esta API.
 
-ajustarStock (contrato 08) registra ajustes con historial privado y retira temporalmente el producto público hasta republicarlo.
+ajustarStock (contrato 08) registra ajustes con historial privado y mantiene disponibilidad desde la ficha aprobada (contrato 11).
 
 desactivarEmprendedora (contrato 09) requiere administrador activo y coordina bloqueo de datos y Authentication.
 
@@ -63,7 +63,7 @@ Orígenes web locales permitidos: http://localhost:3000 y http://127.0.0.1:3000.
 
 Las cuatro operaciones están conectadas a los emuladores. Publicar productos comprueba los objetos de Storage según 05-imagenes-storage.md: sin imágenes o con referencias inválidas responde 422; si Storage no está disponible responde 503. Las pruebas HTTP usan el verificador de Storage; las pruebas aisladas del módulo usan un sustituto.
 
-Sin invitaciones/registro de producción, procesamiento completo de imágenes, ventas, límites de tasa de producción ni despliegue. No se abre Firestore en la nube.
+Sin invitaciones/registro de producción, infraestructura de procesamiento de imágenes en producción, ventas, límites de tasa de producción ni despliegue. No se abre Firestore en la nube.
 
 ## Verificación
 

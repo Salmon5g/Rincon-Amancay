@@ -1,3 +1,4 @@
+import type { ImagenPreparada } from './imagenes.ts';
 import { createHash } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { Firestore, DocumentData, DocumentReference, Transaction } from 'firebase-admin/firestore';
@@ -27,7 +28,7 @@ function precio(value: unknown) {
   exigir(Number.isSafeInteger(value) && Number(value) >= 0, 'datos-invalidos', 'Precio CLP entero no negativo requerido.');
   return value;
 }
-function estado(p: DocumentData, stock: unknown): string | null {
+export function estado(p: DocumentData, stock: unknown): string | null {
   if (p.modalidad === 'a_pedido') return 'a_pedido';
   if (!p.manejaStock) return 'disponible';
   exigir(Number.isSafeInteger(stock) && Number(stock) >= 0, 'datos-invalidos', 'Stock entero no negativo requerido.');
@@ -41,7 +42,7 @@ async function hijos(tx: Transaction, ref: DocumentReference, nombre: string) {
   return result.docs;
 }
 
-export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string, tiendaId: string, productoId: string) => Promise<boolean>) {
+export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string, tiendaId: string, productoId: string) => Promise<boolean | ImagenPreparada>) {
   return async function ejecutar(accion: Accion, identidad: IdentidadVerificada, solicitud: Solicitud) {
     exigir(['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'].includes(accion), 'datos-invalidos', 'Acción inválida.');
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
@@ -54,6 +55,8 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
     const publica = db.doc(`tiendasPublicas/${solicitud.tiendaId}`);
     const source = esProducto ? privada.collection('productos').doc(solicitud.productoId!) : privada;
     const target = esProducto ? publica.collection('productos').doc(solicitud.productoId!) : publica;
+    const aprobacion = esProducto ? source.collection('publicacion').doc('vigente') : null;
+    const imagenesPreparadas = new Map<string, boolean | ImagenPreparada>();
     const recibo = privada.collection('operacionesPublicacion').doc(solicitud.operacionId);
 
     return db.runTransaction(async tx => {
@@ -83,6 +86,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
         }
         borrar.push(publica);
       } else if (accion === 'retirarProducto') {
+        borrar.push(aprobacion!);
         borrar.push(...(await hijos(tx, target, 'variantes')).map(v => v.ref), target);
       } else {
         const config = (await tx.get(privada.collection('configuracion').doc('general'))).data();
@@ -112,7 +116,15 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           exigir(type.data()?.activo === true && definition.exists && category.data()?.activo === true, 'datos-invalidos', 'Tipo, versión o categoría inexistentes/inactivos.');
           exigir(Array.isArray(data.imagenes) && data.imagenes.length >= 1 && data.imagenes.length <= 5, 'imagen-requerida', 'Se requiere entre una y cinco imágenes autorizadas.');
           exigir(new Set(data.imagenes).size === data.imagenes.length, 'datos-invalidos', 'No repetir imágenes.');
-          for (const image of data.imagenes) exigir(typeof image === 'string' && await imagenAutorizada(image, solicitud.tiendaId, solicitud.productoId!), 'imagen-no-autorizada', 'Imagen no validada.');
+          const imagenes:string[]=[],miniaturas:string[]=[];
+          for (const image of data.imagenes) {
+            exigir(typeof image==='string','imagen-no-autorizada','Ruta inválida.');
+            if(!imagenesPreparadas.has(image)) imagenesPreparadas.set(image,await imagenAutorizada(image,solicitud.tiendaId,solicitud.productoId!));
+            const preparada=imagenesPreparadas.get(image)!;
+            exigir(preparada,'imagen-no-autorizada','Imagen no validada.');
+            if(typeof preparada==='object') {imagenes.push(preparada.imagen);miniaturas.push(preparada.miniatura);}
+            else imagenes.push(image); // Inyección de pruebas aisladas; servidor usa procesador.
+          }
           const attrs: DocumentData = {};
           for (const field of definition.data()!.campos) {
             const input = data.atributosEspecificos?.[field.clave];
@@ -125,10 +137,11 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const projection: DocumentData = {
             nombre: texto(data.nombre, 120), descripcion: texto(data.descripcion, 2000),
             tipoProductoId: data.tipoProductoId, versionTipoProducto: data.versionTipoProducto,
-            categoriaId: data.categoriaId, imagenes: data.imagenes, atributosEspecificos: attrs,
+            categoriaId: data.categoriaId, imagenes, ...(miniaturas.length?{miniaturas}:{}), atributosEspecificos: attrs,
             tieneVariantes: data.tieneVariantes, moneda: 'CLP', unidadVenta: 'unidad', modalidad: data.modalidad,
             estadoPublicacion: 'publicado', actualizadoEn: now,
           };
+          const variantesAprobadas: Record<string,DocumentData> = Object.create(null);
           if (data.tieneVariantes) {
             exigir(!('precioBase' in data) && !('stock' in data), 'datos-invalidos', 'Stock/precio duplicados en producto con variantes.');
             const states: string[] = [];
@@ -136,9 +149,10 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
               const v = variant.data();
               if (!v.activa) continue;
               const availability = estado(data, v.stock);
-              if (!availability) continue;
               const options: DocumentData = {};
               for (const key of definition.data()!.opcionesVariante) options[key] = texto(v.opciones?.[key], 100);
+              variantesAprobadas[variant.id]={opciones:options,precio:precio(v.precio),activa:true};
+              if(!availability) continue;
               states.push(availability);
               escribir.push({ ref: target.collection('variantes').doc(variant.id), data: { opciones: options, precio: precio(v.precio), activa: true, estadoDisponibilidad: availability, actualizadoEn: now } });
             }
@@ -151,6 +165,9 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             projection.precioBase = precio(data.precioBase);
             projection.estadoDisponibilidad = availability;
           }
+          escribir.push({ref:aprobacion!,data:{schema:1,cicloCatalogo:store.cicloCatalogo??0,
+            politica:{modalidad:data.modalidad,manejaStock:data.manejaStock,alAgotarse:data.alAgotarse},
+            producto:projection,variantes:variantesAprobadas,aprobadoEn:now}});
           escribir.push({ ref: target, data: projection });
         }
       }
@@ -158,7 +175,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
       const nuevos = new Set(escribir.map(w => w.ref.path));
       for (const ref of borrar) if (!nuevos.has(ref.path)) tx.delete(ref);
       for (const item of escribir) tx.set(item.ref, item.data);
-      tx.update(source, { estadoPublicacion: accion.startsWith('publicar') ? 'publicado' : 'archivado', actualizadoEn: now });
+      tx.update(source, { ...(accion==='retirarTienda'?{cicloCatalogo:(store.cicloCatalogo??0)+1}:{}), estadoPublicacion: accion.startsWith('publicar') ? 'publicado' : 'archivado', actualizadoEn: now });
       tx.create(recibo, { firma, resultado, creadoEn: now });
       return resultado;
     });

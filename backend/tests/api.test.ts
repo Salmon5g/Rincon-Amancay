@@ -102,7 +102,7 @@ test('API con Firebase Authentication y Firestore locales', async t => {
       await status(await post({...await input(),productoId:'p_gorro_01',versionEsperada:version((await p.get()).data()!)},token,'publicarProducto'),422,'imagen-no-autorizada');
     });
     await t.test('publicar producto con imagen de Storage mediante HTTP',async()=>{
-      await bucket.file(imagePath).save(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'), {resumable:false,metadata:{contentType:'image/png'}});
+      await bucket.file(imagePath).save(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWOYFrdtWtw2BggFAC4mBqmTvDXaAAAAAElFTkSuQmCC', 'base64'), {resumable:false,metadata:{contentType:'image/png'}});
       const p=store.collection('productos').doc('p_gorro_01');
       const request={...await input(),productoId:'p_gorro_01',versionEsperada:version((await p.get()).data()!)};
       await status(await post(request,token,'publicarProducto'),200);

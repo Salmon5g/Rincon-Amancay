@@ -113,7 +113,7 @@ Ver ../android/ejemplos/README.md: inicialización debug, dependencias, red loca
 3. Emprendedora: cerrar la sesión administrativa, iniciar con la candidata y comprobar que consultarAcceso devuelve su tiendaId.
 4. Publicar esa tienda; crear un producto siguiendo el contrato 07, subir/seleccionar su foto y publicarlo según contratos 03/05.
 5. Comprador: consultar esa tienda desde la web sin sesión y, cuando se integre Android, desde el mismo computador anfitrión. Verificar coincidencia de nombre, precio e imagen.
-6. Ajustar stock: en este incremento el producto se retira hasta republicarse. Desactivar la cuenta: toda la tienda deja de ser pública.
+6. Ajustar stock: conserva la ficha aprobada y actualiza su disponibilidad (contrato 11); solo los datos anteriores sin aprobación requieren republicar. Desactivar la cuenta: toda la tienda deja de ser pública.
 
 La configuración mostrarPrecios=false todavía bloquea la lectura del catálogo de productos. Leer la tienda primero y manejar esa condición; no solicitar una consulta de productos como si fueran visibles. Esto es una limitación implementada, no un catálogo sin precios terminado.
 
@@ -127,8 +127,10 @@ Los adaptadores no reintentan escrituras automáticamente ni generan operacionId
 
 Con API y emuladores listos: npm --prefix web run typecheck y npm --prefix web run test:local. La prueba usa los SDK cliente de Auth, Firestore y Storage contra la API local, crea IDs aislados y limpia sus datos. No requiere copiar credenciales. Necesita dependencias instaladas también en backend/ para preparar y limpiar fixtures exclusivamente desde el proceso de test; no importa Admin en código del navegador.
 
-Se verificaron quince casos de integración del cliente web (17 tests incluyendo los dos grupos padre), incluidos registro, verificación y recuperación. No se probó una interfaz Nuxt ni un navegador móvil; la descarga getBlob es de navegador y el test Node verifica la lectura equivalente con getBytes. Android queda pendiente de integrar, compilar y probar con el proyecto del equipo.
+Se verificaron dieciséis casos de integración del cliente web (18 tests incluyendo los dos grupos padre), incluidos cuentas, copias procesadas y disponibilidad sin publicar borradores. No se probó una interfaz Nuxt ni un navegador móvil; la descarga getBlob es de navegador y el test Node verifica la lectura equivalente con getBytes. Android queda pendiente de integrar, compilar y probar con el proyecto del equipo.
 
 La nube sigue cerrada. Compartir datos entre computadores exige un entorno remoto de desarrollo con API desplegada y configuración propia, que se preparará tras revisión. No abrir los emuladores a internet ni reemplazar estos hosts por direcciones remotas sin cambiar el diseño de entorno.
 
 Referencias oficiales: [plugin cliente Nuxt](https://nuxt.com/docs/4.x/guide/concepts/nuxt-lifecycle), [Auth Emulator y Android](https://firebase.google.com/docs/emulator-suite/connect_auth), [reglas de descarga de imágenes](https://firebase.google.com/docs/storage/web/download-files).
+
+Imágenes públicas: leer imagenes y miniaturas de la proyección; los originales en tiendas/ son privados. Detalle y compatibilidad: [contrato 11](../contratos/11-disponibilidad-e-imagenes.md).

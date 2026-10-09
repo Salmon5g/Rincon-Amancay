@@ -61,7 +61,7 @@ test('ajustes de stock e historial privados',async t=>{
       const d=await input({cantidad:-99,motivo:'perdida'});await expect(d,409);assert.equal((await product.get()).data()!.stock,7);assert.equal((await store.collection('movimientosStock').doc(d.operacionId).get()).exists,false);
     });
     await t.test('versión antigua se rechaza',async()=>{await expect(await input({versionEsperada:'1:0'}),409);});
-    await t.test('ajuste retira público y variantes sin copiar borrador',async()=>{
+    await t.test('publicación antigua sin aprobación requiere republicación, sin copiar borrador',async()=>{
       await product.update({estadoPublicacion:'publicado',nombre:'Borrador nuevo'});await pub.set({estadoPublicacion:'publicado',nombre:'Texto anterior'});await pub.collection('variantes').doc('antigua').set({activa:true});
       const r=await expect(await input({cantidad:-1,motivo:'perdida'}),200);assert.equal(r.datos.requiereRepublicar,true);
       assert.equal((await pub.get()).exists,false);assert.equal((await pub.collection('variantes').get()).size,0);assert.equal((await product.get()).data()!.estadoPublicacion,'archivado');assert.equal((await product.get()).data()!.nombre,'Borrador nuevo');

@@ -26,17 +26,17 @@ El producto debe manejar stock. Se rechazan un stock existente inválido, saldo 
 
 ## Catálogo público
 
-En esta primera versión cualquier ajuste retira el producto público completo y sus variantes, si estaban publicados, dentro de la misma transacción. La ficha privada pasa a archivado cuando tenía una publicación; un borrador sin publicación conserva su estado. Se conserva la tienda pública y los demás productos.
+Los ajustes actualizan la disponibilidad pública desde la última ficha aprobada, sin publicar cambios del borrador. Con política ocultar, una reposición restaura esa ficha. Las retiradas explícitas se respetan. Detalle, variantes y límites en [contrato 11](11-disponibilidad-e-imagenes.md).
 
-Después del ajuste, releer la ficha, revisar los cambios y llamar a publicarProducto con otra operación. Allí se calculan agotado, a_pedido u ocultación según la política vigente. Esta retirada temporal evita mostrar cantidades/disponibilidad antiguas y evita publicar precios, textos o fotos pendientes en el borrador. La sincronización automática de disponibilidad sin republicación queda pendiente; no presentar este incremento como stock público en tiempo real.
+Excepción de compatibilidad: publicaciones anteriores sin aprobación interna se retiran y requieren revisar/publicar una vez. El servidor no inventa una copia aprobada a partir de un borrador potencialmente modificado.
 
 Los archivos de Storage se conservan. Al desaparecer la proyección pública, las reglas de Storage bloquean nuevas lecturas públicas de sus referencias; esto no borra copias descargadas ni enlaces con token distribuidos previamente.
 
 ## Historial y consistencia
 
-Una transacción guarda el stock, la nueva versión del producto (y de la variante, cuando corresponde), la retirada pública y dos documentos:
+Una transacción guarda el stock, la nueva versión del producto (y de la variante, cuando corresponde), la disponibilidad pública y dos documentos:
 
-- `tiendasPrivadas/{tiendaId}/movimientosStock/{operacionId}`: productoId, varianteId opcional, cantidad, motivo, nota opcional, stockAnterior, stockNuevo, realizadoPor, creadoEn y retiradoDelCatalogo.
+- `tiendasPrivadas/{tiendaId}/movimientosStock/{operacionId}`: productoId, varianteId opcional, cantidad, motivo, nota opcional, stockAnterior, stockNuevo, realizadoPor, creadoEn, retiradoDelCatalogo y actualizacionCatalogo.
 - `tiendasPrivadas/{tiendaId}/operacionesStock/{operacionId}`: comprobante interno del servidor para reintentos; los clientes no lo leen.
 
 El movimiento es legible únicamente por la propietaria activa. Ningún cliente, incluida ella, puede crearlo, modificarlo o borrarlo directamente. Una corrección posterior genera otro movimiento. Las herramientas técnicas con SDK Admin pueden modificar datos y requieren controles operativos antes del despliegue; estas reglas no equivalen a un registro inviolable de producción.
@@ -48,10 +48,10 @@ Reintentar una misma solicitud con el mismo operacionId devuelve el resultado or
 Respuesta 200:
 
 ```json
-{"datos":{"operacionId":"...","stockAnterior":5,"stockNuevo":3,"requiereRepublicar":true}}
+{"datos":{"operacionId":"...","stockAnterior":5,"stockNuevo":3,"requiereRepublicar":false,"actualizacionCatalogo":"actualizado"}}
 ```
 
-requiereRepublicar indica que este ajuste retiró una publicación o encontró la ficha marcada publicada. Es el resultado histórico de esa operación, no una consulta del estado actual en futuros reintentos. Un borrador no publicado también requiere publicación explícita para aparecer en el catálogo.
+requiereRepublicar indica que no se pudo mantener una aprobación compatible y hace falta revisión/publicación explícita; es false para publicaciones nuevas sincronizadas. Es el resultado histórico de esa operación, no una consulta del estado actual en futuros reintentos. Un borrador no publicado también requiere publicación explícita para aparecer en el catálogo.
 
 400: datos incompatibles; 401/403: sesión/permisos; 404: producto/variante inexistente; 409: versión, ID o saldo en conflicto; 422: más de 100 variantes públicas en la retirada. El límite protege la transacción y falla sin ajustes parciales. El editor actual admite hasta 20 variantes.
 
@@ -63,4 +63,4 @@ Leer movimientosStock dentro de la tienda propia. Para una primera pantalla: ord
 
 Desde backend/, con emuladores activos: npm run typecheck y npm run test:stock. 17 casos (18 incluyendo el grupo) cubren sesión, permisos, motivos, saldos, historial inmutable para clientes, privacidad, variantes, piezas únicas, retirada pública, idempotencia y concurrencia. Las pruebas crean datos aislados y los eliminan al terminar.
 
-Ventas, cobros, reservas, devoluciones, stock inicial auditado y sincronización automática de disponibilidad permanecen pendientes. No se desplegaron reglas ni código en Firebase real.
+Ventas, cobros, reservas, devoluciones y stock inicial auditado permanecen pendientes. La sincronización de disponibilidad está implementada según el contrato 11. No se desplegaron reglas ni código en Firebase real.

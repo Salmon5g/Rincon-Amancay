@@ -14,10 +14,11 @@ service firebase.storage {
       let product = firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data;
       return store.estadoPublicacion == 'publicado' && store.habilitada == true && store.mostrarPrecios == true
         && product.estadoPublicacion == 'publicado'
-        && ('tiendas/' + tiendaId + '/productos/' + productoId + '/' + archivo) in product.imagenes;
+        && (('catalogo/' + tiendaId + '/productos/' + productoId + '/' + archivo) in product.imagenes
+          || ('miniaturas' in product && ('catalogo/' + tiendaId + '/productos/' + productoId + '/' + archivo) in product.miniaturas));
     }
     match /tiendas/{tiendaId}/productos/{productoId}/{archivo} {
-      allow get: if (request.auth != null && owner(tiendaId)) || published(tiendaId, productoId, archivo);
+      allow get: if request.auth != null && owner(tiendaId);
       allow create: if resource == null && request.auth != null && owner(tiendaId)
         && firestore.exists(/databases/(default)/documents/tiendasPrivadas/$(tiendaId)/productos/$(productoId))
         && archivo.matches('[a-zA-Z0-9_-]{1,128}\\.(jpg|png|webp)')
@@ -29,6 +30,11 @@ service firebase.storage {
           || (archivo.matches('.*\\.webp') && request.resource.contentType == 'image/webp'));
       // Objetos inmutables. Eliminación y limpieza mediante servidor, pendientes.
       allow update, delete, list: if false;
+    }
+    match /catalogo/{tiendaId}/productos/{productoId}/{archivo} {
+      allow get: if (request.auth != null && owner(tiendaId)) || published(tiendaId, productoId, archivo);
+      // Copias generadas únicamente por el backend; tampoco las crea la propietaria.
+      allow write, list: if false;
     }
     match /{allPaths=**} { allow read, write: if false; }
   }

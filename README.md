@@ -44,7 +44,7 @@ Avance local: ya están disponibles los emuladores y una carga reproducible de 2
 2. Pasar los acuerdos aprobados del modelo provisional a contratos/. Los documentos anteriores siguen fuera del repositorio hasta que el usuario decida incorporarlos.
 3. Preparar Firebase de desarrollo y la primera conexión de web y Android.
 4. Completar invitaciones/registro de producción y la integración de clientes. El alta administrativa local está descrita en contratos/06-alta-emprendedoras.md; productos y variantes en contratos/07-edicion-productos.md. Los ajustes de stock están implementados según contratos/08-ajustes-stock.md y la desactivación coordinada según contratos/09-desactivacion-cuentas.md. Registro, invitaciones y reactivación locales están implementados en [contrato 10](contratos/10-ciclo-cuentas.md). Reconciliación automática, correos reales y despliegue siguen pendientes.
-5. Elegir el alojamiento del backend, completar el procesamiento de imágenes y evaluar costos antes del despliegue. Cloud Functions es una posibilidad pendiente de evaluar.
+5. Elegir el alojamiento del backend y evaluar costos antes del despliegue. El procesamiento local de imágenes y la disponibilidad sincronizada están implementados en [contrato 11](contratos/11-disponibilidad-e-imagenes.md). Cloud Functions es una posibilidad pendiente de evaluar.
 
 web/ tiene package.json y package-lock.json para la conexión Firebase; no tiene npm run dev todavía. backend/ sí dispone de npm run dev y pruebas automatizadas. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 

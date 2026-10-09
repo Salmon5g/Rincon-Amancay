@@ -13,7 +13,7 @@ test('cliente compartido web contra SDK, API y emuladores',async t=>{
   const suffix=randomUUID(),uid='cliente_'+suffix,tiendaId='t_'+suffix;
   const local=obtenerFirebaseLocal('test_'+suffix),client=crearClienteLocal(local);
   const store=adminDb.doc(`tiendasPrivadas/${tiendaId}`),pub=adminDb.doc(`tiendasPublicas/${tiendaId}`);
-  let imagePath;
+  let imagePath;const derivadas=[];
   const email=uid+'@example.test',password=randomUUID();
   try {
     await adminAuth.createUser({uid,email,password});
@@ -39,7 +39,7 @@ test('cliente compartido web contra SDK, API y emuladores',async t=>{
       assert.equal((await client.leerProductoPrivado(tiendaId,'producto')).data().stock,2);
     });
     await t.test('sube imagen, selecciona con versión y publica producto',async()=>{
-      const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+      const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWOYFrdtWtw2BggFAC4mBqmTvDXaAAAAAElFTkSuQmCC','base64');
       imagePath=await client.subirImagen(tiendaId,'producto',new Blob([bytes],{type:'image/png'}));
       const before=versionDocumento((await client.leerProductoPrivado(tiendaId,'producto')).data().actualizadoEn);
       await client.seleccionarImagenes(tiendaId,'producto',[imagePath],before);
@@ -47,9 +47,25 @@ test('cliente compartido web contra SDK, API y emuladores',async t=>{
       const p=await client.leerProductoPrivado(tiendaId,'producto');
       await client.llamar('publicarProducto',{tiendaId,productoId:'producto',operacionId:randomUUID(),versionEsperada:versionDocumento(p.data().actualizadoEn)});
     });
+    await t.test('stock cambia disponibilidad y conserva las fotos y ficha aprobadas',async()=>{
+      const publicado=(await pub.collection('productos').doc('producto').get()).data();
+      await store.collection('productos').doc('producto').update({nombre:'Borrador pendiente',precioBase:9000});
+      const ficha=await client.leerProductoPrivado(tiendaId,'producto');
+      const solicitud={tiendaId,productoId:'producto',operacionId:randomUUID(),versionEsperada:versionDocumento(ficha.data().actualizadoEn),cantidad:-2,motivo:'perdida'};
+      const resultado=await client.llamar('ajustarStock',solicitud);
+      assert.equal(resultado.requiereRepublicar,false);assert.equal(resultado.actualizacionCatalogo,'actualizado');
+      assert.deepEqual(await client.llamar('ajustarStock',solicitud),resultado);
+      const actual=(await pub.collection('productos').doc('producto').get()).data();
+      assert.equal(actual.estadoDisponibilidad,'agotado');assert.equal(actual.nombre,publicado.nombre);assert.equal(actual.precioBase,publicado.precioBase);
+      assert.deepEqual(actual.imagenes,publicado.imagenes);assert.deepEqual(actual.miniaturas,publicado.miniaturas);
+    });
     await t.test('cerrar sesión permite catálogo y foto pero no ficha privada',async()=>{
       await client.cerrarSesion();const products=await client.listarProductos(tiendaId);assert.equal(products.docs[0].id,'producto');
-      assert((await getBytes(ref(local.storage,imagePath))).byteLength>0);
+      const publicada=products.docs[0].data();derivadas.push(...publicada.imagenes,...publicada.miniaturas);
+      assert(publicada.imagenes[0].startsWith('catalogo/'));
+      assert((await getBytes(ref(local.storage,publicada.imagenes[0]))).byteLength>0);
+      assert((await getBytes(ref(local.storage,publicada.miniaturas[0]))).byteLength>0);
+      await assert.rejects(getBytes(ref(local.storage,imagePath)),e=>e.code==='storage/unauthorized');
       await assert.rejects(client.leerProductoPrivado(tiendaId,'producto'),e=>e.code==='permission-denied');
     });
     await t.test('401 HTTP no provoca reintento automático ni oculta el error',async()=>{
@@ -61,6 +77,7 @@ test('cliente compartido web contra SDK, API y emuladores',async t=>{
     await adminDb.recursiveDelete(store);await adminDb.recursiveDelete(pub);await adminDb.recursiveDelete(adminDb.doc(`tiposProducto/${tiendaId}`));
     for(const path of [`accesos/${uid}`,`sectores/${tiendaId}`,`tiposEmprendimiento/${tiendaId}`,`categorias/${tiendaId}`])await adminDb.doc(path).delete();
     await adminAuth.deleteUser(uid).catch(e=>{if(e.code!=='auth/user-not-found')throw e;});
+    for(const path of derivadas)await bucket.file(path).delete({ignoreNotFound:true});
     if(imagePath)await bucket.file(imagePath).delete({ignoreNotFound:true});await adminDb.terminate();
   }
 });
