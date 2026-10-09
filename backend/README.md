@@ -4,9 +4,11 @@ Implementado el módulo TypeScript de publicación/retiro y una API HTTP autenti
 
 src/config/ inicializará las conexiones de servidor; src/modules/ agrupará casos de uso por negocio; src/shared/ contendrá autorización y errores comunes. tests/ comprobará permisos y consistencia.
 
-Contratos: ../contratos/03-publicacion.md y ../contratos/06-alta-emprendedoras.md. Implementada alta administrativa de rol y tienda para una identidad existente; npm run cuentas:demo crea identidades de práctica. Invitaciones de producción, ventas y actualización de stock siguen pendientes.
+Contratos: ../contratos/03-publicacion.md y ../contratos/06-alta-emprendedoras.md. Implementada alta administrativa de rol y tienda para una identidad existente; npm run cuentas:demo crea identidades de práctica. Invitaciones de producción, ventas y sincronización automática de disponibilidad pública siguen pendientes.
 
 crearProducto y editarProducto gestionan fichas y variantes privadas según ../contratos/07-edicion-productos.md. npm run test:productos comprueba este flujo; editar no publica ni modifica stock existente.
+
+ajustarStock registra reposiciones, pérdidas y correcciones según ../contratos/08-ajustes-stock.md. Se prueba con npm run test:stock; el cambio de saldo y la retirada pública son atómicos. El producto requiere republicación explícita. No registra ventas.
 
 ## Ejecutar
 

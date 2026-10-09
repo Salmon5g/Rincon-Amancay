@@ -25,6 +25,8 @@ Todos son POST y requieren Content-Type: application/json y Authorization: Beare
 
 Rutas adicionales autenticadas: altaEmprendedora (contrato 06), crearProducto y editarProducto (contrato 07). Tienen sus propios cuerpos y conservan las comprobaciones de sesión y límites HTTP de esta API.
 
+ajustarStock (contrato 08) registra ajustes con historial privado y retira temporalmente el producto público hasta republicarlo.
+
 Los valores son strings. versionEsperada es seconds:nanoseconds de actualizadoEn privado. operacionId se conserva al reintentar la misma intención. No enviar uid, roles, imágenes ni una copia de la ficha: el servidor obtiene identidad del token y contenido desde Firestore. Cualquier campo extra se rechaza. Límite del cuerpo: 16 KiB, sin compresión.
 
 Respuesta correcta: {"datos":{"accion":"publicarTienda","operacionId":"..."}}. Error: {"error":{"code":"sin-permiso","mensaje":"..."}}.

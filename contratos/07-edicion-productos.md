@@ -77,4 +77,4 @@ Respuesta 200: `{"datos":{"accion":"crearProducto","productoId":"...","operacion
 
 Con emuladores activos: npm run typecheck y npm run test:productos desde backend/. Se probaron 21 casos de sesión, propiedad, validación, modalidades, stock inicial, variantes, publicación explícita, reintentos y concurrencia. La prueba de edición/publicación usa un sustituto de imágenes; la suite api.test.ts prueba por separado el verificador de Storage.
 
-No registra ventas, reservas, ajustes de stock, devoluciones ni eliminación de productos. No admite cantidades fraccionarias, tipos específicos no textuales ni migraciones de estructura. El modelo puede ampliarse después del levantamiento de requerimientos conservando contratos versionados.
+El editor no registra ventas, reservas, devoluciones ni elimina productos. Los ajustes de stock tienen su propia operación, descrita en 08-ajustes-stock.md. No admite cantidades fraccionarias, tipos específicos no textuales ni migraciones de estructura. El modelo puede ampliarse después del levantamiento de requerimientos conservando contratos versionados.

@@ -4,6 +4,8 @@ Acuerdos disponibles: [cuentas y tiendas](01-cuentas-tiendas.md), [catálogo](02
 
 También está implementada la [creación y edición de productos y variantes](07-edicion-productos.md), con stock inicial y publicación explícita.
 
+Los [ajustes de stock](08-ajustes-stock.md) registran cambios con historial privado y retirada pública hasta republicar.
+
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
 
 Se conserva el modelo provisional previamente trabajado; esta carpeta no lo reemplaza. Los documentos anteriores siguen separados hasta que el usuario decida incorporarlos.

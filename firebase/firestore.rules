@@ -54,6 +54,7 @@ service cloud.firestore {
         && request.resource.data.descripcion is string && request.resource.data.descripcion.size() <= 2000
         && request.resource.data.actualizadoEn == request.time;
       match /configuracion/general { allow get: if owner(tiendaId); }
+      match /movimientosStock/{movimientoId} { allow read: if owner(tiendaId); }
       match /productos/{productoId} {
         allow read: if owner(tiendaId);
         // Selección del borrador: Storage se valida en el backend al publicar.
