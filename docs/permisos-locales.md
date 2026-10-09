@@ -12,7 +12,7 @@ Reglas en firebase/firestore.rules. No desplegadas al proyecto real: rincon-aman
 | Propietaria activa y asignada | Leer ficha/configuración/productos/variantes privados de su tienda; editar nombre (1–120) y descripción (máximo 2000) privados, con fecha de servidor |
 | Administrador activo | Leer/listar accesos y metadatos administrativos de emprendedoras; no leer tiendas privadas o ventas |
 
-Los límites de longitud son provisionales de esta implementación. Las ediciones de texto privado no publican automáticamente. Ningún cliente puede crear cuentas Firestore, cambiar roles, asignar propiedad, publicar, modificar stock o configuración, borrar tiendas ni escribir ventas. Esas operaciones quedan reservadas para un backend validado aún pendiente. Ventas y otros módulos todavía no implementados permanecen bloqueados también para propietarias.
+Los límites de longitud son provisionales de esta implementación. Las ediciones de texto privado no publican automáticamente. Ningún cliente puede crear cuentas Firestore, cambiar roles, asignar propiedad, publicar, modificar stock o configuración, borrar tiendas ni escribir ventas. Las operaciones implementadas se ejecutan mediante la API validada de los contratos 03–10; las restantes permanecen bloqueadas. Ventas y otros módulos todavía no implementados permanecen bloqueados también para propietarias.
 
 ## Consultas acordadas
 

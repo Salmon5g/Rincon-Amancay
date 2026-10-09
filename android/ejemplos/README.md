@@ -73,3 +73,19 @@ Para leer una imagen publicada: servicios.storage.reference.child(ruta).getBytes
 Sin compilación ni ejecución en este equipo: faltan proyecto Gradle, SDK configurado y dispositivo. Verificar login, catálogo público, token de API, reglas, imágenes, cierre de sesión y hosts al integrarlo. Mantener la misma intención/operacionId entre reintentos y no cambiar seconds:nanoseconds por milisegundos.
 
 Fuentes: [configuración Firebase y BoM](https://firebase.google.com/docs/android/setup), [módulos principales en lugar de KTX](https://firebase.google.com/docs/android/learn-more), [Task.await](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-play-services/), [HTTP en configuración de red Android](https://developer.android.com/privacy-and-security/security-config), [host del emulador](https://firebase.google.com/docs/emulator-suite/connect_auth).
+
+## Ciclo de cuentas
+
+ClienteLocal incluye crearIdentidad, enviarVerificacion, confirmarCorreo, solicitarRecuperacion, comprobarRecuperacion y confirmarRecuperacion. Después de verificar el correo, llamar a registrarComprador con nombreMostrar; para una invitación, aceptarInvitacion con invitacionId. Solicitudes administrativas y permisos en [contrato 10](../../contratos/10-ciclo-cuentas.md).
+
+Ejemplo desde una coroutine de una acción de usuario, con cliente ya inicializado:
+
+```kotlin
+cliente.crearIdentidad(correo, clave)
+cliente.enviarVerificacion()
+// Otra acción, cuando llegue el código del enlace:
+cliente.confirmarCorreo(codigo)
+cliente.llamar("registrarComprador", JSONObject().put("nombreMostrar", nombreMostrar))
+```
+
+No se han creado pantallas ni manejadores de enlaces Android. El ejemplo sigue pendiente de compilación en el proyecto del equipo. En desarrollo Auth simula los correos; las invitaciones se entregan por su identificador.

@@ -1,10 +1,10 @@
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, applyActionCode, verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, limit, query, startAfter, where, runTransaction, serverTimestamp } from 'firebase/firestore';
 import type { QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
 import { getBlob, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseLocal } from './firebase-local.ts';
 
-const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora'] as const;
+const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora'] as const;
 export type Operacion = typeof operaciones[number];
 export class ErrorApi extends Error {
   code: string; status: number; resultadoIncierto: boolean;
@@ -21,6 +21,28 @@ export function crearClienteLocal(firebase: FirebaseLocal) {
   return {
     firebase,
     iniciarSesion: (correo: string, clave: string) => signInWithEmailAndPassword(auth,correo,clave),
+    // Crear identidad y enviar verificación son pasos separados: si el envío falla,
+    // se reenvía el correo sin intentar registrar otra vez la misma identidad.
+    crearIdentidad: (correo: string, clave: string) => createUserWithEmailAndPassword(auth,correo,clave),
+    async enviarVerificacion() {
+      await auth.authStateReady();
+      if(!auth.currentUser) throw new ErrorApi('no-autenticado','Iniciar sesión.',401);
+      return sendEmailVerification(auth.currentUser);
+    },
+    async confirmarCorreo(codigo: string) {
+      await applyActionCode(auth,codigo);
+      await auth.authStateReady();
+      if(auth.currentUser) {await auth.currentUser.reload();await auth.currentUser.getIdToken(true);}
+    },
+    async solicitarRecuperacion(correo: string) {
+      try {await sendPasswordResetEmail(auth,correo);}
+      catch(error) {if((error as {code?:string}).code!=='auth/user-not-found') throw error;}
+      return {mensaje:'Si el correo corresponde a una cuenta, recibirás instrucciones.'};
+    },
+    comprobarRecuperacion: (codigo: string) => verifyPasswordResetCode(auth,codigo),
+    async confirmarRecuperacion(codigo: string, clave: string) {
+      await confirmPasswordReset(auth,codigo,clave);await signOut(auth);
+    },
     cerrarSesion: () => signOut(auth),
     async consultarAcceso() {
       await auth.authStateReady();

@@ -1,3 +1,5 @@
+import { accionesCuentas } from '../modules/ciclo-cuentas.ts';
+import type { crearCicloCuentas, AccionCuenta } from '../modules/ciclo-cuentas.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Auth } from 'firebase-admin/auth';
@@ -46,7 +48,8 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>) {
+  if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const origins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000']);
   const server = createServer(async (req, res) => {
     try {
@@ -55,11 +58,12 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: 'emulador', proyecto: 'demo-rincon-amancay' });
       const action = req.url?.match(/^\/api\/v1\/(publicarTienda|retirarTienda|publicarProducto|retirarProducto)$/)?.[1] as Accion | undefined;
+      const accionCuenta = ciclo && accionesCuentas.find(a => req.url === `/api/v1/${a}`) as AccionCuenta | undefined;
       const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;
       const esStock = req.url === '/api/v1/ajustarStock' && stock !== undefined;
       const esDesactivacion = req.url === '/api/v1/desactivarEmprendedora' && desactivar !== undefined;
       const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto)$/)?.[1] as AccionProducto | undefined;
-      if (!esAlta && !esStock && !esDesactivacion && !accionProducto && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' });
         return res.end();
@@ -67,8 +71,8 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (req.method !== 'POST') { res.setHeader('Allow', 'POST, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar POST.'); }
       const match = req.headers.authorization?.match(/^Bearer ([^\s]+)$/i);
       if (!match) throw new ErrorHttp(401, 'no-autenticado', 'Se requiere un ID token de Firebase.');
-      let uid: string;
-      try { uid = (await auth.verifyIdToken(match[1], true)).uid; }
+      let uid: string, authTime: number;
+      try { const token = await auth.verifyIdToken(match[1], true); uid = token.uid; authTime = token.auth_time; }
       catch (error) {
         const code = (error as {code?: string}).code;
         if (code && ['auth/id-token-expired', 'auth/id-token-revoked', 'auth/argument-error', 'auth/invalid-id-token', 'auth/user-disabled', 'auth/user-not-found'].includes(code)) {
@@ -76,8 +80,9 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         }
         throw new ErrorHttp(503, 'autenticacion-no-disponible', 'No se pudo comprobar la sesión.');
       }
+      if(sesion && !await sesion(uid,authTime)) throw new ErrorHttp(401,'no-autenticado','Iniciar una nueva sesión después de la reactivación.');
       const input = await body(req);
-      const result = esAlta ? await alta!({uid}, input)
+      const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : esAlta ? await alta!({uid}, input)
         : esDesactivacion ? await desactivar!({uid}, input)
         : esStock ? await stock!({uid}, input)
         : accionProducto ? await productos!(accionProducto, {uid}, input)

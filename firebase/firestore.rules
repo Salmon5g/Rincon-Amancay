@@ -3,7 +3,9 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function active(uid) {
-      return get(/databases/$(database)/documents/accesos/$(uid)).data.estado == 'activo';
+      let access = get(/databases/$(database)/documents/accesos/$(uid)).data;
+      return access.estado == 'activo'
+        && (!('sesionesRevocadasHasta' in access) || request.auth.token.auth_time > access.sesionesRevocadasHasta);
     }
     function hasRole(uid, role) {
       return active(uid) && role in get(/databases/$(database)/documents/accesos/$(uid)).data.roles;
@@ -40,6 +42,8 @@ service cloud.firestore {
       allow get: if (signedIn() && request.auth.uid == uid) || admin();
       allow list: if admin();
     }
+    match /invitaciones/{invitacionId} { allow read: if admin(); }
+    match /reactivaciones/{operacionId} { allow read: if admin(); }
     match /desactivaciones/{operacionId} { allow read: if admin(); }
     match /emprendedoras/{uid} {
       allow get: if (signedIn() && request.auth.uid == uid && active(uid)) || admin();

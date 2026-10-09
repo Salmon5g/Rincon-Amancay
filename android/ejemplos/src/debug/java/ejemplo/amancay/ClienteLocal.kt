@@ -14,11 +14,32 @@ class ErrorApi(val code: String, message: String, val status: Int = 0, val resul
 
 class ClienteLocal(private val servicios: ConexionLocal.Servicios) {
     private val operaciones = setOf("publicarTienda", "retirarTienda", "publicarProducto", "retirarProducto",
-        "altaEmprendedora", "crearProducto", "editarProducto", "ajustarStock", "desactivarEmprendedora")
+        "altaEmprendedora", "crearProducto", "editarProducto", "ajustarStock", "desactivarEmprendedora", "registrarComprador", "invitarEmprendedora", "consultarInvitacion",
+        "aceptarInvitacion", "cancelarInvitacion", "reactivarEmprendedora")
     private fun id(value: String): String {
         require(value.matches(Regex("[a-zA-Z0-9_-]{1,128}"))) { "ID inválido" }; return value
     }
     suspend fun iniciarSesion(correo: String, clave: String) = servicios.auth.signInWithEmailAndPassword(correo, clave).await()
+    suspend fun crearIdentidad(correo: String, clave: String) = servicios.auth.createUserWithEmailAndPassword(correo, clave).await()
+    suspend fun enviarVerificacion() {
+        val user = servicios.auth.currentUser ?: throw ErrorApi("no-autenticado", "Iniciar sesión", 401)
+        user.sendEmailVerification().await()
+    }
+    suspend fun confirmarCorreo(codigo: String) {
+        servicios.auth.applyActionCode(codigo).await()
+        servicios.auth.currentUser?.let { it.reload().await(); it.getIdToken(true).await() }
+    }
+    suspend fun solicitarRecuperacion(correo: String): String {
+        try { servicios.auth.sendPasswordResetEmail(correo).await() }
+        catch (e: com.google.firebase.auth.FirebaseAuthException) {
+            if (e.errorCode != "ERROR_USER_NOT_FOUND") throw e
+        }
+        return "Si el correo corresponde a una cuenta, recibirás instrucciones."
+    }
+    suspend fun comprobarRecuperacion(codigo: String) = servicios.auth.verifyPasswordResetCode(codigo).await()
+    suspend fun confirmarRecuperacion(codigo: String, clave: String) {
+        servicios.auth.confirmPasswordReset(codigo, clave).await(); servicios.auth.signOut()
+    }
     fun cerrarSesion() = servicios.auth.signOut()
     suspend fun consultarAcceso(): Map<String, Any>? {
         val user = servicios.auth.currentUser ?: return null

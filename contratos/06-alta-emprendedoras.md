@@ -66,7 +66,7 @@ Los datos del emulador no persisten tras reiniciarlo. El JSON local puede quedar
 
 ## Alcance y pendientes
 
-El flujo de invitación, recuperación/verificación de correo, alta de compradores y creación del primer administrador de producción siguen pendientes. Este incremento trabaja con identidades ya existentes; no manda correos ni gestiona contraseñas desde la API.
+Invitaciones, recuperación/verificación de correo y registro de compradores están implementados localmente según 10-ciclo-cuentas.md. Este endpoint conserva el alta administrativa directa para identidades existentes; no exige aceptación/verificación del destinatario. Para las pantallas del equipo usar el flujo de invitación. El primer administrador de producción, el envío real de invitaciones y el despliegue siguen pendientes. La API no recibe contraseñas.
 
 Auth y Firestore no comparten transacción. Se comprueba Auth antes de escribir; una deshabilitación o eliminación externa simultánea de la identidad requiere reconciliación futura. La desactivación administrativa de una emprendedora asignada está implementada según 09-desactivacion-cuentas.md. Reasignación de tiendas, eliminación de cuentas y retención de comprobantes siguen pendientes. No se considera este flujo listo para producción.
 

@@ -86,6 +86,22 @@ await $amancay.llamar('publicarTienda', solicitud);
 
 Para productos, usar leerProductoPrivado y el mismo formato de versión. subirImagen devuelve una ruta; seleccionarImagenes guarda hasta cinco rutas con control de versión. Releer el producto antes de publicar. leerImagen devuelve un Blob: usar URL.createObjectURL en la vista y URL.revokeObjectURL al reemplazarlo o desmontar. No almacenar URLs de descarga con token en los documentos.
 
+## Cuentas: nuevo flujo compartido
+
+Consultar [ciclo de cuentas](../contratos/10-ciclo-cuentas.md) para cuerpos, permisos, reintentos y límites. Desde una acción del usuario en el cliente Nuxt:
+
+```ts
+await $amancay.crearIdentidad(correo, clave);
+await $amancay.enviarVerificacion();
+// En otra acción, tras recibir el enlace/código local:
+await $amancay.confirmarCorreo(codigo);
+await $amancay.llamar('registrarComprador', { nombreMostrar });
+// Si recibió invitación, con sesión y el correo destinatario verificado:
+await $amancay.llamar('aceptarInvitacion', { invitacionId });
+```
+
+Verificar identidad no concede permisos de emprendedora. No repetir crearIdentidad si únicamente falló el envío: usar enviarVerificacion. Para recuperación: solicitarRecuperacion, comprobarRecuperacion y confirmarRecuperacion; luego iniciar sesión de nuevo. Las contraseñas/códigos van únicamente al SDK Auth. Todavía deben construirse las pantallas.
+
 ## Android
 
 Ver ../android/ejemplos/README.md: inicialización debug, dependencias, red local y llamadas Kotlin. El proyecto Android/Gradle y su applicationId todavía no existen en este repositorio; los ejemplos no se han compilado ni probado en dispositivo. No se registró una app Android real en Firebase.
@@ -111,7 +127,7 @@ Los adaptadores no reintentan escrituras automáticamente ni generan operacionId
 
 Con API y emuladores listos: npm --prefix web run typecheck y npm --prefix web run test:local. La prueba usa los SDK cliente de Auth, Firestore y Storage contra la API local, crea IDs aislados y limpia sus datos. No requiere copiar credenciales. Necesita dependencias instaladas también en backend/ para preparar y limpiar fixtures exclusivamente desde el proceso de test; no importa Admin en código del navegador.
 
-Se verificaron diez casos de integración del cliente web (11 tests incluyendo el grupo padre). No se probó una interfaz Nuxt ni un navegador móvil; la descarga getBlob es de navegador y el test Node verifica la lectura equivalente con getBytes. Android queda pendiente de integrar, compilar y probar con el proyecto del equipo.
+Se verificaron quince casos de integración del cliente web (17 tests incluyendo los dos grupos padre), incluidos registro, verificación y recuperación. No se probó una interfaz Nuxt ni un navegador móvil; la descarga getBlob es de navegador y el test Node verifica la lectura equivalente con getBytes. Android queda pendiente de integrar, compilar y probar con el proyecto del equipo.
 
 La nube sigue cerrada. Compartir datos entre computadores exige un entorno remoto de desarrollo con API desplegada y configuración propia, que se preparará tras revisión. No abrir los emuladores a internet ni reemplazar estos hosts por direcciones remotas sin cambiar el diseño de entorno.
 

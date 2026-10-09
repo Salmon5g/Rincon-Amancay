@@ -29,6 +29,8 @@ ajustarStock (contrato 08) registra ajustes con historial privado y retira tempo
 
 desactivarEmprendedora (contrato 09) requiere administrador activo y coordina bloqueo de datos y Authentication.
 
+registrarComprador, invitarEmprendedora, consultarInvitacion, aceptarInvitacion, cancelarInvitacion y reactivarEmprendedora están descritas en el contrato 10. Todas requieren ID token; registrarComprador admite una identidad verificada que aún no tiene acceso Firestore.
+
 Los valores son strings. versionEsperada es seconds:nanoseconds de actualizadoEn privado. operacionId se conserva al reintentar la misma intención. No enviar uid, roles, imágenes ni una copia de la ficha: el servidor obtiene identidad del token y contenido desde Firestore. Cualquier campo extra se rechaza. Límite del cuerpo: 16 KiB, sin compresión.
 
 Respuesta correcta: {"datos":{"accion":"publicarTienda","operacionId":"..."}}. Error: {"error":{"code":"sin-permiso","mensaje":"..."}}.

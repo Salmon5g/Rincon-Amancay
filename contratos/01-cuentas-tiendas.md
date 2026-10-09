@@ -8,7 +8,7 @@ Actualización de implementación local: ver ../docs/permisos-locales.md. La fic
 
 Acuerdo confirmado por el usuario: explorar tiendas y productos publicados sin iniciar sesión, tanto en web como en modo comprador Android. Para las funciones privadas se usará inicialmente correo y contraseña, junto a permisos por cuenta. Esta navegación pública no requiere Firebase Anonymous Authentication. Las lecturas públicas están probadas en emuladores; la nube continúa cerrada.
 
-Habilitar correo/contraseña permite técnicamente registrar identidades mediante el SDK; una identidad creada no recibe automáticamente un rol ni una tienda. El alta y asignación de emprendedoras seguirá siendo administrativa según el modelo. Nunca confiar solo en ocultar el botón de registro: el backend y las reglas deben exigir los accesos autorizados. El flujo de alta de compradores se concretará antes de implementarlo.
+Habilitar correo/contraseña permite técnicamente registrar identidades mediante el SDK; una identidad creada no recibe automáticamente un rol ni una tienda. El alta y asignación de emprendedoras seguirá siendo administrativa según el modelo. Nunca confiar solo en ocultar el botón de registro: el backend y las reglas deben exigir los accesos autorizados. El registro de compradores con correo verificado está implementado localmente según 10-ciclo-cuentas.md.
 
 - Campos en español sin tildes y camelCase. Respetar exactamente las rutas.
 - El ID se obtiene de la ruta; no duplicarlo como campo editable.
@@ -39,7 +39,7 @@ El borrador de ejemplo tiene los campos mínimos completos. El procedimiento de 
 
 La ficha privada es la fuente de edición. La pública es una proyección controlada, nunca una copia automática de todo el documento privado. No incluye propietarioUid, roles, correo de acceso, configuración ni ventas. Una tienda borrador no tiene vista pública.
 
-Publicación/retiro están implementados localmente. La desactivación administrativa coordinada se describe en 09-desactivacion-cuentas.md. Reactivación, reconciliación automática y despliegue siguen pendientes.
+Publicación/retiro están implementados localmente. La desactivación administrativa coordinada se describe en 09-desactivacion-cuentas.md. Reactivación local en 10-ciclo-cuentas.md; reconciliación automática y despliegue siguen pendientes.
 
 ## Permisos a implementar
 

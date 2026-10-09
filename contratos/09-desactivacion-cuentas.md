@@ -21,14 +21,14 @@ Solo admite cuentas con rol emprendedora y sin rol administrador. No permite des
 
 ## Dos fases y reintentos
 
-1. En una transacción Firestore, comprobar permisos y versión, poner accesos.estado=desactivado, actualizar su fecha y poner habilitada=false en la tienda pública si existe. Crear un comprobante con estado pendienteAuth. No se crea ficha pública si no existía.
-2. Fuera de la transacción, deshabilitar la identidad Authentication y revocar sus refresh tokens. Después marcar el comprobante completada. Si la identidad ya no existe, completar con autenticacion=ausente: los datos quedan igualmente bloqueados.
+1. En una transacción Firestore, comprobar permisos y versión, poner accesos.estado=desactivado, actualizar su fecha y poner habilitada=false en la tienda pública si existe. Crear un comprobante con estado pendienteAuth y reservar su ruta en accesos.operacionCuentaPendiente. No se crea ficha pública si no existía.
+2. Fuera de la transacción, deshabilitar la identidad Authentication y revocar sus refresh tokens. Después marcar el comprobante completada y quitar la reserva. Si la identidad ya no existe, completar con autenticacion=ausente: los datos quedan igualmente bloqueados.
 
 Authentication y Firestore no comparten transacción. Un fallo temporal de la segunda fase devuelve 503, code pendiente, con un mensaje que indica que la gestión y el catálogo ya se bloquearon. Repetir la misma solicitud, con el mismo operacionId y versionEsperada original, completa el trabajo. No se revierte el bloqueo de Firestore ante un fallo de Auth. Una interrupción del proceso entre fases se recupera por ese mismo reintento.
 
 Una operación completada devuelve su resultado guardado sin repetir Auth ni modificar fechas. Es un comprobante histórico, no una consulta del estado actual. Cambiar datos conservando el ID produce 409. Se vuelve a comprobar que quien reintenta sea una administradora activa. Si la cuenta cambió de estado/asignación durante una operación pendiente, se pide revisión en lugar de continuar ciegamente.
 
-No hay un trabajador automático que termine operaciones pendientes. La web administrativa deberá mostrar las pendientes y permitir reintento. Si la administradora original ya no tiene permisos, otra administradora activa puede iniciar una operación nueva con un ID nuevo y la versión actual del acceso desactivado, para completar el bloqueo de Auth. El comprobante anterior seguirá pendiente hasta una reconciliación administrativa posterior; no modificarlo directamente desde el cliente.
+No hay un trabajador automático que termine operaciones pendientes. La web administrativa deberá mostrar las pendientes y permitir reintento. Si la administradora original pierde permisos, hace falta revisión técnica: una operación nueva no puede saltarse la reserva pendiente. No modificarla directamente desde el cliente. Desactivación y reactivación comparten una cola por UID en el único proceso local; consultar los límites de concurrencia del contrato 10.
 
 Respuesta 200:
 
@@ -56,4 +56,4 @@ Para una primera vista de pendientes, consultar desactivaciones con estado==pend
 
 Con emuladores activos, desde backend/: npm run typecheck y npm run test:desactivacion. 15 casos (16 incluyendo grupo padre) cubren autorización, estados, propiedad, versiones, fallos simulados de Auth/revocación, reintentos, privacidad administrativa, lecturas de Firestore/Storage y publicación concurrente. Auth y los datos son reales del emulador; solo la interrupción de las llamadas a Auth se simula.
 
-No hay reactivación implementada. No habilitar manualmente la tienda ni el acceso con una operación pendiente. Antes de producción se requieren un flujo de reactivación coordinado, seguimiento de pendientes, políticas administrativas y despliegue seguro. No se modificó ninguna cuenta de Firebase real.
+La reactivación local está implementada en 10-ciclo-cuentas.md. No habilitar manualmente la tienda ni el acceso con una operación pendiente. Antes de producción se requieren coordinación entre instancias del servidor, seguimiento de pendientes, políticas administrativas y despliegue seguro. No se modificó ninguna cuenta de Firebase real.

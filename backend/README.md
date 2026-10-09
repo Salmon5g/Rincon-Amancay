@@ -10,7 +10,9 @@ crearProducto y editarProducto gestionan fichas y variantes privadas según ../c
 
 ajustarStock registra reposiciones, pérdidas y correcciones según ../contratos/08-ajustes-stock.md. Se prueba con npm run test:stock; el cambio de saldo y la retirada pública son atómicos. El producto requiere republicación explícita. No registra ventas.
 
-desactivarEmprendedora bloquea gestión y catálogo antes de deshabilitar Auth; ver ../contratos/09-desactivacion-cuentas.md. npm run test:desactivacion prueba también fallos parciales y reintentos. No hay reactivación ni reconciliación automática.
+desactivarEmprendedora bloquea gestión y catálogo antes de deshabilitar Auth; ver ../contratos/09-desactivacion-cuentas.md. npm run test:desactivacion prueba también fallos parciales y reintentos. Reactivación local disponible en el contrato 10; la reconciliación automática sigue pendiente.
+
+El ciclo de cuentas (registro comprador, invitaciones, verificación/recuperación y reactivación) se describe en [contrato 10](../contratos/10-ciclo-cuentas.md). Probar con npm run test:ciclo. Ejecutar una sola instancia de la API local: las fases de Auth se serializan por UID dentro de este proceso.
 
 ## Ejecutar
 
@@ -26,5 +28,5 @@ Solo se usa demo-rincon-amancay: Firestore en 127.0.0.1:8080, Authentication en 
 
 La API verifica el ID token Firebase con comprobación de revocación y pasa su UID al módulo. Rechaza uid/roles en el cuerpo. La función de validación de imágenes conecta Storage local: ruta, existencia, tamaño, MIME y firma inicial; consultar ../contratos/05-imagenes-storage.md para sus límites. Las pruebas HTTP utilizan esa conexión; solo las pruebas aisladas de negocio la sustituyen.
 
-Verificado el 8 de octubre de 2026: TypeScript correcto; 16 casos de negocio, 24 de API y 9 de imágenes pasados (52 incluyendo grupos padre). Incluye sesión, permisos, proyecciones, variantes, producto a pedido, imágenes inválidas, stock inválido, retiradas, idempotencia y concurrencia. Auditoría previa del backend: 0 vulnerabilidades reportadas; sin nuevas dependencias en este incremento. No equivale a auditoría completa.
+Validación del incremento de cuentas: TypeScript, suite completa del backend, cliente web y reglas locales. Los resultados actuales se obtienen con los comandos de pruebas; no se han añadido dependencias. Android permanece pendiente de compilación en el proyecto del equipo.
 

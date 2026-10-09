@@ -5,6 +5,7 @@ service firebase.storage {
       let access = firestore.get(/databases/(default)/documents/accesos/$(request.auth.uid)).data;
       let store = firestore.get(/databases/(default)/documents/tiendasPrivadas/$(tiendaId)).data;
       return request.auth != null && access.estado == 'activo'
+        && (!('sesionesRevocadasHasta' in access) || request.auth.token.auth_time > access.sesionesRevocadasHasta)
         && 'emprendedora' in access.roles && access.tiendaId == tiendaId
         && store.propietarioUid == request.auth.uid;
     }

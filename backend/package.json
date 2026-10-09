@@ -4,17 +4,27 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts tests/cuentas.test.ts tests/productos.test.ts tests/stock.test.ts tests/desactivacion.test.ts",
+    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts tests/cuentas.test.ts tests/productos.test.ts tests/stock.test.ts tests/desactivacion.test.ts tests/ciclo-cuentas.test.ts",
     "dev": "node src/server.ts",
     "test:api": "node --test tests/api.test.ts",
     "test:cuentas": "node --test tests/cuentas.test.ts",
     "test:productos": "node --test tests/productos.test.ts",
     "test:stock": "node --test tests/stock.test.ts",
     "test:desactivacion": "node --test tests/desactivacion.test.ts",
-    "cuentas:demo": "node scripts/cuentas-demo.ts"
+    "cuentas:demo": "node scripts/cuentas-demo.ts",
+    "test:ciclo": "node --test tests/ciclo-cuentas.test.ts"
   },
-  "dependencies": { "firebase-admin": "14.5.0" },
-  "devDependencies": { "typescript": "5.9.3", "@types/node": "^24.0.0" },
-  "engines": { "node": ">=24.15.0" },
-  "overrides": { "@grpc/grpc-js": "1.14.5" }
+  "dependencies": {
+    "firebase-admin": "14.5.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.5"
+  }
 }

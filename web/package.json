@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:local": "node --test tests/cliente-local.test.mjs",
+    "test:local": "node --test --test-concurrency=1 tests/cliente-local.test.mjs tests/cuentas-local.test.mjs",
     "check:firebase": "node --env-file=.env scripts/check-firebase.mjs"
   },
   "dependencies": {

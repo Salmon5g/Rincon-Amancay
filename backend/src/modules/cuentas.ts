@@ -27,7 +27,7 @@ export function validarAlta(input: unknown): AltaEmprendedora {
 }
 
 export function crearCuentas(db: Firestore, auth: Auth) {
-  return async (identidad: {uid: string}, input: unknown) => {
+  return async (identidad: {uid: string}, input: unknown, invitacion?: {id: string; uidAcepta: string}) => {
     exigir(identidad && typeof identidad.uid === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
     const d = validarAlta(input);
     const adminRef = db.doc(`accesos/${identidad.uid}`);
@@ -35,8 +35,14 @@ export function crearCuentas(db: Firestore, auth: Auth) {
     // Comprobar antes de consultar Auth evita revelar cuentas a no administradores.
     exigir(esAdmin((await adminRef.get()).data()), 'sin-permiso', 'Se requiere administrador activo.');
     exigir(identidad.uid !== d.uidDestino, 'sin-permiso', 'El alta no permite asignarse una tienda a sí mismo.');
+    let correoVerificado: string | undefined;
+    if(invitacion) exigir(invitacion.uidAcepta===d.uidDestino,'sin-permiso','La invitación corresponde a otra cuenta.');
     try {
       const account = await auth.getUser(d.uidDestino);
+      if(invitacion) {
+        exigir(account.emailVerified && account.email,'sin-permiso','Verificar el correo antes de aceptar.');
+        correoVerificado=account.email.toLowerCase();
+      }
       exigir(!account.disabled && Boolean(account.email), 'conflicto', 'La cuenta destino debe estar habilitada y tener correo.');
     } catch (error) {
       if (error instanceof ErrorOperacion) throw error;
@@ -55,6 +61,14 @@ export function crearCuentas(db: Firestore, auth: Auth) {
         adminRef, receiptRef, userRef, accessRef, profileRef, storeRef, configRef,
         db.doc(`tiendasPublicas/${d.tiendaId}`), db.doc(`sectores/${d.sectorId}`), db.doc(`tiposEmprendimiento/${d.tipoEmprendimientoId}`),
       );
+      const inviteRef=invitacion ? db.doc(`invitaciones/${invitacion.id}`) : undefined;
+      const invite=inviteRef ? await tx.get(inviteRef) : undefined;
+      if(inviteRef) {
+        const i=invite?.data();
+        exigir(i && i.correo===correoVerificado && i.creadaPor===identidad.uid && JSON.stringify(validarAlta(i.alta))===JSON.stringify({...d,uidDestino:'pendiente'}),'sin-permiso','La invitación no corresponde a esta cuenta o solicitud.');
+        exigir(i.estado==='pendiente' || (i.estado==='aceptada' && i.aceptadaPor===d.uidDestino),'conflicto','Invitación no disponible.');
+        if(i.estado==='pendiente') exigir(i.venceEn.toMillis()>Date.now(),'conflicto','La invitación venció.');
+      }
       exigir(esAdmin(admin.data()), 'sin-permiso', 'Se requiere administrador activo.');
       if (receipt.exists) {
         exigir(receipt.data()!.firma === firma, 'id-reutilizado', 'operacionId corresponde a otra solicitud.');
@@ -77,6 +91,7 @@ export function crearCuentas(db: Firestore, auth: Auth) {
         sectorId: d.sectorId, tipoEmprendimientoId: d.tipoEmprendimientoId, estadoPublicacion: 'borrador', ...dates});
       tx.create(configRef, {mostrarPrecios: d.mostrarPrecios, historialVentasActivo: d.historialVentasActivo, formaContacto: d.formaContacto, ...dates});
       const resultado = {uid: d.uidDestino, tiendaId: d.tiendaId, operacionId: d.operacionId};
+      if(inviteRef) tx.update(inviteRef,{estado:'aceptada',aceptadaPor:d.uidDestino,aceptadaEn:now});
       tx.create(receiptRef, {firma, resultado, creadaPor: identidad.uid, creadoEn: now});
       return resultado;
     });
