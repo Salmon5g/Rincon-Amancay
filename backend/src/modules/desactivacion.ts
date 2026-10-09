@@ -24,7 +24,7 @@ export function crearDesactivacion(db: Firestore, auth: Pick<Auth,'updateUser'|'
     exigir(typeof d.motivo==='string' && d.motivo.trim().length>0 && d.motivo.length<=500,'datos-invalidos','Motivo requerido, de hasta 500 caracteres.');
     exigir(identidad.uid!==d.uidDestino,'sin-permiso','No se permite desactivar la propia cuenta.');
     const uid=d.uidDestino as string, operacionId=d.operacionId as string;
-    return porCuenta(uid, async () => {
+    return porCuenta(db, uid, identidad.uid, async () => {
       const firma=createHash('sha256').update(JSON.stringify([uid,operacionId,d.versionEsperada,d.motivo])).digest('hex');
       const actor=db.doc(`accesos/${identidad.uid}`),target=db.doc(`accesos/${uid}`);
       const receipt=db.doc(`desactivaciones/${identidad.uid}_${operacionId}`);

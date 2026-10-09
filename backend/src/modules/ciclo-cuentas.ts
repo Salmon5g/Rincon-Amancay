@@ -94,7 +94,7 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
       exigir(typeof d.motivo==='string' && d.motivo.trim().length>0 && d.motivo.length<=500,'datos-invalidos','Motivo requerido, hasta 500 caracteres.');
       exigir(uid!==d.uidDestino,'sin-permiso','No se permite reactivar la propia cuenta.');
       const destino=d.uidDestino;
-      return porCuenta(destino,async()=>{
+      return porCuenta(db,destino,uid,async()=>{
         const target=db.doc(`accesos/${destino}`),receipt=db.doc(`reactivaciones/${uid}_${d.operacionId}`);
         const firma=huella([destino,d.operacionId,d.versionEsperada,d.motivo]);
         const phase=await db.runTransaction(async tx=>{

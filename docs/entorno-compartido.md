@@ -33,7 +33,7 @@ Propongo **una alerta inicial de US$5 al mes**, con avisos al 50%, 80% y 100%, p
 
 ## Bloqueos técnicos encontrados
 
-1. **Cuentas:** desactivar/reactivar usa una cola en memoria y una reserva Firestore. Antes de nube hace falta un ejecutor durable que serialice por UID, registre fases y gestione reintentos sin que un trabajo antiguo vuelva a habilitar/deshabilitar Auth. Un máximo de una instancia no sustituye ese protocolo entre procesos y revisiones. Probar dos procesos y terminación entre fases; no basta con las pruebas de concurrencia de un único proceso actual. [Configuración del máximo de instancias](https://docs.cloud.google.com/run/docs/configuring/max-instances).
+1. **Cuentas:** desactivar/reactivar ya usa una reserva persistente en `ejecucionesCuentas/{uid}` además de una cola por UID, de modo que dos instancias no reservan la misma cuenta a la vez (probado con una carrera concurrente). Queda pendiente la recuperación de reservas huérfanas: la reserva no vence y un proceso que muera entre fases exige revisión técnica, porque Auth no ofrece un *fencing token*. Antes de la nube falta probar la terminación entre fases con dos procesos reales y definir ese procedimiento. [Configuración del máximo de instancias](https://docs.cloud.google.com/run/docs/configuring/max-instances).
 2. **Servidor:** agregar un adaptador compartido con credenciales del entorno (ADC), proyecto/bucket explícitos, rechazo de variables de emuladores y escucha en `0.0.0.0:$PORT`. El servidor actual continúa ligado al emulador y rechaza producción. No empaquetarlo y desplegarlo como está.
 3. **Contenedor:** preparar y probar Node 24 y Sharp en Linux con instalación por lockfile, usuario sin privilegios y exclusión de .env, credenciales, .local y datos de prueba. Docker y gcloud no se encontraron en PATH en esta revisión; no se probó ni construyó una imagen.
 4. **Clientes:** implementar adaptadores compartidos separados de los locales. Completar URL API, bucket confirmado, orígenes web y applicationId Android. Los adaptadores locales siguen rechazando proyectos reales por diseño.
@@ -54,6 +54,24 @@ Las reglas de Firebase controlan SDK cliente; el SDK Admin las omite y depende d
 3. Con esos cambios probados, entregar manifiesto, comandos concretos, permisos, recursos y estimación regional para revisión final. Solo entonces solicitar autorización de facturación/despliegue; no confundir aprobar la propuesta con activar Blaze.
 4. Tras autorización: confirmar estado de la consola, vincular facturación y avisos, crear bucket/servicio e identidad, desplegar reglas e índices revisados, API y datos ficticios controlados.
 5. Validar HTTPS, roles, fotos y una actualización desde dos clientes. La prueba de pantallas completas espera al desarrollo de Nuxt/Android; la conexión y los permisos pueden probarse antes.
+
+## Contenedor propuesto (pendiente de construir)
+
+`backend/Dockerfile` usa `node:24.15.0-bookworm-slim`, instala por lockfile sin dependencias de desarrollo, arranca `src/server-compartido.ts` y ejecuta como usuario `node`. `backend/.dockerignore` limita el contexto a `package.json`, `package-lock.json` y `src/`, excluyendo `.env`, credenciales, `.local` y datos de prueba. El arranque sin `AMANCAY_ENTORNO=compartido` o con variables de emulador se rechaza (probado con `npm --prefix backend run start:compartido`).
+
+Docker y gcloud no están disponibles en el equipo de preparación, así que la imagen **no se construyó ni probó**. Comandos previstos para la revisión final:
+
+```sh
+docker build -t amancay-api-dev ./backend
+docker run --rm -p 8080:8080 \
+  -e AMANCAY_ENTORNO=compartido \
+  -e AMANCAY_PROJECT_ID=rincon-amancay \
+  -e AMANCAY_STORAGE_BUCKET=<bucket-confirmado> \
+  -e AMANCAY_ORIGENES_WEB=<origen-https> \
+  amancay-api-dev
+```
+
+Falta construir en Linux, verificar el binario nativo de Sharp, revisar el tamaño de la imagen y probar la terminación por SIGTERM que ya espera el servidor compartido.
 
 ## Archivos revisables
 

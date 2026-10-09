@@ -1,16 +1,6 @@
-import { crearValidadorSesion } from './modules/sesiones.ts';
-import { crearCicloCuentas } from './modules/ciclo-cuentas.ts';
 import { auth, db, bucket } from './config/emulador.ts';
-import { crearApi } from './http/api.ts';
-import { crearPublicacion } from './modules/publicacion.ts';
-import { crearProcesadorImagenes } from './modules/imagenes.ts';
-import { crearCuentas } from './modules/cuentas.ts';
-import { crearProductos } from './modules/productos.ts';
-import { crearStock } from './modules/stock.ts';
-import { crearDesactivacion } from './modules/desactivacion.ts';
-
-const ejecutar = crearPublicacion(db, crearProcesadorImagenes(bucket));
-const server = crearApi(auth, ejecutar, crearCuentas(db, auth), crearProductos(db), crearStock(db), crearDesactivacion(db, auth), crearCicloCuentas(db, auth), crearValidadorSesion(db));
+import { montarApi } from './montar-api.ts';
+const server=montarApi(auth,db,bucket);
 server.listen(8787, '127.0.0.1', () => console.log('API LOCAL: http://127.0.0.1:8787 — solo demo-rincon-amancay'));
 server.on('error', error => { console.error(`No se pudo iniciar la API: ${(error as NodeJS.ErrnoException).code}`); process.exitCode = 1; });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => {

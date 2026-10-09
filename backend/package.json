@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts tests/cuentas.test.ts tests/productos.test.ts tests/stock.test.ts tests/desactivacion.test.ts tests/ciclo-cuentas.test.ts tests/disponibilidad.test.ts tests/config-http.test.ts",
+    "test": "node --test --test-concurrency=1 tests/publicacion.test.ts tests/api.test.ts tests/imagenes.test.ts tests/cuentas.test.ts tests/productos.test.ts tests/stock.test.ts tests/desactivacion.test.ts tests/ciclo-cuentas.test.ts tests/disponibilidad.test.ts tests/config-http.test.ts tests/compartido.test.ts tests/bloqueo-cuentas.test.ts",
     "dev": "node src/server.ts",
     "test:api": "node --test tests/api.test.ts",
     "test:cuentas": "node --test tests/cuentas.test.ts",
@@ -14,7 +14,8 @@
     "cuentas:demo": "node scripts/cuentas-demo.ts",
     "test:ciclo": "node --test tests/ciclo-cuentas.test.ts",
     "test:disponibilidad": "node --test tests/disponibilidad.test.ts",
-    "plan:desarrollo": "node scripts/plan-desarrollo.mjs"
+    "plan:desarrollo": "node scripts/plan-desarrollo.mjs",
+    "start:compartido": "node src/server-compartido.ts"
   },
   "dependencies": {
     "firebase-admin": "14.5.0",
