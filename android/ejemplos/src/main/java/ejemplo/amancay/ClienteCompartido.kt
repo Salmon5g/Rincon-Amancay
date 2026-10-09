@@ -10,10 +10,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.IOException
 
-// Cliente compartido: misma superficie que ClienteLocal, pero contra el proyecto
-// real y la API HTTPS. `apiBase` debe terminar en /api/v1/.
-class ClienteCompartido(private val servicios: ConexionCompartida.Servicios, apiBase: String) {
-    private val api = if (apiBase.endsWith("/")) apiBase else "$apiBase/"
+// Ejemplo para src/main: misma superficie que ClienteLocal, pero contra el proyecto
+// real y la API HTTPS. `apiUrl` es el origen, sin /api/v1/.
+class ClienteCompartido(private val servicios: ConexionCompartida.Servicios, apiUrl: String) {
+    // Validar aquí también: esta es la dirección que recibirá el ID token.
+    private val api = ConexionCompartida.validarApiUrl(apiUrl) + "/api/v1/"
     private val operaciones = setOf("publicarTienda", "retirarTienda", "publicarProducto", "retirarProducto",
         "altaEmprendedora", "crearProducto", "editarProducto", "ajustarStock", "desactivarEmprendedora", "registrarComprador", "invitarEmprendedora", "consultarInvitacion",
         "aceptarInvitacion", "cancelarInvitacion", "reactivarEmprendedora")

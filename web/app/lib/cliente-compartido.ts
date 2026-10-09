@@ -8,15 +8,14 @@ const PROYECTO_COMPARTIDO = 'rincon-amancay';
 export { ErrorApi, versionDocumento } from './cliente-base.ts';
 export type { Operacion } from './cliente-base.ts';
 
-// Acepta una URL absoluta HTTPS. Solo admite http para loopback (pruebas con túnel local).
+// El entorno real exige HTTPS. Los emuladores usan cliente-local.ts.
 function apiCompartida(apiUrl: string): string {
   let url: URL;
   try { url = new URL(apiUrl); } catch { throw new Error('NUXT_PUBLIC_API_URL debe ser una URL absoluta.'); }
-  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if (url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) {
-    throw new Error('La API compartida debe usar HTTPS, salvo en loopback.');
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+    throw new Error('Usar el origen HTTPS de la API, sin rutas, credenciales, consulta ni fragmento.');
   }
-  return `${url.toString().replace(/\/+$/, '')}/api/v1/`;
+  return `${url.origin}/api/v1/`;
 }
 
 export function crearClienteCompartido(firebase: ServiciosCliente, config: { apiUrl: string }) {

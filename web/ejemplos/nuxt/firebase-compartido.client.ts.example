@@ -1,5 +1,6 @@
 // Copiar a app/plugins/firebase-compartido.client.ts cuando exista Nuxt y la API desplegada.
 // Solo cliente: obtiene la configuración pública desde runtimeConfig.
+// Instalar únicamente este plugin al pasar al entorno remoto, retirando el local.
 //
 // Define en nuxt.config.ts (o sobreescribe con NUXT_PUBLIC_* en .env):
 //   runtimeConfig: {

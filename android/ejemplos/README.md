@@ -5,7 +5,7 @@ Ejemplos para integrar en el futuro módulo Android. No hay Gradle, applicationI
 ## Preparación
 
 1. Iniciar API y emuladores en el computador según ../../docs/integracion-equipos.md.
-2. Crear/usar el proyecto Android del equipo y copiar los adaptadores locales (ConexionLocal.kt y ClienteLocal.kt) a su src/debug/, combinando el manifest con el existente. Los archivos compartidos (ConexionCompartida.kt, ClienteCompartido.kt y ErrorApi.kt) van a src/main/, porque src/main no puede ver src/debug. Mantener el adaptador local fuera de release.
+2. Crear/usar el proyecto Android del equipo y copiar los adaptadores de `ejemplos/src/debug/java/ejemplo/amancay/` (ConexionLocal.kt y ClienteLocal.kt) a su `src/debug/java/<paquete>/`, combinando el manifest con el existente. Copiar `ejemplos/src/main/java/ejemplo/amancay/ErrorApi.kt` a `src/main/java/<paquete>/` y adaptar los `package` al namespace del equipo. Los adaptadores compartidos también están en `ejemplos/src/main/`, pero se integran cuando haya entorno remoto. `src/main` no puede importar clases de `src/debug`. Mantener la inicialización y pantalla de diagnóstico local en debug.
 3. Agregar las dependencias principales Firebase Auth, Firestore y Storage, además de coroutines Android y coroutines-play-services para Task.await. Las dependencias Firebase se alinean con BoM; no usar los módulos antiguos -ktx.
 
 Referencia de versiones de las páginas oficiales consultadas: Firebase BoM 35.0.0 y coroutines 1.11.0. Alinear con Kotlin, AGP, SDK y catálogo de versiones del proyecto antes de sincronizar. Esto no sustituye la compilación del equipo:
@@ -25,7 +25,7 @@ ConexionLocal crea una FirebaseApp nombrada con parámetros ficticios y conecta 
 
 ## Red de desarrollo
 
-Android Emulator usa 10.0.2.2 para llegar al computador anfitrión. No cambiar el servidor a 0.0.0.0. El manifest debug concede INTERNET y el XML permite HTTP únicamente para hosts locales; no copiar esa excepción a release. Si el proyecto ya tiene networkSecurityConfig, integrar las excepciones locales en su variante debug y resolver la fusión de manifests.
+Android Emulator usa 10.0.2.2 para llegar al computador anfitrión. No cambiar el servidor local a 0.0.0.0. El manifest principal concede INTERNET para ambas variantes. El manifest debug y su XML permiten HTTP únicamente para hosts locales; no copiar esa excepción a release. Si el proyecto ya tiene networkSecurityConfig, integrar las excepciones locales en su variante debug y resolver la fusión de manifests. Integrar los ejemplos de manifest en los existentes; no reemplazar las actividades del proyecto.
 
 Para teléfono físico por USB, habilitar depuración, seleccionar el dispositivo correcto con adb -s <serial> y ejecutar reverse para los cuatro puertos. Cambiar HOST a 127.0.0.1 en el adaptador debug para esa sesión:
 
@@ -97,18 +97,20 @@ No se han creado pantallas ni manejadores de enlaces Android. El ejemplo sigue p
 ```kotlin
 val config = ConexionCompartida.Configuracion(
     projectId = "rincon-amancay",
-    applicationId = "<applicationId del equipo>",   // pendiente de registrar
+    firebaseAppId = "<mobilesdk_app_id de google-services.json>", // 1:…:android:…
     apiKey = "<API key de la app Android en Firebase>",
     storageBucket = "rincon-amancay.firebasestorage.app",
     apiUrl = "<URL HTTPS de Cloud Run>",            // pendiente de desplegar
 )
 val cliente = ClienteCompartido(
     servicios = ConexionCompartida.obtener(context.applicationContext, config),
-    apiBase = "${config.apiUrl}/api/v1/",
+    apiUrl = config.apiUrl, // El cliente agrega /api/v1/ y exige origen HTTPS.
 )
 ```
 
-Requiere registrar la app Android y `google-services.json` (o `FirebaseOptions`) del equipo. Storage y Cloud Run exigen activar Blaze; el bucket todavía no existe. Estos archivos no se compilaron ni probaron.
+Para registrar Android se usa el `applicationId` de Gradle (package name, por ejemplo `cl.equipo.amancay`). Firebase devuelve un **Firebase App ID** distinto, `mobilesdk_app_id` con formato `1:…:android:…`; ese es el valor de `firebaseAppId` que recibe `FirebaseOptions.setApplicationId`. Nunca pasar el package name a ese método. La configuración requiere `google-services.json` o sus valores correctos en `FirebaseOptions`; ver [guía oficial de identificadores](https://firebase.google.com/support/guides/init-options).
+
+El inicializador rechaza cambios de configuración después de crearse; ambos puntos de entrada validan un origen HTTPS sin credenciales, rutas, consulta ni fragmento. Storage y el servidor remoto aún están pendientes de preparación y despliegue. Estos archivos no se compilaron ni probaron en Android. No mezclar los adaptadores compartidos con emuladores ni agregar excepciones HTTP a release.
 
 ## Disponibilidad e imágenes públicas
 
