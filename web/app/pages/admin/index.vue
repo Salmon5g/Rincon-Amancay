@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { listarCatalogos } from '~/repositories/admin'
+import type { DatosAdmin, ElementoCatalogo } from '~/types/admin'
 
 useHead({
   title: 'Administración — Rincón Amancay',
@@ -22,86 +24,154 @@ type Seccion = {
   descripcion: string
   accion: string
   items: Item[]
+  aviso?: string
 }
 
-// Datos de ejemplo (sin datos personales reales). Se reemplazarán por Firebase.
-const secciones: Seccion[] = [
-  {
-    id: 'emprendedoras',
-    icono: '👩‍🎨',
-    titulo: 'Emprendedoras',
-    descripcion: 'Registrar, invitar, desactivar y reactivar cuentas de emprendedoras.',
-    accion: '+ Invitar emprendedora',
-    items: [
-      { titulo: 'Ana Soto', detalle: 'Alerce · Cerámica', estado: 'Activa' },
-      { titulo: 'María Carrillo', detalle: 'Puerto Montt · Textil', estado: 'Activa' },
-      { titulo: 'Rosa Oyarzún', detalle: 'Chinquihue · Alimentos', estado: 'Invitada' },
-    ],
-  },
-  {
-    id: 'asociaciones',
-    icono: '🤝',
-    titulo: 'Asociaciones',
-    descripcion: 'Crear asociaciones y asignar o quitar emprendedoras integrantes.',
-    accion: '+ Crear asociación',
-    items: [
-      { titulo: 'Manos de Alerce', detalle: '8 integrantes', estado: 'Activa' },
-      { titulo: 'Tejedoras del Sur', detalle: '5 integrantes', estado: 'Activa' },
-    ],
-  },
-  {
-    id: 'ferias',
-    icono: '🎪',
-    titulo: 'Ferias y eventos',
-    descripcion: 'Crear ferias, invitar participantes y seguir su estado en el checklist.',
-    accion: '+ Crear feria',
-    items: [
-      { titulo: 'Feria Costumbrista de Alerce', detalle: 'Sáb 24 oct · 12 invitadas, 7 confirmadas', estado: 'Abierta' },
-      { titulo: 'Feria de Invierno', detalle: 'Julio · finalizada', estado: 'Cerrada' },
-    ],
-  },
-  {
-    id: 'catalogos',
-    icono: '🗂️',
-    titulo: 'Catálogos',
-    descripcion: 'Mantener los tipos de emprendimiento, tipos de producto y categorías.',
-    accion: '+ Agregar valor',
-    items: [
-      { titulo: 'Tipos de producto', detalle: 'Decoración, Bienestar, Alimentos, Papelería, Textil', estado: '5 valores' },
-      { titulo: 'Tipos de emprendimiento', detalle: 'Artesanía, Gastronomía, Cosmética natural', estado: '3 valores' },
-    ],
-  },
-  {
-    id: 'configuracion',
-    icono: '⚙️',
-    titulo: 'Configuración general',
-    descripcion: 'Navegación anónima de la app y habilitación de módulos opcionales.',
-    accion: 'Guardar cambios',
-    items: [
-      { titulo: 'Navegación anónima', detalle: 'Los compradores ven tiendas sin cuenta', estado: 'Activada' },
-      { titulo: 'Módulo de ferias', detalle: 'Invitaciones y checklist', estado: 'Activada' },
-    ],
-  },
-  {
-    id: 'administradores',
-    icono: '🛡️',
-    titulo: 'Administradores',
-    descripcion: 'Gestionar otras cuentas de administrador de la plataforma.',
-    accion: '+ Agregar administrador',
-    items: [{ titulo: 'Equipo Amancay', detalle: 'Cuenta administradora principal', estado: 'Activa' }],
-  },
+const vacio: DatosAdmin = {
+  accesos: [],
+  emprendedoras: [],
+  invitaciones: [],
+  catalogos: { sectores: [], categorias: [], tiposEmprendimiento: [], tiposProducto: [] },
+}
+
+// Lecturas en el cliente (no SSR). Sin sesión solo hay catálogos públicos;
+// accesos, emprendedoras e invitaciones exigen administradora (ver firestore.rules).
+const { $amancay } = useNuxtApp()
+const cargando = ref(false)
+const errorDatos = ref('')
+const datos = ref<DatosAdmin>(vacio)
+const formularioAbierto = ref(false)
+const borrador = ref({
+  nombre: '',
+  correo: '',
+  nombreTienda: '',
+  descripcion: '',
+  sectorId: '',
+  tipoEmprendimientoId: '',
+  ubicacion: '',
+  fechaInicio: '',
+  fechaFin: '',
+  tipoCatalogo: 'sectores',
+  valor: '',
+  clave: '',
+})
+const tiposCatalogo = [
+  { id: 'sectores', nombre: 'Sectores' },
+  { id: 'categorias', nombre: 'Categorías' },
+  { id: 'tiposEmprendimiento', nombre: 'Tipos de emprendimiento' },
+  { id: 'tiposProducto', nombre: 'Tipos de producto' },
 ]
+
+const SIN_MODELO = 'Sección en preparación. El formulario de muestra todavía no guarda datos.'
+
+function activos(lista: ElementoCatalogo[]) {
+  return lista.filter((valor) => valor.activo)
+}
+
+const secciones = computed<Seccion[]>(() => {
+  function grupo(titulo: string, lista: ElementoCatalogo[]): Item {
+    const vigentes = activos(lista)
+    return {
+      titulo,
+      detalle: vigentes.map((valor) => valor.nombre).join(', ') || 'Sin valores',
+      estado: `${vigentes.length} valores`,
+    }
+  }
+
+  return [
+    {
+      id: 'emprendedoras',
+      icono: '👩‍🎨',
+      titulo: 'Emprendedoras',
+      descripcion: 'Invitaciones, desactivación y reactivación de cuentas.',
+      accion: '+ Invitar emprendedora',
+      items: [],
+    },
+    {
+      id: 'asociaciones',
+      icono: '🤝',
+      titulo: 'Asociaciones',
+      descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.',
+      accion: '+ Crear asociación',
+      items: [],
+      aviso: SIN_MODELO,
+    },
+    {
+      id: 'ferias',
+      icono: '🎪',
+      titulo: 'Ferias y eventos',
+      descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.',
+      accion: '+ Crear feria',
+      items: [],
+      aviso: SIN_MODELO,
+    },
+    {
+      id: 'catalogos',
+      icono: '🗂️',
+      titulo: 'Catálogos',
+      descripcion: 'Tipos de producto, categorías, tipos de emprendimiento y sectores.',
+      accion: '+ Agregar valor',
+      items: [
+        grupo('Tipos de producto', datos.value.catalogos.tiposProducto),
+        grupo('Categorías', datos.value.catalogos.categorias),
+        grupo('Tipos de emprendimiento', datos.value.catalogos.tiposEmprendimiento),
+        grupo('Sectores', datos.value.catalogos.sectores),
+      ],
+    },
+    {
+      id: 'configuracion',
+      icono: '⚙️',
+      titulo: 'Configuración general',
+      descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.',
+      accion: 'Guardar cambios',
+      items: [],
+      aviso: SIN_MODELO,
+    },
+    {
+      id: 'administradores',
+      icono: '🛡️',
+      titulo: 'Administradores',
+      descripcion: 'Cuentas con rol administrador de la plataforma.',
+      accion: '+ Agregar administrador',
+      items: [],
+    },
+  ]
+})
+
+function mensajeError(error: unknown, alterno: string) {
+  const e = error as { code?: string; message?: string }
+  if (e?.code === 'permission-denied') return 'Sin permiso para leer estos datos.'
+  if (e?.code === 'unavailable') return 'No hay conexión con los emuladores.'
+  return e?.message || alterno
+}
+
+async function cargarDatos() {
+  cargando.value = true
+  errorDatos.value = ''
+  try {
+    const catalogos = await listarCatalogos($amancay as never)
+    datos.value = { ...vacio, catalogos }
+  } catch (error) {
+    errorDatos.value = mensajeError(error, 'No se pudieron cargar los catálogos.')
+  } finally {
+    cargando.value = false
+  }
+}
+
+onMounted(cargarDatos)
 
 const activa = ref('inicio')
 const busqueda = ref('')
 const filtro = ref('Todos')
-const seccion = computed(() => secciones.find((s) => s.id === activa.value) ?? null)
+const seccion = computed(() => secciones.value.find((s) => s.id === activa.value) ?? null)
 const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long' }).toUpperCase()
 const aviso = ref('')
 let temporizador: ReturnType<typeof setTimeout>
 
 const resumen = computed(() =>
-  secciones.slice(0, 4).map((s) => ({ id: s.id, icono: s.icono, titulo: s.titulo, total: s.items.length })),
+  secciones.value
+    .filter((s) => s.items.length > 0)
+    .map((s) => ({ id: s.id, icono: s.icono, titulo: s.titulo, total: s.items.length })),
 )
 
 const estados = computed(() => ['Todos', ...new Set(seccion.value?.items.map((i) => i.estado) ?? [])])
@@ -128,9 +198,39 @@ function iniciales(t: string) {
 
 function ir(id: string) {
   activa.value = id
+  formularioAbierto.value = false
   busqueda.value = ''
   filtro.value = 'Todos'
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function abrirFormulario() {
+  borrador.value = {
+    nombre: '',
+    correo: '',
+    nombreTienda: '',
+    descripcion: '',
+    sectorId: '',
+    tipoEmprendimientoId: '',
+    ubicacion: '',
+    fechaInicio: '',
+    fechaFin: '',
+    tipoCatalogo: 'sectores',
+    valor: '',
+    clave: '',
+  }
+  formularioAbierto.value = true
+}
+
+function cerrarFormulario() {
+  formularioAbierto.value = false
+}
+
+function guardarVistaPrevia() {
+  formularioAbierto.value = false
+  aviso.value = 'Vista previa: no se guardaron ni enviaron datos.'
+  clearTimeout(temporizador)
+  temporizador = setTimeout(() => (aviso.value = ''), 3500)
 }
 
 function proximamente() {
@@ -170,6 +270,9 @@ function proximamente() {
     </aside>
 
     <main class="contenido">
+      <p v-if="errorDatos" class="aviso-error" role="alert">{{ errorDatos }}</p>
+      <p v-else-if="cargando" class="aviso-carga" role="status">Cargando datos…</p>
+
       <template v-if="!seccion">
         <header class="encabezado">
           <p class="sobretitulo">Hola, equipo Amancay</p>
@@ -220,10 +323,71 @@ function proximamente() {
             <h1>{{ seccion.titulo }}</h1>
             <p class="sub">{{ seccion.descripcion }}</p>
           </div>
-          <button class="boton boton-primario" type="button" @click="proximamente">
+          <button class="boton boton-primario" type="button" @click="abrirFormulario">
             {{ seccion.accion }}
           </button>
         </header>
+
+        <section v-if="formularioAbierto" class="formulario" aria-labelledby="titulo-formulario">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-formulario">{{ seccion.accion }}</h2>
+              <p>Vista previa: estos datos todavía no se guardan ni se envían.</p>
+            </div>
+            <button class="editar" type="button" @click="cerrarFormulario">Cancelar</button>
+          </div>
+          <form class="campos-formulario" @submit.prevent="guardarVistaPrevia">
+            <template v-if="seccion.id === 'emprendedoras'">
+              <label>Nombre de la emprendedora<input v-model="borrador.nombre" required autocomplete="name" /></label>
+              <label>Correo electrónico<input v-model="borrador.correo" type="email" required autocomplete="email" /></label>
+              <label>Nombre de la tienda<input v-model="borrador.nombreTienda" required /></label>
+              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" /></label>
+              <label>Sector
+                <select v-model="borrador.sectorId">
+                  <option value="">Seleccionar sector</option>
+                  <option v-for="opcion in datos.catalogos.sectores" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
+                </select>
+              </label>
+              <label>Tipo de emprendimiento
+                <select v-model="borrador.tipoEmprendimientoId">
+                  <option value="">Seleccionar tipo</option>
+                  <option v-for="opcion in datos.catalogos.tiposEmprendimiento" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
+                </select>
+              </label>
+            </template>
+            <template v-else-if="seccion.id === 'administradores'">
+              <label>Nombre<input v-model="borrador.nombre" required autocomplete="name" /></label>
+              <label>Correo electrónico<input v-model="borrador.correo" type="email" required autocomplete="email" /></label>
+            </template>
+            <template v-else-if="seccion.id === 'catalogos'">
+              <label>Tipo de catálogo
+                <select v-model="borrador.tipoCatalogo">
+                  <option v-for="tipo in tiposCatalogo" :key="tipo.id" :value="tipo.id">{{ tipo.nombre }}</option>
+                </select>
+              </label>
+              <label>Nombre del valor<input v-model="borrador.valor" required /></label>
+            </template>
+            <template v-else-if="seccion.id === 'asociaciones'">
+              <label>Nombre de la asociación<input v-model="borrador.nombre" required /></label>
+              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" /></label>
+            </template>
+            <template v-else-if="seccion.id === 'ferias'">
+              <label>Nombre de la feria<input v-model="borrador.nombre" required /></label>
+              <label>Ubicación<input v-model="borrador.ubicacion" /></label>
+              <label>Fecha de inicio<input v-model="borrador.fechaInicio" type="date" /></label>
+              <label>Fecha de término<input v-model="borrador.fechaFin" type="date" /></label>
+              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" /></label>
+            </template>
+            <template v-else>
+              <label>Nombre de la configuración<input v-model="borrador.clave" required /></label>
+              <label>Valor<input v-model="borrador.valor" required /></label>
+            </template>
+            <div class="acciones-formulario">
+              <button class="boton boton-primario" type="submit">Guardar (vista previa)</button>
+              <button class="editar" type="button" @click="cerrarFormulario">Cerrar</button>
+            </div>
+          </form>
+        </section>
 
         <div class="herramientas">
           <label class="buscar">
@@ -256,9 +420,9 @@ function proximamente() {
           </li>
         </ul>
         <div v-else class="vacio">
-          <span aria-hidden="true">🌼</span>
-          <p>No encontramos resultados.</p>
-          <button class="editar" type="button" @click="(busqueda = ''), (filtro = 'Todos')">
+          <span aria-hidden="true">{{ seccion.aviso ? '🔒' : '🌼' }}</span>
+          <p>{{ seccion.aviso || 'No encontramos resultados.' }}</p>
+          <button v-if="!seccion.aviso" class="editar" type="button" @click="(busqueda = ''), (filtro = 'Todos')">
             Limpiar filtros
           </button>
         </div>
@@ -466,7 +630,7 @@ input:focus-visible {
   border-radius: 16px;
 }
 
-.pie span:last-child {
+.pie span {
   display: flex;
   flex-direction: column;
   font-size: 0.85rem;
@@ -616,6 +780,79 @@ h1 {
 
 .boton-ambar:hover {
   background: #f9cd75;
+}
+
+.formulario {
+  margin: 0 0 1.4rem;
+  padding: 1.4rem;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1.5px solid var(--borde);
+  border-radius: 22px;
+  box-shadow: var(--sombra);
+}
+
+.formulario-encabezado {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.formulario-encabezado h2 {
+  margin: 0;
+  color: var(--vino);
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 400;
+}
+
+.formulario-encabezado p {
+  margin: 0.35rem 0 0;
+  color: var(--suave);
+  font-size: 0.86rem;
+}
+
+.campos-formulario {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.campos-formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--tinta);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.campos-formulario input,
+.campos-formulario select,
+.campos-formulario textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.8rem;
+  box-sizing: border-box;
+  color: var(--tinta);
+  background: #fff;
+  border: 1.5px solid var(--borde);
+  border-radius: 12px;
+  font: inherit;
+}
+
+.campos-formulario textarea {
+  resize: vertical;
+}
+
+.acciones-formulario {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  padding-top: 0.25rem;
 }
 
 /* Hero */
@@ -1022,6 +1259,25 @@ h1 {
   transform: translate(-50%, 0);
 }
 
+.aviso-error,
+.aviso-carga {
+  margin: 0 0 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.aviso-error {
+  background: var(--rosado, #f7e9e8);
+  color: #b23b3c;
+}
+
+.aviso-carga {
+  background: var(--crema-2, #fdf1d4);
+  color: #8a5a00;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
@@ -1044,6 +1300,10 @@ h1 {
     border-right: 0;
     border-bottom: 1.5px solid var(--borde);
     padding: 0.9rem 1rem 0.6rem;
+  }
+
+  .campos-formulario {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .marca {
