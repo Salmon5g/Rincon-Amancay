@@ -15,6 +15,9 @@ google-services.json
 GoogleService-Info.plist
 *serviceAccount*.json
 *service-account*.json
+key-*.json
+*adminsdk*.json
+secrets/
 *.pem
 *.key
 *.jks
