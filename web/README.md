@@ -1,17 +1,25 @@
 # Web
 
-Espacio para una única aplicación Nuxt + Vue + TypeScript. Ya incluye el SDK Firebase, un módulo de inicialización y una comprobación técnica sin pantallas. Nuxt y su interfaz todavía no están inicializados; no existe npm run dev.
+Una sola aplicación Nuxt 4 + Vue + TypeScript para todos los perfiles. La ruta /admin incluye acceso, comprobación de rol, lecturas reales y una acción de invitación/cancelación que puede usar la API autenticada. Las demás secciones y operaciones todavía no están conectadas.
 
-Para el trabajo del equipo, comenzar por [la guía de integración local](../docs/integracion-equipos.md). app/lib/firebase-local.ts conecta los emuladores y app/lib/cliente-local.ts ofrece sesión, catálogo, imágenes y API. El plugin de ejemplo está en ejemplos/nuxt/. No requiere .env real. Con emuladores y API activos: npm run typecheck y npm run test:local. Este último requiere también las dependencias de backend/ instaladas y crea/elimina datos de prueba aislados. No ejecutar simultáneamente con otras suites.
+## Ejecutar
 
-La comprobación anterior contra la nube sigue disponible por separado: npm run check:firebase requiere .env y hace una lectura sin sesión que debe rechazarse mientras las reglas permanezcan cerradas. No crea datos ni valida login. No es necesaria para probar el cliente local.
+Desde la raíz: npm --prefix web ci y npm --prefix web run dev. Abrir http://localhost:3000/admin.
 
-La configuración del proyecto real está en .env, excluido de Git. .env.example sirve para esa conexión; no usarlo para los emuladores. Los parámetros SDK no son credenciales Admin; la protección efectiva depende de reglas y autorización.
+El único plugin activo es app/plugins/firebase.client.ts. No copiar plugins adicionales desde ejemplos/nuxt/: duplicarían la inicialización. NUXT_PUBLIC_FIREBASE_MODO selecciona el entorno y requiere reiniciar Nuxt y recargar la página al cambiarlo:
 
-app/lib/firebase.ts conserva el inicializador del proyecto real. app/lib/cliente-base.ts concentra la lógica del cliente web; cliente-local.ts (emuladores, rechaza el proyecto real) y cliente-compartido.ts (proyecto `rincon-amancay` + API HTTPS, rechaza el demo) la usan. Antes de un despliegue habrá que definir el plugin y runtimeConfig; las variables NUXT_PUBLIC no se conectan automáticamente. El ejemplo compartido está en ejemplos/nuxt/firebase-compartido.client.ts.example. El tsconfig actual comprueba los módulos app/lib/ y deberá integrarse con el generado por Nuxt. El plugin local se niega a iniciar una compilación de producción.
+- local (predeterminado): demo-rincon-amancay y emuladores. Seguir [arranque local](../docs/arranque-equipos.md). El cliente local conserva las operaciones compartidas para futuros componentes.
+- real-lectura: rincon-amancay, Authentication y lecturas Firestore desde servidor. Seguir [conexión real del administrador](../docs/admin-firestore-real.md). No requiere URL de API; no expone operaciones de negocio ni subida de imágenes.
+- real-api: Firebase real más API autenticada. Para una demo local contra datos reales, seguir [API local con Firebase real](../docs/admin-firebase-real-api-local.md). Para servicio compartido, configurar la URL HTTPS de Cloud Run.
 
-app/plugins/ inicializará Firebase para el navegador; app/repositories/ reunirá las consultas y llamadas al backend; app/types/ contendrá los tipos derivados del contrato común. Nunca incluir Firebase Admin SDK o credenciales de servidor en el navegador.
+.env está excluido de Git. Copiar .env.example solo si no existe y completar la configuración SDK. runtimeConfig en nuxt.config.ts declara las variables públicas. No incluir claves privadas Admin. La configuración de Storage no crea un bucket y este modo no lo utiliza.
 
-El equipo web creará pages/, layouts/, components/ y assets/ al iniciar su interfaz. Comprador y administrador trabajarán aquí; no deben crear dos proyectos web independientes. Cuando corresponda, el área emprendedora también formará parte de esta web.
+El modo real-api usa `cliente-compartido.ts`; en Nuxt dev admite HTTP solo para localhost. En producción la URL debe ser HTTPS. No configurar una URL ficticia.
 
-`npm run test:unit` valida el adaptador compartido sin conectar a Firebase real. La URL compartida es un origen HTTPS (sin `/api/v1/`, parámetros ni fragmentos); el cliente agrega la ruta y rechaza HTTP también en localhost. Para desarrollo local usar el adaptador local. No instalar ambos plugins a la vez: uno solo proporciona `$amancay` por entorno. Resultados de pruebas y límites en [verificación de la base](../docs/verificacion-base.md).
+## Comprobaciones
+
+npm run typecheck comprueba TypeScript de los módulos. npm run build comprueba la compilación de Nuxt; no significa que la nube esté lista. npm run check:firebase prueba una lectura anónima que debe ser rechazada; no comprueba login ni todas las reglas.
+
+npm run test:unit valida el adaptador compartido sin nube. npm run test:local requiere emuladores, API y dependencias backend; crea y elimina datos de prueba aislados y no debe coincidir con otras suites o una demostración.
+
+El cliente base y los contratos siguen siendo comunes. Las pantallas deben invocar los métodos desde eventos u onMounted: el plugin se ejecuta únicamente en navegador. Nunca incluir Firebase Admin SDK en el frontend.

@@ -2,7 +2,7 @@
 
 Guía corta para que los tres equipos empiecen **en local** sin depender de la nube. Primero todos hacen la **preparación común**; después cada equipo sigue su sección. Para el detalle, ver [integración de equipos](integracion-equipos.md) y los [contratos](../contratos/).
 
-> La conexión a la nube todavía **no** está activa. No usar los adaptadores `*-compartido` (`cliente-compartido.ts`, `ConexionCompartida.kt`), ni el `admin:compartido`, ni pedir Blaze. Todo el trabajo inicial es contra los emuladores.
+> Esta guía describe los emuladores. Para probar Authentication y lecturas de Firestore real, seguir [admin-firestore-real.md](admin-firestore-real.md). La API compartida y Storage siguen pendientes; no usar el adaptador completo sin su despliegue.
 
 ## 0. Preparación común (una vez por computador)
 
@@ -45,20 +45,19 @@ Reglas de convivencia:
 
 ## 1. Equipo web (base común a comprador y admin)
 
-Un solo proyecto Nuxt para todos los perfiles. Al inicializar **Nuxt 4** en `web/`:
+Nuxt ya está inicializado en web/. Comprador y administrador desarrollan áreas de la misma aplicación, mediante ramas por funcionalidad y pull requests.
 
-Coordinar un único commit de inicialización entre ambos equipos web; luego desarrollar áreas separadas dentro de ese proyecto. Conservar `app/lib/`, ejemplos, pruebas, dependencias Firebase y scripts existentes: no sobrescribir la carpeta con una plantilla. Propuesta de rutas: `/` y `/tiendas/[tiendaId]` para comprador; `/admin` para administración. No existe aún una interfaz ejecutable ni `npm run dev` web. El responsable de la base Nuxt confirma el arranque antes de repartir componentes.
+1. Usar el único plugin app/plugins/firebase.client.ts; no copiar el plugin de ejemplo sobre él ni instalar otro.
+2. Para esta guía, configurar NUXT_PUBLIC_FIREBASE_MODO=local en web/.env (es también el valor predeterminado).
+3. Arrancar con npm --prefix web run dev desde la raíz y abrir http://localhost:3000/admin. La API local admite localhost:3000 y 127.0.0.1:3000.
+4. Ingresar con la cuenta creada por cuentas:demo. La nueva interfaz muestra lecturas autorizadas y mantiene las acciones administrativas pendientes de integración.
 
-1. Copiar `web/ejemplos/nuxt/firebase-local.client.ts.example` a `web/app/plugins/firebase-local.client.ts`.
-   Instalar solo ese plugin en esta etapa: el compartido también proporciona `$amancay` y no deben coexistir.
-2. Conservar la comprobación de tipos de `app/lib/` al adaptar el `tsconfig`.
-3. Correr la web en **localhost:3000** (la API rechaza otros orígenes por CORS).
-
-Uso del cliente en componentes (consultas en cliente, no SSR):
+Uso del cliente local completo en componentes (solo modo local; el modo real-lectura tiene una interfaz limitada):
 
 ```ts
 const { $amancay } = useNuxtApp();
 onMounted(async () => {
+  if (!('listarTiendas' in $amancay)) return; // Solo disponible en el cliente completo.
   const pagina = await $amancay.listarTiendas();
   const tiendas = pagina.docs.map(d => ({ id: d.id, ...d.data() }));
   // Para la siguiente página: await $amancay.listarTiendas(pagina.docs.at(-1));
@@ -78,6 +77,8 @@ Meta: catálogo público **sin sesión** (tiendas, productos, variantes, imágen
 ### 1b. Web administrador (primer incremento)
 
 Meta: sesión + lectura de accesos + invitación/cancelación de emprendedoras + desactivación/reactivación. El flujo de pantallas usa el [contrato 10](../contratos/10-ciclo-cuentas.md).
+
+La web `/admin` del repositorio ya incluye login y lecturas. Con `real-api` y la API local contra Firebase real puede crear y cancelar invitaciones desde el panel; seguir [esta guía](admin-firebase-real-api-local.md). No confundirlo con `real-lectura`, que solo permite iniciar sesión y leer.
 
 - Credenciales de prueba: las genera `cuentas:demo` en `backend/.local/cuentas-<uuid>.json` (incluye la administradora y una candidata con `solicitudAlta`).
 - Iniciar sesión con `iniciarSesion(correo, clave)`; luego `consultarAcceso()`.
