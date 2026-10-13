@@ -11,7 +11,7 @@ gcloud auth application-default login
 gcloud config set project rincon-amancay
 ```
 
-La identidad de Google Cloud que ejecuta el backend necesita permisos IAM para Firestore, como `roles/datastore.user`. El rol `administrador` en `accesos/{uid}` autoriza a la persona usuaria dentro de la aplicación; no reemplaza los permisos IAM de la identidad del proceso backend. No crear ni compartir claves de cuenta de servicio.
+La identidad de Google Cloud que ejecuta el backend necesita permisos IAM para Firestore (por ejemplo, `roles/datastore.user`) y para administrar usuarios de Authentication. La desactivación/reactivación usa `getUser`, `updateUser` y revocación de tokens; concede el rol de Identity Toolkit adecuado o un rol personalizado de menor privilegio con los permisos requeridos (`firebaseauth.users.get` y `firebaseauth.users.update`). El rol `administrador` en `accesos/{uid}` autoriza a la persona usuaria dentro de la aplicación; no reemplaza los permisos IAM de la identidad del proceso backend. No crear ni compartir claves de cuenta de servicio.
 
 ## Arrancar el backend
 
