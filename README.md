@@ -48,6 +48,6 @@ Hay emuladores, datos ficticios y adaptadores de integración. La documentación
 
 web/ tiene package.json, package-lock.json y `npm run dev`. backend/ dispone de pruebas automatizadas y entradas para emuladores o Firebase real local. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 
-Se conserva la configuración Git del clon. Compartir cambios mediante commits y push no despliega servicios. No se desplegaron reglas, web o servidor. `.firebaserc` asocia development a rincon-amancay; los scripts locales fijan demo-rincon-amancay.
+Se conserva la configuración Git del clon. Compartir cambios mediante commits y push no despliega servicios. Las reglas de Firestore fueron publicadas manualmente por el responsable; falta comparar las reglas de consola con `firebase/firestore.rules`. La web pública y el servidor aún no se han desplegado. `.firebaserc` asocia development a rincon-amancay; los scripts locales fijan demo-rincon-amancay.
 
 Preparación del entorno compartido: [propuesta de arquitectura, consumo y pendientes](docs/entorno-compartido.md). Todavía no hay despliegue.
