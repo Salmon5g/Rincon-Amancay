@@ -78,6 +78,8 @@ Meta: catálogo público **sin sesión** (tiendas, productos, variantes, imágen
 
 Meta: sesión + lectura de accesos + invitación/cancelación de emprendedoras + desactivación/reactivación. El flujo de pantallas usa el [contrato 10](../contratos/10-ciclo-cuentas.md).
 
+La web `/admin` del repositorio ya incluye login y lecturas. Con `real-api` y la API local contra Firebase real puede crear y cancelar invitaciones desde el panel; seguir [esta guía](admin-firebase-real-api-local.md). No confundirlo con `real-lectura`, que solo permite iniciar sesión y leer.
+
 - Credenciales de prueba: las genera `cuentas:demo` en `backend/.local/cuentas-<uuid>.json` (incluye la administradora y una candidata con `solicitudAlta`).
 - Iniciar sesión con `iniciarSesion(correo, clave)`; luego `consultarAcceso()`.
   - `consultarAcceso()` = `null` significa identidad **sin permisos**; no tratarla como administradora.

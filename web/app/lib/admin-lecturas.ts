@@ -2,7 +2,7 @@ import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, doc, getDocFromServer, getDocsFromServer, limit, query, where } from 'firebase/firestore';
 import type { ServiciosCliente } from './cliente-base';
 
-export type FilaAdmin = { titulo: string; detalle: string; estado: string };
+export type FilaAdmin = { titulo: string; detalle: string; estado: string; invitacionId?: string };
 export type SeccionLectura = 'administradores' | 'emprendedoras' | 'catalogos';
 
 export function esAdministrador(acceso: { estado?: unknown; roles?: unknown } | null): boolean {
@@ -30,9 +30,20 @@ export function crearLecturasAdmin(firebase: ServiciosCliente) {
         return resultado.docs.map(d => ({ titulo: d.id, detalle: 'Identificador de cuenta administradora', estado: String(d.data().estado ?? '') }));
       }
       if (seccion === 'emprendedoras') {
-        const resultado = await getDocsFromServer(query(collection(db, 'emprendedoras'), limit(50)));
+        const [resultado, invitaciones] = await Promise.all([
+          getDocsFromServer(query(collection(db, 'emprendedoras'), limit(50))),
+          getDocsFromServer(query(collection(db, 'invitaciones'), limit(50))),
+        ]);
         // Las reglas no permiten al administrador consultar perfiles privados arbitrarios.
-        return resultado.docs.map(d => ({ titulo: d.id, detalle: `Tienda: ${String(d.data().tiendaId ?? '')}`, estado: 'Registrada' }));
+        return [
+          ...resultado.docs.map(d => ({ titulo: d.id, detalle: `Tienda: ${String(d.data().tiendaId ?? '')}`, estado: 'Registrada' })),
+          ...invitaciones.docs.map(d => ({
+            titulo: String(d.data().correo ?? 'Invitación'),
+            detalle: `Tienda: ${String(d.data().alta?.nombreTienda ?? '')} · Código: ${d.id}`,
+            estado: String(d.data().estado ?? ''),
+            invitacionId: d.id,
+          })),
+        ];
       }
       if (seccion !== 'catalogos') throw new Error('Sección no disponible para lectura.');
       const grupos = ['categorias', 'tiposEmprendimiento', 'tiposProducto'] as const;

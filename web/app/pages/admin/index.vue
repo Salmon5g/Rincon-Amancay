@@ -18,7 +18,7 @@ useHead({
   ],
 })
 
-type Item = { titulo: string; detalle: string; estado: string }
+type Item = { titulo: string; detalle: string; estado: string; invitacionId?: string }
 type Seccion = {
   id: string
   icono: string
@@ -81,7 +81,9 @@ const seccion = computed(() => secciones.value.find((s) => s.id === activa.value
 const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long' }).toUpperCase()
 const { $amancay } = useNuxtApp()
 const config = useRuntimeConfig().public
-const entorno = config.firebaseModo === 'real-lectura' ? 'Firebase real · solo lectura' : 'Emuladores locales'
+const entorno = config.firebaseModo === 'real-api'
+  ? 'Firebase real · API autenticada'
+  : config.firebaseModo === 'real-lectura' ? 'Firebase real · solo lectura' : 'Emuladores locales'
 const cargandoSesion = ref(true)
 const autorizado = ref(false)
 const sesion = ref('')
@@ -90,6 +92,9 @@ const clave = ref('')
 const enviando = ref(false)
 const errorSesion = ref('')
 const errorDatos = ref('')
+const errorOperacion = ref('')
+const operacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
+const invitacionCreada = ref('')
 const cargandoDatos = ref(false)
 const cargandoCatalogos = ref(false)
 const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'catalogos'].includes(activa.value))
@@ -99,6 +104,10 @@ let desconectar: (() => void) | undefined
 
 function mensajeError(error: unknown) {
   const codigo = (error as { code?: string })?.code
+  if (codigo === 'datos-invalidos') return 'Completa los campos y selecciona un sector y tipo de emprendimiento activos.'
+  if (codigo === 'sin-permiso') return 'La API no reconoce un acceso administrador activo para esta cuenta.'
+  if (codigo === 'conexion-interrumpida' || (error as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Conservé la solicitud; vuelve a intentar sin cambiar los datos.'
+  if (codigo === 'id-reutilizado') return 'La solicitud cambió después de un intento interrumpido. Cierra y vuelve a abrir el formulario para crear una nueva operación.'
   if (codigo === 'permission-denied') return 'Firestore rechazó la lectura. Revisar las reglas publicadas y los permisos de esta cuenta.'
   if (codigo === 'auth/operation-not-allowed') return 'Habilitar correo y contraseña en Firebase Authentication.'
   if (codigo === 'auth/invalid-credential' || codigo === 'auth/user-not-found' || codigo === 'auth/wrong-password') return 'No se pudo iniciar sesión. Revisa el correo y la contraseña.'
@@ -247,6 +256,9 @@ function abrirFormulario() {
     tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
     tipoCatalogo: 'sectores', valor: '', clave: '',
   }
+  errorOperacion.value = ''
+  invitacionCreada.value = ''
+  operacionPendiente.value = null
   formularioAbierto.value = true
 }
 
@@ -259,6 +271,76 @@ function guardarVistaPrevia() {
   aviso.value = 'Vista previa: no se guardaron ni enviaron datos.'
   clearTimeout(temporizador)
   temporizador = setTimeout(() => (aviso.value = ''), 3500)
+}
+
+async function guardarFormulario() {
+  if (seccion.value?.id !== 'emprendedoras' || config.firebaseModo !== 'real-api') {
+    guardarVistaPrevia()
+    return
+  }
+  errorOperacion.value = ''
+  invitacionCreada.value = ''
+  const contenido = {
+    correo: borrador.value.correo.trim(),
+    nombreMostrar: borrador.value.nombre.trim(),
+    nombreTienda: borrador.value.nombreTienda.trim(),
+    descripcion: borrador.value.descripcion.trim(),
+    sectorId: borrador.value.sectorId,
+    tipoEmprendimientoId: borrador.value.tipoEmprendimientoId,
+    mostrarPrecios: true,
+    historialVentasActivo: false,
+    formaContacto: 'formulario',
+  }
+  const firma = JSON.stringify(contenido)
+  if (!operacionPendiente.value || operacionPendiente.value.solicitud !== firma) {
+    operacionPendiente.value = { id: crypto.randomUUID(), solicitud: firma }
+  }
+  enviando.value = true
+  try {
+    const resultado = await $amancay.llamar('invitarEmprendedora', {
+      ...contenido,
+      operacionId: operacionPendiente.value.id,
+    })
+    invitacionCreada.value = String(resultado.invitacionId ?? '')
+    formularioAbierto.value = false
+    aviso.value = invitacionCreada.value
+      ? `Invitación registrada en Firebase. Código para compartir manualmente: ${invitacionCreada.value}. El sistema aún no envía correo.`
+      : 'Invitación registrada en Firebase.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 12000)
+    await cargarSeccion()
+  } catch (error) {
+    errorOperacion.value = mensajeError(error)
+  } finally {
+    enviando.value = false
+  }
+}
+
+async function copiarInvitacion() {
+  if (!invitacionCreada.value) return
+  try {
+    await navigator.clipboard.writeText(invitacionCreada.value)
+    aviso.value = 'Código de invitación copiado.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 3500)
+  } catch {
+    aviso.value = `Código de invitación: ${invitacionCreada.value}`
+  }
+}
+
+async function cancelarInvitacion(item: Item) {
+  if (!item.invitacionId || config.firebaseModo !== 'real-api') return
+  if (!window.confirm(`¿Cancelar la invitación pendiente para ${item.titulo}?`)) return
+  errorDatos.value = ''
+  try {
+    await $amancay.llamar('cancelarInvitacion', { invitacionId: item.invitacionId })
+    aviso.value = 'Invitación cancelada en Firebase.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 3500)
+    await cargarSeccion()
+  } catch (error) {
+    errorDatos.value = mensajeError(error)
+  }
 }
 
 </script>
@@ -374,27 +456,32 @@ function guardarVistaPrevia() {
           <div class="formulario-encabezado">
             <div>
               <h2 id="titulo-formulario">{{ seccion.accion }}</h2>
-              <p>Vista previa: estos datos todavía no se guardan ni se envían.</p>
+              <p>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. El sistema no envía correo: tendrás que compartir el código con la destinataria.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
             </div>
             <button class="editar" type="button" @click="cerrarFormulario">Cancelar</button>
           </div>
-          <form class="campos-formulario" @submit.prevent="guardarVistaPrevia">
+          <form class="campos-formulario" @submit.prevent="guardarFormulario">
             <template v-if="seccion.id === 'emprendedoras'">
               <label>Nombre de la emprendedora<input v-model="borrador.nombre" required autocomplete="name" /></label>
               <label>Correo electrónico<input v-model="borrador.correo" type="email" required autocomplete="email" /></label>
               <label>Nombre de la tienda<input v-model="borrador.nombreTienda" required /></label>
               <label>Descripción<textarea v-model="borrador.descripcion" rows="3" /></label>
               <label>Sector
-                <select v-model="borrador.sectorId">
+                <select v-model="borrador.sectorId" required>
                   <option value="">Seleccionar sector</option>
                   <option v-for="opcion in datos.catalogos.sectores" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
               </label>
               <label>Tipo de emprendimiento
-                <select v-model="borrador.tipoEmprendimientoId">
+                <select v-model="borrador.tipoEmprendimientoId" required>
                   <option value="">Seleccionar tipo</option>
                   <option v-for="opcion in datos.catalogos.tiposEmprendimiento" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
+              </label>
+              <label class="opcion"><input type="checkbox" checked disabled /> Mostrar precios en el catálogo</label>
+              <label class="opcion"><input type="checkbox" disabled /> Activar historial de ventas</label>
+              <label>Forma de contacto
+                <select disabled><option>Formulario de contacto</option></select>
               </label>
             </template>
             <template v-else-if="seccion.id === 'administradores'">
@@ -425,10 +512,16 @@ function guardarVistaPrevia() {
               <label>Valor<input v-model="borrador.valor" required /></label>
             </template>
             <div class="acciones-formulario">
-              <button class="boton boton-primario" type="submit">Guardar (vista previa)</button>
+              <button class="boton boton-primario" type="submit" :disabled="enviando">{{ enviando ? 'Enviando…' : seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'Crear invitación real' : 'Guardar (vista previa)' }}</button>
               <button class="editar" type="button" @click="cerrarFormulario">Cerrar</button>
             </div>
+            <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
           </form>
+        </section>
+        <section v-if="invitacionCreada" class="aviso-carga" aria-live="polite">
+          Invitación creada. Comparte manualmente este código con la destinataria: <code>{{ invitacionCreada }}</code>
+          <button class="editar" type="button" @click="copiarInvitacion">Copiar código</button>
+          El envío automático de correo aún no está configurado.
         </section>
 
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
@@ -463,7 +556,11 @@ function guardarVistaPrevia() {
               <small>{{ item.detalle }}</small>
             </div>
             <span class="etiqueta" :class="tono(item.estado)">{{ item.estado }}</span>
-            <button class="editar" type="button" disabled title="Operación pendiente de API">Editar</button>
+            <button
+              v-if="item.invitacionId && item.estado === 'pendiente' && config.firebaseModo === 'real-api'"
+              class="editar" type="button" @click="cancelarInvitacion(item)"
+            >Cancelar invitación</button>
+            <button v-else class="editar" type="button" disabled title="Operación pendiente de API">Editar</button>
           </li>
         </ul>
         <div v-else-if="!cargandoDatos && !cargandoCatalogos && !errorDatos" class="vacio">

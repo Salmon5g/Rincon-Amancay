@@ -1,6 +1,6 @@
 # Web
 
-Una sola aplicación Nuxt 4 + Vue + TypeScript para todos los perfiles. La ruta /admin incluye acceso por correo, comprobación de rol y lecturas de Firestore. Las altas, invitaciones, publicaciones y cambios de stock aún no se ejecutan desde esta interfaz.
+Una sola aplicación Nuxt 4 + Vue + TypeScript para todos los perfiles. La ruta /admin incluye acceso, comprobación de rol, lecturas reales y una acción de invitación/cancelación que puede usar la API autenticada. Las demás secciones y operaciones todavía no están conectadas.
 
 ## Ejecutar
 
@@ -10,10 +10,11 @@ El único plugin activo es app/plugins/firebase.client.ts. No copiar plugins adi
 
 - local (predeterminado): demo-rincon-amancay y emuladores. Seguir [arranque local](../docs/arranque-equipos.md). El cliente local conserva las operaciones compartidas para futuros componentes.
 - real-lectura: rincon-amancay, Authentication y lecturas Firestore desde servidor. Seguir [conexión real del administrador](../docs/admin-firestore-real.md). No requiere URL de API; no expone operaciones de negocio ni subida de imágenes.
+- real-api: Firebase real más API autenticada. Para una demo local contra datos reales, seguir [API local con Firebase real](../docs/admin-firebase-real-api-local.md). Para servicio compartido, configurar la URL HTTPS de Cloud Run.
 
 .env está excluido de Git. Copiar .env.example solo si no existe y completar la configuración SDK. runtimeConfig en nuxt.config.ts declara las variables públicas. No incluir claves privadas Admin. La configuración de Storage no crea un bucket y este modo no lo utiliza.
 
-El adaptador cliente-compartido.ts y su ejemplo siguen reservados para la API HTTPS completa, aún pendiente. No sustituir su URL por una dirección ficticia. El plugin de solo lectura no los utiliza.
+El modo real-api usa `cliente-compartido.ts`; en Nuxt dev admite HTTP solo para localhost. En producción la URL debe ser HTTPS. No configurar una URL ficticia.
 
 ## Comprobaciones
 

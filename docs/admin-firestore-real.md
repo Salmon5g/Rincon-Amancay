@@ -1,5 +1,7 @@
 # Administración: conexión real de lectura
 
+Para ejecutar operaciones reales de backend en una demo local, usar [API local contra Firebase real](admin-firebase-real-api-local.md); este documento cubre solo login y lecturas.
+
 Actualizado el 12 de octubre de 2026. Este modo permite probar Authentication y Firestore sin API desplegada. No habilita operaciones de negocio ni imágenes.
 
 ## Estado verificado en consola
