@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { onAuthStateChanged } from 'firebase/auth'
+import { esAdministrador, type SeccionLectura } from '~/lib/admin-lecturas'
 import { listarCatalogos } from '~/repositories/admin'
 import type { DatosAdmin, ElementoCatalogo } from '~/types/admin'
 
@@ -27,33 +29,21 @@ type Seccion = {
   aviso?: string
 }
 
-const vacio: DatosAdmin = {
+const datosVacios: DatosAdmin = {
   accesos: [],
   emprendedoras: [],
   invitaciones: [],
   catalogos: { sectores: [], categorias: [], tiposEmprendimiento: [], tiposProducto: [] },
 }
-
-// Lecturas en el cliente (no SSR). Sin sesión solo hay catálogos públicos;
-// accesos, emprendedoras e invitaciones exigen administradora (ver firestore.rules).
-const { $amancay } = useNuxtApp()
-const cargando = ref(false)
-const errorDatos = ref('')
-const datos = ref<DatosAdmin>(vacio)
+const datos = ref<DatosAdmin>(datosVacios)
+const SIN_MODELO = 'Sección en preparación. Este formulario es una vista previa y todavía no guarda datos.'
 const formularioAbierto = ref(false)
+const aviso = ref('')
+let temporizador: ReturnType<typeof setTimeout>
 const borrador = ref({
-  nombre: '',
-  correo: '',
-  nombreTienda: '',
-  descripcion: '',
-  sectorId: '',
-  tipoEmprendimientoId: '',
-  ubicacion: '',
-  fechaInicio: '',
-  fechaFin: '',
-  tipoCatalogo: 'sectores',
-  valor: '',
-  clave: '',
+  nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
+  tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
+  tipoCatalogo: 'sectores', valor: '', clave: '',
 })
 const tiposCatalogo = [
   { id: 'sectores', nombre: 'Sectores' },
@@ -62,116 +52,162 @@ const tiposCatalogo = [
   { id: 'tiposProducto', nombre: 'Tipos de producto' },
 ]
 
-const SIN_MODELO = 'Sección en preparación. El formulario de muestra todavía no guarda datos.'
-
 function activos(lista: ElementoCatalogo[]) {
   return lista.filter((valor) => valor.activo)
 }
 
-const secciones = computed<Seccion[]>(() => {
-  function grupo(titulo: string, lista: ElementoCatalogo[]): Item {
-    const vigentes = activos(lista)
-    return {
-      titulo,
-      detalle: vigentes.map((valor) => valor.nombre).join(', ') || 'Sin valores',
-      estado: `${vigentes.length} valores`,
-    }
-  }
-
-  return [
-    {
-      id: 'emprendedoras',
-      icono: '👩‍🎨',
-      titulo: 'Emprendedoras',
-      descripcion: 'Invitaciones, desactivación y reactivación de cuentas.',
-      accion: '+ Invitar emprendedora',
-      items: [],
-    },
-    {
-      id: 'asociaciones',
-      icono: '🤝',
-      titulo: 'Asociaciones',
-      descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.',
-      accion: '+ Crear asociación',
-      items: [],
-      aviso: SIN_MODELO,
-    },
-    {
-      id: 'ferias',
-      icono: '🎪',
-      titulo: 'Ferias y eventos',
-      descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.',
-      accion: '+ Crear feria',
-      items: [],
-      aviso: SIN_MODELO,
-    },
-    {
-      id: 'catalogos',
-      icono: '🗂️',
-      titulo: 'Catálogos',
-      descripcion: 'Tipos de producto, categorías, tipos de emprendimiento y sectores.',
-      accion: '+ Agregar valor',
-      items: [
-        grupo('Tipos de producto', datos.value.catalogos.tiposProducto),
-        grupo('Categorías', datos.value.catalogos.categorias),
-        grupo('Tipos de emprendimiento', datos.value.catalogos.tiposEmprendimiento),
-        grupo('Sectores', datos.value.catalogos.sectores),
-      ],
-    },
-    {
-      id: 'configuracion',
-      icono: '⚙️',
-      titulo: 'Configuración general',
-      descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.',
-      accion: 'Guardar cambios',
-      items: [],
-      aviso: SIN_MODELO,
-    },
-    {
-      id: 'administradores',
-      icono: '🛡️',
-      titulo: 'Administradores',
-      descripcion: 'Cuentas con rol administrador de la plataforma.',
-      accion: '+ Agregar administrador',
-      items: [],
-    },
-  ]
-})
-
-function mensajeError(error: unknown, alterno: string) {
-  const e = error as { code?: string; message?: string }
-  if (e?.code === 'permission-denied') return 'Sin permiso para leer estos datos.'
-  if (e?.code === 'unavailable') return 'No hay conexión con los emuladores.'
-  return e?.message || alterno
-}
-
-async function cargarDatos() {
-  cargando.value = true
-  errorDatos.value = ''
-  try {
-    const catalogos = await listarCatalogos($amancay as never)
-    datos.value = { ...vacio, catalogos }
-  } catch (error) {
-    errorDatos.value = mensajeError(error, 'No se pudieron cargar los catálogos.')
-  } finally {
-    cargando.value = false
+function grupoCatalogo(titulo: string, lista: ElementoCatalogo[]): Item {
+  const vigentes = activos(lista)
+  return {
+    titulo,
+    detalle: vigentes.map((valor) => valor.nombre).join(', ') || 'Sin valores',
+    estado: `${vigentes.length} valores`,
   }
 }
 
-onMounted(cargarDatos)
+const secciones = ref<Seccion[]>([
+  { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
+  { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear asociación', items: [], aviso: SIN_MODELO },
+  { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear feria', items: [], aviso: SIN_MODELO },
+  { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Tipos de producto, categorías, tipos de emprendimiento y sectores.', accion: '+ Agregar valor', items: [] },
+  { id: 'configuracion', icono: '⚙️', titulo: 'Configuración general', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: 'Guardar cambios', items: [], aviso: SIN_MODELO },
+  { id: 'administradores', icono: '🛡️', titulo: 'Administradores', descripcion: 'Cuentas con rol administrador de la plataforma.', accion: '+ Agregar administrador', items: [] },
+])
 
 const activa = ref('inicio')
 const busqueda = ref('')
 const filtro = ref('Todos')
 const seccion = computed(() => secciones.value.find((s) => s.id === activa.value) ?? null)
 const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long' }).toUpperCase()
-const aviso = ref('')
-let temporizador: ReturnType<typeof setTimeout>
+const { $amancay } = useNuxtApp()
+const config = useRuntimeConfig().public
+const entorno = config.firebaseModo === 'real-lectura' ? 'Firebase real · solo lectura' : 'Emuladores locales'
+const cargandoSesion = ref(true)
+const autorizado = ref(false)
+const sesion = ref('')
+const correo = ref('')
+const clave = ref('')
+const enviando = ref(false)
+const errorSesion = ref('')
+const errorDatos = ref('')
+const cargandoDatos = ref(false)
+const cargandoCatalogos = ref(false)
+const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'catalogos'].includes(activa.value))
+let revisionSesion = 0
+let revisionDatos = 0
+let desconectar: (() => void) | undefined
+
+function mensajeError(error: unknown) {
+  const codigo = (error as { code?: string })?.code
+  if (codigo === 'permission-denied') return 'Firestore rechazó la lectura. Revisar las reglas publicadas y los permisos de esta cuenta.'
+  if (codigo === 'auth/operation-not-allowed') return 'Habilitar correo y contraseña en Firebase Authentication.'
+  if (codigo === 'auth/invalid-credential' || codigo === 'auth/user-not-found' || codigo === 'auth/wrong-password') return 'No se pudo iniciar sesión. Revisa el correo y la contraseña.'
+  if (codigo === 'auth/network-request-failed' || codigo === 'unavailable') return 'No se pudo contactar con Firebase. Revisa la conexión y el entorno seleccionado.'
+  if (codigo === 'auth/too-many-requests') return 'Demasiados intentos. Espera antes de volver a intentarlo.'
+  return 'No se pudo completar la consulta. Revisa la configuración de Firebase y vuelve a intentarlo.'
+}
+
+function limpiarListados() {
+  revisionDatos++
+  for (const s of secciones.value) s.items = []
+  errorDatos.value = ''
+  cargandoDatos.value = false
+}
+
+async function cargarDatosCatalogos() {
+  cargandoCatalogos.value = true
+  errorDatos.value = ''
+  try {
+    const catalogos = await listarCatalogos($amancay as never)
+    datos.value = { ...datosVacios, catalogos }
+    const agrupados = [
+      grupoCatalogo('Tipos de producto', catalogos.tiposProducto),
+      grupoCatalogo('Categorías', catalogos.categorias),
+      grupoCatalogo('Tipos de emprendimiento', catalogos.tiposEmprendimiento),
+      grupoCatalogo('Sectores', catalogos.sectores),
+    ]
+    const seccionCatalogos = secciones.value.find((seccionActual) => seccionActual.id === 'catalogos')
+    if (seccionCatalogos) seccionCatalogos.items = agrupados
+  } catch (error) {
+    errorDatos.value = mensajeError(error)
+  } finally {
+    cargandoCatalogos.value = false
+  }
+}
+
+async function comprobarSesion() {
+  const revision = ++revisionSesion
+  autorizado.value = false
+  cargandoSesion.value = true
+  errorSesion.value = ''
+  limpiarListados()
+  sesion.value = $amancay.firebase.auth.currentUser?.email ?? ''
+  try {
+    const acceso = await $amancay.consultarAcceso()
+    if (revision !== revisionSesion) return
+    autorizado.value = esAdministrador(acceso)
+    if (sesion.value && !autorizado.value) errorSesion.value = 'La cuenta no tiene un documento de acceso con estado activo y rol administrador.'
+    if (autorizado.value) await cargarSeccion()
+  } catch (error) {
+    if (revision === revisionSesion) errorSesion.value = mensajeError(error)
+  } finally {
+    if (revision === revisionSesion) cargandoSesion.value = false
+  }
+}
+
+async function ingresar() {
+  enviando.value = true
+  errorSesion.value = ''
+  try {
+    await $amancay.iniciarSesion(correo.value.trim(), clave.value)
+    // onAuthStateChanged comprueba el rol después de autenticar.
+  } catch (error) {
+    errorSesion.value = mensajeError(error)
+  } finally {
+    clave.value = ''
+    enviando.value = false
+  }
+}
+
+async function salir() {
+  try { await $amancay.cerrarSesion() }
+  catch (error) { errorSesion.value = mensajeError(error); return }
+  autorizado.value = false
+  limpiarListados()
+  correo.value = ''; clave.value = ''; activa.value = 'inicio'
+}
+
+async function cargarSeccion() {
+  const revision = ++revisionDatos
+  errorDatos.value = ''
+  cargandoDatos.value = false
+  if (!autorizado.value || !lecturaDisponible.value) return
+  const destino = seccion.value
+  if (!destino) return
+  if (destino.id === 'catalogos') {
+    await cargarDatosCatalogos()
+    return
+  }
+  destino.items = []
+  cargandoDatos.value = true
+  try {
+    const filas = await $amancay.listarAdministracion(destino.id as SeccionLectura)
+    if (revision === revisionDatos && autorizado.value) destino.items = filas
+  } catch (error) {
+    if (revision === revisionDatos) errorDatos.value = mensajeError(error)
+  } finally {
+    if (revision === revisionDatos) cargandoDatos.value = false
+  }
+}
+
+onMounted(() => {
+  void cargarDatosCatalogos()
+  desconectar = onAuthStateChanged($amancay.firebase.auth, () => { void comprobarSesion() })
+})
+onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.() })
 
 const resumen = computed(() =>
-  secciones.value
-    .filter((s) => s.items.length > 0)
-    .map((s) => ({ id: s.id, icono: s.icono, titulo: s.titulo, total: s.items.length })),
+  secciones.value.slice(0, 4).map((s) => ({ id: s.id, icono: s.icono, titulo: s.titulo, total: s.items.length })),
 )
 
 const estados = computed(() => ['Todos', ...new Set(seccion.value?.items.map((i) => i.estado) ?? [])])
@@ -196,28 +232,20 @@ function iniciales(t: string) {
   return t.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()
 }
 
-function ir(id: string) {
+async function ir(id: string) {
   activa.value = id
   formularioAbierto.value = false
   busqueda.value = ''
   filtro.value = 'Todos'
   window.scrollTo({ top: 0, behavior: 'smooth' })
+  await cargarSeccion()
 }
 
 function abrirFormulario() {
   borrador.value = {
-    nombre: '',
-    correo: '',
-    nombreTienda: '',
-    descripcion: '',
-    sectorId: '',
-    tipoEmprendimientoId: '',
-    ubicacion: '',
-    fechaInicio: '',
-    fechaFin: '',
-    tipoCatalogo: 'sectores',
-    valor: '',
-    clave: '',
+    nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
+    tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
+    tipoCatalogo: 'sectores', valor: '', clave: '',
   }
   formularioAbierto.value = true
 }
@@ -233,15 +261,29 @@ function guardarVistaPrevia() {
   temporizador = setTimeout(() => (aviso.value = ''), 3500)
 }
 
-function proximamente() {
-  aviso.value = 'Esta acción estará disponible en la versión final.'
-  clearTimeout(temporizador)
-  temporizador = setTimeout(() => (aviso.value = ''), 2500)
-}
 </script>
 
 <template>
-  <div class="admin">
+  <section v-if="!autorizado" class="acceso-admin">
+    <img src="/logo-amancay.png" alt="Rincón Amancay" width="72" />
+    <h1>Ingresar a administración</h1>
+    <p>{{ entorno }}</p>
+    <p v-if="cargandoSesion">Comprobando sesión…</p>
+    <form v-else-if="!sesion" @submit.prevent="ingresar">
+      <label for="correo-admin">Correo</label>
+      <input id="correo-admin" v-model="correo" type="email" autocomplete="username" required />
+      <label for="clave-admin">Contraseña</label>
+      <input id="clave-admin" v-model="clave" type="password" autocomplete="current-password" required />
+      <button class="boton" :disabled="enviando">{{ enviando ? 'Ingresando…' : 'Ingresar' }}</button>
+    </form>
+    <template v-else>
+      <p>Sesión: {{ sesion }}. No se ha confirmado un acceso de administrador activo.</p>
+      <button class="boton" @click="comprobarSesion">Volver a comprobar permisos</button>
+      <button class="boton" @click="salir">Cerrar sesión</button>
+    </template>
+    <p v-if="errorSesion" role="alert">{{ errorSesion }}</p>
+  </section>
+  <div v-else class="admin">
     <aside class="lateral">
       <div class="marca">
         <img class="marca-icono" src="/logo-amancay.png" alt="Rincón Amancay" />
@@ -265,14 +307,13 @@ function proximamente() {
       </nav>
       <div class="pie">
         <img class="pie-avatar" src="/logo-amancay.png" alt="" />
-        <span><b>Equipo Amancay</b><small>Modo administrador</small></span>
+        <span><b>{{ sesion }}</b><small>{{ entorno }}</small></span>
       </div>
     </aside>
 
     <main class="contenido">
-      <p v-if="errorDatos" class="aviso-error" role="alert">{{ errorDatos }}</p>
-      <p v-else-if="cargando" class="aviso-carga" role="status">Cargando datos…</p>
-
+      <div class="estado-conexion"><span>{{ entorno }} · {{ sesion }}</span><button class="editar" @click="salir">Cerrar sesión</button></div>
+      <p v-if="errorSesion" role="alert">{{ errorSesion }}</p>
       <template v-if="!seccion">
         <header class="encabezado">
           <p class="sobretitulo">Hola, equipo Amancay</p>
@@ -292,6 +333,7 @@ function proximamente() {
           <div class="destacada-arte" aria-hidden="true"><img src="/logo-amancay.png" alt="" /></div>
         </section>
 
+        <p>Los contadores muestran registros cargados en esta sesión, no totales globales.</p>
         <section class="resumen" aria-label="Resumen">
           <button v-for="r in resumen" :key="r.id" type="button" class="dato" @click="ir(r.id)">
             <span class="dato-num">{{ r.total }}</span>
@@ -389,6 +431,11 @@ function proximamente() {
           </form>
         </section>
 
+        <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
+        <p v-else>Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
+        <button v-if="lecturaDisponible" class="editar" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
+        <p v-if="cargandoDatos || cargandoCatalogos" role="status">Leyendo Firestore…</p>
+        <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
         <div class="herramientas">
           <label class="buscar">
             <span aria-hidden="true">🔎</span>
@@ -408,7 +455,7 @@ function proximamente() {
           </div>
         </div>
 
-        <ul v-if="visibles.length" class="lista">
+        <ul v-if="!cargandoDatos && !cargandoCatalogos && !errorDatos && visibles.length" class="lista">
           <li v-for="item in visibles" :key="item.titulo" class="fila">
             <span class="avatar" aria-hidden="true">{{ iniciales(item.titulo) }}</span>
             <div class="fila-texto">
@@ -416,12 +463,12 @@ function proximamente() {
               <small>{{ item.detalle }}</small>
             </div>
             <span class="etiqueta" :class="tono(item.estado)">{{ item.estado }}</span>
-            <button class="editar" type="button" @click="proximamente">Editar</button>
+            <button class="editar" type="button" disabled title="Operación pendiente de API">Editar</button>
           </li>
         </ul>
-        <div v-else class="vacio">
+        <div v-else-if="!cargandoDatos && !cargandoCatalogos && !errorDatos" class="vacio">
           <span aria-hidden="true">{{ seccion.aviso ? '🔒' : '🌼' }}</span>
-          <p>{{ seccion.aviso || 'No encontramos resultados.' }}</p>
+          <p>{{ seccion.aviso || 'No hay registros para mostrar con estos filtros.' }}</p>
           <button v-if="!seccion.aviso" class="editar" type="button" @click="(busqueda = ''), (filtro = 'Todos')">
             Limpiar filtros
           </button>
@@ -434,6 +481,12 @@ function proximamente() {
 </template>
 
 <style scoped>
+.acceso-admin { max-width: 420px; margin: 3rem auto; padding: 1.5rem; font-family: system-ui; color: #3a1228; }
+.acceso-admin form { display: grid; gap: .8rem; }
+.acceso-admin input { font: inherit; padding: .8rem; border: 1px solid #89727d; border-radius: 8px; }
+.estado-conexion { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+
 .admin {
   --vino: #75264f;
   --vino-oscuro: #5a1c3c;
@@ -630,7 +683,7 @@ input:focus-visible {
   border-radius: 16px;
 }
 
-.pie span {
+.pie span:last-child {
   display: flex;
   flex-direction: column;
   font-size: 0.85rem;
@@ -685,6 +738,98 @@ input:focus-visible {
 
 .fila-encabezado .sub {
   margin-bottom: 0;
+}
+
+.formulario {
+  margin: 0 0 1.4rem;
+  padding: 1.4rem;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1.5px solid var(--borde);
+  border-radius: 22px;
+  box-shadow: var(--sombra);
+}
+
+.formulario-encabezado {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.formulario-encabezado h2 {
+  margin: 0;
+  color: var(--vino);
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 400;
+}
+
+.formulario-encabezado p {
+  margin: 0.35rem 0 0;
+  color: var(--suave);
+  font-size: 0.86rem;
+}
+
+.campos-formulario {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.campos-formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--tinta);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.campos-formulario input,
+.campos-formulario select,
+.campos-formulario textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.8rem;
+  box-sizing: border-box;
+  color: var(--tinta);
+  background: #fff;
+  border: 1.5px solid var(--borde);
+  border-radius: 12px;
+  font: inherit;
+}
+
+.campos-formulario textarea {
+  resize: vertical;
+}
+
+.acciones-formulario {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  padding-top: 0.25rem;
+}
+
+.aviso-error,
+.aviso-carga {
+  margin: 0 0 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.aviso-error {
+  background: var(--rosado, #f7e9e8);
+  color: #b23b3c;
+}
+
+.aviso-carga {
+  background: var(--crema-2, #fdf1d4);
+  color: #8a5a00;
 }
 
 .sobretitulo {
@@ -780,79 +925,6 @@ h1 {
 
 .boton-ambar:hover {
   background: #f9cd75;
-}
-
-.formulario {
-  margin: 0 0 1.4rem;
-  padding: 1.4rem;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1.5px solid var(--borde);
-  border-radius: 22px;
-  box-shadow: var(--sombra);
-}
-
-.formulario-encabezado {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.formulario-encabezado h2 {
-  margin: 0;
-  color: var(--vino);
-  font-family: 'DM Serif Display', Georgia, serif;
-  font-size: 1.35rem;
-  font-weight: 400;
-}
-
-.formulario-encabezado p {
-  margin: 0.35rem 0 0;
-  color: var(--suave);
-  font-size: 0.86rem;
-}
-
-.campos-formulario {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.campos-formulario label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  color: var(--tinta);
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.campos-formulario input,
-.campos-formulario select,
-.campos-formulario textarea {
-  width: 100%;
-  min-height: 44px;
-  padding: 0.65rem 0.8rem;
-  box-sizing: border-box;
-  color: var(--tinta);
-  background: #fff;
-  border: 1.5px solid var(--borde);
-  border-radius: 12px;
-  font: inherit;
-}
-
-.campos-formulario textarea {
-  resize: vertical;
-}
-
-.acciones-formulario {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  grid-column: 1 / -1;
-  padding-top: 0.25rem;
 }
 
 /* Hero */
@@ -1259,25 +1331,6 @@ h1 {
   transform: translate(-50%, 0);
 }
 
-.aviso-error,
-.aviso-carga {
-  margin: 0 0 1rem;
-  padding: 0.7rem 1rem;
-  border-radius: 14px;
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.aviso-error {
-  background: var(--rosado, #f7e9e8);
-  color: #b23b3c;
-}
-
-.aviso-carga {
-  background: var(--crema-2, #fdf1d4);
-  color: #8a5a00;
-}
-
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
@@ -1285,6 +1338,10 @@ h1 {
 }
 
 @media (max-width: 860px) {
+  .campos-formulario {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .admin {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1300,10 +1357,6 @@ h1 {
     border-right: 0;
     border-bottom: 1.5px solid var(--borde);
     padding: 0.9rem 1rem 0.6rem;
-  }
-
-  .campos-formulario {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .marca {
