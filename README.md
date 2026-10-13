@@ -1,6 +1,6 @@
 # Rincón Amancay — base compartida de desarrollo
 
-Base compartida para web administrador, web comprador y app comprador. Incluye una web Nuxt con módulo administrador, API autenticada, ciclo de cuentas, productos, stock con historial, publicación e imágenes procesadas, reglas y pruebas para emuladores. **Empezar por [arranque por equipo](docs/arranque-equipos.md)**. La API puede ejecutarse localmente contra Firebase real para la demo de invitaciones; Cloud Run y la web pública aún no están desplegados. Android y comprador web siguen en desarrollo. Estado técnico y verificaciones en [verificación de la base](docs/verificacion-base.md).
+Base compartida para web administrador, web comprador y app comprador. Incluye una web Nuxt con módulo administrador, API autenticada, ciclo de cuentas, productos, stock con historial, publicación e imágenes procesadas, reglas y pruebas para emuladores. **Empezar por [arranque por equipo](docs/arranque-equipos.md)**. La API puede ejecutarse localmente contra Firebase real para probar invitaciones y el ciclo de cuentas; Cloud Run y la web pública aún no están desplegados. Android y comprador web siguen en desarrollo. Estado técnico y verificaciones en [verificación de la base](docs/verificacion-base.md).
 
 ## Abrir en Visual Studio Code
 

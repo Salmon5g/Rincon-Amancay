@@ -37,9 +37,13 @@ En otra terminal, ejecutar `npm.cmd --prefix web run dev`, abrir `http://localho
 
 ## Operaciones reales disponibles en esta integración
 
-El formulario **Emprendedoras → Invitar emprendedora** registra una invitación real en `invitaciones/{id}`. Los sectores y tipos elegidos deben existir y estar activos. La API devuelve un código para compartir manualmente; el backend todavía no manda correos. Reintentar sin cambiar el formulario conserva el `operacionId` y no duplica la invitación.
+En **Emprendedoras**, el modo `real-api` permite crear y cancelar invitaciones, además de desactivar y reactivar cuentas existentes. Las invitaciones se guardan en `invitaciones/{id}`; el backend devuelve un código para compartir manualmente y todavía no manda correos. Los sectores y tipos seleccionados deben existir y estar activos. Las operaciones de cuenta requieren motivo, versión vigente del acceso y una identidad emprendedora vinculada a su tienda. Al desactivar, se oculta la tienda, se bloquea el acceso y se deshabilita Authentication. Al reactivar, la tienda sigue oculta y la emprendedora debe iniciar sesión y publicarla de nuevo. Si la conexión se interrumpe, reintentar con la misma solicitud conserva el `operacionId`.
 
-Las otras secciones del panel aún muestran vistas previas o lecturas. No están habilitadas para escribir asociaciones, ferias, catálogos ni administradores. La edición del panel todavía no cubre las otras operaciones de catálogo, productos, stock e imágenes que existen en la API. Antes de una demo con clientes, confirmar en la interfaz qué se puede hacer realmente y no presentar esos formularios como persistentes.
+Administradores y catálogos siguen disponibles como lectura. Asociaciones, ferias y configuración no tienen un contrato de datos acordado ni operaciones de servidor; sus formularios son demostrativos. La web aún no integra operaciones de catálogo, productos, stock e imágenes destinadas a la emprendedora. La asignación del rol administrador se hace mediante un proceso privilegiado, no desde el panel.
+
+## Uso desde otro computador
+
+La API local escucha solo en `127.0.0.1`. Por eso, `http://localhost:8080` solo funciona desde el mismo computador donde corre la API; nunca reemplazarlo por una IP de red ni exponer ese puerto. Para una prueba local, cada computador debe iniciar su propia API con identidad ADC autorizada en el proyecto. Para compartir un único backend entre el equipo, desplegar el servicio en Cloud Run y usar su URL HTTPS, con facturación y permisos de servicio revisados.
 
 ## Datos reales y cuidado operativo
 

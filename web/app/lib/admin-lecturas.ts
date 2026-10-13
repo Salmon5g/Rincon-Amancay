@@ -1,12 +1,36 @@
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, doc, getDocFromServer, getDocsFromServer, limit, query, where } from 'firebase/firestore';
 import type { ServiciosCliente } from './cliente-base';
+import type { Timestamp } from 'firebase/firestore';
 
-export type FilaAdmin = { titulo: string; detalle: string; estado: string; invitacionId?: string };
+export type FilaAdmin = {
+  titulo: string;
+  detalle: string;
+  estado: string;
+  invitacionId?: string;
+  uidDestino?: string;
+  tiendaId?: string;
+  versionEsperada?: string;
+};
 export type SeccionLectura = 'administradores' | 'emprendedoras' | 'catalogos';
 
 export function esAdministrador(acceso: { estado?: unknown; roles?: unknown } | null): boolean {
   return acceso?.estado === 'activo' && Array.isArray(acceso.roles) && acceso.roles.includes('administrador');
+}
+
+export function filaEmprendedora(uid: string, acceso: Record<string, unknown>): FilaAdmin {
+  const actualizado = acceso.actualizadoEn as Timestamp | undefined;
+  const versionEsperada = actualizado && typeof actualizado.seconds === 'number' && typeof actualizado.nanoseconds === 'number'
+    ? `${actualizado.seconds}:${actualizado.nanoseconds}`
+    : undefined;
+  return {
+    titulo: uid,
+    detalle: `Tienda: ${String(acceso.tiendaId ?? 'sin asignar')}`,
+    estado: String(acceso.estado ?? 'desconocido'),
+    uidDestino: uid,
+    ...(typeof acceso.tiendaId === 'string' ? { tiendaId: acceso.tiendaId } : {}),
+    ...(versionEsperada ? { versionEsperada } : {}),
+  };
 }
 
 export function crearLecturasAdmin(firebase: ServiciosCliente) {
@@ -30,13 +54,14 @@ export function crearLecturasAdmin(firebase: ServiciosCliente) {
         return resultado.docs.map(d => ({ titulo: d.id, detalle: 'Identificador de cuenta administradora', estado: String(d.data().estado ?? '') }));
       }
       if (seccion === 'emprendedoras') {
-        const [resultado, invitaciones] = await Promise.all([
-          getDocsFromServer(query(collection(db, 'emprendedoras'), limit(50))),
+        const [accesos, invitaciones] = await Promise.all([
+          getDocsFromServer(query(collection(db, 'accesos'), where('roles', 'array-contains', 'emprendedora'), limit(50))),
           getDocsFromServer(query(collection(db, 'invitaciones'), limit(50))),
         ]);
-        // Las reglas no permiten al administrador consultar perfiles privados arbitrarios.
+        // El acceso contiene la versión necesaria para que la API rechace acciones
+        // obsoletas; nunca se aceptan UID, estado o versión desde el formulario.
         return [
-          ...resultado.docs.map(d => ({ titulo: d.id, detalle: `Tienda: ${String(d.data().tiendaId ?? '')}`, estado: 'Registrada' })),
+          ...accesos.docs.map(d => filaEmprendedora(d.id, d.data())),
           ...invitaciones.docs.map(d => ({
             titulo: String(d.data().correo ?? 'Invitación'),
             detalle: `Tienda: ${String(d.data().alta?.nombreTienda ?? '')} · Código: ${d.id}`,

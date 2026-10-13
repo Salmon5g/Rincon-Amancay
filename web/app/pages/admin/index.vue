@@ -18,7 +18,16 @@ useHead({
   ],
 })
 
-type Item = { titulo: string; detalle: string; estado: string; invitacionId?: string }
+type Item = {
+  titulo: string
+  detalle: string
+  estado: string
+  invitacionId?: string
+  uidDestino?: string
+  tiendaId?: string
+  versionEsperada?: string
+}
+type AccionCuentaAdmin = 'desactivarEmprendedora' | 'reactivarEmprendedora'
 type Seccion = {
   id: string
   icono: string
@@ -95,6 +104,14 @@ const errorDatos = ref('')
 const errorOperacion = ref('')
 const operacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
 const invitacionCreada = ref('')
+const cuentaPendiente = ref<{
+  item: Item
+  accion: AccionCuentaAdmin
+  motivo: string
+  operacionId: string
+  firma: string
+  reintentoObligatorio: boolean
+} | null>(null)
 const cargandoDatos = ref(false)
 const cargandoCatalogos = ref(false)
 const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'catalogos'].includes(activa.value))
@@ -106,6 +123,8 @@ function mensajeError(error: unknown) {
   const codigo = (error as { code?: string })?.code
   if (codigo === 'datos-invalidos') return 'Completa los campos y selecciona un sector y tipo de emprendimiento activos.'
   if (codigo === 'sin-permiso') return 'La API no reconoce un acceso administrador activo para esta cuenta.'
+  if (codigo === 'conflicto') return 'La cuenta cambió desde que se cargó. Actualiza la lista y revisa su estado antes de continuar.'
+  if (codigo === 'pendiente') return 'La operación quedó pendiente de completar en Authentication. Reintenta sin cambiar el motivo ni cierres el formulario.'
   if (codigo === 'conexion-interrumpida' || (error as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Conservé la solicitud; vuelve a intentar sin cambiar los datos.'
   if (codigo === 'id-reutilizado') return 'La solicitud cambió después de un intento interrumpido. Cierra y vuelve a abrir el formulario para crear una nueva operación.'
   if (codigo === 'permission-denied') return 'Firestore rechazó la lectura. Revisar las reglas publicadas y los permisos de esta cuenta.'
@@ -343,6 +362,56 @@ async function cancelarInvitacion(item: Item) {
   }
 }
 
+function prepararAccionCuenta(item: Item, accion: AccionCuentaAdmin) {
+  if (!item.uidDestino || !item.versionEsperada || config.firebaseModo !== 'real-api') {
+    errorDatos.value = 'Falta la versión actual de la cuenta. Actualiza la lista antes de operar.'
+    return
+  }
+  errorOperacion.value = ''
+  cuentaPendiente.value = { item, accion, motivo: '', operacionId: crypto.randomUUID(), firma: '', reintentoObligatorio: false }
+}
+
+async function confirmarAccionCuenta() {
+  const pendiente = cuentaPendiente.value
+  if (!pendiente || !pendiente.item.uidDestino || !pendiente.item.versionEsperada) return
+  const motivo = pendiente.motivo.trim()
+  if (!motivo) {
+    errorOperacion.value = 'Escribe el motivo para dejar constancia de la operación.'
+    return
+  }
+  const contenido = {
+    uidDestino: pendiente.item.uidDestino,
+    versionEsperada: pendiente.item.versionEsperada,
+    motivo,
+  }
+  const firma = JSON.stringify([pendiente.accion, contenido])
+  if (pendiente.firma && pendiente.firma !== firma) pendiente.operacionId = crypto.randomUUID()
+  pendiente.firma = firma
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    const resultado = await $amancay.llamar(pendiente.accion, {
+      ...contenido,
+      operacionId: pendiente.operacionId,
+    })
+    cuentaPendiente.value = null
+    aviso.value = pendiente.accion === 'desactivarEmprendedora'
+      ? 'Emprendedora desactivada. Su tienda quedó oculta y se cerraron sus sesiones.'
+      : 'Cuenta reactivada. La emprendedora deberá iniciar sesión y publicar su tienda nuevamente.'
+    if (resultado.autenticacion === 'ausente') aviso.value += ' La identidad ya no existía en Authentication.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 7000)
+    await cargarSeccion()
+  } catch (error) {
+    errorOperacion.value = mensajeError(error)
+    if ((error as { resultadoIncierto?: boolean; code?: string })?.resultadoIncierto || (error as { code?: string })?.code === 'pendiente') {
+      pendiente.reintentoObligatorio = true
+    }
+  } finally {
+    enviando.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -524,6 +593,26 @@ async function cancelarInvitacion(item: Item) {
           El envío automático de correo aún no está configurado.
         </section>
 
+        <section v-if="cuentaPendiente" class="formulario" aria-labelledby="titulo-accion-cuenta">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-accion-cuenta">{{ cuentaPendiente.accion === 'desactivarEmprendedora' ? 'Desactivar emprendedora' : 'Reactivar emprendedora' }}</h2>
+              <p>{{ cuentaPendiente.item.titulo }} · Tienda {{ cuentaPendiente.item.tiendaId }}</p>
+            </div>
+            <button class="editar" type="button" :disabled="enviando || cuentaPendiente.reintentoObligatorio" @click="cuentaPendiente = null">Cerrar</button>
+          </div>
+          <form class="campos-formulario" @submit.prevent="confirmarAccionCuenta">
+            <label class="campo-completo">Motivo<textarea v-model="cuentaPendiente.motivo" rows="3" maxlength="500" required :disabled="enviando || cuentaPendiente.reintentoObligatorio" /></label>
+            <p class="campo-completo">La operación se registra en Firebase. {{ cuentaPendiente.accion === 'desactivarEmprendedora' ? 'La cuenta se deshabilitará y su tienda se ocultará.' : 'La cuenta se habilitará, pero la tienda seguirá oculta hasta que la emprendedora la publique.' }}</p>
+            <p v-if="cuentaPendiente.reintentoObligatorio" class="campo-completo" role="status">El servidor no confirmó el resultado o dejó pasos pendientes. Reintenta esta misma solicitud; el motivo queda bloqueado para conservar su identificador.</p>
+            <div class="acciones-formulario">
+              <button class="boton boton-primario" type="submit" :disabled="enviando">{{ enviando ? 'Procesando…' : cuentaPendiente.accion === 'desactivarEmprendedora' ? 'Confirmar desactivación' : 'Confirmar reactivación' }}</button>
+              <button class="editar" type="button" :disabled="enviando || cuentaPendiente.reintentoObligatorio" @click="cuentaPendiente = null">Cancelar</button>
+            </div>
+            <p v-if="errorOperacion" class="campo-completo" role="alert">{{ errorOperacion }}</p>
+          </form>
+        </section>
+
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
         <p v-else>Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
         <button v-if="lecturaDisponible" class="editar" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
@@ -560,7 +649,15 @@ async function cancelarInvitacion(item: Item) {
               v-if="item.invitacionId && item.estado === 'pendiente' && config.firebaseModo === 'real-api'"
               class="editar" type="button" @click="cancelarInvitacion(item)"
             >Cancelar invitación</button>
-            <button v-else class="editar" type="button" disabled title="Operación pendiente de API">Editar</button>
+            <button
+              v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'activo' && config.firebaseModo === 'real-api'"
+              class="editar" type="button" @click="prepararAccionCuenta(item, 'desactivarEmprendedora')"
+            >Desactivar</button>
+            <button
+              v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'desactivado' && config.firebaseModo === 'real-api'"
+              class="editar" type="button" @click="prepararAccionCuenta(item, 'reactivarEmprendedora')"
+            >Reactivar</button>
+            <button v-else class="editar" type="button" disabled :title="item.versionEsperada ? 'Acción no disponible en este entorno o pendiente de integrar' : 'El registro no tiene una versión válida para modificar'">Sin acción</button>
           </li>
         </ul>
         <div v-else-if="!cargandoDatos && !cargandoCatalogos && !errorDatos" class="vacio">
@@ -899,6 +996,10 @@ input:focus-visible {
 
 .campos-formulario textarea {
   resize: vertical;
+}
+
+.campo-completo {
+  grid-column: 1 / -1;
 }
 
 .acciones-formulario {

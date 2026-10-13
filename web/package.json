@@ -9,7 +9,7 @@
     "postinstall": "nuxt prepare",
     "typecheck": "tsc --noEmit",
     "test:local": "node --test --test-concurrency=1 tests/cliente-local.test.mjs tests/cuentas-local.test.mjs",
-    "test:unit": "node --test tests/cliente-compartido.test.mjs",
+    "test:unit": "node --test tests/cliente-compartido.test.mjs tests/admin-filas.test.mjs",
     "check:firebase": "node --env-file=.env scripts/check-firebase.mjs"
   },
   "dependencies": {
