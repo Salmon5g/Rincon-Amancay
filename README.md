@@ -40,13 +40,13 @@ rincon-amancay-estructura/
 
 Hay emuladores, datos ficticios y adaptadores de integración. La documentación de [contratos](contratos/README.md) es el acuerdo común de campos y permisos; los documentos provisionales previos permanecen fuera del repositorio. Los próximos pasos son:
 
-1. Inicializar una sola base Nuxt entre ambos equipos web y el proyecto Gradle del equipo Android, conservando adaptadores, pruebas y contratos.
-2. Integrar catálogo sin sesión, gestión administrativa por invitaciones y manejo de errores según la guía de arranque.
+1. Continuar comprador y administrador sobre la aplicación Nuxt ya inicializada; crear/integrar el proyecto Gradle Android, conservando adaptadores, pruebas y contratos.
+2. Completar el catálogo comprador y las operaciones administrativas según la guía de arranque.
 3. Probar una modificación visible desde web y Android conectados al mismo computador; no requiere terminar las pantallas.
 4. Revisar el modelo tras terreno y coordinar cambios de campos y migraciones con ambos clientes. Los límites actuales están expresos en la guía y contratos.
 5. Para una demo en el computador del responsable, seguir [API local contra Firebase real](docs/admin-firebase-real-api-local.md). Para que cualquier equipo/cliente acceda desde una URL, preparar Cloud Run con permisos IAM, facturación y validación operativa; consultar [entorno compartido](docs/entorno-compartido.md). Recuperación técnica de cuentas disponible en [este procedimiento](docs/recuperacion-cuentas.md); no hay reconciliación automática.
 
-web/ tiene package.json y package-lock.json para la conexión Firebase; no tiene npm run dev todavía. backend/ sí dispone de npm run dev y pruebas automatizadas. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
+web/ tiene package.json, package-lock.json y `npm run dev`. backend/ dispone de pruebas automatizadas y entradas para emuladores o Firebase real local. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 
 Se conserva la configuración Git del clon. Compartir cambios mediante commits y push no despliega servicios. No se desplegaron reglas, web o servidor. `.firebaserc` asocia development a rincon-amancay; los scripts locales fijan demo-rincon-amancay.
 
