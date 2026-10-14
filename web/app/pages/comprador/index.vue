@@ -200,6 +200,10 @@ onBeforeUnmount(() => {
           <span class="mi" aria-hidden="true">🛍️</span>
           {{ tienda.datos.nombre }}
         </button>
+        <NuxtLink class="menu-enlace" to="/admin">
+          <span class="mi" aria-hidden="true">🛡️</span>
+          Administración
+        </NuxtLink>
       </nav>
       <div class="pie">
         <img class="pie-avatar" src="/logo-amancay.png" alt="" />
@@ -517,6 +521,30 @@ input:focus-visible {
     text-align: left;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
+}
+
+.menu-enlace {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: 14px;
+    color: var(--suave);
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+}
+
+.menu-enlace:hover {
+    background: var(--crema);
+    color: var(--vino);
+}
+
+.menu-enlace:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: 2px;
 }
 
 .mi {
@@ -1260,6 +1288,10 @@ h1 {
     }
 
     .menu button {
+        white-space: nowrap;
+    }
+
+    .menu-enlace {
         white-space: nowrap;
     }
 

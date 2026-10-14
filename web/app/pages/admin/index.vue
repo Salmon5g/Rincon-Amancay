@@ -415,24 +415,29 @@ async function confirmarAccionCuenta() {
 </script>
 
 <template>
-  <section v-if="!autorizado" class="acceso-admin">
-    <img src="/logo-amancay.png" alt="Rincón Amancay" width="72" />
-    <h1>Ingresar a administración</h1>
-    <p>{{ entorno }}</p>
-    <p v-if="cargandoSesion">Comprobando sesión…</p>
-    <form v-else-if="!sesion" @submit.prevent="ingresar">
-      <label for="correo-admin">Correo</label>
-      <input id="correo-admin" v-model="correo" type="email" autocomplete="username" required />
-      <label for="clave-admin">Contraseña</label>
-      <input id="clave-admin" v-model="clave" type="password" autocomplete="current-password" required />
-      <button class="boton" :disabled="enviando">{{ enviando ? 'Ingresando…' : 'Ingresar' }}</button>
-    </form>
-    <template v-else>
-      <p>Sesión: {{ sesion }}. No se ha confirmado un acceso de administrador activo.</p>
-      <button class="boton" @click="comprobarSesion">Volver a comprobar permisos</button>
-      <button class="boton" @click="salir">Cerrar sesión</button>
-    </template>
-    <p v-if="errorSesion" role="alert">{{ errorSesion }}</p>
+  <section v-if="!autorizado" class="pantalla-acceso">
+    <NuxtLink class="volver-comprador" to="/comprador">
+      <span aria-hidden="true">←</span> Volver al modo comprador
+    </NuxtLink>
+    <div class="acceso-admin">
+      <img src="/logo-amancay.png" alt="Rincón Amancay" width="72" />
+      <h1>Ingresar a administración</h1>
+      <p>{{ entorno }}</p>
+      <p v-if="cargandoSesion">Comprobando sesión…</p>
+      <form v-else-if="!sesion" @submit.prevent="ingresar">
+        <label for="correo-admin">Correo</label>
+        <input id="correo-admin" v-model="correo" type="email" autocomplete="username" required />
+        <label for="clave-admin">Contraseña</label>
+        <input id="clave-admin" v-model="clave" type="password" autocomplete="current-password" required />
+        <button class="boton" :disabled="enviando">{{ enviando ? 'Ingresando…' : 'Ingresar' }}</button>
+      </form>
+      <template v-else>
+        <p>Sesión: {{ sesion }}. No se ha confirmado un acceso de administrador activo.</p>
+        <button class="boton" @click="comprobarSesion">Volver a comprobar permisos</button>
+        <button class="boton" @click="salir">Cerrar sesión</button>
+      </template>
+      <p v-if="errorSesion" role="alert">{{ errorSesion }}</p>
+    </div>
   </section>
   <div v-else class="admin">
     <aside class="lateral">
@@ -445,6 +450,9 @@ async function confirmarAccionCuenta() {
         <button type="button" :class="{ on: activa === 'inicio' }" @click="ir('inicio')">
           <span class="mi" aria-hidden="true">🏠</span> Inicio
         </button>
+        <NuxtLink class="menu-enlace" to="/comprador">
+          <span class="mi" aria-hidden="true">🛍️</span> Modo comprador
+        </NuxtLink>
         <p class="menu-titulo">Gestión</p>
         <button
           v-for="s in secciones"
@@ -675,9 +683,79 @@ async function confirmarAccionCuenta() {
 </template>
 
 <style scoped>
-.acceso-admin { max-width: 420px; margin: 3rem auto; padding: 1.5rem; font-family: system-ui; color: #3a1228; }
-.acceso-admin form { display: grid; gap: .8rem; }
-.acceso-admin input { font: inherit; padding: .8rem; border: 1px solid #89727d; border-radius: 8px; }
+.pantalla-acceso {
+  --vino: #75264f;
+  --vino-oscuro: #5a1c3c;
+  --crema: #fff8ef;
+  --crema-2: #fdf1d4;
+  --durazno: #f5b183;
+  --rosado: #f7e9e8;
+  --tinta: #3a1228;
+  --suave: #89727d;
+  --borde: #ead9cc;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: 1.25rem clamp(1rem, 3vw, 2.5rem);
+  background: radial-gradient(900px 400px at 100% 0, var(--crema-2), transparent 70%), var(--crema);
+  color: var(--tinta);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.volver-comprador {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: .5rem;
+  min-height: 44px;
+  padding: .5rem 1rem;
+  border: 1.5px solid var(--borde);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .86);
+  color: var(--vino);
+  font-size: .9rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.volver-comprador:hover { border-color: var(--vino); background: var(--rosado); }
+.volver-comprador:active { transform: scale(.98); }
+.volver-comprador:focus-visible { outline: 2px solid var(--vino); outline-offset: 2px; }
+.acceso-admin {
+  display: grid;
+  justify-items: center;
+  gap: .8rem;
+  width: min(100%, 420px);
+  box-sizing: border-box;
+  margin: auto;
+  padding: 2rem;
+  border: 1.5px solid var(--borde);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 14px 30px rgba(117, 38, 79, .12);
+  text-align: center;
+}
+.acceso-admin h1 { margin: 0; font-size: 1.8rem; }
+.acceso-admin > p { margin: 0; color: var(--suave); }
+.acceso-admin form { display: grid; gap: .65rem; width: 100%; text-align: left; }
+.acceso-admin label { color: var(--tinta); font-size: .88rem; font-weight: 600; }
+.acceso-admin input {
+  width: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
+  padding: .7rem .8rem;
+  border: 1.5px solid var(--borde);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--tinta);
+  font: inherit;
+}
+.acceso-admin input:focus-visible { outline: 2px solid var(--vino); outline-offset: 2px; }
+.acceso-admin .boton { margin-top: .35rem; color: #fff; background: var(--vino); }
+.acceso-admin .boton:hover { background: var(--vino-oscuro); }
+.acceso-admin [role="alert"] { color: #b23b3c; }
 .estado-conexion { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1rem; }
 button:disabled { opacity: .55; cursor: not-allowed; }
 
@@ -831,6 +909,23 @@ input:focus-visible {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
+
+.menu-enlace {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 14px;
+  color: var(--suave);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.menu-enlace:hover { background: var(--crema); color: var(--vino); }
+.menu-enlace:focus-visible { outline: 2px solid var(--vino); outline-offset: 2px; }
 
 .mi {
   width: 30px;
@@ -1575,6 +1670,8 @@ h1 {
   .menu button {
     white-space: nowrap;
   }
+
+  .menu-enlace { white-space: nowrap; }
 
   .menu button.on::before {
     display: none;
