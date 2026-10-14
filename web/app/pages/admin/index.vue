@@ -104,6 +104,7 @@ const errorDatos = ref('')
 const errorOperacion = ref('')
 const operacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
 const invitacionCreada = ref('')
+const invitacionPendiente = ref<Item | null>(null)
 const cuentaPendiente = ref<{
   item: Item
   accion: AccionCuentaAdmin
@@ -140,13 +141,14 @@ function limpiarListados() {
   for (const s of secciones.value) s.items = []
   errorDatos.value = ''
   cargandoDatos.value = false
+  invitacionPendiente.value = null
 }
 
 async function cargarDatosCatalogos() {
   cargandoCatalogos.value = true
   errorDatos.value = ''
   try {
-    const catalogos = await listarCatalogos($amancay as never)
+    const catalogos = await listarCatalogos($amancay)
     datos.value = { ...datosVacios, catalogos }
     const agrupados = [
       grupoCatalogo('Tipos de producto', catalogos.tiposProducto),
@@ -235,7 +237,14 @@ onMounted(() => {
 onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.() })
 
 const resumen = computed(() =>
-  secciones.value.slice(0, 4).map((s) => ({ id: s.id, icono: s.icono, titulo: s.titulo, total: s.items.length })),
+  secciones.value.slice(0, 4).map((s) => ({
+    id: s.id,
+    icono: s.icono,
+    titulo: s.titulo,
+    total: s.id === 'catalogos'
+      ? Object.values(datos.value.catalogos).reduce((total, valores) => total + valores.length, 0)
+      : s.items.length,
+  })),
 )
 
 const estados = computed(() => ['Todos', ...new Set(seccion.value?.items.map((i) => i.estado) ?? [])])
@@ -269,7 +278,11 @@ async function ir(id: string) {
   await cargarSeccion()
 }
 
-function abrirFormulario() {
+async function abrirFormulario() {
+  if (seccion.value?.id === 'emprendedoras' && config.firebaseModo === 'real-api') {
+    await cargarDatosCatalogos()
+    if (errorDatos.value) return
+  }
   borrador.value = {
     nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
     tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
@@ -347,18 +360,30 @@ async function copiarInvitacion() {
   }
 }
 
-async function cancelarInvitacion(item: Item) {
+function prepararCancelacionInvitacion(item: Item) {
   if (!item.invitacionId || config.firebaseModo !== 'real-api') return
-  if (!window.confirm(`¿Cancelar la invitación pendiente para ${item.titulo}?`)) return
+  invitacionPendiente.value = item
+  errorOperacion.value = ''
+}
+
+async function confirmarCancelacionInvitacion() {
+  const item = invitacionPendiente.value
+  if (!item?.invitacionId) return
   errorDatos.value = ''
+  errorOperacion.value = ''
+  enviando.value = true
   try {
     await $amancay.llamar('cancelarInvitacion', { invitacionId: item.invitacionId })
+    invitacionPendiente.value = null
+    invitacionCreada.value = ''
     aviso.value = 'Invitación cancelada en Firebase.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 3500)
     await cargarSeccion()
   } catch (error) {
-    errorDatos.value = mensajeError(error)
+    errorOperacion.value = mensajeError(error)
+  } finally {
+    enviando.value = false
   }
 }
 
@@ -601,6 +626,20 @@ async function confirmarAccionCuenta() {
           El envío automático de correo aún no está configurado.
         </section>
 
+        <section v-if="invitacionPendiente" class="formulario" aria-labelledby="titulo-cancelar-invitacion">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-cancelar-invitacion">Cancelar invitación</h2>
+              <p>{{ invitacionPendiente.titulo }} dejará de poder aceptar esta invitación.</p>
+            </div>
+          </div>
+          <div class="acciones-formulario">
+            <button class="boton boton-primario" type="button" :disabled="enviando" @click="confirmarCancelacionInvitacion">{{ enviando ? 'Cancelando…' : 'Confirmar cancelación' }}</button>
+            <button class="editar" type="button" :disabled="enviando" @click="invitacionPendiente = null">Volver</button>
+          </div>
+          <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
+        </section>
+
         <section v-if="cuentaPendiente" class="formulario" aria-labelledby="titulo-accion-cuenta">
           <div class="formulario-encabezado">
             <div>
@@ -655,7 +694,7 @@ async function confirmarAccionCuenta() {
             <span class="etiqueta" :class="tono(item.estado)">{{ item.estado }}</span>
             <button
               v-if="item.invitacionId && item.estado === 'pendiente' && config.firebaseModo === 'real-api'"
-              class="editar" type="button" @click="cancelarInvitacion(item)"
+              class="editar" type="button" @click="prepararCancelacionInvitacion(item)"
             >Cancelar invitación</button>
             <button
               v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'activo' && config.firebaseModo === 'real-api'"

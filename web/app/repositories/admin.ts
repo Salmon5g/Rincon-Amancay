@@ -1,6 +1,5 @@
-import { collection, getDocs } from 'firebase/firestore'
-import type { DocumentData, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore'
-import type { crearClienteLocal } from '~/lib/cliente-local'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import type { DocumentData, Firestore, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore'
 import type {
   Acceso,
   Catalogos,
@@ -11,8 +10,8 @@ import type {
   InvitacionAlta,
 } from '~/types/admin'
 
-// El cliente local (emuladores) expone `firebase.db` y las operaciones.
-export type ClienteAmancay = ReturnType<typeof crearClienteLocal>
+// Estas lecturas requieren solo Firestore y funcionan con cliente local o real.
+export type ClienteAmancay = { firebase: { db: Firestore } }
 
 function texto(valor: unknown, alterno = ''): string {
   return typeof valor === 'string' ? valor : alterno
@@ -70,7 +69,9 @@ function mapearInvitacion(snap: QueryDocumentSnapshot<DocumentData>): Invitacion
 }
 
 async function leerCatalogo(cliente: ClienteAmancay, coleccion: string): Promise<ElementoCatalogo[]> {
-  const snap = await getDocs(collection(cliente.firebase.db, coleccion))
+  // Las reglas solo permiten listar documentos activos: la consulta debe
+  // expresar esa condición incluso si la colección todavía está vacía.
+  const snap = await getDocs(query(collection(cliente.firebase.db, coleccion), where('activo', '==', true)))
   return snap.docs.map((doc) => {
     const datos = doc.data()
     return {
