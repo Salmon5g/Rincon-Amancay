@@ -3,15 +3,22 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "pregenerate": "node scripts/validate-hosting-env.mjs",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
     "typecheck": "tsc --noEmit",
     "test:local": "node --test --test-concurrency=1 tests/cliente-local.test.mjs tests/cuentas-local.test.mjs",
-    "test:unit": "node --test tests/cliente-compartido.test.mjs",
+    "test:unit": "node --test tests/cliente-compartido.test.mjs tests/admin-filas.test.mjs",
     "check:firebase": "node --env-file=.env scripts/check-firebase.mjs"
   },
   "dependencies": {
     "firebase": "13.0.0"
   },
   "devDependencies": {
+    "nuxt": "^4.0.0",
     "typescript": "5.9.3"
   },
   "overrides": {

@@ -1,1 +1,3 @@
-Consultas y escrituras autorizadas de la web y llamadas a operaciones del servidor. Las páginas no contendrán consultas Firestore dispersas. Sin implementación todavía.
+Consultas autorizadas de Firestore para la web. Las operaciones que modifican cuentas se envían a la API autenticada; las páginas no escriben directamente en Firestore.
+
+- `admin.ts`: lecturas del panel (`cargarDatosAdmin`, `listarAccesos`, `listarEmprendedoras`, `listarInvitaciones`, `listarCatalogos`). Recibe un cliente con `firebase.db`; las reglas exigen administrador activo para accesos, emprendedoras e invitaciones. Los catálogos se consultan con `activo == true`, como exigen las reglas. En modo `real-api`, las invitaciones y cambios de cuenta se envían a la API autenticada desde el panel; este repositorio no escribe directamente en Firestore.
