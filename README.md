@@ -1,53 +1,81 @@
-# Rincón Amancay — base compartida de desarrollo
+# Rincón Amancay
 
-Base compartida para web administrador, web comprador y app comprador. Incluye una web Nuxt con módulo administrador, API autenticada, ciclo de cuentas, productos, stock con historial, publicación e imágenes procesadas, reglas y pruebas para emuladores. **Empezar por [arranque por equipo](docs/arranque-equipos.md)**. La web ya está publicada en [https://rincon-amancay.web.app](https://rincon-amancay.web.app): comprador navega sin sesión y administración inicia sesión y consulta Firestore en modo `real-lectura`. La API puede ejecutarse localmente contra Firebase real para probar invitaciones; Cloud Run todavía no está desplegado. Android sigue pendiente de inicialización y aún no hay tiendas públicas cargadas. Estado técnico y verificaciones en [verificación de la base](docs/verificacion-base.md).
+Plataforma para apoyar a las emprendedoras de la feria Rincón Amancay y facilitar que las personas conozcan sus productos. El repositorio reúne la web para compradores y administración, la aplicación Android, la API y la configuración de Firebase.
 
-## Abrir en Visual Studio Code
+La web está publicada en [rincon-amancay.web.app](https://rincon-amancay.web.app). El catálogo comprador se puede recorrer sin iniciar sesión; el acceso administrativo se encuentra en `/admin`.
 
-Para integrar las aplicaciones, comenzar por [la guía para los equipos](docs/integracion-equipos.md): arranque local, cuentas de práctica, cliente web y ejemplos Kotlin. Resumen de inicio por rol (web comprador, web administrador, app comprador) en [arranque por equipo](docs/arranque-equipos.md). Web y Android de un mismo computador usan la misma instancia; las instancias locales de distintos computadores no comparten datos automáticamente.
+## Estado del proyecto
 
-Usar Archivo → Abrir carpeta y seleccionar esta carpeta completa, o abrir rincon-amancay.code-workspace. El explorador mostrará las áreas del proyecto juntas. Android podrá abrirse también en Android Studio cuando el equipo cree el proyecto Gradle.
+- **Web:** una aplicación Nuxt 4, Vue y TypeScript con área pública de comprador y panel de administración. Incluye inicio de sesión administrativo, lectura de datos autorizados e interfaces para gestionar cuentas e invitaciones.
+- **Android:** módulo compilable Kotlin y Jetpack Compose en `android/APP`. Incluye una experiencia móvil para emprendedoras con inicio, productos, registro de productos con fotografía y variantes, vista previa del catálogo, registro de ventas, historial y ajustes. Parte con productos de demostración para recorrer los flujos.
+- **Backend:** API HTTP autenticada con operaciones de cuentas, invitaciones, publicación, productos, stock e imágenes. Tiene pruebas automatizadas y puede ejecutarse con los emuladores locales.
+- **Firebase y modelo compartido:** reglas de Firestore y Storage, índices, datos de prueba y contratos que documentan entidades, permisos y operaciones del proyecto.
 
-```text
-rincon-amancay-estructura/
-├── web/                   Una web Nuxt para todos los perfiles
-│   └── app/
-│       ├── plugins/       Inicialización del SDK cliente Firebase
-│       ├── repositories/ Acceso a datos desde la web
-│       └── types/        Tipos TypeScript de la web
-├── android/               Una app Kotlin con ambos modos
-├── backend/
-│   ├── src/
-│   │   ├── config/        Conexiones de servidor
-│   │   ├── modules/       Operaciones organizadas por función del negocio
-│   │   └── shared/        Autorización y errores comunes del servidor
-│   └── tests/             Pruebas de operaciones del servidor
-├── firebase/
-│   ├── firestore.rules   Permisos de documentos
-│   ├── firestore.indexes.json
-│   ├── storage.rules     Permisos de imágenes y archivos
-│   └── tests/             Pruebas de reglas
-├── contratos/             Acuerdos independientes de Kotlin/TypeScript
-├── datos-prueba/           Datos ficticios para pruebas locales
-├── docs/                  Arquitectura y organización del equipo
-├── firebase.json          Hosting, reglas y configuración local de emuladores
-├── rincon-amancay.code-workspace
-├── .editorconfig
-└── .gitignore
+El modelo de catálogo es provisional y puede evolucionar tras el levantamiento de requerimientos en terreno. Coordinen cualquier cambio de campos o estados entre web, Android, API y contratos.
+
+## Inicio rápido
+
+Requisitos de desarrollo: Node.js 24.15 o posterior, npm, Java y Android Studio para trabajar con la app móvil. En Windows PowerShell, se puede usar `npm.cmd` si la política local bloquea `npm.ps1`.
+
+### Web y servicios locales
+
+La guía [Arranque por equipo](docs/arranque-equipos.md) explica la preparación común, los emuladores, los datos ficticios y la ejecución de cada área. Para empezar, instala las dependencias desde la raíz:
+
+```powershell
+npm.cmd --prefix firebase ci
+npm.cmd --prefix backend ci
+npm.cmd --prefix web ci
 ```
 
-## Qué hacemos ahora
+Configura `web/.env` desde `web/.env.example` según el entorno de trabajo. Para desarrollo local, sigue la guía y usa el modo de emuladores. Luego inicia la web:
 
-Hay emuladores, datos ficticios y adaptadores de integración. La documentación de [contratos](contratos/README.md) es el acuerdo común de campos y permisos; los documentos provisionales previos permanecen fuera del repositorio. Los próximos pasos son:
+```powershell
+npm.cmd --prefix web run dev
+```
 
-1. Continuar comprador y administrador sobre la aplicación Nuxt ya inicializada; crear/integrar el proyecto Gradle Android, conservando adaptadores, pruebas y contratos.
-2. Completar el catálogo comprador y las operaciones administrativas según la guía de arranque.
-3. Probar una modificación visible desde web y Android conectados al mismo computador; no requiere terminar las pantallas.
-4. Revisar el modelo tras terreno y coordinar cambios de campos y migraciones con ambos clientes. Los límites actuales están expresos en la guía y contratos.
-5. La web publicada se puede revisar en [rincon-amancay.web.app](https://rincon-amancay.web.app); para nuevas versiones, seguir [la guía de Firebase Hosting](docs/hosting-web.md). Para una demo de escrituras en el computador del responsable, seguir [API local contra Firebase real](docs/admin-firebase-real-api-local.md). Para compartir esas operaciones con otros equipos, preparar Cloud Run con permisos IAM, facturación y validación operativa; consultar [entorno compartido](docs/entorno-compartido.md). Recuperación técnica de cuentas disponible en [este procedimiento](docs/recuperacion-cuentas.md); no hay reconciliación automática.
+Abre `http://localhost:3000` para el catálogo o `http://localhost:3000/admin` para administración.
 
-web/ tiene package.json, package-lock.json y `npm run dev`. backend/ dispone de pruebas automatizadas y entradas para emuladores o Firebase real local. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
+### Aplicación Android
 
-Se conserva la configuración Git del clon. Compartir cambios mediante commits y push no despliega servicios. Las reglas de Firestore fueron publicadas manualmente por el responsable; falta comparar las reglas de consola con `firebase/firestore.rules`. La web está desplegada en Firebase Hosting en modo `real-lectura`; la API funciona localmente, pero todavía no tiene despliegue público. `.firebaserc` asocia development a rincon-amancay; los scripts locales fijan demo-rincon-amancay.
+Abre `android/APP` en Android Studio, sincroniza Gradle y ejecuta la configuración `app` en un emulador o dispositivo. También puedes compilar y ejecutar las pruebas unitarias desde PowerShell:
 
-Preparación del entorno compartido: [propuesta de arquitectura, consumo y pendientes](docs/entorno-compartido.md). Hosting ya está publicado; el despliegue de la API sigue pendiente.
+```powershell
+cd android/APP
+.\gradlew.bat testDebugUnitTest assembleDebug
+```
+
+El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Estructura del repositorio
+
+```text
+web/                    Aplicación Nuxt para comprador y administración
+android/APP/             Aplicación Android Kotlin y Jetpack Compose
+android/ejemplos/        Ejemplos de integración para equipos Android
+backend/                 API y operaciones de negocio
+firebase/                Reglas, índices, emuladores y pruebas de seguridad
+contratos/               Modelo y acuerdos de datos y operaciones
+datos-prueba/            Datos ficticios para desarrollo y demostraciones
+docs/                    Guías de equipo, arquitectura, entorno y despliegue
+firebase.json            Configuración Firebase y Firebase Hosting
+rincon-amancay.code-workspace
+```
+
+## Comprobaciones útiles
+
+Las pruebas del backend y de reglas requieren el entorno indicado en sus guías. No ejecutes suites que restauran datos mientras otra persona está editando o demostrando el mismo catálogo.
+
+```powershell
+npm.cmd --prefix web run typecheck
+npm.cmd --prefix web run test:unit
+npm.cmd --prefix backend run typecheck
+npm.cmd --prefix backend test
+```
+
+Para conocer los comandos de emuladores y pruebas de reglas, consulta [Firebase local](firebase/README.md) y [arranque por equipo](docs/arranque-equipos.md).
+
+## Publicación y coordinación
+
+La web está desplegada en Firebase Hosting. Para generar y publicar una versión, sigue [Publicación web en Firebase Hosting](docs/hosting-web.md). La API tiene una guía para la ejecución local y otra para preparar un entorno compartido en [Entorno compartido](docs/entorno-compartido.md).
+
+La [guía de integración](docs/integracion-equipos.md) y los archivos de [contratos](contratos/README.md) son el punto de coordinación entre las áreas. Las credenciales locales se mantienen fuera de Git: no subas archivos `.env`, `google-services.json` ni claves de cuentas de servicio.

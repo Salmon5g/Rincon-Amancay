@@ -1,9 +1,29 @@
-# Android
+# Aplicación Android
 
-El equipo Android creará aquí el proyecto Kotlin/Jetpack Compose usando Android Studio, con sus archivos Gradle. Aún no es un proyecto compilable.
+La aplicación de Rincón Amancay está en `APP/` y está desarrollada con Kotlin y Jetpack Compose. Su experiencia móvil permite recorrer flujos de emprendedora: inicio, productos, creación y edición guiada con fotografía y variantes, vista previa de catálogo, registro de ventas, historial y ajustes. Incluye productos ficticios para facilitar las pruebas de navegación.
 
-Se registrará como una aplicación Android del mismo proyecto Firebase usado por la web. Tendrá su inicialización y repositories Kotlin propios. Los modos comprador y emprendedora pertenecen a una misma app. La organización interna se acordará al crearla, sin inventar ahora un applicationId.
+## Abrir y ejecutar
 
-google-services.json queda excluido según el acuerdo de entrega. Las credenciales de servicio de backend nunca deben ir en la app.
+1. Abre la carpeta `android/APP` en Android Studio.
+2. Espera a que Gradle sincronice el proyecto.
+3. Selecciona la configuración `app` y ejecuta en un emulador o dispositivo Android.
 
-Ya hay ejemplos de inicialización debug, sesión, consultas y llamadas a la API en [ejemplos/README.md](ejemplos/README.md). Usan el proyecto demo y los mismos contratos de la web. No se han compilado; integrar y validar cuando exista el módulo Android. Guía común: [integración de equipos](../docs/integracion-equipos.md).
+Desde PowerShell también puedes compilar la app y ejecutar las pruebas unitarias:
+
+```powershell
+cd android/APP
+.\gradlew.bat testDebugUnitTest assembleDebug
+```
+
+El APK de depuración se genera en `APP/app/build/outputs/apk/debug/app-debug.apk`.
+
+## Organización
+
+- `APP/app/src/main/java/com/example/amancay/MainActivity.kt`: navegación y coordinación de pantallas.
+- `APP/app/src/main/java/com/example/amancay/ui/`: pantallas, componentes, transiciones y tema visual.
+- `APP/app/src/main/java/com/example/amancay/data/AmancayData.kt`: modelos y estado de demostración que usan los flujos.
+- `APP/app/src/main/res/`: recursos visuales e íconos.
+
+El identificador de aplicación configurado actualmente es `com.example.amancay`. Las credenciales y archivos privados no se guardan en Git. `google-services.json` está excluido por `.gitignore`; nunca incorpores claves de cuentas de servicio a una aplicación móvil.
+
+Para acuerdos de campos, permisos y operaciones compartidas con la web, consulta [contratos](../contratos/README.md). Para las instrucciones generales de los equipos, consulta [arranque por equipo](../docs/arranque-equipos.md).
