@@ -2,9 +2,11 @@
 
 La web Nuxt se genera como archivos estáticos y se publica con Firebase Hosting. El catálogo consulta Firestore desde el navegador al abrir la página, así que las tiendas publicadas no quedan congeladas dentro de la generación.
 
+**Estado al 14 de octubre de 2026:** [https://rincon-amancay.web.app](https://rincon-amancay.web.app) está publicado en modo `real-lectura`. La raíz redirige a `/comprador`, `/admin` permite iniciar sesión y consultar Firestore, y todavía no hay tiendas públicas cargadas.
+
 ## Antes de generar
 
-1. Instalar dependencias web desde la raíz del repositorio: `npm.cmd --prefix web ci`.
+1. Instalar dependencias desde la raíz del repositorio: `npm.cmd --prefix web ci` y `npm.cmd --prefix firebase ci`.
 2. Crear `web/.env` desde `web/.env.example` si aún no existe y completar la configuración pública de la aplicación web Firebase.
 3. Para esta entrega, configurar `NUXT_PUBLIC_FIREBASE_MODO=real-lectura` y dejar vacía `NUXT_PUBLIC_API_URL`. No incluir credenciales de Admin SDK.
 
@@ -16,12 +18,12 @@ Desde la raíz del repositorio, ejecutar:
 
 ```powershell
 npm.cmd --prefix web run generate
-firebase deploy --only hosting --project rincon-amancay
+.\firebase\node_modules\.bin\firebase.cmd deploy --only hosting --project rincon-amancay
 ```
 
 `generate` produce `web/.output/public`; esa carpeta es la única que Firebase Hosting publica. El `firebase.json` conserva las reglas de Firestore y Storage y añade Hosting sin alterar sus configuraciones. La raíz redirige al catálogo comprador y las páginas `/comprador` y `/admin` se generan como rutas estáticas.
 
-La segunda orden requiere [Firebase CLI](https://firebase.google.com/docs/cli) instalado y una sesión iniciada con una cuenta que tenga permiso para publicar Hosting en `rincon-amancay`. En Windows, instala y autentica la CLI una vez:
+La segunda orden usa la [Firebase CLI](https://firebase.google.com/docs/cli) incluida en `firebase/` y una cuenta con permiso para publicar Hosting en `rincon-amancay`. Puede usar las credenciales ADC creadas por `gcloud auth application-default login`; comprueba el acceso con `.\firebase\node_modules\.bin\firebase.cmd projects:list`. Si prefieres una instalación global con sesión propia:
 
 ```powershell
 npm install -g firebase-tools
