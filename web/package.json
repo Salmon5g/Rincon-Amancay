@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
+    "pregenerate": "node scripts/validate-hosting-env.mjs",
+    "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "typecheck": "tsc --noEmit",

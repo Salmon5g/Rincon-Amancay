@@ -1,6 +1,6 @@
 # Rincón Amancay — base compartida de desarrollo
 
-Base compartida para web administrador, web comprador y app comprador. Incluye una web Nuxt con módulo administrador, API autenticada, ciclo de cuentas, productos, stock con historial, publicación e imágenes procesadas, reglas y pruebas para emuladores. **Empezar por [arranque por equipo](docs/arranque-equipos.md)**. La API puede ejecutarse localmente contra Firebase real para probar invitaciones y el ciclo de cuentas; Cloud Run y la web pública aún no están desplegados. Android y comprador web siguen en desarrollo. Estado técnico y verificaciones en [verificación de la base](docs/verificacion-base.md).
+Base compartida para web administrador, web comprador y app comprador. Incluye una web Nuxt con módulo administrador, API autenticada, ciclo de cuentas, productos, stock con historial, publicación e imágenes procesadas, reglas y pruebas para emuladores. **Empezar por [arranque por equipo](docs/arranque-equipos.md)**. La API puede ejecutarse localmente contra Firebase real para probar invitaciones y el ciclo de cuentas; Cloud Run y la web pública aún no están desplegados. La generación estática y configuración de Hosting están preparadas en [la guía de publicación web](docs/hosting-web.md). Android sigue pendiente de inicialización y el catálogo comprador está en desarrollo. Estado técnico y verificaciones en [verificación de la base](docs/verificacion-base.md).
 
 ## Abrir en Visual Studio Code
 
@@ -30,7 +30,7 @@ rincon-amancay-estructura/
 ├── contratos/             Acuerdos independientes de Kotlin/TypeScript
 ├── datos-prueba/           Datos ficticios para pruebas locales
 ├── docs/                  Arquitectura y organización del equipo
-├── firebase.json          Rutas de reglas y configuración local de emuladores
+├── firebase.json          Hosting, reglas y configuración local de emuladores
 ├── rincon-amancay.code-workspace
 ├── .editorconfig
 └── .gitignore
@@ -44,7 +44,7 @@ Hay emuladores, datos ficticios y adaptadores de integración. La documentación
 2. Completar el catálogo comprador y las operaciones administrativas según la guía de arranque.
 3. Probar una modificación visible desde web y Android conectados al mismo computador; no requiere terminar las pantallas.
 4. Revisar el modelo tras terreno y coordinar cambios de campos y migraciones con ambos clientes. Los límites actuales están expresos en la guía y contratos.
-5. Para una demo en el computador del responsable, seguir [API local contra Firebase real](docs/admin-firebase-real-api-local.md). Para que cualquier equipo/cliente acceda desde una URL, preparar Cloud Run con permisos IAM, facturación y validación operativa; consultar [entorno compartido](docs/entorno-compartido.md). Recuperación técnica de cuentas disponible en [este procedimiento](docs/recuperacion-cuentas.md); no hay reconciliación automática.
+5. Para una demo en el computador del responsable, seguir [API local contra Firebase real](docs/admin-firebase-real-api-local.md). Para publicar la web estática, seguir [la guía de Firebase Hosting](docs/hosting-web.md). Para compartir las operaciones de escritura de la API con otros equipos, preparar Cloud Run con permisos IAM, facturación y validación operativa; consultar [entorno compartido](docs/entorno-compartido.md). Recuperación técnica de cuentas disponible en [este procedimiento](docs/recuperacion-cuentas.md); no hay reconciliación automática.
 
 web/ tiene package.json, package-lock.json y `npm run dev`. backend/ dispone de pruebas automatizadas y entradas para emuladores o Firebase real local. Android está pendiente de inicialización. El archivo firebase.json no crea un proyecto en la nube ni colecciones de Firestore.
 
