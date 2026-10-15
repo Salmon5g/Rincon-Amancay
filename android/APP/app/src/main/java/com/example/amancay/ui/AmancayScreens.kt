@@ -13,20 +13,44 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.Manifest
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -69,39 +93,40 @@ fun StepScaffold(
 fun HomeScreen(
     borrador: Product?,
     publicados: Int,
-    ventasTotal: Long,
+    borradores: Int,
     ventasCount: Int,
     linkCompartido: Boolean,
+    invitacionesPendientes: Int,
     onAgregar: () -> Unit,
     onContinuarBorrador: () -> Unit,
     onMisProductos: () -> Unit,
-    onRegistrarVenta: () -> Unit,
-    onVerCatalogo: () -> Unit
+    onVerCatalogo: () -> Unit,
+    onVerFerias: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
-        Text("HOLA, ANA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-        Text("Tu tienda, paso a paso", fontSize = 32.sp, color = Dark)
+        Text("HOLA, ARTESANA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
+        Text("Tu tienda, paso a paso", fontSize = 32.sp, lineHeight = 38.sp, color = Dark)
         Text(
             "Administra productos, ventas y visibilidad desde un solo lugar.",
-            fontSize = 15.sp, color = Muted
+            fontSize = 15.sp, lineHeight = 22.sp, color = Muted
         )
         Spacer(Modifier.height(14.dp))
         if (borrador != null) {
             DraftBanner(onContinue = onContinuarBorrador)
             Spacer(Modifier.height(14.dp))
         }
-        Text("HOY, 10 DE OCTUBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+        Text(fechaHoy(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed)
         Spacer(Modifier.height(6.dp))
         Card(
             colors = CardDefaults.cardColors(containerColor = Wine),
             shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(22.dp)) {
-                Text("¿Qué quieres hacer hoy?", fontSize = 28.sp, color = Color.White)
+                Text("¿Qué quieres hacer hoy?", fontSize = 28.sp, lineHeight = 34.sp, color = Color.White)
                 Text(
                     "Elige una acción. Te acompañamos en cada paso.",
-                    fontSize = 15.sp, color = Color.White
+                    fontSize = 15.sp, lineHeight = 22.sp, color = Color.White
                 )
                 Spacer(Modifier.height(16.dp))
                 Button(
@@ -120,35 +145,51 @@ fun HomeScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(20.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                modifier = Modifier.weight(1f).clickable { onMisProductos() }
+                modifier = Modifier.fillMaxWidth().clickable { onMisProductos() }
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Image(
                         painter = painterResource(Fig.CARD_GRID), contentDescription = null,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(64.dp)
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Text("Mis productos", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
-                    Text("8 publicados · 2 borradores", fontSize = 13.sp, color = Muted)
-                }
-            }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                modifier = Modifier.weight(1f).clickable { onRegistrarVenta() }
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Image(
-                        painter = painterResource(Fig.CARD_PLUS), contentDescription = null,
-                        modifier = Modifier.size(44.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text("Registrar venta", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
-                    Text("Descuenta stock automáticamente", fontSize = 13.sp, color = Muted)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Mis productos", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
+                        Text(
+                            "$publicados publicados · $borradores borradores",
+                            fontSize = 14.sp, lineHeight = 20.sp, color = Muted
+                        )
+                    }
+                    Text("›", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Wine)
                 }
             }
         }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+            modifier = Modifier.fillMaxWidth().clickable { onVerFerias() }
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Invitaciones a ferias", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
+                    Text(
+                        if (invitacionesPendientes > 0) "$invitacionesPendientes por responder"
+                        else "Sin invitaciones pendientes",
+                        fontSize = 13.sp, color = Muted
+                    )
+                }
+                if (invitacionesPendientes > 0) {
+                    Box(
+                        modifier = Modifier.size(32.dp).background(Wine, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("$invitacionesPendientes", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
         ProgressChecklist(
             tieneProducto = publicados > 0,
             tieneVenta = ventasCount > 0,
@@ -211,6 +252,314 @@ private fun CheckDot(done: Boolean) {
     ) {
         if (done) {
             Icon(Icons.Default.Check, contentDescription = null, tint = GreenText, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+// ---------- FERIAS ----------
+
+@Composable
+fun FeriasScreen(
+    invitaciones: List<FeriaInvitation>,
+    onVerDetalle: (FeriaInvitation) -> Unit,
+    onVolver: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+        Spacer(Modifier.height(8.dp))
+        Text("FERIAS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
+        Text("Invitaciones a ferias", fontSize = 30.sp, color = Dark)
+        Text("Acepta o rechaza cada invitación.", fontSize = 15.sp, color = Muted)
+        Spacer(Modifier.height(14.dp))
+        if (invitaciones.none { it.estado == "pendiente" }) {
+            Text("Sin invitaciones pendientes.", fontSize = 14.sp, color = Muted)
+            Spacer(Modifier.height(8.dp))
+        }
+        invitaciones.forEach { inv ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { onVerDetalle(inv) }
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(inv.nombre, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
+                    Text("${inv.donde} · ${inv.cuando}", fontSize = 13.sp, color = Muted)
+                    Spacer(Modifier.height(10.dp))
+                    when (inv.estado) {
+                        "aceptada" -> Text("✓ Inscrita", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText)
+                        "rechazada" -> Text("Rechazada", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Muted)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        GhostButton("Volver", onVolver)
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+// ---------- DETALLE INVITACION A FERIA ----------
+
+@Composable
+fun FeriaDetalleScreen(
+    invitacion: FeriaInvitation?,
+    onAceptar: (FeriaInvitation) -> Unit,
+    onRechazar: (FeriaInvitation) -> Unit,
+    onVolver: () -> Unit
+) {
+    if (invitacion == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Invitación no disponible.", color = Muted)
+        }
+        return
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+        Spacer(Modifier.height(8.dp))
+        Text("INVITACIÓN A FERIA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
+        Text("Te invitaron a una feria", fontSize = 30.sp, color = Dark, fontFamily = FontFamily.Serif)
+        Text("Responde con un toque si quieres participar.", fontSize = 15.sp, color = Muted)
+        Spacer(Modifier.height(14.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(24.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier.size(56.dp).background(Peach, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("📅", fontSize = 28.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (invitacion.estado == "pendiente") {
+                        Surface(color = BannerStroke, shape = RoundedCornerShape(20.dp)) {
+                            Text(
+                                "Invitación nueva", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                color = Dark, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(invitacion.nombre, fontSize = 28.sp, color = Dark, fontFamily = FontFamily.Serif)
+                Spacer(Modifier.height(12.dp))
+                Surface(color = CardPink, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        DetalleFila("Dónde", invitacion.donde)
+                        DetalleFila("Cuándo", invitacion.cuando)
+                        DetalleFila("Horario", invitacion.horario)
+                        DetalleFila("Organiza", invitacion.organiza)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("Tu respuesta le llega a quien organiza la feria.", fontSize = 13.sp, color = Muted)
+        if (invitacion.estado == "aceptada") {
+            Text("Respondiste: Participo ✓", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText)
+        } else if (invitacion.estado == "rechazada") {
+            Text("Respondiste: No participo", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Muted)
+        }
+        Spacer(Modifier.height(14.dp))
+        if (invitacion.estado == "pendiente") {
+            var confirmar by remember { mutableStateOf<String?>(null) }
+            PrimaryButton("Participo", { confirmar = "si" })
+            Spacer(Modifier.height(10.dp))
+            OutlineButton("No participo", { confirmar = "no" })
+            confirmar?.let { r ->
+                AlertDialog(
+                    onDismissRequest = { confirmar = null },
+                    shape = RoundedCornerShape(24.dp),
+                    containerColor = Color.White,
+                    text = {
+                        PopIn {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            Text("¿Confirmar respuesta?", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
+                            Text(
+                                if (r == "si") "Vas a participar en ${invitacion.nombre}."
+                                else "Vas a rechazar la invitación a ${invitacion.nombre}.",
+                                fontSize = 14.sp, color = Muted, textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            PrimaryButton(
+                                if (r == "si") "Sí, participo" else "Sí, no participo",
+                                {
+                                    if (r == "si") onAceptar(invitacion) else onRechazar(invitacion)
+                                    confirmar = null
+                                }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlineButton("Volver", { confirmar = null })
+                        }
+                        }
+                    },
+                    confirmButton = {}
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        GhostButton("Volver", onVolver)
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun DetalleFila(etiqueta: String, valor: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+    ) {
+        Text(etiqueta, fontSize = 14.sp, color = Muted, modifier = Modifier.weight(1f))
+        Text(valor, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark, textAlign = TextAlign.End)
+    }
+}
+
+// ---------- QR ----------
+
+fun generarQR(texto: String, px: Int = 512): Bitmap {
+    val bits = QRCodeWriter().encode(texto, BarcodeFormat.QR_CODE, px, px)
+    val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.RGB_565)
+    for (x in 0 until px) {
+        for (y in 0 until px) {
+            bmp.setPixel(x, y, if (bits.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        }
+    }
+    return bmp
+}
+
+// ---------- CAMARA INTEGRADA ----------
+
+@Composable
+fun CameraScreen(
+    onFoto: (Bitmap) -> Unit,
+    onCancelar: () -> Unit,
+    onGaleria: () -> Unit
+) {
+    val ctx = LocalContext.current
+    val activity = ctx as? ComponentActivity
+    var tienePermiso by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) ==
+                    PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val pedirPermiso = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        tienePermiso = ok
+    }
+    var error by remember { mutableStateOf<String?>(null) }
+    var capturando by remember { mutableStateOf(false) }
+    var proveedor by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    val imageCapture = remember {
+        ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
+    }
+
+    LaunchedEffect(Unit) {
+        if (!tienePermiso) pedirPermiso.launch(Manifest.permission.CAMERA)
+    }
+
+    fun tomarFoto() {
+        if (capturando) return
+        capturando = true
+        try {
+            imageCapture.takePicture(
+                ContextCompat.getMainExecutor(ctx),
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        try {
+                            onFoto(image.toBitmap())
+                        } catch (_: Exception) {
+                            error = "No se pudo procesar la foto"
+                            capturando = false
+                        } finally {
+                            image.close()
+                        }
+                    }
+                    override fun onError(exception: ImageCaptureException) {
+                        error = "No se pudo tomar la foto"
+                        capturando = false
+                    }
+                }
+            )
+        } catch (_: Exception) {
+            error = "Sin cámara disponible en este equipo"
+            capturando = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            if (tienePermiso && error == null) {
+                AndroidView(
+                    factory = { c ->
+                        PreviewView(c).also { pv ->
+                            pv.scaleType = PreviewView.ScaleType.FILL_CENTER
+                            val preview = Preview.Builder().build()
+                            preview.setSurfaceProvider(ContextCompat.getMainExecutor(c), pv.surfaceProvider)
+                            try {
+                                val futuro = ProcessCameraProvider.getInstance(c)
+                                futuro.addListener({
+                                    try {
+                                        val p = futuro.get()
+                                        p.unbindAll()
+                                        val selector =
+                                            if (p.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA))
+                                                CameraSelector.DEFAULT_BACK_CAMERA
+                                            else CameraSelector.DEFAULT_FRONT_CAMERA
+                                        if (activity != null) {
+                                            p.bindToLifecycle(activity, selector, preview, imageCapture)
+                                            proveedor = p
+                                        } else {
+                                            error = "Sin cámara disponible en este equipo"
+                                        }
+                                    } catch (_: Exception) {
+                                        error = "Sin cámara disponible en este equipo"
+                                    }
+                                }, ContextCompat.getMainExecutor(c))
+                            } catch (_: Exception) {
+                                error = "Sin cámara disponible en este equipo"
+                            }
+                        }
+                    },
+                    onRelease = { proveedor?.unbindAll() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(
+                    error ?: "Necesitamos permiso de cámara.",
+                    color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
+        ) {
+            TextButton(onClick = onCancelar) {
+                Text("Cancelar", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+            Button(
+                onClick = { tomarFoto() },
+                enabled = tienePermiso && error == null && !capturando,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(76.dp)
+            ) {
+                Box(
+                    modifier = Modifier.size(60.dp).background(Wine, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("◉", color = Color.White, fontSize = 28.sp)
+                }
+            }
+            TextButton(onClick = onGaleria) {
+                Text("Galería", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -285,12 +634,18 @@ fun BasicsStep(draft: DraftState, bump: () -> Unit, onNext: () -> Unit, onBack: 
         Spacer(Modifier.height(10.dp))
         val tipos = ProductType.values().toList()
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
                 tipos.take(2).forEach { t ->
                     SelectableChip(t.label, draft.tipo == t) { draft.tipo = t; bump() }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
                 tipos.drop(2).forEach { t ->
                     SelectableChip(t.label, draft.tipo == t) { draft.tipo = t; bump() }
                 }
@@ -442,10 +797,10 @@ fun ProductsScreen(
             Text("Mis productos", fontSize = 30.sp, color = Dark)
             Text("Edita, oculta o elimina sin perder el control.", fontSize = 15.sp, color = Muted)
             Spacer(Modifier.height(12.dp))
-            ToggleRow("Visibilidad masiva", "", settings.visibilidadMaxima) { onSettings(settings.copy(visibilidadMaxima = it)) }
-            ToggleRow("Valores por defecto", "", settings.valoresPorDefecto) { onSettings(settings.copy(valoresPorDefecto = it)) }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
                 SelectableChip("Todos · ${productos.size}", tab == 0) { tab = 0 }
                 SelectableChip("Publicados · ${productos.count { it.publicado }}", tab == 1) { tab = 1 }
                 SelectableChip("Borradores · ${productos.count { it.esBorrador }}", tab == 2) { tab = 2 }
@@ -538,6 +893,8 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
         Text("Así ven tu catálogo", fontSize = 30.sp, color = Dark, modifier = Modifier.fillMaxWidth())
         Text("Revisa cómo se muestra tu tienda antes de compartirla.", fontSize = 15.sp, color = Muted, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(14.dp))
+        var showShare by remember { mutableStateOf(false) }
+        val link = "https://rincon-amancay.tienda"
         if (p == null) {
             Text("Aún no tienes productos publicados.", color = Muted)
         } else {
@@ -576,7 +933,7 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
             Text(formatPrice(p.precioPrincipal()), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Dark, modifier = Modifier.fillMaxWidth())
             Text("Disponible para encargo", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GreenText, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(12.dp))
-            PrimaryButton("Contactar a Ana", onContact)
+            PrimaryButton("Contactar a la vendedora", onContact)
             Spacer(Modifier.height(12.dp))
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -588,12 +945,71 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
                     Text("Tu tienda está visible", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark)
                     Text("Comparte el enlace cuando quieras.", fontSize = 13.sp, color = Muted)
                     Spacer(Modifier.height(10.dp))
-                    OutlineButton("Compartir", onShare)
+                    OutlineButton("Compartir", { showShare = true })
                 }
+            }
+            if (showShare) {
+                ShareDialog(link = link, onCopiar = { onShare(); showShare = false }, onCerrar = { showShare = false })
             }
         }
         Spacer(Modifier.height(16.dp))
     }
+}
+
+@Composable
+private fun ShareDialog(link: String, onCopiar: () -> Unit, onCerrar: () -> Unit) {
+    val ctx = LocalContext.current
+    var verQR by remember { mutableStateOf(false) }
+    fun abrirWhatsApp() {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "Mira mi tienda Rincón Amancay: $link")
+        }
+        try {
+            send.setPackage("com.whatsapp")
+            ctx.startActivity(send)
+            AmancayRepo.marcarEnlaceCompartido()
+        } catch (_: Exception) {
+            send.setPackage(null)
+            ctx.startActivity(Intent.createChooser(send, "Compartir tienda"))
+            AmancayRepo.marcarEnlaceCompartido()
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onCerrar,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = Color.White,
+        text = {
+            PopIn {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text("Compartir tienda", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
+                if (!verQR) {
+                    Text(link, fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(14.dp))
+                    PrimaryButton("WhatsApp", { abrirWhatsApp(); onCerrar() })
+                    Spacer(Modifier.height(8.dp))
+                    OutlineButton("Código QR", { verQR = true })
+                    Spacer(Modifier.height(8.dp))
+                    OutlineButton("Copiar enlace", onCopiar)
+                    Spacer(Modifier.height(4.dp))
+                    GhostButton("Cerrar", onCerrar)
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    val qr = remember(link) { generarQR(link) }
+                    Image(
+                        bitmap = qr.asImageBitmap(), contentDescription = "QR de la tienda",
+                        modifier = Modifier.size(220.dp).clip(RoundedCornerShape(20.dp)).border(1.dp, Line, RoundedCornerShape(20.dp))
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Escanea para abrir la tienda", fontSize = 13.sp, color = Muted)
+                    Spacer(Modifier.height(8.dp))
+                    OutlineButton("Volver", { verQR = false })
+                }
+            }
+            }
+        },
+        confirmButton = {}
+    )
 }
 
 // ---------- REGISTRAR VENTA ----------
@@ -692,7 +1108,8 @@ fun RegisterSaleScreen(
 // ---------- HISTORIAL ----------
 
 @Composable
-fun SalesHistoryScreen(ventas: List<Sale>) {
+fun SalesHistoryScreen(ventas: List<Sale>, eventos: List<CatalogEvent>) {
+    var seccion by remember { mutableStateOf("Ventas") }
     var filtro by remember { mutableStateOf("Todos") }
     val lista = when (filtro) {
         "Feria" -> ventas.filter { it.canal == "Feria" }
@@ -702,35 +1119,76 @@ fun SalesHistoryScreen(ventas: List<Sale>) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
         Text("HISTORIAL DE VENTAS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-        Text("Tus ventas guardadas", fontSize = 30.sp, color = Dark)
-        Text("Filtra para encontrar una venta cuando la necesites.", fontSize = 15.sp, color = Muted)
+        Text(
+            if (seccion == "Ventas") "Tus ventas guardadas" else "Historial del catálogo",
+            fontSize = 30.sp, color = Dark
+        )
+        Text(
+            if (seccion == "Ventas") "Filtra para encontrar una venta cuando la necesites."
+            else "Altas, ediciones y bajas de tus productos.",
+            fontSize = 15.sp, color = Muted
+        )
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf("Todos", "Último mes", "Feria", "Producto").forEach { f ->
-                SelectableChip(f, filtro == f) { filtro = f }
-            }
+            SelectableChip("Ventas", seccion == "Ventas") { seccion = "Ventas" }
+            SelectableChip("Catálogo", seccion == "Catálogo") { seccion = "Catálogo" }
         }
         Spacer(Modifier.height(12.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(lista) { s ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                modifier = Modifier.fillMaxWidth().animateItem()
+        if (seccion == "Ventas") {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             ) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                            Text(s.productoNombre, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark)
-                            Text("${s.canal} · ${formatFecha(s.fecha)}", fontSize = 13.sp, color = Muted)
-                        }
-                        Text(formatPrice(s.total), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Wine)
-                    }
+                listOf("Todos", "Feria", "Producto").forEach { f ->
+                    SelectableChip(f, filtro == f) { filtro = f }
                 }
             }
-            item {
-                Text("Puedes filtrar por fecha, feria o producto.", fontSize = 13.sp, color = Muted)
-                Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(lista) { s ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                        modifier = Modifier.fillMaxWidth().animateItem()
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(s.productoNombre, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark)
+                                Text("${s.canal} · ${formatFecha(s.fecha)}", fontSize = 13.sp, color = Muted)
+                            }
+                            Text(formatPrice(s.total), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Wine)
+                        }
+                    }
+                }
+                item {
+                    Text("Puedes filtrar por fecha, feria o producto.", fontSize = 13.sp, color = Muted)
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+        } else {
+            if (eventos.isEmpty()) {
+                Text(
+                    "Aún no hay movimientos. Se registran al crear, editar o eliminar productos.",
+                    fontSize = 14.sp, color = Muted
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(eventos) { e ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                        modifier = Modifier.fillMaxWidth().animateItem()
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(e.texto, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark)
+                            Text(formatFecha(e.fecha), fontSize = 13.sp, color = Muted)
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(16.dp)) }
             }
         }
     }
@@ -739,7 +1197,11 @@ fun SalesHistoryScreen(ventas: List<Sale>) {
 // ---------- CONFIGURACION ----------
 
 @Composable
-fun SettingsScreen(settings: ShopSettings, onChange: (ShopSettings) -> Unit) {
+fun SettingsScreen(
+    settings: ShopSettings,
+    onChange: (ShopSettings) -> Unit,
+    onGuardar: () -> Unit
+) {
     var s = settings
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
@@ -747,26 +1209,96 @@ fun SettingsScreen(settings: ShopSettings, onChange: (ShopSettings) -> Unit) {
         Text("Tu forma de trabajar", fontSize = 30.sp, color = Dark)
         Text("Ajusta la app una sola vez y úsala con tranquilidad.", fontSize = 15.sp, color = Muted)
         Spacer(Modifier.height(16.dp))
-        Text("VENTAS E HISTORIAL", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-        ToggleRow("Guardar historial de ventas", "Precio, fecha, lugar, producto y variante.", true) {}
-        Spacer(Modifier.height(8.dp))
         Text("VALORES PARA PRODUCTOS NUEVOS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
         Spacer(Modifier.height(4.dp))
         Text("Manejo de stock", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark)
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf("Piezas físicas", "Sin stock", "Por encargo").forEach { m ->
-                SelectableChip(m, s.manejoStock == m) { s = s.copy(manejoStock = m); onChange(s) }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                SelectableChip("Piezas físicas", s.manejoStock == "Piezas físicas") { s = s.copy(manejoStock = "Piezas físicas"); onChange(s) }
+                SelectableChip("Sin stock", s.manejoStock == "Sin stock") { s = s.copy(manejoStock = "Sin stock"); onChange(s) }
+                SelectableChip("Por encargo", s.manejoStock == "Por encargo") { s = s.copy(manejoStock = "Por encargo"); onChange(s) }
             }
         }
         Spacer(Modifier.height(8.dp))
         Text("Al agotarse", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark)
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SelectableChip("Ocultar automáticamente", s.ocultarAutomatico) { s = s.copy(ocultarAutomatico = true); onChange(s) }
             SelectableChip("Mostrar “agotado”", !s.ocultarAutomatico) { s = s.copy(ocultarAutomatico = false); onChange(s) }
+            SelectableChip("Aceptar pedidos", s.aceptarPedidos) { s = s.copy(aceptarPedidos = !s.aceptarPedidos); onChange(s) }
         }
-        ToggleRow("Aceptar pedidos", "", s.aceptarPedidos) { s = s.copy(aceptarPedidos = it); onChange(s) }
+        Spacer(Modifier.height(14.dp))
+        PrimaryButton("Guardar valores por defecto", onGuardar)
         Spacer(Modifier.height(16.dp))
+        Text("ACCESO", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
+        Spacer(Modifier.height(4.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            ToggleRow(
+                "Entrar con huella digital",
+                "Más rápido y seguro en tu teléfono.",
+                settings.huella
+            ) { onChange(settings.copy(huella = it)) }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+// ---------- BLOQUEO CON HUELLA (optativo) ----------
+
+@Composable
+fun BloqueoHuellaScreen(
+    error: String?,
+    onHuella: () -> Unit,
+    onSinHuella: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.weight(1f))
+        Image(
+            painter = painterResource(Fig.LOGO), contentDescription = "Rincón Amancay",
+            modifier = Modifier.size(88.dp)
+        )
+        Spacer(Modifier.height(12.dp))
+        Text("Rincón", fontSize = 13.sp, color = Muted)
+        Text("Amancay", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Wine)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Entra con tu huella",
+            fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Dark, textAlign = TextAlign.Center
+        )
+        Text(
+            "Más rápido y seguro en tu teléfono.",
+            fontSize = 15.sp, color = Muted, textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(28.dp))
+        Button(
+            onClick = onHuella,
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(containerColor = Wine),
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.size(96.dp)
+        ) {
+            Icon(Icons.Default.Fingerprint, contentDescription = "Entrar con huella", tint = Color.White, modifier = Modifier.size(48.dp))
+        }
+        if (error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(error, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentRed, textAlign = TextAlign.Center)
+        }
+        Spacer(Modifier.height(16.dp))
+        GhostButton("Entrar sin huella", onSinHuella)
+        Spacer(Modifier.weight(1f))
     }
 }

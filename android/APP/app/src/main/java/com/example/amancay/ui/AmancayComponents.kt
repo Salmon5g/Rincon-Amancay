@@ -193,7 +193,8 @@ fun SelectableChip(text: String, selected: Boolean, onClick: () -> Unit) {
             text,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
             fontSize = 15.sp, color = fg,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
         )
     }
 }

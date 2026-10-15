@@ -84,7 +84,25 @@ data class ShopSettings(
     var rangoHistorial: String = "Último día",
     var manejoStock: String = "Piezas físicas",
     var aceptarPedidos: Boolean = true,
-    var ocultarAutomatico: Boolean = false
+    var ocultarAutomatico: Boolean = false,
+    var historialCatalogo: Boolean = true,
+    var huella: Boolean = false
+)
+
+data class CatalogEvent(
+    val id: String = UUID.randomUUID().toString(),
+    val texto: String,
+    val fecha: Long = System.currentTimeMillis()
+)
+
+data class FeriaInvitation(
+    val id: String = UUID.randomUUID().toString(),
+    val nombre: String,
+    val donde: String,
+    val cuando: String,
+    val horario: String,
+    val organiza: String,
+    val estado: String = "pendiente" // pendiente | aceptada | rechazada
 )
 
 fun formatPrice(value: Long): String {
@@ -98,6 +116,15 @@ fun formatFecha(ts: Long): String {
         SimpleDateFormat("dd MMM", Locale("es")).format(java.util.Date(ts))
     } catch (_: Exception) {
         ""
+    }
+}
+
+fun fechaHoy(): String {
+    return try {
+        "HOY, " + SimpleDateFormat("d 'DE' MMMM", Locale("es"))
+            .format(java.util.Date()).uppercase(Locale("es"))
+    } catch (_: Exception) {
+        "HOY"
     }
 }
 
@@ -172,6 +199,29 @@ object AmancayRepo {
     private val _enlaceCompartido = MutableStateFlow(false)
     val enlaceCompartido: StateFlow<Boolean> = _enlaceCompartido.asStateFlow()
 
+    private val _invitaciones = MutableStateFlow(
+        listOf(
+            FeriaInvitation(
+                nombre = "Feria Emprende Alerce",
+                donde = "Alerce, Puerto Montt",
+                cuando = "Sábado 17 de octubre",
+                horario = "10:00 a 17:00",
+                organiza = "Asociación de Alerce"
+            ),
+            FeriaInvitation(
+                nombre = "Feria Plaza Ñuñoa",
+                donde = "Plaza Ñuñoa, Stand 12",
+                cuando = "Domingo 19 de octubre",
+                horario = "11:00 a 20:00",
+                organiza = "Junta de Vecinos Ñuñoa"
+            )
+        )
+    )
+    val invitaciones: StateFlow<List<FeriaInvitation>> = _invitaciones.asStateFlow()
+
+    private val _eventosCatalogo = MutableStateFlow<List<CatalogEvent>>(emptyList())
+    val eventosCatalogo: StateFlow<List<CatalogEvent>> = _eventosCatalogo.asStateFlow()
+
     val draft = DraftState()
 
     init {
@@ -205,6 +255,33 @@ object AmancayRepo {
                 disponibleEncargo = false, publicado = true, esBorrador = false, tieneFoto = false
             ),
             Product(
+                nombre = "Miel de Ulmo 500 g",
+                tipo = ProductType.ALIMENTOS,
+                material = "Miel de ulmo, envase de vidrio",
+                tamano = "500 g",
+                cuidados = "Guardar en lugar fresco y seco.",
+                variantes = mutableListOf(Variant(nombre = "Frasco vidrio", precio = "9500", stock = "20")),
+                disponibleEncargo = true, publicado = true, esBorrador = false, tieneFoto = false
+            ),
+            Product(
+                nombre = "Mermelada de Mora 250 g",
+                tipo = ProductType.ALIMENTOS,
+                material = "Mora, azúcar, limón",
+                tamano = "250 g",
+                cuidados = "Refrigerar una vez abierta.",
+                variantes = mutableListOf(Variant(nombre = "Frasco 250 g", precio = "6800", stock = "15")),
+                disponibleEncargo = true, publicado = true, esBorrador = false, tieneFoto = false
+            ),
+            Product(
+                nombre = "Jabón de Matico",
+                tipo = ProductType.BIENESTAR,
+                material = "Matico, aceite de oliva, karité",
+                tamano = "100 g",
+                cuidados = "Mantener seco entre usos.",
+                variantes = mutableListOf(Variant(nombre = "Barra 100 g", precio = "4500", stock = "30")),
+                disponibleEncargo = true, publicado = true, esBorrador = false, tieneFoto = false
+            ),
+            Product(
                 nombre = "Cuaderno Semilla",
                 tipo = ProductType.PAPELERIA,
                 material = "Papel reciclado",
@@ -222,28 +299,56 @@ object AmancayRepo {
     }
 
     fun guardarProducto(p: Product) {
+        val existe = _productos.value.any { it.id == p.id }
         _productos.update { list ->
             val idx = list.indexOfFirst { it.id == p.id }
             if (idx >= 0) list.toMutableList().also { it[idx] = p } else list + p
         }
         // si era el borrador guardado, limpiarlo
         if (_borradorGuardado.value?.id == p.id && !p.esBorrador) _borradorGuardado.value = null
+        eventoCatalogo(
+            if (existe) "Producto editado: ${p.nombre}"
+            else if (p.publicado) "Producto publicado: ${p.nombre}"
+            else "Producto creado: ${p.nombre}"
+        )
     }
 
     fun guardarBorrador(p: Product) {
         val b = p.copy(esBorrador = true, publicado = false)
         _borradorGuardado.value = b
-        guardarProducto(b)
+        val existe = _productos.value.any { it.id == b.id }
+        _productos.update { list ->
+            val idx = list.indexOfFirst { it.id == b.id }
+            if (idx >= 0) list.toMutableList().also { it[idx] = b } else list + b
+        }
+        if (!existe) eventoCatalogo("Borrador guardado: ${b.nombre}")
     }
 
     fun eliminarBorrador() { _borradorGuardado.value = null }
 
     fun eliminarProducto(id: String) {
+        val nombre = _productos.value.firstOrNull { it.id == id }?.nombre ?: "producto"
         _productos.update { list -> list.filterNot { it.id == id } }
         if (_borradorGuardado.value?.id == id) _borradorGuardado.value = null
+        eventoCatalogo("Producto eliminado: $nombre")
+    }
+
+    fun eventoCatalogo(texto: String) {
+        if (!_settings.value.historialCatalogo) return
+        _eventosCatalogo.update { listOf(CatalogEvent(texto = texto)) + it }
     }
 
     fun marcarEnlaceCompartido() { _enlaceCompartido.value = true }
+
+    fun responderFeria(id: String, acepta: Boolean) {
+        _invitaciones.update { list ->
+            list.map {
+                // Solo se puede responder una vez: si ya respondió, no cambia
+                if (it.id == id && it.estado == "pendiente") it.copy(estado = if (acepta) "aceptada" else "rechazada")
+                else it
+            }
+        }
+    }
 
     fun obtener(id: String): Product? = _productos.value.firstOrNull { it.id == id }
 
