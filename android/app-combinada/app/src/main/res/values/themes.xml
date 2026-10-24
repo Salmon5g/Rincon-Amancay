@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <color name="amancay_cream">#FFFFF8EF</color>
+    <color name="amancay_wine">#FF75264F</color>
+
+    <style name="Theme.Amancay" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/amancay_cream</item>
+        <item name="android:statusBarColor">@color/amancay_cream</item>
+        <item name="android:navigationBarColor">@color/amancay_cream</item>
+    </style>
+</resources>

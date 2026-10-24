@@ -8,11 +8,11 @@ coverage/
 *.tsbuildinfo
 
 # Configuración local y credenciales
+google-services*.json
 .env
 .env.*
 !.env.example
 !.env.compartido.local.example
-google-services.json
 GoogleService-Info.plist
 *serviceAccount*.json
 *service-account*.json
@@ -26,6 +26,7 @@ secrets/
 
 # Android y sistema
 .gradle/
+.kotlin/
 .idea/
 local.properties
 .DS_Store
@@ -37,3 +38,6 @@ Thumbs.db
 *-debug.*.log
 emulator-data/
 .local/
+
+# Copia local preservada mientras se resolvía la colisión de rutas en Windows
+/android/src-comprador-preservado/

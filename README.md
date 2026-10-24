@@ -7,7 +7,7 @@ La web está publicada en [rincon-amancay.web.app](https://rincon-amancay.web.ap
 ## Estado del proyecto
 
 - **Web:** una aplicación Nuxt 4, Vue y TypeScript con área pública de comprador y panel de administración. Incluye inicio de sesión administrativo, lectura de datos autorizados e interfaces para gestionar cuentas e invitaciones.
-- **Android:** módulo compilable Kotlin y Jetpack Compose en `android/APP`. Incluye una experiencia móvil para emprendedoras con inicio, productos, registro de productos con fotografía y variantes, vista previa del catálogo, registro de ventas, historial y ajustes. Parte con productos de demostración para recorrer los flujos.
+- **Android:** aplicación unificada Kotlin y Jetpack Compose en `android/app-combinada`, con entrada por modo comprador o emprendedora. Ambos modos usan el mismo catálogo durante la ejecución; el comprador busca por categoría y disponibilidad. Los datos creados en esta demo se mantienen en memoria y no se sincronizan entre dispositivos ni persisten al cerrar la app. El proyecto comprador anterior se conserva en `android/`.
 - **Backend:** API HTTP autenticada con operaciones de cuentas, invitaciones, publicación, productos, stock e imágenes. Tiene pruebas automatizadas y puede ejecutarse con los emuladores locales.
 - **Firebase y modelo compartido:** reglas de Firestore y Storage, índices, datos de prueba y contratos que documentan entidades, permisos y operaciones del proyecto.
 
@@ -37,20 +37,25 @@ Abre `http://localhost:3000` para el catálogo o `http://localhost:3000/admin` p
 
 ### Aplicación Android
 
-Abre `android/APP` en Android Studio, sincroniza Gradle y ejecuta la configuración `app` en un emulador o dispositivo. También puedes compilar y ejecutar las pruebas unitarias desde PowerShell:
+Abre `android/app-combinada` en Android Studio, sincroniza Gradle y ejecuta la configuración `app` en un emulador o dispositivo. También puedes compilar y ejecutar las pruebas unitarias desde PowerShell:
 
 ```powershell
-cd android/APP
+cd android/app-combinada
 .\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
 El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`.
 
+## Migración a Firebase real
+
+El proyecto comprador anterior en `android/` puede conectarse a Firebase real según [Firebase real (nube)](docs/firebase-nube.md). La app unificada de `android/app-combinada` sigue siendo una demo local en memoria; esa guía todavía no configura su catálogo.
+
 ## Estructura del repositorio
 
 ```text
 web/                    Aplicación Nuxt para comprador y administración
-android/APP/             Aplicación Android Kotlin y Jetpack Compose
+android/app-combinada/   Proyecto Android que contiene la app unificada (ejecutar módulo app)
+android/                 Proyecto comprador anterior
 android/ejemplos/        Ejemplos de integración para equipos Android
 backend/                 API y operaciones de negocio
 firebase/                Reglas, índices, emuladores y pruebas de seguridad

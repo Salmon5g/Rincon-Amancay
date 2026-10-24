@@ -99,40 +99,18 @@ const resultado = await $amancay.llamar('invitarEmprendedora', solicitud);
 // Conservar solicitud para reintentar; resultado.invitacionId para la aceptación.
 ```
 
-## 2. Equipo app Android (modo comprador, primer incremento)
+## 2. Equipo app Android
 
-Meta: proyecto **Kotlin + Jetpack Compose** con la pantalla inicial que separa **modo comprador** y **modo emprendedora** (RF-ACC-05); se empieza por comprador.
+La app unificada de demostración está en `android/app-combinada`. En Android Studio abre esa carpeta y ejecuta el módulo `app`; desde PowerShell:
 
-1. Crear el proyecto Gradle/Compose en `android/` con su `applicationId`.
-2. Agregar dependencias (BoM de Firebase + coroutines):
-
-```kotlin
-implementation(platform("com.google.firebase:firebase-bom:35.0.0"))
-implementation("com.google.firebase:firebase-auth")
-implementation("com.google.firebase:firebase-firestore")
-implementation("com.google.firebase:firebase-storage")
-implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
+```powershell
+cd android/app-combinada
+.\gradlew.bat :app:assembleDebug --console=plain
 ```
 
-3. Copiar `ConexionLocal.kt` y `ClienteLocal.kt` de `android/ejemplos/src/debug/java/ejemplo/amancay/` al `src/debug/java/<paquete>/` del módulo app. Copiar `ErrorApi.kt` desde `android/ejemplos/src/main/java/ejemplo/amancay/` a `src/main/java/<paquete>/`: lo usan ambos entornos. Cambiar el `package` de los tres archivos al namespace del equipo. Por ahora no copiar los adaptadores compartidos.
-4. Red: el emulador usa `10.0.2.2`; teléfono físico por USB usa `adb reverse` para 9099/8080/9199/8787.
+El modo comprador y el modo emprendedora consultan el mismo catálogo de demostración en memoria y aplican los filtros de producto. Los productos publicados en modo emprendedora aparecen en el comprador durante esa ejecución; al cerrar la app se reinicia el catálogo y no se sincroniza entre teléfonos. Esta demo no lee ni publica datos en Firebase o en la API. El proyecto comprador anterior sigue en la raíz `android/`; es independiente y puede usar Firebase según sus propias instrucciones. No uses rutas `APP` y `app` que solo difieran por mayúsculas en Windows, porque representan la misma carpeta.
 
-**La app sí necesita su `applicationId` de Gradle para compilar** (ejemplo de formato: `cl.equipo.amancay`). No necesita registrarse todavía en Firebase ni tener `google-services.json`: `ConexionLocal` usa un Firebase App ID ficticio. Para la nube se usará otro dato, `firebaseAppId` (`mobilesdk_app_id`, formato `1:…:android:…`), obtenido al registrar la app.
-
-Integrar el permiso INTERNET en el manifest principal para todas las variantes. La excepción de HTTP y `network_security_config.xml` van solo en debug según [el ejemplo Android](../android/ejemplos/README.md). El primer control del equipo es sincronizar Gradle, compilar debug y consultar las tiendas sin sesión. Los ejemplos Kotlin todavía no se han compilado en este repositorio.
-
-Uso desde una coroutine (comprador, sin sesión):
-
-```kotlin
-val cliente = ClienteLocal(ConexionLocal.obtener(context.applicationContext))
-val tiendas = cliente.listarTiendas()          // sin sesión
-val productos = cliente.listarProductos(tiendaId)
-// Para otra página: pasar el último DocumentSnapshot como cursor.
-```
-
-Ver `android/ejemplos/README.md` para manifiesto debug, red y manejo de errores.
-
+La demo unificada aún no lee ni publica productos en Firebase o en la API. Para compartir datos entre teléfonos falta implementar lectura y publicación autenticadas contra el backend y verificar permisos. Los ejemplos de conexión local más abajo sirven como referencia técnica, pero no están conectados a esta demo.
 ## 3. Verificación conjunta
 
 Con los tres clientes conectados a los emuladores de una misma máquina, seguir el **escenario común** de [integración de equipos](integracion-equipos.md#escenario-común-para-revisar-juntos). No hace falta terminar las pantallas: basta una vista de catálogo y una acción de prueba. Las operaciones de emprendedora pueden comprobarse mediante los adaptadores mientras su interfaz no exista.
