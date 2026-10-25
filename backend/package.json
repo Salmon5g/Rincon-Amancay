@@ -12,6 +12,7 @@
     "test:stock": "node --test tests/stock.test.ts",
     "test:desactivacion": "node --test tests/desactivacion.test.ts",
     "cuentas:demo": "node scripts/cuentas-demo.ts",
+    "emprendedor:demo": "node scripts/emprendedor-demo.ts",
     "test:ciclo": "node --test tests/ciclo-cuentas.test.ts",
     "test:disponibilidad": "node --test tests/disponibilidad.test.ts",
     "plan:desarrollo": "node scripts/plan-desarrollo.mjs",

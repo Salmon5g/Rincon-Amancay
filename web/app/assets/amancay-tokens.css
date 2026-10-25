@@ -1,0 +1,26 @@
+/* Tokens visuales Rincón Amancay — derivados del Figma emprendedora (01-11).
+   La parte compradora reutiliza la "vista pública" (09): fondo crema,
+   tarjetas claras con borde suave, títulos serif y acentos bordó + mostaza. */
+
+:root {
+  --amancay-fondo: #fbf3e4;
+  --amancay-superficie: #fffbf2;
+  --amancay-superficie-variante: #f6e8d3;
+  --amancay-bordo: #6b1e3d;
+  --amancay-bordo-oscuro: #4e142c;
+  --amancay-bordo-suave: #f3dee3;
+  --amancay-mostaza: #f2b73b;
+  --amancay-mostaza-suave: #fef0cd;
+  --amancay-tinta: #2e1b20;
+  --amancay-tinta-suave: #7c6a6e;
+  --amancay-naranja-icono: #f6c177;
+  --amancay-naranja-fondo: #fbe3b8;
+  --amancay-verde-fondo: #ddebd3;
+  --amancay-verde-texto: #2f6b2e;
+  --amancay-borde: #e7d5be;
+  --amancay-radio-tarjeta: 20px;
+  --amancay-radio-chip: 999px;
+  --amancay-radio-boton: 16px;
+  --amancay-fuente-titulo: Georgia, "Times New Roman", serif;
+  --amancay-fuente-cuerpo: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
