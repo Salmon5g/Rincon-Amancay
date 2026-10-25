@@ -387,7 +387,8 @@ button:disabled {
     --sombra: 0 6px 20px rgba(117, 38, 79, 0.08);
 
     display: grid;
-    grid-template-columns: 270px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
     width: 100%;
     min-height: 100vh;
     min-height: 100dvh;
@@ -430,24 +431,25 @@ input:focus-visible {
 
 /* Lateral */
 .lateral {
-    position: sticky;
-    top: 0;
+    position: relative;
     align-self: start;
-    height: 100vh;
+    height: auto;
     display: flex;
-    flex-direction: column;
-    padding: 1.25rem 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem 2rem;
+    padding: 1rem clamp(1.25rem, 3vw, 3.5rem);
     box-sizing: border-box;
     background: rgba(255, 255, 255, 0.82);
     backdrop-filter: blur(6px);
-    border-right: 1.5px solid var(--borde);
+    border-bottom: 1.5px solid var(--borde);
 }
 
 .marca {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0;
 }
 
 .marca-icono {
@@ -491,10 +493,12 @@ input:focus-visible {
 
 .menu {
     flex: 1;
+    min-width: 0;
     display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    overflow-y: auto;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .menu-titulo {
@@ -572,21 +576,14 @@ input:focus-visible {
 }
 
 .menu button.on::before {
-    content: '';
-    position: absolute;
-    left: -1rem;
-    top: 20%;
-    bottom: 20%;
-    width: 4px;
-    border-radius: 0 4px 4px 0;
-    background: var(--vino);
+    display: none;
 }
 
 .pie {
     display: flex;
     align-items: center;
     gap: 0.7rem;
-    margin-top: 0.8rem;
+    margin-top: 0;
     padding: 0.7rem;
     background: var(--crema);
     border-radius: 16px;
@@ -1270,14 +1267,18 @@ h1 {
         border-right: 0;
         border-bottom: 1.5px solid var(--borde);
         padding: 0.9rem 1rem 0.6rem;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.7rem;
     }
 
     .marca {
-        margin-bottom: 0.7rem;
+        margin-bottom: 0;
     }
 
     .menu {
         flex-direction: row;
+        flex-wrap: nowrap;
         overflow-x: auto;
         padding-bottom: 0.3rem;
     }
