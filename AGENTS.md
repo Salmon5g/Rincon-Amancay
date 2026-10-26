@@ -17,6 +17,7 @@ Rincón Amancay: web Nuxt en `web/`, API en `backend/`, configuración Firebase 
 
 ## Estado actual
 
+- 2026-10-26: se agregó la ficha de mitigación de P01 (la foto del producto sale mal) en `docs/Problematicas_de_uso(Mitigacion_por_cada_problematica)/mitigacion-p01.md`; es propuesta de diseño sin cambios de código.
 - 2026-10-25: el menú del comprador web se ubicó en una barra superior adaptable a móvil mediante cambios de CSS; se conservó la lógica de consultas y navegación.
 - 2026-10-24: `android/APP` se reubicó a `android/app-combinada` para evitar colisión de mayúsculas/minúsculas con `android/app` en Windows. Se restauró el proyecto comprador y sus cambios locales.
 - 2026-10-24: se retiró la sincronización Firebase de demostración de la app unificada. `:app:assembleDebug` comprobado con éxito usando el JDK 25 de Android Studio.
