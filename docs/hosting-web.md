@@ -21,7 +21,9 @@ npm.cmd --prefix web run generate
 .\firebase\node_modules\.bin\firebase.cmd deploy --only hosting --project rincon-amancay
 ```
 
-`generate` produce `web/.output/public`; esa carpeta es la única que Firebase Hosting publica. El `firebase.json` conserva las reglas de Firestore y Storage y añade Hosting sin alterar sus configuraciones. La raíz redirige al catálogo comprador y las páginas `/comprador` y `/admin` se generan como rutas estáticas. Publicar Hosting no despliega por sí solo la API ni cambia las reglas Firestore.
+`generate` produce `web/.output/public`; esa carpeta es la única que Firebase Hosting publica. El `firebase.json` conserva las reglas de Firestore y Storage y añade Hosting sin alterar sus configuraciones. La raíz redirige al catálogo comprador y las páginas `/comprador`, `/admin` y `/invitacion-emprendedora` se generan como rutas estáticas. El enlace de invitación lleva el ID por query string, por lo que no requiere reescrituras dinámicas de Hosting. Publicar Hosting no despliega por sí solo la API ni cambia las reglas Firestore.
+
+Para que la verificación del correo vuelva a la invitación, agrega el dominio usado por la web (por ejemplo `rincon-amancay.web.app`) en **Firebase Console → Authentication → Configuración → Dominios autorizados**. El enlace compartido lleva `invitacionId`; la autorización final se valida en la API con el correo de Authentication verificado.
 
 La segunda orden usa la [Firebase CLI](https://firebase.google.com/docs/cli) incluida en `firebase/` y una cuenta con permiso para publicar Hosting en `rincon-amancay`. Puede usar las credenciales ADC creadas por `gcloud auth application-default login`; comprueba el acceso con `.\firebase\node_modules\.bin\firebase.cmd projects:list`. Si prefieres una instalación global con sesión propia:
 

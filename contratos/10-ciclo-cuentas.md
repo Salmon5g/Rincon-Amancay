@@ -1,6 +1,6 @@
-# Ciclo de cuentas provisional
+# Ciclo de cuentas
 
-Implementado para `demo-rincon-amancay`, con API local y emuladores. El catálogo sigue siendo público sin sesión. Una identidad de Firebase Authentication no recibe permisos de aplicación automáticamente. Los roles se consultan en `accesos/{uid}` y se asignan únicamente mediante el backend.
+El catálogo sigue siendo público sin sesión. Una identidad de Firebase Authentication no recibe permisos de aplicación automáticamente. Los roles se consultan en `accesos/{uid}` y se asignan únicamente mediante el backend. El flujo web de invitación puede probarse con emuladores/API local o con Firebase real y la API autenticada.
 
 ## Registro de compradores
 
@@ -34,7 +34,9 @@ La administradora activa llama a `POST /api/v1/invitarEmprendedora`:
 
 Usar IDs activos de los catálogos, no asumir que los ejemplos son valores universales. El servidor genera `invitacionId` y `tiendaId`, fija vencimiento de siete días y responde con ambos IDs, estado y `venceEn` ISO. Guarda los datos aprobados en `invitaciones/{invitacionId}`. Mismo administrador, operación y contenido reutilizan la invitación; cambiar contenido conservando la operación devuelve 409. Repetir una invitación vencida o cancelada no la renueva: emitir otra con un ID de operación nuevo.
 
-La invitación se puede preparar antes de que exista la identidad. En este entorno local **no se envía un correo de invitación**: la administradora entrega manualmente el identificador a la persona de prueba. El envío real y una pantalla/enlace de aceptación se integrarán antes de usarlo en la nube. No existe todavía una ruta visual de aceptación.
+La invitación se puede preparar antes de que exista la identidad. El panel no envía un correo de invitación automático: la administradora comparte manualmente el enlace `https://<dominio-web>/invitacion-emprendedora?invitacionId={invitacionId}` por WhatsApp, en persona u otro canal acordado. La destinataria abre la ruta web, crea su propia contraseña o inicia sesión, y solicita el correo de verificación a Firebase Authentication. El enlace de verificación vuelve a la invitación; tras confirmar que el correo está verificado, la web consulta y acepta la invitación mediante la API. La destinataria debe usar exactamente el correo invitado.
+
+El envío de verificación usa un `ActionCodeSettings.url` con la ruta de invitación como URL de continuación. El dominio publicado debe estar agregado en **Authentication → Configuración → Dominios autorizados**. Firebase procesa el código de verificación en su página de acción y luego redirige a la web. La ruta también permite iniciar sesión después de verificar en otro dispositivo. La contraseña nunca se envía al backend ni se comparte con la administradora.
 
 La destinataria crea su identidad o inicia sesión, verifica el mismo correo y llama a:
 
@@ -54,7 +56,7 @@ Se conserva `altaEmprendedora` del contrato 06 como alta administrativa directa 
 
 Estas operaciones usan el SDK cliente de Firebase, no la API de negocio. La API nunca recibe una contraseña ni un código de recuperación:
 
-- `enviarVerificacion()` y `confirmarCorreo(codigo)`.
+- `enviarVerificacion(urlContinuacion?)` y `confirmarCorreo(codigo)`.
 - `solicitarRecuperacion(correo)` devuelve un mensaje genérico tanto para correo existente como desconocido; los errores de red/cuota se mantienen como errores.
 - `comprobarRecuperacion(codigo)` comprueba el código y devuelve el correo asociado.
 - `confirmarRecuperacion(codigo, nuevaClave)` cambia la contraseña y cierra la sesión de este cliente. Iniciar sesión de nuevo.

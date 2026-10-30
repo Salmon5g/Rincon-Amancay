@@ -4,7 +4,7 @@ API HTTP autenticada en `src/http/api.ts` con publicación, cuentas, productos, 
 
 `src/config/` separa conexiones y configuración HTTP; `src/modules/` implementa operaciones por función; `src/montar-api.ts` conecta módulos y servidor. `tests/` comprueba permisos y consistencia. `src/shared/` queda reservado para futuras utilidades comunes.
 
-Contratos: ../contratos/03-publicacion.md y ../contratos/06-alta-emprendedoras.md. Implementada alta administrativa de rol y tienda para una identidad existente; npm run cuentas:demo crea identidades de práctica. Invitaciones de producción y ventas siguen pendientes. Disponibilidad e imágenes procesadas: contrato 11.
+Contratos: ../contratos/03-publicacion.md, ../contratos/06-alta-emprendedoras.md, ../contratos/10-ciclo-cuentas.md y ../contratos/14-edicion-cuentas-emprendedoras.md. La API incluye invitaciones, edición administrativa del nombre visible, desactivación/reactivación, catálogos, asociaciones e integrantes, además de productos, stock, disponibilidad e imágenes. El panel web comparte el enlace de invitación y la destinataria crea sus credenciales, verifica el correo y acepta la tienda desde la web; el panel no envía la invitación por correo. Ver el estado y los límites en `../docs/admin-firebase-real-api-local.md`.
 
 crearProducto y editarProducto gestionan fichas y variantes privadas según ../contratos/07-edicion-productos.md. npm run test:productos comprueba este flujo; editar no publica ni modifica stock existente.
 

@@ -6,7 +6,7 @@ import { crearCuentas, validarAlta } from './cuentas.ts';
 import { ErrorOperacion, version } from './publicacion.ts';
 import { porCuenta } from './serializacion-cuentas.ts';
 
-export const accionesCuentas = ['registrarComprador', 'invitarEmprendedora', 'consultarInvitacion', 'aceptarInvitacion', 'cancelarInvitacion', 'reactivarEmprendedora'] as const;
+export const accionesCuentas = ['registrarComprador', 'listarEmprendedorasAdmin', 'editarCuentaEmprendedora', 'invitarEmprendedora', 'consultarInvitacion', 'aceptarInvitacion', 'cancelarInvitacion', 'reactivarEmprendedora'] as const;
 export type AccionCuenta = typeof accionesCuentas[number];
 function exigir(ok: unknown, code: string, mensaje: string): asserts ok {if(!ok) throw new ErrorOperacion(code,mensaje);}
 function id(v: unknown): v is string {return typeof v==='string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v);}
@@ -18,6 +18,16 @@ function campos(input: unknown, keys: string[]) {
   return d;
 }
 function huella(input: unknown) {return createHash('sha256').update(JSON.stringify(input)).digest('hex');}
+function versionOpcional(data: DocumentData | undefined): string | undefined {
+  const actualizadoEn=data?.actualizadoEn;
+  return actualizadoEn instanceof Timestamp ? `${actualizadoEn.seconds}:${actualizadoEn.nanoseconds}` : undefined;
+}
+
+async function getAllEnLotes(db: Firestore, refs: FirebaseFirestore.DocumentReference[], size = 90): Promise<FirebaseFirestore.DocumentSnapshot[]> {
+  const result: FirebaseFirestore.DocumentSnapshot[] = [];
+  for (let index = 0; index < refs.length; index += size) result.push(...await db.getAll(...refs.slice(index, index + size)));
+  return result;
+}
 
 export function crearCicloCuentas(db: Firestore, auth: Auth) {
   const alta=crearCuentas(db,auth);
@@ -46,6 +56,100 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
         if(!user.exists) tx.create(perfil,{nombreMostrar,creadoEn:now,actualizadoEn:now});
         tx.create(actor,{roles:['comprador'],estado:'activo',creadoEn:now,actualizadoEn:now});
         return {uid,estado:'activo'};
+      });
+    }
+    if(accion==='listarEmprendedorasAdmin') {
+      campos(input,[]);
+      exigir(admin((await actor.get()).data()),'sin-permiso','Se requiere administrador activo.');
+      const [accesos,invitaciones]=await Promise.all([
+        db.collection('accesos').where('roles','array-contains','emprendedora').limit(51).get(),
+        db.collection('invitaciones').where('estado','==','pendiente').limit(51).get(),
+      ]);
+      exigir(accesos.size<=50 && invitaciones.size<=50,'limite-local','Hay más de 50 cuentas o invitaciones; se requiere paginación antes de continuar.');
+      const uids=accesos.docs.map(documento=>documento.id);
+      const perfiles=await getAllEnLotes(db,uids.flatMap(uid=>[
+        db.doc(`emprendedoras/${uid}`),db.doc(`usuarios/${uid}`),
+      ]));
+      const tiendaIds=[...new Set(accesos.docs.map(documento=>documento.data().tiendaId).filter((tiendaId):tiendaId is string=>typeof tiendaId==='string' && id(tiendaId)))];
+      const tiendas=await getAllEnLotes(db,tiendaIds.map(tiendaId=>db.doc(`tiendasPrivadas/${tiendaId}`)));
+      const tiendaPorId=new Map(tiendas.map(tienda=>[tienda.id,tienda.data()]));
+      const emprendedoras=await Promise.all(accesos.docs.map(async(documento,index)=>{
+        const acceso=documento.data(),perfil=perfiles[index*2]?.data(),usuario=perfiles[index*2+1]?.data();
+        const tiendaId=typeof acceso.tiendaId==='string'?acceso.tiendaId:'';
+        let correo='';
+        try { correo=(await auth.getUser(documento.id)).email?.toLowerCase() ?? ''; }
+        catch(error) {
+          if((error as {code?:string}).code!=='auth/user-not-found') throw new ErrorOperacion('pendiente','No se pudo consultar Authentication para completar el listado administrativo.');
+        }
+        const tienda=tiendaPorId.get(tiendaId);
+        const consistente=(acceso.estado==='activo' || acceso.estado==='desactivado')
+          && Array.isArray(acceso.roles) && !acceso.roles.includes('administrador')
+          && Boolean(correo) && id(tiendaId) && perfil?.tiendaId===tiendaId && tienda?.propietarioUid===documento.id;
+        return {
+          uid:documento.id,
+          correo,
+          nombreMostrar:typeof usuario?.nombreMostrar==='string'?usuario.nombreMostrar:'',
+          nombreTienda:typeof tienda?.nombre==='string'?tienda.nombre:'Tienda sin ficha',
+          tiendaId,
+          estado:acceso.estado==='desactivado'?'desactivado':acceso.estado==='activo'?'activo':'inconsistente',
+          consistente,
+          versionAcceso:versionOpcional(acceso),
+          versionPerfil:versionOpcional(usuario),
+        };
+      }));
+      const pendientes=invitaciones.docs.filter(documento=>documento.data().estado==='pendiente').map(documento=>({
+        invitacionId:documento.id,
+        correo:String(documento.data().correo ?? ''),
+        nombreTienda:String(documento.data().alta?.nombreTienda ?? ''),
+        estado:String(documento.data().estado ?? ''),
+      }));
+      return {
+        emprendedoras:emprendedoras.sort((a,b)=>a.nombreMostrar.localeCompare(b.nombreMostrar,'es-CL')),
+        invitaciones:pendientes,
+      };
+    }
+    if(accion==='editarCuentaEmprendedora') {
+      const d=campos(input,['uidDestino','operacionId','versionEsperada','nombreMostrar']);
+      exigir(id(d.uidDestino) && id(d.operacionId),'datos-invalidos','Identificador de cuenta u operación inválido.');
+      exigir(typeof d.versionEsperada==='string' && /^[0-9]{1,12}:[0-9]{1,9}$/.test(d.versionEsperada),'datos-invalidos','Versión del perfil requerida.');
+      exigir(typeof d.nombreMostrar==='string' && d.nombreMostrar.trim().length>0 && d.nombreMostrar.trim().length<=100,'datos-invalidos','El nombre visible es obligatorio y admite hasta 100 caracteres.');
+      const destino=d.uidDestino, nombreMostrar=(d.nombreMostrar as string).trim();
+      exigir(uid!==destino,'sin-permiso','No se permite modificar desde aquí la propia cuenta administradora.');
+      exigir(admin((await actor.get()).data()),'sin-permiso','Se requiere administrador activo.');
+      const target=db.doc(`accesos/${destino}`), profile=db.doc(`emprendedoras/${destino}`), user=db.doc(`usuarios/${destino}`);
+      const operacionRef=db.doc(`operacionesAdministracion/${uid}_${d.operacionId}`), auditoriaRef=db.doc(`auditoriaAdministracion/${uid}_${d.operacionId}`);
+      const solicitud={uidDestino:destino,operacionId:d.operacionId,versionEsperada:d.versionEsperada,nombreMostrar};
+      const firma=huella(solicitud), anterior=await operacionRef.get();
+      if(anterior.exists) {
+        exigir(anterior.data()!.firma===firma,'id-reutilizado','operacionId corresponde a otra solicitud.');
+        return anterior.data()!.resultado as Record<string,unknown>;
+      }
+      try { await auth.getUser(destino); }
+      catch(error) {
+        if((error as {code?:string}).code==='auth/user-not-found') throw new ErrorOperacion('no-encontrado','La identidad de Authentication ya no existe.');
+        throw new ErrorOperacion('pendiente','No se pudo comprobar la identidad en Authentication.');
+      }
+      return db.runTransaction(async tx=>{
+        const [who,previous,access,entrepreneur,userDoc]=await tx.getAll(actor,operacionRef,target,profile,user);
+        exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
+        if(previous.exists) {
+          exigir(previous.data()!.firma===firma,'id-reutilizado','operacionId corresponde a otra solicitud.');
+          return previous.data()!.resultado as Record<string,unknown>;
+        }
+        const acceso=access.data(),perfil=entrepreneur.data(),usuario=userDoc.data();
+        exigir(access.exists && (acceso?.estado==='activo' || acceso?.estado==='desactivado') && Array.isArray(acceso.roles)
+          && acceso.roles.includes('emprendedora') && !acceso.roles.includes('administrador') && id(acceso.tiendaId)
+          && !acceso.operacionCuentaPendiente,'conflicto','La cuenta no es una emprendedora administrable o tiene una operación pendiente.');
+        exigir(entrepreneur.exists && perfil?.tiendaId===acceso!.tiendaId && userDoc.exists && usuario!==undefined,'conflicto','El perfil, el acceso y la cuenta de usuario no están completos o no coinciden.');
+        exigir(version(usuario)===d.versionEsperada,'conflicto','El nombre visible cambió; actualiza la cuenta antes de guardar.');
+        const store=await tx.get(db.doc(`tiendasPrivadas/${acceso!.tiendaId}`));
+        exigir(store.data()?.propietarioUid===destino,'conflicto','La tienda no pertenece a esta cuenta.');
+        const now=FieldValue.serverTimestamp();
+        const resultado={uid:destino,tiendaId:acceso!.tiendaId,nombreMostrar,estado:'actualizada'};
+        tx.update(user,{nombreMostrar,actualizadoEn:now});
+        tx.create(operacionRef,{firma,resultado,creadaPor:uid,creadoEn:now});
+        tx.create(auditoriaRef,{actorUid:uid,accion,documentoId:destino,antes:typeof usuario!.nombreMostrar==='string'?{nombreMostrar:usuario!.nombreMostrar}:{},despues:{nombreMostrar},creadoEn:now});
+        return resultado;
       });
     }
     if(accion==='invitarEmprendedora') {

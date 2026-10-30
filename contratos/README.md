@@ -12,6 +12,8 @@ La [administración de catálogos](12-administracion-catalogos.md) permite gesti
 
 La [administración de asociaciones](13-administracion-asociaciones.md) cubre la ficha, su estado y las relaciones de integrantes mediante la API autenticada. No incluye la vista pública de asociaciones (RF-ASO-03) ni carga de logos a Storage.
 
+La [edición de cuentas emprendedoras](14-edicion-cuentas-emprendedoras.md) permite cambiar el nombre visible con control de versión y auditoría. Correo, contraseña y ficha de tienda se mantienen en flujos separados.
+
 El [ciclo de cuentas](10-ciclo-cuentas.md) define registro, invitaciones, recuperación de contraseña y reactivación. Las pantallas administrativas usan invitaciones; el alta directa del contrato 06 queda como apoyo técnico local. Las reservas interrumpidas tienen [procedimiento técnico](../docs/recuperacion-cuentas.md), fuera de las pantallas.
 
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).

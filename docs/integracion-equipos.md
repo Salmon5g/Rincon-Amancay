@@ -102,7 +102,7 @@ await $amancay.llamar('registrarComprador', { nombreMostrar });
 await $amancay.llamar('aceptarInvitacion', { invitacionId });
 ```
 
-Verificar identidad no concede permisos de emprendedora. No repetir crearIdentidad si únicamente falló el envío: usar enviarVerificacion. Para recuperación: solicitarRecuperacion, comprobarRecuperacion y confirmarRecuperacion; luego iniciar sesión de nuevo. Las contraseñas/códigos van únicamente al SDK Auth. Todavía deben construirse las pantallas.
+Verificar identidad no concede permisos de emprendedora. No repetir crearIdentidad si únicamente falló el envío: usar enviarVerificacion. Para recuperación: solicitarRecuperacion, comprobarRecuperacion y confirmarRecuperacion; luego iniciar sesión de nuevo. Las contraseñas/códigos van únicamente al SDK Auth. En web, el formulario compartido está en `/invitacion-emprendedora?invitacionId={id}`; Android debe construir su pantalla nativa siguiendo este contrato.
 
 ## Android
 

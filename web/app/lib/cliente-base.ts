@@ -14,7 +14,7 @@ export interface ServiciosCliente {
   storage: FirebaseStorage;
 }
 
-export const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora'] as const;
+export const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora'] as const;
 export type Operacion = typeof operaciones[number];
 export class ErrorApi extends Error {
   code: string; status: number; resultadoIncierto: boolean;
@@ -34,10 +34,11 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
     // Crear identidad y enviar verificación son pasos separados: si el envío falla,
     // se reenvía el correo sin intentar registrar otra vez la misma identidad.
     crearIdentidad: (correo: string, clave: string) => createUserWithEmailAndPassword(auth,correo,clave),
-    async enviarVerificacion() {
+    async enviarVerificacion(urlContinuacion?: string) {
       await auth.authStateReady();
       if(!auth.currentUser) throw new ErrorApi('no-autenticado','Iniciar sesión.',401);
-      return sendEmailVerification(auth.currentUser);
+      const ajustes = urlContinuacion ? { url: urlContinuacion, handleCodeInApp: false } : undefined;
+      return sendEmailVerification(auth.currentUser, ajustes);
     },
     async confirmarCorreo(codigo: string) {
       await applyActionCode(auth,codigo);

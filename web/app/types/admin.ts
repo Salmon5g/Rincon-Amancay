@@ -17,6 +17,18 @@ export interface Emprendedora {
   creadaPor?: string
 }
 
+export interface EmprendedoraAdmin {
+  uid: string
+  correo: string
+  nombreMostrar: string
+  nombreTienda: string
+  tiendaId: string
+  estado: string
+  consistente: boolean
+  versionAcceso?: string
+  versionPerfil?: string
+}
+
 export interface InvitacionAlta {
   nombreMostrar: string
   nombreTienda: string
@@ -32,6 +44,13 @@ export interface Invitacion {
   estado: string
   alta: InvitacionAlta
   venceEn: Date | null
+}
+
+export interface InvitacionEmprendedoraAdmin {
+  invitacionId: string
+  correo: string
+  nombreTienda: string
+  estado: string
 }
 
 export interface ElementoCatalogo {

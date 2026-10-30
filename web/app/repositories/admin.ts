@@ -10,7 +10,9 @@ import type {
   ElementoCatalogo,
   CampoTipoProducto,
   ContactoAsociacion,
+  EmprendedoraAdmin,
   IntegrantesAsociacion,
+  InvitacionEmprendedoraAdmin,
   Emprendedora,
   Invitacion,
   InvitacionAlta,
@@ -156,6 +158,55 @@ export async function listarEmprendedoras(cliente: ClienteAmancay): Promise<Empr
 export async function listarInvitaciones(cliente: ClienteAmancay): Promise<Invitacion[]> {
   const snap = await getDocs(collection(cliente.firebase.db, 'invitaciones'))
   return snap.docs.map(mapearInvitacion)
+}
+
+export async function listarEmprendedorasAdmin(cliente: ClienteAdminConApi): Promise<{
+  emprendedoras: EmprendedoraAdmin[]
+  invitaciones: InvitacionEmprendedoraAdmin[]
+}> {
+  await comprobarAdmin(cliente)
+  const data = await cliente.llamar('listarEmprendedorasAdmin', {})
+  if (!Array.isArray(data.emprendedoras) || !Array.isArray(data.invitaciones)) {
+    throw new Error('La API no devolvió las cuentas de emprendedoras.')
+  }
+  const emprendedoras = data.emprendedoras.map((value): EmprendedoraAdmin => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una cuenta inválida.')
+    const account = value as Record<string, unknown>
+    if (typeof account.uid !== 'string' || typeof account.tiendaId !== 'string' || typeof account.estado !== 'string'
+      || typeof account.consistente !== 'boolean') throw new Error('La API devolvió una cuenta incompleta.')
+    return {
+      uid: account.uid,
+      correo: typeof account.correo === 'string' ? account.correo : '',
+      nombreMostrar: typeof account.nombreMostrar === 'string' ? account.nombreMostrar : '',
+      nombreTienda: typeof account.nombreTienda === 'string' ? account.nombreTienda : 'Tienda sin ficha',
+      tiendaId: account.tiendaId,
+      estado: account.estado,
+      consistente: account.consistente,
+      ...(typeof account.versionAcceso === 'string' ? { versionAcceso: account.versionAcceso } : {}),
+      ...(typeof account.versionPerfil === 'string' ? { versionPerfil: account.versionPerfil } : {}),
+    }
+  })
+  const invitaciones = data.invitaciones.map((value): InvitacionEmprendedoraAdmin => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una invitación inválida.')
+    const invite = value as Record<string, unknown>
+    if (typeof invite.invitacionId !== 'string' || typeof invite.estado !== 'string') throw new Error('La API devolvió una invitación incompleta.')
+    return {
+      invitacionId: invite.invitacionId,
+      correo: typeof invite.correo === 'string' ? invite.correo : '',
+      nombreTienda: typeof invite.nombreTienda === 'string' ? invite.nombreTienda : '',
+      estado: invite.estado,
+    }
+  })
+  return { emprendedoras, invitaciones }
+}
+
+export function editarCuentaEmprendedora(cliente: ClienteAdminConApi, solicitud: {
+  uidDestino: string
+  operacionId: string
+  versionEsperada: string
+  nombreMostrar: string
+}) {
+  return cliente.llamar('editarCuentaEmprendedora', solicitud)
 }
 
 export async function listarCatalogos(cliente: ClienteAmancay): Promise<Catalogos> {

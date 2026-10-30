@@ -1,6 +1,6 @@
 # Web
 
-Una sola aplicación Nuxt 4 + Vue + TypeScript para todos los perfiles. La ruta /admin incluye acceso, comprobación de rol y lecturas reales. En `real-api`, Emprendedoras permite gestionar invitaciones y desactivar/reactivar cuentas mediante la API autenticada. Las demás secciones y operaciones todavía no están conectadas.
+Una sola aplicación Nuxt 4 + Vue + TypeScript para todos los perfiles. La ruta `/admin` incluye inicio de sesión y comprobación de rol. En `real-api`, la API autenticada permite gestionar catálogos, asociaciones e integrantes, invitaciones y desactivación/reactivación de emprendedoras, además de editar el nombre visible de sus cuentas. La invitada crea su contraseña y verifica su correo en `/invitacion-emprendedora?invitacionId={id}`. El panel comparte el enlace, pero no envía la invitación por correo. La ruta se incluye en la generación estática de Hosting; la ficha de tienda sigue su flujo separado y la vista pública de asociaciones todavía no está implementada.
 
 ## Ejecutar
 

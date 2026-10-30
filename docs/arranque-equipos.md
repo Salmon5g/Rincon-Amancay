@@ -74,16 +74,18 @@ Meta: catálogo público **sin sesión** (tiendas, productos, variantes, imágen
 - Las imágenes del fixture están vacías: mostrar un **placeholder**, no asumir una URL.
 - Si `mostrarPrecios` es `false`, la lectura del catálogo de productos se bloquea: leer la tienda primero y manejar esa condición.
 
-### 1b. Web administrador (primer incremento)
+### 1b. Web administrador
 
-Meta: sesión + lectura de accesos + invitación/cancelación de emprendedoras + desactivación/reactivación. El flujo de pantallas usa el [contrato 10](../contratos/10-ciclo-cuentas.md).
+Meta: sesión y gestión autenticada de emprendedoras, asociaciones e integrantes, más el mantenimiento de catálogos. Los contratos relacionados son [ciclo de cuentas](../contratos/10-ciclo-cuentas.md), [administración de catálogos](../contratos/12-administracion-catalogos.md), [administración de asociaciones](../contratos/13-administracion-asociaciones.md) y [edición de cuentas](../contratos/14-edicion-cuentas-emprendedoras.md).
 
-La web `/admin` del repositorio ya incluye login y lecturas. Con `real-api` y la API local contra Firebase real puede crear y cancelar invitaciones desde el panel; seguir [esta guía](admin-firebase-real-api-local.md). No confundirlo con `real-lectura`, que solo permite iniciar sesión y leer.
+La web `/admin` ya incluye inicio de sesión, lectura, invitaciones, desactivación/reactivación y edición del nombre visible; también administra catálogos, asociaciones e integrantes. Estas escrituras requieren `real-api` y una API actualizada; para ejecutar la API local contra Firebase real sigue [esta guía](admin-firebase-real-api-local.md). No confundirlo con `real-lectura`, que solo permite iniciar sesión y leer. La edición de cuenta no cambia correo, contraseña ni ficha de tienda.
 
 - Credenciales de prueba: las genera `cuentas:demo` en `backend/.local/cuentas-<uuid>.json` (incluye la administradora y una candidata con `solicitudAlta`).
 - Iniciar sesión con `iniciarSesion(correo, clave)`; luego `consultarAcceso()`.
   - `consultarAcceso()` = `null` significa identidad **sin permisos**; no tratarla como administradora.
-- `invitarEmprendedora` recibe correo y datos de tienda según contrato 10; conservar su `invitacionId`. En local se entrega manualmente a la destinataria de prueba, que verifica su correo y llama a `aceptarInvitacion`. No se envían invitaciones reales.
+- `invitarEmprendedora` recibe correo y datos de tienda según contrato 10; conservar su `invitacionId`. El panel genera un enlace a `/invitacion-emprendedora?invitacionId={id}` para compartir. La destinataria crea su contraseña o inicia sesión, verifica el correo y la web llama a `aceptarInvitacion`. En local, Authentication Emulator simula el envío y entrega del correo.
+- La edición administrativa de cuenta cambia solo `usuarios/{uid}.nombreMostrar`; la API exige una versión vigente y registra auditoría. Correo, contraseña y datos de tienda pertenecen a flujos separados.
+- Las asociaciones admiten cero, una o varias relaciones por emprendedora. El retiro conserva el historial y no desactiva su cuenta ni tienda. La lectura pública de asociaciones (RF-ASO-03) sigue pendiente.
 - Comprobar acceso `estado === 'activo'` y que `roles` incluya `administrador` antes de mostrar gestión. La API y las reglas siguen verificando los permisos; ocultar un botón no los sustituye.
 - Generar **un** `operacionId` por intención y **conservar el cuerpo completo** ante error o conexión perdida.
 - `altaEmprendedora` y `solicitudAlta` quedan para la prueba técnica rápida con la candidata existente; no usarlos como formulario final de alta ni reemplazo de invitaciones.

@@ -8,10 +8,12 @@ import {
   cambiarEstadoValorCatalogo,
   crearAsociacion,
   crearValorCatalogo,
+  editarCuentaEmprendedora,
   editarAsociacion,
   editarValorCatalogo,
   listarAsociacionesAdmin,
   listarCatalogosAdmin,
+  listarEmprendedorasAdmin,
   leerIntegrantesAsociacion,
   quitarEmprendedora,
 } from '~/repositories/admin'
@@ -38,7 +40,12 @@ type Item = {
   invitacionId?: string
   uidDestino?: string
   tiendaId?: string
+  correo?: string
+  nombreMostrar?: string
+  nombreTienda?: string
+  consistente?: boolean
   versionEsperada?: string
+  versionPerfilEsperada?: string
   catalogo?: ColeccionCatalogoEditable
   catalogoId?: string
   elementoCatalogo?: ElementoCatalogo
@@ -97,7 +104,7 @@ function activos(lista: ElementoCatalogo[]) {
 }
 
 const secciones = ref<Seccion[]>([
-  { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
+  { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, datos visibles, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
   { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Ficha, estado e integrantes de cada asociación.', accion: '+ Crear asociación', items: [] },
   { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear feria', items: [], aviso: SIN_MODELO },
   { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Sectores, tipos de emprendimiento, tipos de producto y categorías.', accion: '+ Nuevo valor', items: [] },
@@ -127,6 +134,10 @@ const errorOperacion = ref('')
 const operacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
 const invitacionCreada = ref('')
 const invitacionPendiente = ref<Item | null>(null)
+const cuentaEmprendedoraEnEdicion = ref<Item | null>(null)
+const nombreCuentaBorrador = ref('')
+const edicionCuentaOperacion = ref<{ id: string; solicitud: string } | null>(null)
+const edicionCuentaReintentoObligatorio = ref(false)
 const catalogoEnEdicion = ref<{ coleccion: ColeccionCatalogoEditable; elemento: ElementoCatalogo } | null>(null)
 const catalogoCampos = ref<CampoTipoProducto[]>([])
 const catalogoOpcionesVarianteTexto = ref('')
@@ -192,12 +203,25 @@ function mensajeErrorAsociacion(error: unknown) {
   return mensajeError(error)
 }
 
+function mensajeErrorEdicionCuenta(error: unknown) {
+  const codigo = (error as { code?: string })?.code
+  if (codigo === 'datos-invalidos') return 'El nombre visible es obligatorio y admite hasta 100 caracteres.'
+  if (codigo === 'conflicto') return 'La cuenta o el perfil cambió; actualiza el listado y revisa los datos antes de volver a guardar.'
+  if (codigo === 'no-encontrado') return 'La identidad de Authentication ya no existe; revisa la cuenta antes de editarla.'
+  if (codigo === 'id-reutilizado') return 'La solicitud se intentó con otros datos. Inicia una operación nueva antes de continuar.'
+  return mensajeError(error)
+}
+
 function limpiarListados() {
   revisionDatos++
   for (const s of secciones.value) s.items = []
   errorDatos.value = ''
   cargandoDatos.value = false
   invitacionPendiente.value = null
+  cuentaEmprendedoraEnEdicion.value = null
+  nombreCuentaBorrador.value = ''
+  edicionCuentaOperacion.value = null
+  edicionCuentaReintentoObligatorio.value = false
 }
 
 async function cargarDatosCatalogos() {
@@ -289,7 +313,7 @@ async function ingresar() {
 async function salir() {
   if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
     || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
-    || operacionIntegrantePendiente.value?.reintentoObligatorio) {
+    || operacionIntegrantePendiente.value?.reintentoObligatorio || edicionCuentaReintentoObligatorio.value) {
     errorOperacion.value = 'Completa el reintento de la operación pendiente antes de cerrar sesión.'
     return
   }
@@ -318,6 +342,33 @@ async function cargarSeccion() {
   destino.items = []
   cargandoDatos.value = true
   try {
+    if (destino.id === 'emprendedoras' && config.firebaseModo === 'real-api') {
+      const listado = await listarEmprendedorasAdmin($amancay)
+      if (revision === revisionDatos && autorizado.value) {
+        destino.items = [
+          ...listado.emprendedoras.map((cuenta): Item => ({
+            titulo: cuenta.nombreMostrar || cuenta.correo || cuenta.uid,
+            detalle: `${cuenta.correo || 'Correo no disponible'} · Tienda: ${cuenta.nombreTienda} · ID: ${cuenta.tiendaId}${cuenta.consistente ? '' : ' · Revisar datos relacionados'}`,
+            estado: cuenta.estado,
+            uidDestino: cuenta.uid,
+            tiendaId: cuenta.tiendaId,
+            correo: cuenta.correo,
+            nombreMostrar: cuenta.nombreMostrar,
+            nombreTienda: cuenta.nombreTienda,
+            consistente: cuenta.consistente,
+            versionEsperada: cuenta.versionAcceso,
+            versionPerfilEsperada: cuenta.versionPerfil,
+          })),
+          ...listado.invitaciones.map((invitacion): Item => ({
+            titulo: invitacion.correo || 'Invitación',
+            detalle: `Tienda: ${invitacion.nombreTienda} · Enlace de aceptación disponible`,
+            estado: invitacion.estado,
+            invitacionId: invitacion.invitacionId,
+          })),
+        ]
+      }
+      return
+    }
     const filas = await $amancay.listarAdministracion(destino.id as SeccionLectura)
     if (revision === revisionDatos && autorizado.value) destino.items = filas
   } catch (error) {
@@ -368,7 +419,7 @@ function iniciales(t: string) {
 async function ir(id: string) {
   if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
     || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
-    || operacionIntegrantePendiente.value?.reintentoObligatorio) {
+    || operacionIntegrantePendiente.value?.reintentoObligatorio || edicionCuentaReintentoObligatorio.value) {
     errorOperacion.value = 'Completa el reintento de la operación pendiente antes de cambiar de sección.'
     return
   }
@@ -377,6 +428,9 @@ async function ir(id: string) {
   integranteParaQuitar.value = null
   if (!operacionIntegrantePendiente.value?.reintentoObligatorio) operacionIntegrantePendiente.value = null
   if (!asociacionEstadoPendiente.value?.reintentoObligatorio) asociacionEstadoPendiente.value = null
+  cuentaEmprendedoraEnEdicion.value = null
+  edicionCuentaOperacion.value = null
+  edicionCuentaReintentoObligatorio.value = false
   activa.value = id
   formularioAbierto.value = false
   busqueda.value = ''
@@ -827,7 +881,7 @@ async function guardarFormulario() {
     invitacionCreada.value = String(resultado.invitacionId ?? '')
     formularioAbierto.value = false
     aviso.value = invitacionCreada.value
-      ? `Invitación registrada en Firebase. Código para compartir manualmente: ${invitacionCreada.value}. El sistema aún no envía correo.`
+      ? 'Invitación registrada. Comparte el enlace con la destinataria; ella creará su contraseña y verificará su correo.'
       : 'Invitación registrada en Firebase.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 12000)
@@ -839,15 +893,22 @@ async function guardarFormulario() {
   }
 }
 
-async function copiarInvitacion() {
-  if (!invitacionCreada.value) return
+function enlaceInvitacion(id: string) {
+  if (!import.meta.client || !id) return ''
+  const enlace = new URL('/invitacion-emprendedora', window.location.origin)
+  enlace.searchParams.set('invitacionId', id)
+  return enlace.toString()
+}
+
+async function copiarEnlaceInvitacion(id: string) {
+  if (!id) return
   try {
-    await navigator.clipboard.writeText(invitacionCreada.value)
-    aviso.value = 'Código de invitación copiado.'
+    await navigator.clipboard.writeText(enlaceInvitacion(id))
+    aviso.value = 'Enlace de invitación copiado.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 3500)
   } catch {
-    aviso.value = `Código de invitación: ${invitacionCreada.value}`
+    aviso.value = `Copia este enlace: ${enlaceInvitacion(id)}`
   }
 }
 
@@ -922,6 +983,84 @@ async function confirmarAccionCuenta() {
     errorOperacion.value = mensajeError(error)
     if ((error as { resultadoIncierto?: boolean; code?: string })?.resultadoIncierto || (error as { code?: string })?.code === 'pendiente') {
       pendiente.reintentoObligatorio = true
+    }
+  } finally {
+    enviando.value = false
+  }
+}
+
+function prepararEdicionCuentaEmprendedora(item: Item) {
+  if (config.firebaseModo !== 'real-api' || !item.uidDestino) return
+  if (!item.consistente) {
+    errorDatos.value = 'No se puede editar esta cuenta hasta revisar la relación entre acceso, perfil y tienda.'
+    return
+  }
+  if (!item.versionPerfilEsperada) {
+    errorDatos.value = 'El perfil no tiene una versión de actualización. Actualiza la cuenta antes de editarla.'
+    return
+  }
+  cuentaEmprendedoraEnEdicion.value = item
+  nombreCuentaBorrador.value = item.nombreMostrar ?? ''
+  edicionCuentaOperacion.value = null
+  edicionCuentaReintentoObligatorio.value = false
+  errorOperacion.value = ''
+}
+
+function cerrarEdicionCuentaEmprendedora() {
+  if (edicionCuentaReintentoObligatorio.value) {
+    errorOperacion.value = 'Reintenta la misma operación antes de cerrar la edición de esta cuenta.'
+    return
+  }
+  cuentaEmprendedoraEnEdicion.value = null
+  nombreCuentaBorrador.value = ''
+  edicionCuentaOperacion.value = null
+  errorOperacion.value = ''
+}
+
+async function guardarEdicionCuentaEmprendedora() {
+  const cuenta = cuentaEmprendedoraEnEdicion.value
+  if (!cuenta?.uidDestino || !cuenta.versionPerfilEsperada || config.firebaseModo !== 'real-api') return
+  const nombreMostrar = nombreCuentaBorrador.value.trim()
+  if (!nombreMostrar || nombreMostrar.length > 100) {
+    errorOperacion.value = 'El nombre visible es obligatorio y admite hasta 100 caracteres.'
+    return
+  }
+  const solicitud = JSON.stringify([cuenta.uidDestino, cuenta.versionPerfilEsperada, nombreMostrar])
+  if (edicionCuentaReintentoObligatorio.value && edicionCuentaOperacion.value?.solicitud !== solicitud) {
+    errorOperacion.value = 'La operación pudo guardarse. Reintenta exactamente el mismo nombre para confirmar el resultado.'
+    return
+  }
+  if (!edicionCuentaOperacion.value || edicionCuentaOperacion.value.solicitud !== solicitud) {
+    edicionCuentaOperacion.value = { id: crypto.randomUUID(), solicitud }
+  }
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    await editarCuentaEmprendedora($amancay, {
+      uidDestino: cuenta.uidDestino,
+      operacionId: edicionCuentaOperacion.value.id,
+      versionEsperada: cuenta.versionPerfilEsperada,
+      nombreMostrar,
+    })
+    cuentaEmprendedoraEnEdicion.value = null
+    nombreCuentaBorrador.value = ''
+    edicionCuentaOperacion.value = null
+    edicionCuentaReintentoObligatorio.value = false
+    aviso.value = 'Nombre de la cuenta actualizado.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 5000)
+    await cargarSeccion()
+  } catch (error) {
+    const codigo = (error as { code?: string })?.code
+    errorOperacion.value = codigo === 'conflicto'
+      ? 'El perfil cambió desde que lo abriste. Se actualizará el listado para que revises el dato vigente.'
+      : mensajeErrorEdicionCuenta(error)
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) edicionCuentaReintentoObligatorio.value = true
+    else if (codigo === 'conflicto') {
+      cuentaEmprendedoraEnEdicion.value = null
+      edicionCuentaOperacion.value = null
+      await cargarSeccion()
+      errorDatos.value = 'El perfil cambió desde que lo abriste. Revisa el nombre actualizado antes de volver a editar.'
     }
   } finally {
     enviando.value = false
@@ -1043,6 +1182,7 @@ async function confirmarAccionCuenta() {
           <button
             v-if="seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true"
             class="boton boton-primario" type="button"
+            :disabled="seccion.id === 'emprendedoras' && !!cuentaEmprendedoraEnEdicion"
             @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : seccion.id === 'asociaciones' ? prepararNuevaAsociacion() : abrirFormulario()"
           >
             {{ seccion.accion }}
@@ -1055,7 +1195,7 @@ async function confirmarAccionCuenta() {
               <h2 id="titulo-formulario">{{ seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Editar valor de catálogo' : 'Nuevo valor de catálogo' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Editar asociación' : 'Crear asociación' : seccion.accion }}</h2>
               <p v-if="seccion.id === 'catalogos'">Los cambios se guardan en Firestore mediante la API autenticada. Los nombres deben ser únicos dentro de cada catálogo.</p>
               <p v-else-if="seccion.id === 'asociaciones'">La ficha se guarda mediante la API autenticada. El contacto y el logo se consideran información pública.</p>
-              <p v-else>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. El sistema no envía correo: tendrás que compartir el código con la destinataria.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
+              <p v-else>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. Luego podrás compartir un enlace; la destinataria creará su contraseña y verificará su correo.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
             </div>
             <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || asociacionReintentoObligatorio" @click="cerrarFormulario">Cancelar</button>
           </div>
@@ -1152,9 +1292,33 @@ async function confirmarAccionCuenta() {
           </form>
         </section>
         <section v-if="invitacionCreada" class="aviso-carga" aria-live="polite">
-          Invitación creada. Comparte manualmente este código con la destinataria: <code>{{ invitacionCreada }}</code>
-          <button class="editar" type="button" @click="copiarInvitacion">Copiar código</button>
-          El envío automático de correo aún no está configurado.
+          <strong>Invitación creada</strong>
+          <p>Comparte este enlace con la destinataria. Al abrirlo podrá crear su acceso, verificar el correo y aceptar la tienda.</p>
+          <a :href="enlaceInvitacion(invitacionCreada)">{{ enlaceInvitacion(invitacionCreada) }}</a>
+          <button class="editar" type="button" @click="copiarEnlaceInvitacion(invitacionCreada)">Copiar enlace</button>
+          <small>La web no manda invitaciones por correo automáticamente; puedes compartir el enlace por WhatsApp o en persona.</small>
+        </section>
+
+        <section v-if="cuentaEmprendedoraEnEdicion" class="formulario" aria-labelledby="titulo-edicion-cuenta">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-edicion-cuenta">Editar datos de la cuenta</h2>
+              <p>{{ cuentaEmprendedoraEnEdicion.nombreTienda }} · ID {{ cuentaEmprendedoraEnEdicion.uidDestino }}</p>
+            </div>
+            <button class="editar" type="button" :disabled="enviando || edicionCuentaReintentoObligatorio" @click="cerrarEdicionCuentaEmprendedora">Cerrar</button>
+          </div>
+          <form class="campos-formulario" @submit.prevent="guardarEdicionCuentaEmprendedora">
+            <label>Nombre visible<input v-model="nombreCuentaBorrador" maxlength="100" autocomplete="name" required :disabled="enviando || edicionCuentaReintentoObligatorio" /></label>
+            <label>Correo de acceso (solo lectura)<input :value="cuentaEmprendedoraEnEdicion.correo || 'Correo no disponible'" disabled /></label>
+            <label class="campo-completo">Tienda asignada (solo lectura)<input :value="cuentaEmprendedoraEnEdicion.nombreTienda || cuentaEmprendedoraEnEdicion.tiendaId || 'Sin tienda'" disabled /></label>
+            <p class="campo-completo">Aquí se modifica el nombre visible asociado a la cuenta. El correo y la contraseña pertenecen al acceso de Firebase Authentication y no se cambian desde este formulario; la ficha de la tienda se edita por su propio flujo.</p>
+            <div class="acciones-formulario">
+              <button class="boton boton-primario" type="submit" :disabled="enviando || !nombreCuentaBorrador.trim()">{{ enviando ? 'Guardando…' : edicionCuentaReintentoObligatorio ? 'Reintentar guardado' : 'Guardar nombre' }}</button>
+              <button class="editar" type="button" :disabled="enviando || edicionCuentaReintentoObligatorio" @click="cerrarEdicionCuentaEmprendedora">Cancelar</button>
+            </div>
+            <p v-if="edicionCuentaReintentoObligatorio" class="campo-completo" role="status">No se confirmó la respuesta. Reintenta con el mismo nombre para comprobar si quedó guardado.</p>
+            <p v-if="errorOperacion" class="campo-completo" role="alert">{{ errorOperacion }}</p>
+          </form>
         </section>
 
         <section v-if="invitacionPendiente" class="formulario" aria-labelledby="titulo-cancelar-invitacion">
@@ -1312,7 +1476,7 @@ async function confirmarAccionCuenta() {
         </div>
 
         <ul v-if="!cargandoDatos && !cargandoCatalogos && !errorDatos && visibles.length" class="lista">
-          <li v-for="item in visibles" :key="`${item.catalogo ?? seccion.id}:${item.catalogoId ?? item.titulo}`" class="fila">
+          <li v-for="item in visibles" :key="`${item.catalogo ?? seccion.id}:${item.catalogoId ?? item.uidDestino ?? item.invitacionId ?? item.titulo}`" class="fila">
             <span class="avatar" aria-hidden="true">{{ iniciales(item.titulo) }}</span>
             <div class="fila-texto">
               <b>{{ item.titulo }}</b>
@@ -1329,18 +1493,16 @@ async function confirmarAccionCuenta() {
               class="editar" type="button" :disabled="enviando || !!catalogoEstadoPendiente"
               @click="prepararCambioEstadoCatalogo(item, item.estado !== 'Activo')"
             >{{ item.estado === 'Activo' ? 'Desactivar' : 'Reactivar' }}</button>
-            <button
-              v-if="item.invitacionId && item.estado === 'pendiente' && config.firebaseModo === 'real-api'"
-              class="editar" type="button" @click="prepararCancelacionInvitacion(item)"
-            >Cancelar invitación</button>
-            <button
-              v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'activo' && config.firebaseModo === 'real-api'"
-              class="editar" type="button" @click="prepararAccionCuenta(item, 'desactivarEmprendedora')"
-            >Desactivar</button>
-            <button
-              v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'desactivado' && config.firebaseModo === 'real-api'"
-              class="editar" type="button" @click="prepararAccionCuenta(item, 'reactivarEmprendedora')"
-            >Reactivar</button>
+            <template v-if="item.invitacionId && item.estado === 'pendiente' && config.firebaseModo === 'real-api'">
+              <button class="editar" type="button" @click="copiarEnlaceInvitacion(item.invitacionId)">Copiar enlace</button>
+              <button class="editar" type="button" @click="prepararCancelacionInvitacion(item)">Cancelar invitación</button>
+            </template>
+            <template v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && config.firebaseModo === 'real-api'">
+              <button class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionPerfilEsperada" :title="!item.consistente ? 'El acceso, perfil y tienda requieren revisión' : !item.versionPerfilEsperada ? 'El perfil no tiene una versión de actualización' : ''" @click="prepararEdicionCuentaEmprendedora(item)">Editar cuenta</button>
+              <button v-if="item.estado === 'activo'" class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionEsperada" @click="prepararAccionCuenta(item, 'desactivarEmprendedora')">Desactivar</button>
+              <button v-else-if="item.estado === 'desactivado'" class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionEsperada" @click="prepararAccionCuenta(item, 'reactivarEmprendedora')">Reactivar</button>
+              <button v-else class="editar" type="button" disabled title="El estado de la cuenta requiere revisión">Revisar</button>
+            </template>
             <template v-else-if="seccion.id === 'asociaciones' && item.asociacion">
               <button class="editar" type="button" :disabled="cargandoDatos || cargandoCatalogos || !!operacionIntegrantePendiente" @click="gestionarIntegrantes(item.asociacion)">Integrantes</button>
               <button v-if="escrituraAsociacionesDisponible" class="editar" type="button" :disabled="enviando || !!asociacionEstadoPendiente || !!asociacionEnGestion" @click="prepararEdicionAsociacion(item)">Editar</button>
@@ -1886,6 +2048,10 @@ input:focus-visible {
   background: var(--crema-2, #fdf1d4);
   color: #8a5a00;
 }
+
+.aviso-carga > p { margin: 0.45rem 0; }
+.aviso-carga > a { display: block; margin: 0.5rem 0; color: var(--vino); font-weight: 700; overflow-wrap: anywhere; }
+.aviso-carga > small { display: block; margin-top: 0.45rem; color: var(--suave); line-height: 1.5; }
 
 .sobretitulo {
   margin: 0 0 0.35rem;
