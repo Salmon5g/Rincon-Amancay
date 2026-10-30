@@ -11,6 +11,8 @@ import type { crearCuentas } from '../modules/cuentas.ts';
 import type { crearProductos, AccionProducto } from '../modules/productos.ts';
 import type { crearStock } from '../modules/stock.ts';
 import type { crearDesactivacion } from '../modules/desactivacion.ts';
+import { accionesCatalogo } from '../modules/catalogos.ts';
+import type { AccionCatalogo, crearCatalogos } from '../modules/catalogos.ts';
 
 const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'];
 const status: Record<string, number> = {
@@ -50,7 +52,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -66,7 +68,8 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esStock = req.url === '/api/v1/ajustarStock' && stock !== undefined;
       const esDesactivacion = req.url === '/api/v1/desactivarEmprendedora' && desactivar !== undefined;
       const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto)$/)?.[1] as AccionProducto | undefined;
-      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      const accionCatalogo = catalogos ? accionesCatalogo.find(a => req.url === `/api/v1/${a}`) as AccionCatalogo | undefined : undefined;
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' });
         return res.end();
@@ -85,7 +88,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       }
       if(sesion && !await sesion(uid,authTime)) throw new ErrorHttp(401,'no-autenticado','Iniciar una nueva sesión después de la reactivación.');
       const input = await body(req);
-      const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : esAlta ? await alta!({uid}, input)
+      const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : esAlta ? await alta!({uid}, input)
         : esDesactivacion ? await desactivar!({uid}, input)
         : esStock ? await stock!({uid}, input)
         : accionProducto ? await productos!(accionProducto, {uid}, input)

@@ -2,8 +2,14 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
 import { esAdministrador, type SeccionLectura } from '~/lib/admin-lecturas'
-import { listarCatalogos } from '~/repositories/admin'
-import type { DatosAdmin, ElementoCatalogo } from '~/types/admin'
+import {
+  cambiarEstadoValorCatalogo,
+  crearValorCatalogo,
+  editarValorCatalogo,
+  listarCatalogosAdmin,
+} from '~/repositories/admin'
+import type { ColeccionCatalogoEditable } from '~/repositories/admin'
+import type { CampoTipoProducto, DatosAdmin, ElementoCatalogo } from '~/types/admin'
 
 useHead({
   title: 'Administración — Rincón Amancay',
@@ -26,6 +32,9 @@ type Item = {
   uidDestino?: string
   tiendaId?: string
   versionEsperada?: string
+  catalogo?: ColeccionCatalogoEditable
+  catalogoId?: string
+  elementoCatalogo?: ElementoCatalogo
 }
 type AccionCuentaAdmin = 'desactivarEmprendedora' | 'reactivarEmprendedora'
 type Seccion = {
@@ -59,26 +68,17 @@ const tiposCatalogo = [
   { id: 'categorias', nombre: 'Categorías' },
   { id: 'tiposEmprendimiento', nombre: 'Tipos de emprendimiento' },
   { id: 'tiposProducto', nombre: 'Tipos de producto' },
-]
+] as const
 
 function activos(lista: ElementoCatalogo[]) {
   return lista.filter((valor) => valor.activo)
-}
-
-function grupoCatalogo(titulo: string, lista: ElementoCatalogo[]): Item {
-  const vigentes = activos(lista)
-  return {
-    titulo,
-    detalle: vigentes.map((valor) => valor.nombre).join(', ') || 'Sin valores',
-    estado: `${vigentes.length} valores`,
-  }
 }
 
 const secciones = ref<Seccion[]>([
   { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
   { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear asociación', items: [], aviso: SIN_MODELO },
   { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear feria', items: [], aviso: SIN_MODELO },
-  { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Tipos de producto, categorías, tipos de emprendimiento y sectores.', accion: '+ Agregar valor', items: [] },
+  { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Sectores, tipos de emprendimiento, tipos de producto y categorías.', accion: '+ Nuevo valor', items: [] },
   { id: 'configuracion', icono: '⚙️', titulo: 'Configuración general', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: 'Guardar cambios', items: [], aviso: SIN_MODELO },
   { id: 'administradores', icono: '🛡️', titulo: 'Administradores', descripcion: 'Cuentas con rol administrador de la plataforma.', accion: '+ Agregar administrador', items: [] },
 ])
@@ -105,6 +105,12 @@ const errorOperacion = ref('')
 const operacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
 const invitacionCreada = ref('')
 const invitacionPendiente = ref<Item | null>(null)
+const catalogoEnEdicion = ref<{ coleccion: ColeccionCatalogoEditable; elemento: ElementoCatalogo } | null>(null)
+const catalogoCampos = ref<CampoTipoProducto[]>([])
+const catalogoOpcionesVarianteTexto = ref('')
+const catalogoOperacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
+const catalogoReintentoObligatorio = ref(false)
+const catalogoEstadoPendiente = ref<{ item: Item; activo: boolean; operacionId: string; reintentoObligatorio: boolean } | null>(null)
 const cuentaPendiente = ref<{
   item: Item
   accion: AccionCuentaAdmin
@@ -116,6 +122,7 @@ const cuentaPendiente = ref<{
 const cargandoDatos = ref(false)
 const cargandoCatalogos = ref(false)
 const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'catalogos'].includes(activa.value))
+const escrituraCatalogosDisponible = computed(() => ['local', 'real-api'].includes(config.firebaseModo))
 let revisionSesion = 0
 let revisionDatos = 0
 let desconectar: (() => void) | undefined
@@ -136,6 +143,14 @@ function mensajeError(error: unknown) {
   return 'No se pudo completar la consulta. Revisa la configuración de Firebase y vuelve a intentarlo.'
 }
 
+function mensajeErrorCatalogo(error: unknown) {
+  const codigo = (error as { code?: string })?.code
+  if (codigo === 'datos-invalidos') return 'Revisa el nombre y la definición del catálogo. Las claves deben ser únicas y los atributos son de texto.'
+  if (codigo === 'conflicto') return 'El valor cambió desde que se cargó o ya existe un nombre igual. Actualiza el listado y vuelve a revisar.'
+  if (codigo === 'id-reutilizado') return 'La solicitud ya se intentó con otros datos. Cierra el formulario y comienza una operación nueva.'
+  return mensajeError(error)
+}
+
 function limpiarListados() {
   revisionDatos++
   for (const s of secciones.value) s.items = []
@@ -148,16 +163,17 @@ async function cargarDatosCatalogos() {
   cargandoCatalogos.value = true
   errorDatos.value = ''
   try {
-    const catalogos = await listarCatalogos($amancay)
+    const catalogos = await listarCatalogosAdmin($amancay)
     datos.value = { ...datosVacios, catalogos }
-    const agrupados = [
-      grupoCatalogo('Tipos de producto', catalogos.tiposProducto),
-      grupoCatalogo('Categorías', catalogos.categorias),
-      grupoCatalogo('Tipos de emprendimiento', catalogos.tiposEmprendimiento),
-      grupoCatalogo('Sectores', catalogos.sectores),
-    ]
     const seccionCatalogos = secciones.value.find((seccionActual) => seccionActual.id === 'catalogos')
-    if (seccionCatalogos) seccionCatalogos.items = agrupados
+    if (seccionCatalogos) {
+      seccionCatalogos.items = [
+        ...catalogos.sectores.map((elemento) => itemCatalogo('sectores', elemento)),
+        ...catalogos.tiposEmprendimiento.map((elemento) => itemCatalogo('tiposEmprendimiento', elemento)),
+        ...catalogos.tiposProducto.map((elemento) => itemCatalogo('tiposProducto', elemento)),
+        ...catalogos.categorias.map((elemento) => itemCatalogo('categorias', elemento)),
+      ]
+    }
   } catch (error) {
     errorDatos.value = mensajeError(error)
   } finally {
@@ -200,6 +216,10 @@ async function ingresar() {
 }
 
 async function salir() {
+  if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio) {
+    errorOperacion.value = 'Completa el reintento de la operación de catálogo antes de cerrar sesión.'
+    return
+  }
   try { await $amancay.cerrarSesion() }
   catch (error) { errorSesion.value = mensajeError(error); return }
   autorizado.value = false
@@ -231,7 +251,6 @@ async function cargarSeccion() {
 }
 
 onMounted(() => {
-  void cargarDatosCatalogos()
   desconectar = onAuthStateChanged($amancay.firebase.auth, () => { void comprobarSesion() })
 })
 onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.() })
@@ -261,7 +280,7 @@ const visibles = computed(() => {
 function tono(estado: string) {
   if (/^(activ|abiert)/i.test(estado)) return 'ok'
   if (/^invitad/i.test(estado)) return 'pend'
-  if (/^cerrad/i.test(estado)) return 'off'
+  if (/^(inactiv|desactiv|cerrad)/i.test(estado)) return 'off'
   return ''
 }
 
@@ -270,6 +289,10 @@ function iniciales(t: string) {
 }
 
 async function ir(id: string) {
+  if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio) {
+    errorOperacion.value = 'Completa el reintento de la operación de catálogo antes de cambiar de sección.'
+    return
+  }
   activa.value = id
   formularioAbierto.value = false
   busqueda.value = ''
@@ -279,6 +302,7 @@ async function ir(id: string) {
 }
 
 async function abrirFormulario() {
+  if (seccion.value?.id === 'catalogos' && !escrituraCatalogosDisponible.value) return
   if (seccion.value?.id === 'emprendedoras' && config.firebaseModo === 'real-api') {
     await cargarDatosCatalogos()
     if (errorDatos.value) return
@@ -291,6 +315,25 @@ async function abrirFormulario() {
   errorOperacion.value = ''
   invitacionCreada.value = ''
   operacionPendiente.value = null
+  catalogoEnEdicion.value = null
+  catalogoCampos.value = []
+  catalogoOpcionesVarianteTexto.value = ''
+  catalogoOperacionPendiente.value = null
+  catalogoReintentoObligatorio.value = false
+  if (seccion.value?.id === 'catalogos') borrador.value.tipoCatalogo = 'sectores'
+  formularioAbierto.value = true
+}
+
+function prepararNuevoCatalogo() {
+  if (!escrituraCatalogosDisponible.value) return
+  catalogoEnEdicion.value = null
+  catalogoCampos.value = []
+  catalogoOpcionesVarianteTexto.value = ''
+  catalogoOperacionPendiente.value = null
+  catalogoReintentoObligatorio.value = false
+  borrador.value.tipoCatalogo = 'sectores'
+  borrador.value.valor = ''
+  errorOperacion.value = ''
   formularioAbierto.value = true
 }
 
@@ -305,7 +348,145 @@ function guardarVistaPrevia() {
   temporizador = setTimeout(() => (aviso.value = ''), 3500)
 }
 
+function itemCatalogo(coleccion: ColeccionCatalogoEditable, elemento: ElementoCatalogo): Item {
+  const tituloColeccion = tiposCatalogo.find((tipo) => tipo.id === coleccion)?.nombre ?? coleccion
+  const definicion = coleccion === 'tiposProducto'
+    ? ` · versión ${elemento.versionActual ?? '?'} · ${elemento.campos?.length ?? 0} campos · ${elemento.opcionesVariante?.length ?? 0} opciones`
+    : ''
+  return {
+    titulo: elemento.nombre,
+    detalle: `${tituloColeccion} · ID: ${elemento.id}${definicion}`,
+    estado: elemento.activo ? 'Activo' : 'Inactivo',
+    catalogo: coleccion,
+    catalogoId: elemento.id,
+    versionEsperada: elemento.versionEsperada,
+    elementoCatalogo: elemento,
+  }
+}
+
+function prepararEdicionCatalogo(item: Item) {
+  if (!escrituraCatalogosDisponible.value || !item.catalogo || !item.elementoCatalogo) return
+  if (!item.versionEsperada) {
+    errorDatos.value = 'Este valor no tiene una versión de actualización. Revísalo en Firestore antes de editarlo.'
+    return
+  }
+  catalogoEnEdicion.value = { coleccion: item.catalogo, elemento: item.elementoCatalogo }
+  borrador.value.tipoCatalogo = item.catalogo
+  borrador.value.valor = item.elementoCatalogo.nombre
+  catalogoCampos.value = item.elementoCatalogo.campos?.map((campo) => ({ ...campo })) ?? []
+  catalogoOpcionesVarianteTexto.value = item.elementoCatalogo.opcionesVariante?.join(', ') ?? ''
+  catalogoOperacionPendiente.value = null
+  catalogoReintentoObligatorio.value = false
+  errorOperacion.value = ''
+  formularioAbierto.value = true
+}
+
+function agregarCampoCatalogo() {
+  if (catalogoCampos.value.length >= 20) return
+  catalogoCampos.value.push({ clave: '', etiqueta: '', tipo: 'texto', obligatorio: false })
+}
+
+function quitarCampoCatalogo(index: number) {
+  catalogoCampos.value.splice(index, 1)
+}
+
+function prepararCambioEstadoCatalogo(item: Item, activo: boolean) {
+  if (!escrituraCatalogosDisponible.value || !item.catalogo || !item.catalogoId || !item.versionEsperada) {
+    errorDatos.value = 'No se puede modificar este valor porque falta su versión de Firestore. Actualiza el listado.'
+    return
+  }
+  catalogoEstadoPendiente.value = { item, activo, operacionId: crypto.randomUUID(), reintentoObligatorio: false }
+  errorOperacion.value = ''
+}
+
+async function confirmarCambioEstadoCatalogo() {
+  const pendiente = catalogoEstadoPendiente.value
+  if (!pendiente?.item.catalogo || !pendiente.item.catalogoId || !pendiente.item.versionEsperada) return
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    await cambiarEstadoValorCatalogo($amancay, {
+      operacionId: pendiente.operacionId,
+      coleccion: pendiente.item.catalogo,
+      documentoId: pendiente.item.catalogoId,
+      versionEsperada: pendiente.item.versionEsperada,
+      activo: pendiente.activo,
+    })
+    catalogoEstadoPendiente.value = null
+    aviso.value = pendiente.activo ? 'Valor de catálogo reactivado en Firestore.' : 'Valor desactivado en Firestore. Se conserva para las fichas existentes.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 5000)
+    await cargarDatosCatalogos()
+  } catch (error) {
+    errorOperacion.value = mensajeErrorCatalogo(error)
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) pendiente.reintentoObligatorio = true
+  } finally {
+    enviando.value = false
+  }
+}
+
+async function guardarCatalogo() {
+  if (!escrituraCatalogosDisponible.value) return
+  const coleccion = borrador.value.tipoCatalogo as ColeccionCatalogoEditable
+  const nombre = borrador.value.valor.trim()
+  const definicion = coleccion === 'tiposProducto' ? {
+    campos: catalogoCampos.value.map((campo) => ({ ...campo, clave: campo.clave.trim(), etiqueta: campo.etiqueta.trim() })),
+    opcionesVariante: catalogoOpcionesVarianteTexto.value.split(',').map((opcion) => opcion.trim()).filter(Boolean),
+  } : undefined
+  const solicitud = {
+    coleccion,
+    nombre,
+    ...(catalogoEnEdicion.value ? {
+      documentoId: catalogoEnEdicion.value.elemento.id,
+      versionEsperada: catalogoEnEdicion.value.elemento.versionEsperada,
+    } : {}),
+    ...(definicion ? { definicion } : {}),
+  }
+  const accion = catalogoEnEdicion.value ? 'editarElementoCatalogo' : 'crearElementoCatalogo'
+  const firma = JSON.stringify([accion, solicitud])
+  if (catalogoReintentoObligatorio.value && catalogoOperacionPendiente.value?.solicitud !== firma) {
+    errorOperacion.value = 'El servidor pudo guardar la solicitud. Reintenta exactamente los mismos datos antes de cambiar el formulario.'
+    return
+  }
+  if (!catalogoOperacionPendiente.value || catalogoOperacionPendiente.value.solicitud !== firma) {
+    catalogoOperacionPendiente.value = { id: crypto.randomUUID(), solicitud: firma }
+  }
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    const operacionId = catalogoOperacionPendiente.value.id
+    if (catalogoEnEdicion.value) {
+      await editarValorCatalogo($amancay, {
+        ...solicitud,
+        documentoId: catalogoEnEdicion.value.elemento.id,
+        versionEsperada: catalogoEnEdicion.value.elemento.versionEsperada ?? '',
+        operacionId,
+      })
+    } else {
+      await crearValorCatalogo($amancay, { coleccion, nombre, ...(definicion ? { definicion } : {}), operacionId })
+    }
+    const estado = catalogoEnEdicion.value ? 'actualizado' : 'creado'
+    catalogoEnEdicion.value = null
+    catalogoOperacionPendiente.value = null
+    catalogoReintentoObligatorio.value = false
+    formularioAbierto.value = false
+    aviso.value = `Valor de catálogo ${estado} en Firestore.`
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 5000)
+    await cargarDatosCatalogos()
+  } catch (error) {
+    errorOperacion.value = mensajeErrorCatalogo(error)
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) catalogoReintentoObligatorio.value = true
+  } finally {
+    enviando.value = false
+  }
+}
+
 async function guardarFormulario() {
+  if (seccion.value?.id === 'catalogos') {
+    await guardarCatalogo()
+    return
+  }
   if (seccion.value?.id !== 'emprendedoras' || config.firebaseModo !== 'real-api') {
     guardarVistaPrevia()
     return
@@ -549,7 +730,11 @@ async function confirmarAccionCuenta() {
             <h1>{{ seccion.titulo }}</h1>
             <p class="sub">{{ seccion.descripcion }}</p>
           </div>
-          <button class="boton boton-primario" type="button" @click="abrirFormulario">
+          <button
+            v-if="seccion.id !== 'catalogos' || escrituraCatalogosDisponible"
+            class="boton boton-primario" type="button"
+            @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : abrirFormulario()"
+          >
             {{ seccion.accion }}
           </button>
         </header>
@@ -557,10 +742,11 @@ async function confirmarAccionCuenta() {
         <section v-if="formularioAbierto" class="formulario" aria-labelledby="titulo-formulario">
           <div class="formulario-encabezado">
             <div>
-              <h2 id="titulo-formulario">{{ seccion.accion }}</h2>
-              <p>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. El sistema no envía correo: tendrás que compartir el código con la destinataria.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
+              <h2 id="titulo-formulario">{{ seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Editar valor de catálogo' : 'Nuevo valor de catálogo' : seccion.accion }}</h2>
+              <p v-if="seccion.id === 'catalogos'">Los cambios se guardan en Firestore mediante la API autenticada. Los nombres deben ser únicos dentro de cada catálogo.</p>
+              <p v-else>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. El sistema no envía correo: tendrás que compartir el código con la destinataria.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
             </div>
-            <button class="editar" type="button" @click="cerrarFormulario">Cancelar</button>
+            <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio" @click="cerrarFormulario">Cancelar</button>
           </div>
           <form class="campos-formulario" @submit.prevent="guardarFormulario">
             <template v-if="seccion.id === 'emprendedoras'">
@@ -577,7 +763,7 @@ async function confirmarAccionCuenta() {
               <label>Tipo de emprendimiento
                 <select v-model="borrador.tipoEmprendimientoId" required>
                   <option value="">Seleccionar tipo</option>
-                  <option v-for="opcion in datos.catalogos.tiposEmprendimiento" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
+                  <option v-for="opcion in activos(datos.catalogos.tiposEmprendimiento)" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
               </label>
               <label class="opcion"><input type="checkbox" checked disabled /> Mostrar precios en el catálogo</label>
@@ -592,11 +778,24 @@ async function confirmarAccionCuenta() {
             </template>
             <template v-else-if="seccion.id === 'catalogos'">
               <label>Tipo de catálogo
-                <select v-model="borrador.tipoCatalogo">
+                <select v-model="borrador.tipoCatalogo" :disabled="!!catalogoEnEdicion || enviando || catalogoReintentoObligatorio">
                   <option v-for="tipo in tiposCatalogo" :key="tipo.id" :value="tipo.id">{{ tipo.nombre }}</option>
                 </select>
               </label>
-              <label>Nombre del valor<input v-model="borrador.valor" required /></label>
+              <label>Nombre<input v-model="borrador.valor" maxlength="100" required :disabled="enviando || catalogoReintentoObligatorio" /></label>
+              <div v-if="borrador.tipoCatalogo === 'tiposProducto'" class="campo-completo editor-tipo-producto">
+                <h3>Datos que tendrá la ficha de este tipo de producto</h3>
+                <p>Al cambiar estos campos se crea una nueva versión. Los productos existentes conservan la definición con que fueron creados.</p>
+                <div v-for="(campo, index) in catalogoCampos" :key="index" class="campo-tipo-producto">
+                  <label>Clave técnica<input v-model="campo.clave" maxlength="40" placeholder="material" required :disabled="enviando || catalogoReintentoObligatorio" /></label>
+                  <label>Nombre que verá la persona<input v-model="campo.etiqueta" maxlength="80" placeholder="Material" required :disabled="enviando || catalogoReintentoObligatorio" /></label>
+                  <label class="opcion"><input v-model="campo.obligatorio" type="checkbox" :disabled="enviando || catalogoReintentoObligatorio" /> Obligatorio</label>
+                  <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio" @click="quitarCampoCatalogo(index)">Quitar campo</button>
+                </div>
+                <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || catalogoCampos.length >= 20" @click="agregarCampoCatalogo">+ Agregar campo de texto</button>
+                <label class="campo-completo">Opciones de variantes<textarea v-model="catalogoOpcionesVarianteTexto" rows="2" maxlength="500" placeholder="talla, color, tamaño" :disabled="enviando || catalogoReintentoObligatorio" /></label>
+                <small>Escribe opciones separadas por coma. Déjalo vacío si el producto no tendrá variantes.</small>
+              </div>
             </template>
             <template v-else-if="seccion.id === 'asociaciones'">
               <label>Nombre de la asociación<input v-model="borrador.nombre" required /></label>
@@ -614,9 +813,10 @@ async function confirmarAccionCuenta() {
               <label>Valor<input v-model="borrador.valor" required /></label>
             </template>
             <div class="acciones-formulario">
-              <button class="boton boton-primario" type="submit" :disabled="enviando">{{ enviando ? 'Enviando…' : seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'Crear invitación real' : 'Guardar (vista previa)' }}</button>
-              <button class="editar" type="button" @click="cerrarFormulario">Cerrar</button>
+              <button class="boton boton-primario" type="submit" :disabled="enviando">{{ enviando ? 'Guardando…' : seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Guardar cambios en Firestore' : 'Crear valor en Firestore' : seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'Crear invitación real' : 'Guardar (vista previa)' }}</button>
+              <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio" @click="cerrarFormulario">Cerrar</button>
             </div>
+            <p v-if="catalogoReintentoObligatorio" class="campo-completo" role="status">No se recibió confirmación. Reintenta sin cambiar los datos para evitar duplicar operaciones.</p>
             <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
           </form>
         </section>
@@ -660,8 +860,26 @@ async function confirmarAccionCuenta() {
           </form>
         </section>
 
+        <section v-if="catalogoEstadoPendiente" class="formulario" aria-labelledby="titulo-estado-catalogo">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-estado-catalogo">{{ catalogoEstadoPendiente.activo ? 'Reactivar valor' : 'Desactivar valor' }}</h2>
+              <p>{{ catalogoEstadoPendiente.item.titulo }} · {{ catalogoEstadoPendiente.item.detalle }}</p>
+            </div>
+          </div>
+          <p>El registro no se elimina. Los productos ya creados conservan sus referencias y su definición histórica.</p>
+          <p v-if="catalogoEstadoPendiente.reintentoObligatorio" role="status">El servidor pudo completar el cambio. Reintenta esta misma acción para confirmar el resultado.</p>
+          <div class="acciones-formulario">
+            <button class="boton boton-primario" type="button" :disabled="enviando" @click="confirmarCambioEstadoCatalogo">{{ enviando ? 'Guardando…' : catalogoEstadoPendiente.activo ? 'Confirmar reactivación' : 'Confirmar desactivación' }}</button>
+            <button class="editar" type="button" :disabled="enviando || catalogoEstadoPendiente.reintentoObligatorio" @click="catalogoEstadoPendiente = null">Cancelar</button>
+          </div>
+          <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
+        </section>
+
+        <p v-if="seccion.id === 'catalogos' && !escrituraCatalogosDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. Para administrar valores, conecta el panel a la API autenticada real.</p>
+        <p v-if="seccion.id === 'catalogos'">Los sectores se usan al invitar emprendedoras. Desactiva los valores que ya no deban seleccionarse; se conservan para no borrar referencias históricas.</p>
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
-        <p v-else>Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
+        <p v-else-if="seccion.id !== 'catalogos'">Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
         <button v-if="lecturaDisponible" class="editar" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
         <p v-if="cargandoDatos || cargandoCatalogos" role="status">Leyendo Firestore…</p>
         <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
@@ -685,13 +903,23 @@ async function confirmarAccionCuenta() {
         </div>
 
         <ul v-if="!cargandoDatos && !cargandoCatalogos && !errorDatos && visibles.length" class="lista">
-          <li v-for="item in visibles" :key="item.titulo" class="fila">
+          <li v-for="item in visibles" :key="`${item.catalogo ?? seccion.id}:${item.catalogoId ?? item.titulo}`" class="fila">
             <span class="avatar" aria-hidden="true">{{ iniciales(item.titulo) }}</span>
             <div class="fila-texto">
               <b>{{ item.titulo }}</b>
               <small>{{ item.detalle }}</small>
             </div>
             <span class="etiqueta" :class="tono(item.estado)">{{ item.estado }}</span>
+            <button
+              v-if="seccion.id === 'catalogos' && item.catalogo && escrituraCatalogosDisponible"
+              class="editar" type="button" :disabled="enviando || !!catalogoEstadoPendiente"
+              @click="prepararEdicionCatalogo(item)"
+            >Editar</button>
+            <button
+              v-if="seccion.id === 'catalogos' && item.catalogo && escrituraCatalogosDisponible"
+              class="editar" type="button" :disabled="enviando || !!catalogoEstadoPendiente"
+              @click="prepararCambioEstadoCatalogo(item, item.estado !== 'Activo')"
+            >{{ item.estado === 'Activo' ? 'Desactivar' : 'Reactivar' }}</button>
             <button
               v-if="item.invitacionId && item.estado === 'pendiente' && config.firebaseModo === 'real-api'"
               class="editar" type="button" @click="prepararCancelacionInvitacion(item)"
@@ -704,7 +932,7 @@ async function confirmarAccionCuenta() {
               v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'desactivado' && config.firebaseModo === 'real-api'"
               class="editar" type="button" @click="prepararAccionCuenta(item, 'reactivarEmprendedora')"
             >Reactivar</button>
-            <button v-else class="editar" type="button" disabled :title="item.versionEsperada ? 'Acción no disponible en este entorno o pendiente de integrar' : 'El registro no tiene una versión válida para modificar'">Sin acción</button>
+            <button v-else-if="seccion.id !== 'catalogos'" class="editar" type="button" disabled :title="item.versionEsperada ? 'Acción no disponible en este entorno o pendiente de integrar' : 'El registro no tiene una versión válida para modificar'">Sin acción</button>
           </li>
         </ul>
         <div v-else-if="!cargandoDatos && !cargandoCatalogos && !errorDatos" class="vacio">
@@ -1134,6 +1362,49 @@ input:focus-visible {
 
 .campo-completo {
   grid-column: 1 / -1;
+}
+
+.editor-tipo-producto {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  background: var(--crema);
+}
+
+.editor-tipo-producto h3 {
+  margin: 0;
+  color: var(--vino);
+  font-size: 1rem;
+}
+
+.editor-tipo-producto p,
+.editor-tipo-producto small {
+  margin: 0;
+  color: var(--suave);
+  line-height: 1.5;
+}
+
+.campo-tipo-producto {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.campo-tipo-producto .opcion {
+  flex-direction: row;
+  align-items: center;
+}
+
+.campo-tipo-producto .opcion input {
+  width: 20px;
+  min-height: 20px;
 }
 
 .acciones-formulario {
@@ -1671,6 +1942,10 @@ h1 {
 
 @media (max-width: 860px) {
   .campos-formulario {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .campo-tipo-producto {
     grid-template-columns: minmax(0, 1fr);
   }
 

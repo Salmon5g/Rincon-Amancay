@@ -1,5 +1,11 @@
 # Verificación de la base — 9 de octubre de 2026
 
+## Actualización local — 30 de octubre de 2026
+
+Se agregó administración autenticada de sectores, categorías, tipos de emprendimiento y tipos de producto, con versiones históricas de esquemas y auditoría. Backend y web pasaron `npm.cmd run typecheck` después de incluir sectores; Nuxt compiló para producción. No se ejecutaron suites de pruebas, no se inició la API contra Firebase real y las reglas no se publicaron. La nueva administración no está disponible en la URL publicada hasta desplegar reglas, configurar una URL API HTTPS, generar y publicar la web.
+
+Limpieza del proyecto Firebase real `rincon-amancay`: se retiraron 15 documentos de prueba (invitaciones, sector demo, tres tiendas públicas y sus productos/variantes, y tres tipos de emprendimiento demo). Se conservaron `usuarios/zvhHSDzNzNZhlPdx9r2P4V4nYu13`, `accesos/zvhHSDzNzNZhlPdx9r2P4V4nYu13` y la cuenta Authentication `rinconamancay67@gmail.com`. Authentication no tenía otras cuentas y el proyecto no tenía buckets de Storage. No se cambiaron reglas, Hosting ni despliegues.
+
 Estado: disponible para que los equipos comiencen **desarrollo local** con [arranque por equipo](arranque-equipos.md). No equivale a una aplicación terminada ni a un despliegue remoto verificado.
 
 ## Comprobaciones ejecutadas

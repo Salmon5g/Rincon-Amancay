@@ -82,15 +82,20 @@ service cloud.firestore {
         }
       }
     }
-    match /sectores/{id} { allow read: if resource.data.activo == true; }
-    match /categorias/{id} { allow read: if resource.data.activo == true; }
-    match /tiposEmprendimiento/{id} { allow read: if resource.data.activo == true; }
+    match /sectores/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
+    // Un tipo o categoría inactiva deja de ofrecerse al crear productos, pero
+    // una emprendedora puede leer su definición histórica para mantener fichas existentes.
+    match /categorias/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
+    match /tiposEmprendimiento/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
     match /tiposProducto/{id} {
-      allow read: if resource.data.activo == true;
+      allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora'));
       match /versiones/{version} {
-        allow read: if get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true;
+        allow read: if get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true
+          || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora'));
       }
     }
+    match /operacionesAdministracion/{operationId} { allow read: if admin(); }
+    match /auditoriaAdministracion/{auditId} { allow read: if admin(); }
     // Altas, roles, publicaciones, stock, ventas y módulos no implementados
     // no admiten escrituras de cliente; ni siquiera por rol administrador.
     match /{document=**} {

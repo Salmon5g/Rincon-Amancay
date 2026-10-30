@@ -42,20 +42,11 @@ firebase deploy --only firestore:rules,storage
 
 (Usando las `firestore.rules` y `storage.rules` existentes.)
 
-## 5. Cargar los datos ficticios a la nube
+## 5. Preparar los datos reales
 
-Necesitás una cuenta de servicio con permiso para escribir en Firestore:
+No cargar datos ficticios a esta base. `datos-prueba/catalogo-local.json` y `npm --prefix firebase run seed` son exclusivamente para los emuladores; `seed:cloud` ahora rechaza ese fixture para evitar mezclar cuentas, tiendas y productos inventados con datos reales.
 
-1. Firebase → Configuración del proyecto → Cuentas de servicio.
-2. Generar una nueva clave privada → descargar `serviceAccount.json` (¡Este archivo **NO** va a Git!).
-3. Asignar `GOOGLE_APPLICATION_CREDENTIALS` y cargar:
-
-```powershell
-$env:GOOGLE_APPLICATION_CREDENTIALS="C:\ruta\serviceAccount.json"
-npm --prefix firebase run seed:cloud
-```
-
-El script carga todos los documentos de `datos-prueba/catalogo-local.json` en tu proyecto real (merge/set, preservando la estructura). También podés volver a ejecutar `seed:cloud` si necesitás refrescar.
+En el proyecto real, crear y mantener catálogos desde Web Admin cuando la API autenticada esté configurada. No generar claves de cuenta de servicio para ejecutar scripts manuales; la API debe usar credenciales administradas (ADC local para desarrollo y una identidad de servicio con permisos mínimos al desplegar).
 
 ## 6. Compilar y probar
 
@@ -70,6 +61,6 @@ Luego Run desde Android Studio (variante debug) contra tu emulador/dispositivo. 
 ## Notas
 
 - `ConexionLocal.API` apunta a `http://127.0.0.1:8787/api/v1/`. El comprador **no usa** ese endpoint (lee directamente de Firestore). Solo lo usaría si se agregan operaciones que escriban y requieran el backend.
-- El `seed.mjs` queda para los emuladores. El `seed-cloud.mjs` usa `firebase-admin`.
+- El `seed.mjs` queda para los emuladores. `seed-cloud.mjs` no permite importar el fixture ficticio a Firebase real.
 - `google-services.json` puede subirse a Git porque no contiene secretos.
 - Te quedan suscriptos a las cuotas gratuitas de Firebase (Spark). Revisá cuotas si cargás mucho.

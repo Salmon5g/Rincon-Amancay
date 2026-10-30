@@ -78,7 +78,10 @@ export function crearProductos(db: Firestore) {
         }
         exigir(!old.piezaUnicaVendida, 'conflicto', 'No se edita una pieza única vendida.');
       }
-      exigir(type.data()?.activo === true && definition.exists && category.data()?.activo === true, 'datos-invalidos', 'Tipo, versión o categoría inexistente/inactiva.');
+      const referenciasVigentes = type.data()?.activo === true && category.data()?.activo === true;
+      const conservaReferenciasHistoricas = !crear && old?.tipoProductoId === p.tipoProductoId
+        && old?.categoriaId === p.categoriaId && old?.versionTipoProducto === p.versionTipoProducto;
+      exigir(definition.exists && (referenciasVigentes || conservaReferenciasHistoricas), 'datos-invalidos', 'Tipo, versión o categoría inexistente/inactiva para una ficha nueva.');
       const def = definition.data()!;
       exigir(Array.isArray(def.campos) && Array.isArray(def.opcionesVariante), 'datos-invalidos', 'Definición de tipo inválida.');
       exigir(Object.keys(attrs).every(k => def.campos.some((f: any) => f.clave === k)), 'datos-invalidos', 'Atributo no definido para el tipo.');

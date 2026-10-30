@@ -38,6 +38,17 @@ export interface ElementoCatalogo {
   id: string
   nombre: string
   activo: boolean
+  versionEsperada?: string
+  versionActual?: number
+  campos?: CampoTipoProducto[]
+  opcionesVariante?: string[]
+}
+
+export interface CampoTipoProducto {
+  clave: string
+  etiqueta: string
+  tipo: 'texto'
+  obligatorio: boolean
 }
 
 export interface Catalogos {

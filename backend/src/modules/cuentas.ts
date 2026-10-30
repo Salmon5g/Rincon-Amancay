@@ -80,7 +80,9 @@ export function crearCuentas(db: Firestore, auth: Auth) {
       exigir(products.empty && sales.empty, 'conflicto', 'La ruta conserva datos de una tienda anterior.');
       const a = access.data();
       exigir(!access.exists || (a?.estado === 'activo' && Array.isArray(a.roles) && a.roles.length === 1 && a.roles[0] === 'comprador' && !('tiendaId' in a)), 'conflicto', 'El acceso existente no admite esta alta.');
-      exigir(sector.data()?.activo === true && type.data()?.activo === true, 'datos-invalidos', 'Sector o tipo de emprendimiento inexistente/inactivo.');
+      const catalogosActivos = sector.data()?.activo === true && type.data()?.activo === true;
+      const invitacionValida = Boolean(inviteRef && invite?.exists);
+      exigir(catalogosActivos || invitacionValida, 'datos-invalidos', 'Sector o tipo de emprendimiento inexistente/inactivo.');
       const now = FieldValue.serverTimestamp();
       const dates = {creadoEn: now, actualizadoEn: now};
       if (!user.exists) tx.create(userRef, {nombreMostrar: d.nombreMostrar, ...dates});

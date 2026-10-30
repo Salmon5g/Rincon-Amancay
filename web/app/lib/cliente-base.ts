@@ -14,7 +14,7 @@ export interface ServiciosCliente {
   storage: FirebaseStorage;
 }
 
-export const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora'] as const;
+export const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo'] as const;
 export type Operacion = typeof operaciones[number];
 export class ErrorApi extends Error {
   code: string; status: number; resultadoIncierto: boolean;
