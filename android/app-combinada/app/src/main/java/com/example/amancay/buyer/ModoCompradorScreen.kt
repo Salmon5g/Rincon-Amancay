@@ -36,15 +36,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.amancay.data.AmancayRepo
+import com.example.amancay.data.AmancayRepository
 import com.example.amancay.data.Product
 import com.example.amancay.data.ProductType
 import java.text.NumberFormat
 import java.util.Locale
 
 @Composable
-fun ModoCompradorScreen(alVolver: () -> Unit) {
-    val productos by AmancayRepo.productos.collectAsState()
+fun ModoCompradorScreen(repositorio: AmancayRepository, alVolver: () -> Unit) {
+    val productos by repositorio.productos.collectAsState()
     var busqueda by remember { mutableStateOf("") }
     var tipoSeleccionado by remember { mutableStateOf<ProductType?>(null) }
     var productoSeleccionado by remember { mutableStateOf<Product?>(null) }

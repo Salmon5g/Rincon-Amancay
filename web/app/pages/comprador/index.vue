@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
-import { crearCliente } from '~/lib/cliente-base';
+import type { FichaComprador, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico';
 useHead({
     title: 'Comprar local — Rincón Amancay',
     link: [{ rel: 'icon', href: '/favicon.png' },
@@ -9,28 +8,63 @@ useHead({
             href: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap' }]
 });
 
-// Tipos de datos
-type Ficha = {
-    id: string;
-    datos: DocumentData;
-};
-
 // Cliente y estado de la página
-const { $amancay } = useNuxtApp();
-const cliente = () => crearCliente($amancay.firebase, '');
-const tienda = ref<Ficha | null>(null);
-const producto = ref<Ficha | null>(null);
-const filas = ref<Ficha[]>([]);
-const variantes = ref<Ficha[]>([]);
+const { $catalogoPublico } = useNuxtApp();
+const tienda = ref<FichaComprador | null>(null);
+const producto = ref<FichaComprador | null>(null);
+const filas = ref<FichaComprador[]>([]);
+const variantes = ref<FichaComprador[]>([]);
 const seleccion = ref('');
 const busqueda = ref('');
 const error = ref('');
 const cargando = ref(false);
 const siguiente = ref(false);
 const pagina = ref(1);
-let cursores: (QueryDocumentSnapshot | undefined)[] = [undefined];
-let ultimo: QueryDocumentSnapshot | undefined;
+let cursores: (string | null)[] = [null];
+let cursorSiguiente: string | null = null;
 let revision = 0;
+
+function fichaTienda(elemento: TiendaPublica): FichaComprador {
+    return {
+        id: elemento.id,
+        datos: {
+            nombre: elemento.nombre,
+            descripcion: elemento.descripcion,
+            tipoEmprendimientoId: elemento.tipoEmprendimientoId,
+            sectorId: elemento.sectorId,
+            mostrarPrecios: elemento.mostrarPrecios,
+        },
+    };
+}
+
+function fichaProducto(elemento: ProductoPublico): FichaComprador {
+    return {
+        id: elemento.id,
+        datos: {
+            nombre: elemento.nombre,
+            descripcion: elemento.descripcion,
+            imagenes: elemento.imagenes,
+            tieneVariantes: elemento.tieneVariantes,
+            estadoDisponibilidad: elemento.estadoDisponibilidad,
+            precioBase: elemento.precioBase,
+            atributosEspecificos: elemento.atributosEspecificos,
+        },
+    };
+}
+
+function fichaVariante(elemento: VariantePublica): FichaComprador {
+    const nombre = Object.values(elemento.opciones)[0] || elemento.id;
+    return {
+        id: elemento.id,
+        datos: {
+            nombre,
+            descripcion: '',
+            opciones: elemento.opciones,
+            estadoDisponibilidad: elemento.estadoDisponibilidad,
+            precio: elemento.precio,
+        },
+    };
+}
 
 // Datos derivados para la vista
 const visibles = computed(() => filas.value.filter(f => `${f.datos.nombre} ${f.datos.descripcion ?? ''}`.toLowerCase().includes(busqueda.value.trim().toLowerCase())));
@@ -71,8 +105,10 @@ function disponibilidad(valor: unknown) {
 function fallo(errorConsulta: unknown) {
     const codigo = (errorConsulta as { code?: string }).code;
 
-    return codigo === 'permission-denied'
-        ? 'No se pudo leer el catálogo público. Revisa las reglas de Firebase.'
+    return codigo === 'sin-permiso'
+        ? 'No se pudo leer el catálogo público. Revisa los permisos de lectura.'
+        : codigo === 'sin-conexion'
+            ? 'No pudimos conectar con el servicio. Revisa la conexión y vuelve a intentar.'
         : 'No pudimos cargar el catálogo. Revisa la conexión y vuelve a intentar.';
 }
 
@@ -83,16 +119,21 @@ async function cargar(destino = pagina.value) {
     cargando.value = true;
     error.value = '';
     try {
-        const r = tienda.value ? await cliente().listarProductos(tienda.value.id, cursores[destino - 1]) : await cliente().listarTiendas(cursores[destino - 1]);
+        const r = tienda.value
+            ? await $catalogoPublico.listarProductos(tienda.value.id, cursores[destino - 1])
+            : await $catalogoPublico.listarTiendas(cursores[destino - 1]);
         if (actual !== revision)
             return;
-        if (r.empty && destino > 1) {
+        if (!r.elementos.length && destino > 1) {
             siguiente.value = false;
             return;
         }
-        filas.value = r.docs.map(d => ({ id: d.id, datos: d.data() }));
-        ultimo = r.docs.at(-1);
-        siguiente.value = r.size === 20;
+        filas.value = tienda.value
+            ? (r.elementos as ProductoPublico[]).map(fichaProducto)
+            : (r.elementos as TiendaPublica[]).map(fichaTienda);
+        cursorSiguiente = r.cursorSiguiente;
+        cursores[destino] = r.cursorSiguiente;
+        siguiente.value = r.cursorSiguiente !== null;
         pagina.value = destino;
         busqueda.value = '';
     }
@@ -108,11 +149,12 @@ async function cargar(destino = pagina.value) {
 
 // Navegación entre tiendas y productos
 
-async function navegar(ficha: Ficha | null) {
+async function navegar(ficha: FichaComprador | null) {
     revision++;
     tienda.value = ficha;
     producto.value = null;
-    cursores = [undefined];
+    cursores = [null];
+    cursorSiguiente = null;
     pagina.value = 1;
     filas.value = [];
     siguiente.value = false;
@@ -121,7 +163,7 @@ async function navegar(ficha: Ficha | null) {
     await cargar(1);
 }
 
-async function abrir(f: Ficha) {
+async function abrir(f: FichaComprador) {
     if (!tienda.value)
         return;
     const actual = ++revision;
@@ -132,10 +174,10 @@ async function abrir(f: Ficha) {
     cargando.value = true;
     try {
         if (f.datos.tieneVariantes) {
-            const r = await cliente().listarVariantes(tienda.value.id, f.id);
+            const r = await $catalogoPublico.listarVariantes(tienda.value.id, f.id);
             if (actual !== revision)
                 return;
-            variantes.value = r.docs.map(d => ({ id: d.id, datos: d.data() }));
+            variantes.value = r.map(fichaVariante);
             seleccion.value = variantes.value[0]?.id ?? '';
         }
     }
@@ -157,9 +199,7 @@ function volver() {
 }
 
 async function avanzar() {
-    if (!ultimo) return;
-
-    cursores[pagina.value] = ultimo;
+    if (!cursorSiguiente) return;
     await cargar(pagina.value + 1);
 }
 

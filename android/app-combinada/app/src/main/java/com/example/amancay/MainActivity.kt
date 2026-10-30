@@ -31,8 +31,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.buyer.ModoCompradorScreen
-import com.example.amancay.data.AmancayRepo
+import com.example.amancay.data.AmancayRepository
+import com.example.amancay.data.DraftState
 import com.example.amancay.data.Product
+import com.example.amancay.data.crearRepositorioDemostracion
 import com.example.amancay.ui.*
 import com.example.amancay.ui.theme.AmancayTheme
 import com.example.amancay.ui.theme.Cream
@@ -57,10 +59,11 @@ class MainActivity : FragmentActivity() {
 
 @Composable
 fun AmancayApp() {
+    val repositorio = remember { crearRepositorioDemostracion() }
     var modo by remember { mutableStateOf<String?>(null) }
     when (modo) {
-        "comprador" -> ModoCompradorScreen { modo = null }
-        "emprendedora" -> EmprendedoraApp(onExit = { modo = null })
+        "comprador" -> ModoCompradorScreen(repositorio) { modo = null }
+        "emprendedora" -> EmprendedoraApp(repositorio, onExit = { modo = null })
         else -> Column(
             modifier = Modifier.fillMaxSize().background(Cream).padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.Center
@@ -118,21 +121,22 @@ sealed interface Screen {
 }
 
 @Composable
-private fun EmprendedoraApp(onExit: () -> Unit) {
+private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) {
     var tab by remember { mutableStateOf(Tab.INICIO) }
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var sellStep by remember { mutableIntStateOf(1) }
     var draftBump by remember { mutableIntStateOf(0) }
+    val draft = remember { DraftState() }
     val bump: () -> Unit = { draftBump += 1 }
     @Suppress("UNUSED_EXPRESSION") draftBump
 
-    val productos by AmancayRepo.productos.collectAsState()
-    val ventas by AmancayRepo.ventas.collectAsState()
-    val settings by AmancayRepo.settings.collectAsState()
-    val borradorGuardado by AmancayRepo.borradorGuardado.collectAsState()
-    val compartido by AmancayRepo.enlaceCompartido.collectAsState()
-    val invitaciones by AmancayRepo.invitaciones.collectAsState()
-    val eventos by AmancayRepo.eventosCatalogo.collectAsState()
+    val productos by repositorio.productos.collectAsState()
+    val ventas by repositorio.ventas.collectAsState()
+    val settings by repositorio.settings.collectAsState()
+    val borradorGuardado by repositorio.borradorGuardado.collectAsState()
+    val compartido by repositorio.enlaceCompartido.collectAsState()
+    val invitaciones by repositorio.invitaciones.collectAsState()
+    val eventos by repositorio.eventosCatalogo.collectAsState()
 
     var showPublishedDialog by remember { mutableStateOf(false) }
     var showSaleDialog by remember { mutableStateOf(false) }
@@ -155,7 +159,7 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
 
     LaunchedEffect(Unit) {
         if (prefs.getBoolean("huella", false)) {
-            AmancayRepo.updateSettings(AmancayRepo.settings.value.copy(huella = true))
+            repositorio.updateSettings(repositorio.settings.value.copy(huella = true))
         }
     }
 
@@ -201,44 +205,44 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
     }
 
     fun startNew() {
-        AmancayRepo.draft.reset(null)
+        draft.reset(null)
         val cfg = settings
         val ultimo = productos.lastOrNull()
         if (cfg.valoresPorDefecto && ultimo != null) {
-            AmancayRepo.draft.material = ultimo.material
-            AmancayRepo.draft.tamano = ultimo.tamano
-            AmancayRepo.draft.cuidados = ultimo.cuidados
+            draft.material = ultimo.material
+            draft.tamano = ultimo.tamano
+            draft.cuidados = ultimo.cuidados
         }
-        AmancayRepo.draft.disponibleEncargo = cfg.aceptarPedidos
+        draft.disponibleEncargo = cfg.aceptarPedidos
         sellStep = 1; bump()
         go(Screen.Sell, keepTab = true)
     }
     fun continueDraft() {
         val b = borradorGuardado
         if (b != null) {
-            AmancayRepo.draft.reset(b)
+            draft.reset(b)
             sellStep = 1; bump()
             go(Screen.Sell, keepTab = true)
         }
     }
     fun editProduct(p: Product) {
-        AmancayRepo.draft.reset(p)
+        draft.reset(p)
         sellStep = 1; bump()
         go(Screen.Sell, keepTab = true)
     }
     fun saveExit() {
-        val p = AmancayRepo.draft.toProduct()
-        AmancayRepo.guardarBorrador(p)
-        AmancayRepo.draft.reset(null); bump()
+        val p = draft.toProduct()
+        repositorio.guardarBorrador(p)
+        draft.reset(null); bump()
         go(Screen.Home)
         scope.launch { snackbar.showSnackbar("Borrador guardado. Puedes volver después") }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            AmancayRepo.draft.photoUri = uri
-            AmancayRepo.draft.photoBitmap = null
-            AmancayRepo.draft.fotoLista = true
+            draft.photoUri = uri
+            draft.photoBitmap = null
+            draft.fotoLista = true
             bump()
             if (screen == Screen.Camara) {
                 sellStep = 1
@@ -327,21 +331,21 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
                     productos = productos,
                     onEdit = { editProduct(it) },
                     onDelete = {
-                        AmancayRepo.eliminarProducto(it.id)
+                        repositorio.eliminarProducto(it.id)
                         scope.launch { snackbar.showSnackbar("Producto eliminado") }
                     },
                     onCreate = { startNew() },
                     onPreview = { go(Screen.Preview(it.id)) },
                     settings = settings,
-                    onSettings = { AmancayRepo.updateSettings(it) }
+                    onSettings = { repositorio.updateSettings(it) }
                 )
                 is Screen.Preview -> {
-                    val p = s.productId?.let { AmancayRepo.obtener(it) } ?: productos.firstOrNull { it.publicado }
+                    val p = s.productId?.let { repositorio.obtener(it) } ?: productos.firstOrNull { it.publicado }
                     PreviewCatalogScreen(
                         producto = p,
                         onShare = {
                             clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
-                            AmancayRepo.marcarEnlaceCompartido()
+                            repositorio.marcarEnlaceCompartido()
                             scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
                         },
                         onContact = { scope.launch { snackbar.showSnackbar("Te contactarán por WhatsApp") } }
@@ -350,7 +354,7 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
                 is Screen.Sale -> RegisterSaleScreen(
                     productos = productos,
                     onConfirm = { prod, vari, qty ->
-                        AmancayRepo.registrarVenta(prod, vari, qty)
+                        repositorio.registrarVenta(prod, vari, qty)
                         showSaleDialog = true
                     },
                     onVerHistorial = { go(Screen.History) }
@@ -358,9 +362,9 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
                 is Screen.History -> SalesHistoryScreen(ventas, eventos)
                 is Screen.Camara -> CameraScreen(
                     onFoto = { bmp ->
-                        AmancayRepo.draft.photoBitmap = bmp
-                        AmancayRepo.draft.photoUri = null
-                        AmancayRepo.draft.fotoLista = true
+                        draft.photoBitmap = bmp
+                        draft.photoUri = null
+                        draft.fotoLista = true
                         sellStep = 1
                         go(Screen.Sell, keepTab = true)
                     },
@@ -372,14 +376,14 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
                     onChange = { nuevo ->
                         if (nuevo.huella && !settings.huella) {
                             if (puedeHuella) {
-                                AmancayRepo.updateSettings(nuevo)
+                                repositorio.updateSettings(nuevo)
                                 prefs.edit().putBoolean("huella", true).apply()
                                 scope.launch { snackbar.showSnackbar("Huella activada") }
                             } else {
                                 scope.launch { snackbar.showSnackbar("Este equipo no tiene huella disponible") }
                             }
                         } else {
-                            AmancayRepo.updateSettings(nuevo)
+                            repositorio.updateSettings(nuevo)
                             prefs.edit().putBoolean("huella", nuevo.huella).apply()
                         }
                     },
@@ -393,17 +397,17 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
                 is Screen.FeriaDetalle -> FeriaDetalleScreen(
                     invitacion = s.invitacionId?.let { id -> invitaciones.firstOrNull { it.id == id } },
                     onAceptar = {
-                        AmancayRepo.responderFeria(it.id, true)
+                        repositorio.responderFeria(it.id, true)
                         scope.launch { snackbar.showSnackbar("Inscripción confirmada") }
                     },
                     onRechazar = {
-                        AmancayRepo.responderFeria(it.id, false)
+                        repositorio.responderFeria(it.id, false)
                         scope.launch { snackbar.showSnackbar("Invitación rechazada") }
                     },
                     onVolver = { go(Screen.Ferias) }
                 )
                 is Screen.Sell -> {
-                    val d = AmancayRepo.draft
+                    val d = draft
                     when (sellStep) {
                         1 -> PhotoStep(d, bump,
                             onTakePhoto = { go(Screen.Camara, keepTab = true) },
@@ -418,8 +422,8 @@ private fun EmprendedoraApp(onExit: () -> Unit) {
                         else -> ReviewStep(d, bump,
                             onPublish = {
                                 val p = d.toProduct()
-                                AmancayRepo.guardarProducto(p)
-                                AmancayRepo.draft.reset(null); bump()
+                                repositorio.guardarProducto(p)
+                                draft.reset(null); bump()
                                 showPublishedDialog = true
                             },
                             onBack = { sellStep = 4 }, onSaveExit = { saveExit() })

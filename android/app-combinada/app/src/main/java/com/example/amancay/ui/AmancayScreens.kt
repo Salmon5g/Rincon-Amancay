@@ -970,7 +970,12 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
                 }
             }
             if (showShare) {
-                ShareDialog(link = link, onCopiar = { onShare(); showShare = false }, onCerrar = { showShare = false })
+                ShareDialog(
+                    link = link,
+                    onCopiar = { onShare(); showShare = false },
+                    onCompartir = onShare,
+                    onCerrar = { showShare = false }
+                )
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -978,7 +983,7 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
 }
 
 @Composable
-private fun ShareDialog(link: String, onCopiar: () -> Unit, onCerrar: () -> Unit) {
+private fun ShareDialog(link: String, onCopiar: () -> Unit, onCompartir: () -> Unit, onCerrar: () -> Unit) {
     val ctx = LocalContext.current
     var verQR by remember { mutableStateOf(false) }
     fun abrirWhatsApp() {
@@ -989,11 +994,11 @@ private fun ShareDialog(link: String, onCopiar: () -> Unit, onCerrar: () -> Unit
         try {
             send.setPackage("com.whatsapp")
             ctx.startActivity(send)
-            AmancayRepo.marcarEnlaceCompartido()
+            onCompartir()
         } catch (_: Exception) {
             send.setPackage(null)
             ctx.startActivity(Intent.createChooser(send, "Compartir tienda"))
-            AmancayRepo.marcarEnlaceCompartido()
+            onCompartir()
         }
     }
     AlertDialog(

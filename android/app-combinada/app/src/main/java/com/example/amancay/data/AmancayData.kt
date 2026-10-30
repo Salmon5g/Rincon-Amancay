@@ -181,23 +181,45 @@ class DraftState {
     }
 }
 
-// ---------- Repositorio en memoria ----------
+// ---------- Contrato y adaptador de demostración ----------
 
-object AmancayRepo {
+interface AmancayRepository {
+    val productos: StateFlow<List<Product>>
+    val ventas: StateFlow<List<Sale>>
+    val settings: StateFlow<ShopSettings>
+    val borradorGuardado: StateFlow<Product?>
+    val enlaceCompartido: StateFlow<Boolean>
+    val invitaciones: StateFlow<List<FeriaInvitation>>
+    val eventosCatalogo: StateFlow<List<CatalogEvent>>
+
+    fun guardarProducto(producto: Product)
+    fun guardarBorrador(producto: Product)
+    fun eliminarBorrador()
+    fun eliminarProducto(id: String)
+    fun marcarEnlaceCompartido()
+    fun responderFeria(id: String, acepta: Boolean)
+    fun obtener(id: String): Product?
+    fun registrarVenta(producto: Product, variante: Variant, cantidad: Int)
+    fun updateSettings(settings: ShopSettings)
+}
+
+fun crearRepositorioDemostracion(): AmancayRepository = DemoAmancayRepository()
+
+class DemoAmancayRepository : AmancayRepository {
     private val _productos = MutableStateFlow<List<Product>>(emptyList())
-    val productos: StateFlow<List<Product>> = _productos.asStateFlow()
+    override val productos: StateFlow<List<Product>> = _productos.asStateFlow()
 
     private val _ventas = MutableStateFlow<List<Sale>>(emptyList())
-    val ventas: StateFlow<List<Sale>> = _ventas.asStateFlow()
+    override val ventas: StateFlow<List<Sale>> = _ventas.asStateFlow()
 
     private val _settings = MutableStateFlow(ShopSettings())
-    val settings: StateFlow<ShopSettings> = _settings.asStateFlow()
+    override val settings: StateFlow<ShopSettings> = _settings.asStateFlow()
 
     private val _borradorGuardado = MutableStateFlow<Product?>(null)
-    val borradorGuardado: StateFlow<Product?> = _borradorGuardado.asStateFlow()
+    override val borradorGuardado: StateFlow<Product?> = _borradorGuardado.asStateFlow()
 
     private val _enlaceCompartido = MutableStateFlow(false)
-    val enlaceCompartido: StateFlow<Boolean> = _enlaceCompartido.asStateFlow()
+    override val enlaceCompartido: StateFlow<Boolean> = _enlaceCompartido.asStateFlow()
 
     private val _invitaciones = MutableStateFlow(
         listOf(
@@ -217,12 +239,10 @@ object AmancayRepo {
             )
         )
     )
-    val invitaciones: StateFlow<List<FeriaInvitation>> = _invitaciones.asStateFlow()
+    override val invitaciones: StateFlow<List<FeriaInvitation>> = _invitaciones.asStateFlow()
 
     private val _eventosCatalogo = MutableStateFlow<List<CatalogEvent>>(emptyList())
-    val eventosCatalogo: StateFlow<List<CatalogEvent>> = _eventosCatalogo.asStateFlow()
-
-    val draft = DraftState()
+    override val eventosCatalogo: StateFlow<List<CatalogEvent>> = _eventosCatalogo.asStateFlow()
 
     init {
         // Datos de ejemplo como en Figma
@@ -298,23 +318,23 @@ object AmancayRepo {
         )
     }
 
-    fun guardarProducto(p: Product) {
-        val existe = _productos.value.any { it.id == p.id }
+    override fun guardarProducto(producto: Product) {
+        val existe = _productos.value.any { it.id == producto.id }
         _productos.update { list ->
-            val idx = list.indexOfFirst { it.id == p.id }
-            if (idx >= 0) list.toMutableList().also { it[idx] = p } else list + p
+            val idx = list.indexOfFirst { it.id == producto.id }
+            if (idx >= 0) list.toMutableList().also { it[idx] = producto } else list + producto
         }
         // si era el borrador guardado, limpiarlo
-        if (_borradorGuardado.value?.id == p.id && !p.esBorrador) _borradorGuardado.value = null
+        if (_borradorGuardado.value?.id == producto.id && !producto.esBorrador) _borradorGuardado.value = null
         eventoCatalogo(
-            if (existe) "Producto editado: ${p.nombre}"
-            else if (p.publicado) "Producto publicado: ${p.nombre}"
-            else "Producto creado: ${p.nombre}"
+            if (existe) "Producto editado: ${producto.nombre}"
+            else if (producto.publicado) "Producto publicado: ${producto.nombre}"
+            else "Producto creado: ${producto.nombre}"
         )
     }
 
-    fun guardarBorrador(p: Product) {
-        val b = p.copy(esBorrador = true, publicado = false)
+    override fun guardarBorrador(producto: Product) {
+        val b = producto.copy(esBorrador = true, publicado = false)
         _borradorGuardado.value = b
         val existe = _productos.value.any { it.id == b.id }
         _productos.update { list ->
@@ -324,9 +344,9 @@ object AmancayRepo {
         if (!existe) eventoCatalogo("Borrador guardado: ${b.nombre}")
     }
 
-    fun eliminarBorrador() { _borradorGuardado.value = null }
+    override fun eliminarBorrador() { _borradorGuardado.value = null }
 
-    fun eliminarProducto(id: String) {
+    override fun eliminarProducto(id: String) {
         val nombre = _productos.value.firstOrNull { it.id == id }?.nombre ?: "producto"
         _productos.update { list -> list.filterNot { it.id == id } }
         if (_borradorGuardado.value?.id == id) _borradorGuardado.value = null
@@ -338,9 +358,9 @@ object AmancayRepo {
         _eventosCatalogo.update { listOf(CatalogEvent(texto = texto)) + it }
     }
 
-    fun marcarEnlaceCompartido() { _enlaceCompartido.value = true }
+    override fun marcarEnlaceCompartido() { _enlaceCompartido.value = true }
 
-    fun responderFeria(id: String, acepta: Boolean) {
+    override fun responderFeria(id: String, acepta: Boolean) {
         _invitaciones.update { list ->
             list.map {
                 // Solo se puede responder una vez: si ya respondió, no cambia
@@ -350,9 +370,9 @@ object AmancayRepo {
         }
     }
 
-    fun obtener(id: String): Product? = _productos.value.firstOrNull { it.id == id }
+    override fun obtener(id: String): Product? = _productos.value.firstOrNull { it.id == id }
 
-    fun registrarVenta(producto: Product, variante: Variant, cantidad: Int) {
+    override fun registrarVenta(producto: Product, variante: Variant, cantidad: Int) {
         val total = variante.precioLong() * cantidad
         val sale = Sale(
             productoId = producto.id,
@@ -377,5 +397,5 @@ object AmancayRepo {
         }
     }
 
-    fun updateSettings(s: ShopSettings) { _settings.value = s }
+    override fun updateSettings(settings: ShopSettings) { _settings.value = settings }
 }

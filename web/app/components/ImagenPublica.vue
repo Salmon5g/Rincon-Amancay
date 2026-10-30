@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { getBlob, ref as storageRef } from 'firebase/storage'
 const props = defineProps<{ ruta?: string; alt: string }>()
-const { $amancay } = useNuxtApp()
+const { $catalogoPublico } = useNuxtApp()
 const url = ref('')
 const estado = ref('Sin imagen')
 let revision = 0
@@ -18,7 +17,7 @@ watch(() => props.ruta, async (ruta) => {
   estado.value = ruta ? 'Cargando imagen…' : 'Sin imagen'
   if (!ruta) return
   try {
-    const blob = await getBlob(storageRef($amancay.firebase.storage, ruta), 5 * 1024 * 1024)
+    const blob = await $catalogoPublico.leerImagen(ruta)
     if (actual !== revision) return
     url.value = URL.createObjectURL(blob)
   } catch { if (actual === revision) estado.value = 'Imagen no disponible' }

@@ -24,6 +24,7 @@ export interface ProductoPublico {
   estadoDisponibilidad: 'disponible' | 'agotado' | 'a_pedido' | string;
   precioBase: number | null;
   atributosEspecificos: Record<string, string>;
+  imagenes: string[];
 }
 
 export interface VariantePublica {
@@ -32,6 +33,24 @@ export interface VariantePublica {
   precio: number | null;
   estadoDisponibilidad: string;
   activa: boolean;
+}
+
+export interface FichaComprador {
+  id: string;
+  datos: {
+    nombre: string;
+    descripcion: string;
+    tipoEmprendimientoId?: string;
+    sectorId?: string;
+    mostrarPrecios?: boolean;
+    imagenes?: string[];
+    tieneVariantes?: boolean;
+    estadoDisponibilidad?: string;
+    precioBase?: number | null;
+    precio?: number | null;
+    atributosEspecificos?: Record<string, string>;
+    opciones?: Record<string, string>;
+  };
 }
 
 export function etiquetaDisponibilidad(valor: string): string {
