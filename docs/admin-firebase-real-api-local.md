@@ -43,9 +43,11 @@ El proyecto real no recibe los datos de `datos-prueba/`: ese archivo es exclusiv
 
 En modo `real-api`, **Catálogos** permite crear, editar, activar y desactivar sectores, categorías, tipos de emprendimiento y tipos de producto. Los sectores alimentan las invitaciones. Las definiciones de tipos de producto mantienen versiones históricas para no cambiar fichas ya creadas. Estas operaciones pasan por la API autenticada; el navegador no escribe directamente en Firestore. El entorno `real-lectura` solo permite consultar.
 
+En modo `real-api`, **Asociaciones** permite crear, editar, desactivar/reactivar fichas y administrar sus integrantes. La asociación debe referenciar un sector activo; las asignaciones solo admiten cuentas emprendedoras activas con perfil y tienda coherentes. La relación se conserva al retirarla y no desactiva la cuenta ni la tienda. Los cambios usan la API autenticada, quedan auditados y conservan `operacionId` para reintentos. La colección se administra desde el backend: las reglas de Firestore no habilitan escritura directa desde el navegador. El contrato y los límites están en [administración de asociaciones](../contratos/13-administracion-asociaciones.md).
+
 Las reglas locales permiten que un administrador lea también los valores inactivos y mantienen bloqueadas las escrituras directas de cualquier perfil. Publica las reglas revisadas de `firebase/firestore.rules` antes de administrar catálogos desde la web real. La API usa Firebase Admin y requiere permisos IAM de la identidad ADC. El CRUD de catálogos no usa Storage; no hay que crear un bucket para estas operaciones.
 
-Asociaciones, ferias y configuración siguen pendientes de modelo y operaciones. La web aún no integra las operaciones de catálogo, productos, stock e imágenes destinadas a la emprendedora. La asignación del rol administrador se hace mediante un proceso privilegiado, no desde el panel.
+La vista pública de asociaciones (RF-ASO-03), ferias y configuración siguen pendientes de modelo y operaciones. Los logos de asociación se guardan como URL HTTPS; esta pantalla todavía no carga archivos en Storage. La web aún no integra las operaciones de catálogo, productos, stock e imágenes destinadas a la emprendedora. La asignación del rol administrador se hace mediante un proceso privilegiado, no desde el panel.
 
 ## Uso desde otro computador
 

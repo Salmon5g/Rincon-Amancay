@@ -3,13 +3,20 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
 import { esAdministrador, type SeccionLectura } from '~/lib/admin-lecturas'
 import {
+  asignarEmprendedora,
+  cambiarEstadoAsociacion,
   cambiarEstadoValorCatalogo,
+  crearAsociacion,
   crearValorCatalogo,
+  editarAsociacion,
   editarValorCatalogo,
+  listarAsociacionesAdmin,
   listarCatalogosAdmin,
+  leerIntegrantesAsociacion,
+  quitarEmprendedora,
 } from '~/repositories/admin'
 import type { ColeccionCatalogoEditable } from '~/repositories/admin'
-import type { CampoTipoProducto, DatosAdmin, ElementoCatalogo } from '~/types/admin'
+import type { Asociacion, CampoTipoProducto, DatosAdmin, ElementoCatalogo, IntegrantesAsociacion } from '~/types/admin'
 
 useHead({
   title: 'Administración — Rincón Amancay',
@@ -35,8 +42,22 @@ type Item = {
   catalogo?: ColeccionCatalogoEditable
   catalogoId?: string
   elementoCatalogo?: ElementoCatalogo
+  asociacionId?: string
+  asociacion?: Asociacion
 }
 type AccionCuentaAdmin = 'desactivarEmprendedora' | 'reactivarEmprendedora'
+type OperacionIntegrantePendiente = {
+  accion: 'asignarEmprendedora' | 'quitarEmprendedora'
+  id: string
+  solicitud: {
+    asociacionId: string
+    uidEmprendedora: string
+    versionAsociacionEsperada?: string
+    versionRelacionEsperada?: string
+  }
+  nombre: string
+  reintentoObligatorio: boolean
+}
 type Seccion = {
   id: string
   icono: string
@@ -52,6 +73,7 @@ const datosVacios: DatosAdmin = {
   emprendedoras: [],
   invitaciones: [],
   catalogos: { sectores: [], categorias: [], tiposEmprendimiento: [], tiposProducto: [] },
+  asociaciones: [],
 }
 const datos = ref<DatosAdmin>(datosVacios)
 const SIN_MODELO = 'Sección en preparación. Este formulario es una vista previa y todavía no guarda datos.'
@@ -61,7 +83,7 @@ let temporizador: ReturnType<typeof setTimeout>
 const borrador = ref({
   nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
   tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
-  tipoCatalogo: 'sectores', valor: '', clave: '',
+  tipoCatalogo: 'sectores', valor: '', clave: '', contactoValor: '', logoUrl: '',
 })
 const tiposCatalogo = [
   { id: 'sectores', nombre: 'Sectores' },
@@ -76,7 +98,7 @@ function activos(lista: ElementoCatalogo[]) {
 
 const secciones = ref<Seccion[]>([
   { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
-  { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear asociación', items: [], aviso: SIN_MODELO },
+  { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Ficha, estado e integrantes de cada asociación.', accion: '+ Crear asociación', items: [] },
   { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear feria', items: [], aviso: SIN_MODELO },
   { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Sectores, tipos de emprendimiento, tipos de producto y categorías.', accion: '+ Nuevo valor', items: [] },
   { id: 'configuracion', icono: '⚙️', titulo: 'Configuración general', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: 'Guardar cambios', items: [], aviso: SIN_MODELO },
@@ -121,8 +143,19 @@ const cuentaPendiente = ref<{
 } | null>(null)
 const cargandoDatos = ref(false)
 const cargandoCatalogos = ref(false)
-const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'catalogos'].includes(activa.value))
+const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'asociaciones', 'catalogos'].includes(activa.value))
 const escrituraCatalogosDisponible = computed(() => ['local', 'real-api'].includes(config.firebaseModo))
+const escrituraAsociacionesDisponible = computed(() => ['local', 'real-api'].includes(config.firebaseModo))
+const asociacionEnEdicion = ref<Asociacion | null>(null)
+const asociacionOperacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
+const asociacionReintentoObligatorio = ref(false)
+const asociacionEstadoPendiente = ref<{ item: Item; activo: boolean; operacionId: string; reintentoObligatorio: boolean } | null>(null)
+const asociacionEnGestion = ref<Asociacion | null>(null)
+const detalleIntegrantes = ref<IntegrantesAsociacion | null>(null)
+const emprendedoraSeleccionada = ref('')
+const operacionIntegrantePendiente = ref<OperacionIntegrantePendiente | null>(null)
+const integranteParaQuitar = ref<{ uid: string; nombreTienda: string; versionEsperada: string } | null>(null)
+const contactoTipo = ref<'whatsapp' | 'correo' | 'web'>('whatsapp')
 let revisionSesion = 0
 let revisionDatos = 0
 let desconectar: (() => void) | undefined
@@ -151,6 +184,14 @@ function mensajeErrorCatalogo(error: unknown) {
   return mensajeError(error)
 }
 
+function mensajeErrorAsociacion(error: unknown) {
+  const codigo = (error as { code?: string })?.code
+  if (codigo === 'datos-invalidos') return 'Revisa el nombre, sector, contacto y dirección HTTPS del logo.'
+  if (codigo === 'conflicto') return 'La asociación o la relación cambió desde que se cargó. Actualiza el listado e inténtalo de nuevo.'
+  if (codigo === 'id-reutilizado') return 'La solicitud ya se intentó con otros datos. Inicia una operación nueva.'
+  return mensajeError(error)
+}
+
 function limpiarListados() {
   revisionDatos++
   for (const s of secciones.value) s.items = []
@@ -174,6 +215,36 @@ async function cargarDatosCatalogos() {
         ...catalogos.categorias.map((elemento) => itemCatalogo('categorias', elemento)),
       ]
     }
+  } catch (error) {
+    errorDatos.value = mensajeError(error)
+  } finally {
+    cargandoCatalogos.value = false
+  }
+}
+
+function itemAsociacion(asociacion: Asociacion): Item {
+  const sector = datos.value.catalogos.sectores.find((item) => item.id === asociacion.sectorId)?.nombre ?? asociacion.sectorId
+  return {
+    titulo: asociacion.nombre,
+    detalle: `Sector: ${sector} · ${asociacion.contacto.tipo}: ${asociacion.contacto.valor} · ID: ${asociacion.id}`,
+    estado: asociacion.activo ? 'Activa' : 'Inactiva',
+    asociacionId: asociacion.id,
+    asociacion,
+    versionEsperada: asociacion.versionEsperada,
+  }
+}
+
+async function cargarDatosAsociaciones() {
+  cargandoCatalogos.value = true
+  errorDatos.value = ''
+  try {
+    const [catalogos, asociaciones] = await Promise.all([
+      listarCatalogosAdmin($amancay),
+      listarAsociacionesAdmin($amancay),
+    ])
+    datos.value = { ...datosVacios, catalogos, asociaciones }
+    const seccionAsociaciones = secciones.value.find((actual) => actual.id === 'asociaciones')
+    if (seccionAsociaciones) seccionAsociaciones.items = asociaciones.map(itemAsociacion)
   } catch (error) {
     errorDatos.value = mensajeError(error)
   } finally {
@@ -216,8 +287,10 @@ async function ingresar() {
 }
 
 async function salir() {
-  if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio) {
-    errorOperacion.value = 'Completa el reintento de la operación de catálogo antes de cerrar sesión.'
+  if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
+    || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
+    || operacionIntegrantePendiente.value?.reintentoObligatorio) {
+    errorOperacion.value = 'Completa el reintento de la operación pendiente antes de cerrar sesión.'
     return
   }
   try { await $amancay.cerrarSesion() }
@@ -236,6 +309,10 @@ async function cargarSeccion() {
   if (!destino) return
   if (destino.id === 'catalogos') {
     await cargarDatosCatalogos()
+    return
+  }
+  if (destino.id === 'asociaciones') {
+    await cargarDatosAsociaciones()
     return
   }
   destino.items = []
@@ -289,10 +366,17 @@ function iniciales(t: string) {
 }
 
 async function ir(id: string) {
-  if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio) {
-    errorOperacion.value = 'Completa el reintento de la operación de catálogo antes de cambiar de sección.'
+  if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
+    || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
+    || operacionIntegrantePendiente.value?.reintentoObligatorio) {
+    errorOperacion.value = 'Completa el reintento de la operación pendiente antes de cambiar de sección.'
     return
   }
+  asociacionEnGestion.value = null
+  detalleIntegrantes.value = null
+  integranteParaQuitar.value = null
+  if (!operacionIntegrantePendiente.value?.reintentoObligatorio) operacionIntegrantePendiente.value = null
+  if (!asociacionEstadoPendiente.value?.reintentoObligatorio) asociacionEstadoPendiente.value = null
   activa.value = id
   formularioAbierto.value = false
   busqueda.value = ''
@@ -303,6 +387,7 @@ async function ir(id: string) {
 
 async function abrirFormulario() {
   if (seccion.value?.id === 'catalogos' && !escrituraCatalogosDisponible.value) return
+  if (seccion.value?.id === 'asociaciones' && !escrituraAsociacionesDisponible.value) return
   if (seccion.value?.id === 'emprendedoras' && config.firebaseModo === 'real-api') {
     await cargarDatosCatalogos()
     if (errorDatos.value) return
@@ -310,7 +395,7 @@ async function abrirFormulario() {
   borrador.value = {
     nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
     tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
-    tipoCatalogo: 'sectores', valor: '', clave: '',
+    tipoCatalogo: 'sectores', valor: '', clave: '', contactoValor: '', logoUrl: '',
   }
   errorOperacion.value = ''
   invitacionCreada.value = ''
@@ -320,8 +405,225 @@ async function abrirFormulario() {
   catalogoOpcionesVarianteTexto.value = ''
   catalogoOperacionPendiente.value = null
   catalogoReintentoObligatorio.value = false
+  asociacionEnEdicion.value = null
+  asociacionOperacionPendiente.value = null
+  asociacionReintentoObligatorio.value = false
+  contactoTipo.value = 'whatsapp'
   if (seccion.value?.id === 'catalogos') borrador.value.tipoCatalogo = 'sectores'
   formularioAbierto.value = true
+}
+
+async function prepararNuevaAsociacion() {
+  if (!escrituraAsociacionesDisponible.value) return
+  await abrirFormulario()
+}
+
+function prepararEdicionAsociacion(item: Item) {
+  if (!escrituraAsociacionesDisponible.value || !item.asociacion) return
+  const asociacion = item.asociacion
+  asociacionEnEdicion.value = asociacion
+  borrador.value.nombre = asociacion.nombre
+  borrador.value.descripcion = asociacion.descripcion
+  borrador.value.sectorId = asociacion.sectorId
+  borrador.value.logoUrl = asociacion.logoUrl ?? ''
+  contactoTipo.value = asociacion.contacto.tipo
+  borrador.value.contactoValor = asociacion.contacto.valor
+  asociacionOperacionPendiente.value = null
+  asociacionReintentoObligatorio.value = false
+  errorOperacion.value = ''
+  formularioAbierto.value = true
+}
+
+async function guardarAsociacion() {
+  if (!escrituraAsociacionesDisponible.value) return
+  const contenido = {
+    nombre: borrador.value.nombre.trim(),
+    descripcion: borrador.value.descripcion.trim(),
+    sectorId: borrador.value.sectorId,
+    contacto: { tipo: contactoTipo.value, valor: borrador.value.contactoValor.trim() },
+    ...(borrador.value.logoUrl.trim() ? { logoUrl: borrador.value.logoUrl.trim() } : {}),
+  }
+  const accion = asociacionEnEdicion.value ? 'editarAsociacion' : 'crearAsociacion'
+  const solicitud = JSON.stringify([accion, contenido, asociacionEnEdicion.value?.id ?? null, asociacionEnEdicion.value?.versionEsperada ?? null])
+  if (asociacionReintentoObligatorio.value && asociacionOperacionPendiente.value?.solicitud !== solicitud) {
+    errorOperacion.value = 'El servidor pudo guardar la solicitud. Reintenta exactamente los mismos datos antes de editar el formulario.'
+    return
+  }
+  if (!asociacionOperacionPendiente.value || asociacionOperacionPendiente.value.solicitud !== solicitud) {
+    asociacionOperacionPendiente.value = { id: crypto.randomUUID(), solicitud }
+  }
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    const common = { ...contenido, operacionId: asociacionOperacionPendiente.value.id }
+    if (asociacionEnEdicion.value) {
+      await editarAsociacion($amancay, {
+        ...common,
+        asociacionId: asociacionEnEdicion.value.id,
+        versionEsperada: asociacionEnEdicion.value.versionEsperada ?? '',
+      })
+    } else {
+      await crearAsociacion($amancay, common)
+    }
+    const estado = asociacionEnEdicion.value ? 'actualizada' : 'creada'
+    asociacionEnEdicion.value = null
+    asociacionOperacionPendiente.value = null
+    asociacionReintentoObligatorio.value = false
+    formularioAbierto.value = false
+    aviso.value = `Asociación ${estado} en Firebase.`
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 5000)
+    await cargarDatosAsociaciones()
+  } catch (error) {
+    errorOperacion.value = mensajeErrorAsociacion(error)
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) asociacionReintentoObligatorio.value = true
+  } finally {
+    enviando.value = false
+  }
+}
+
+function prepararCambioEstadoAsociacion(item: Item, activo: boolean) {
+  if (!escrituraAsociacionesDisponible.value || !item.asociacionId || !item.versionEsperada) {
+    errorDatos.value = 'Falta la versión vigente de la asociación. Actualiza el listado antes de operar.'
+    return
+  }
+  asociacionEstadoPendiente.value = { item, activo, operacionId: crypto.randomUUID(), reintentoObligatorio: false }
+  errorOperacion.value = ''
+}
+
+async function confirmarCambioEstadoAsociacion() {
+  const pendiente = asociacionEstadoPendiente.value
+  if (!pendiente?.item.asociacionId || !pendiente.item.versionEsperada) return
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    await cambiarEstadoAsociacion($amancay, {
+      operacionId: pendiente.operacionId,
+      asociacionId: pendiente.item.asociacionId,
+      versionEsperada: pendiente.item.versionEsperada,
+      activo: pendiente.activo,
+    })
+    asociacionEstadoPendiente.value = null
+    aviso.value = pendiente.activo ? 'Asociación reactivada.' : 'Asociación desactivada; su ficha deja de estar disponible.'
+    await cargarDatosAsociaciones()
+  } catch (error) {
+    errorOperacion.value = mensajeErrorAsociacion(error)
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) pendiente.reintentoObligatorio = true
+  } finally {
+    enviando.value = false
+  }
+}
+
+async function gestionarIntegrantes(asociacion: Asociacion) {
+  if (operacionIntegrantePendiente.value?.reintentoObligatorio) {
+    errorOperacion.value = 'Reintenta la operación pendiente antes de cambiar de asociación.'
+    return
+  }
+  asociacionEnGestion.value = asociacion
+  detalleIntegrantes.value = null
+  emprendedoraSeleccionada.value = ''
+  integranteParaQuitar.value = null
+  cargandoDatos.value = true
+  errorDatos.value = ''
+  try {
+    detalleIntegrantes.value = await leerIntegrantesAsociacion($amancay, asociacion.id)
+  } catch (error) {
+    errorDatos.value = mensajeErrorAsociacion(error)
+  } finally {
+    cargandoDatos.value = false
+  }
+}
+
+async function actualizarIntegrantes() {
+  if (!asociacionEnGestion.value) return
+  await gestionarIntegrantes(asociacionEnGestion.value)
+}
+
+function prepararAsignacionEmprendedora() {
+  const asociacion = asociacionEnGestion.value
+  const detalle = detalleIntegrantes.value
+  const persona = detalle?.disponibles.find((item) => item.uid === emprendedoraSeleccionada.value)
+  if (!asociacion || !detalle || !persona || !detalle.asociacion.versionEsperada) return
+  const solicitud = {
+    asociacionId: asociacion.id,
+    versionAsociacionEsperada: detalle.asociacion.versionEsperada,
+    uidEmprendedora: persona.uid,
+    ...(persona.versionRelacionEsperada ? { versionRelacionEsperada: persona.versionRelacionEsperada } : {}),
+  }
+  operacionIntegrantePendiente.value = {
+    accion: 'asignarEmprendedora', id: crypto.randomUUID(), solicitud,
+    nombre: persona.nombreTienda, reintentoObligatorio: false,
+  }
+  void enviarOperacionIntegrante()
+}
+
+function prepararRetiroEmprendedora(miembro: IntegrantesAsociacion['miembros'][number]) {
+  if (!asociacionEnGestion.value || !miembro.versionEsperada) return
+  integranteParaQuitar.value = { uid: miembro.uid, nombreTienda: miembro.nombreTienda, versionEsperada: miembro.versionEsperada }
+}
+
+function confirmarRetiroEmprendedora() {
+  const asociacion = asociacionEnGestion.value
+  const miembro = integranteParaQuitar.value
+  if (!asociacion || !miembro) return
+  operacionIntegrantePendiente.value = {
+    accion: 'quitarEmprendedora', id: crypto.randomUUID(),
+    solicitud: { asociacionId: asociacion.id, uidEmprendedora: miembro.uid, versionRelacionEsperada: miembro.versionEsperada },
+    nombre: miembro.nombreTienda, reintentoObligatorio: false,
+  }
+  void enviarOperacionIntegrante()
+}
+
+async function enviarOperacionIntegrante() {
+  const pendiente = operacionIntegrantePendiente.value
+  if (!pendiente) return
+  enviando.value = true
+  errorOperacion.value = ''
+  try {
+    if (pendiente.accion === 'asignarEmprendedora') {
+      if (!pendiente.solicitud.versionAsociacionEsperada) throw new Error('Actualiza la asociación antes de asignar integrantes.')
+      await asignarEmprendedora($amancay, {
+        ...pendiente.solicitud,
+        versionAsociacionEsperada: pendiente.solicitud.versionAsociacionEsperada,
+        operacionId: pendiente.id,
+      })
+    } else {
+      if (!pendiente.solicitud.versionRelacionEsperada) throw new Error('Actualiza la relación antes de retirar integrantes.')
+      await quitarEmprendedora($amancay, {
+        asociacionId: pendiente.solicitud.asociacionId,
+        uidEmprendedora: pendiente.solicitud.uidEmprendedora,
+        versionRelacionEsperada: pendiente.solicitud.versionRelacionEsperada,
+        operacionId: pendiente.id,
+      })
+    }
+    operacionIntegrantePendiente.value = null
+    integranteParaQuitar.value = null
+    emprendedoraSeleccionada.value = ''
+    aviso.value = pendiente.accion === 'asignarEmprendedora' ? 'Emprendedora asignada a la asociación.' : 'Emprendedora retirada de la asociación.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 5000)
+    await actualizarIntegrantes()
+  } catch (error) {
+    errorOperacion.value = mensajeErrorAsociacion(error)
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) pendiente.reintentoObligatorio = true
+    else {
+      operacionIntegrantePendiente.value = null
+      await actualizarIntegrantes()
+    }
+  } finally {
+    enviando.value = false
+  }
+}
+
+function cerrarGestionAsociacion() {
+  if (operacionIntegrantePendiente.value?.reintentoObligatorio) {
+    errorOperacion.value = 'Reintenta la operación pendiente antes de cerrar esta asociación.'
+    return
+  }
+  asociacionEnGestion.value = null
+  detalleIntegrantes.value = null
+  integranteParaQuitar.value = null
+  errorOperacion.value = ''
 }
 
 function prepararNuevoCatalogo() {
@@ -338,6 +640,10 @@ function prepararNuevoCatalogo() {
 }
 
 function cerrarFormulario() {
+  if (catalogoReintentoObligatorio.value || asociacionReintentoObligatorio.value) {
+    errorOperacion.value = 'Completa el reintento pendiente antes de cerrar el formulario.'
+    return
+  }
   formularioAbierto.value = false
 }
 
@@ -483,6 +789,10 @@ async function guardarCatalogo() {
 }
 
 async function guardarFormulario() {
+  if (seccion.value?.id === 'asociaciones') {
+    await guardarAsociacion()
+    return
+  }
   if (seccion.value?.id === 'catalogos') {
     await guardarCatalogo()
     return
@@ -731,9 +1041,9 @@ async function confirmarAccionCuenta() {
             <p class="sub">{{ seccion.descripcion }}</p>
           </div>
           <button
-            v-if="seccion.id !== 'catalogos' || escrituraCatalogosDisponible"
+            v-if="seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true"
             class="boton boton-primario" type="button"
-            @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : abrirFormulario()"
+            @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : seccion.id === 'asociaciones' ? prepararNuevaAsociacion() : abrirFormulario()"
           >
             {{ seccion.accion }}
           </button>
@@ -742,11 +1052,12 @@ async function confirmarAccionCuenta() {
         <section v-if="formularioAbierto" class="formulario" aria-labelledby="titulo-formulario">
           <div class="formulario-encabezado">
             <div>
-              <h2 id="titulo-formulario">{{ seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Editar valor de catálogo' : 'Nuevo valor de catálogo' : seccion.accion }}</h2>
+              <h2 id="titulo-formulario">{{ seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Editar valor de catálogo' : 'Nuevo valor de catálogo' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Editar asociación' : 'Crear asociación' : seccion.accion }}</h2>
               <p v-if="seccion.id === 'catalogos'">Los cambios se guardan en Firestore mediante la API autenticada. Los nombres deben ser únicos dentro de cada catálogo.</p>
+              <p v-else-if="seccion.id === 'asociaciones'">La ficha se guarda mediante la API autenticada. El contacto y el logo se consideran información pública.</p>
               <p v-else>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. El sistema no envía correo: tendrás que compartir el código con la destinataria.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
             </div>
-            <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio" @click="cerrarFormulario">Cancelar</button>
+            <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || asociacionReintentoObligatorio" @click="cerrarFormulario">Cancelar</button>
           </div>
           <form class="campos-formulario" @submit.prevent="guardarFormulario">
             <template v-if="seccion.id === 'emprendedoras'">
@@ -798,8 +1109,27 @@ async function confirmarAccionCuenta() {
               </div>
             </template>
             <template v-else-if="seccion.id === 'asociaciones'">
-              <label>Nombre de la asociación<input v-model="borrador.nombre" required /></label>
-              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" /></label>
+              <label>Nombre de la asociación<input v-model="borrador.nombre" maxlength="120" required :disabled="enviando || asociacionReintentoObligatorio" /></label>
+              <label>Sector
+                <select v-model="borrador.sectorId" required :disabled="enviando || asociacionReintentoObligatorio">
+                  <option value="">Seleccionar sector</option>
+                  <option v-for="opcion in activos(datos.catalogos.sectores)" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
+                </select>
+              </label>
+              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" maxlength="2000" :disabled="enviando || asociacionReintentoObligatorio" /></label>
+              <label>Tipo de contacto público
+                <select v-model="contactoTipo" :disabled="enviando || asociacionReintentoObligatorio">
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="correo">Correo</option>
+                  <option value="web">Sitio web</option>
+                </select>
+              </label>
+              <label>{{ contactoTipo === 'whatsapp' ? 'Número con código de país' : contactoTipo === 'correo' ? 'Correo de contacto' : 'Dirección HTTPS' }}
+                <input v-model="borrador.contactoValor" :type="contactoTipo === 'correo' ? 'email' : contactoTipo === 'web' ? 'url' : 'tel'" maxlength="254" required :disabled="enviando || asociacionReintentoObligatorio" />
+              </label>
+              <label class="campo-completo">URL HTTPS pública del logo<input v-model="borrador.logoUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || asociacionReintentoObligatorio" /></label>
+              <p v-if="!activos(datos.catalogos.sectores).length" class="campo-completo aviso-carga" role="status">Primero crea un sector activo en Catálogos para asociarlo a esta ficha.</p>
+              <p class="campo-completo">El logo se referencia por URL. La carga directa de imágenes en Firebase Storage se incorporará cuando el bucket esté configurado.</p>
             </template>
             <template v-else-if="seccion.id === 'ferias'">
               <label>Nombre de la feria<input v-model="borrador.nombre" required /></label>
@@ -813,10 +1143,11 @@ async function confirmarAccionCuenta() {
               <label>Valor<input v-model="borrador.valor" required /></label>
             </template>
             <div class="acciones-formulario">
-              <button class="boton boton-primario" type="submit" :disabled="enviando">{{ enviando ? 'Guardando…' : seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Guardar cambios en Firestore' : 'Crear valor en Firestore' : seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'Crear invitación real' : 'Guardar (vista previa)' }}</button>
-              <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio" @click="cerrarFormulario">Cerrar</button>
+              <button class="boton boton-primario" type="submit" :disabled="enviando || asociacionReintentoObligatorio || (seccion.id === 'asociaciones' && !activos(datos.catalogos.sectores).length)">{{ enviando ? 'Guardando…' : seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Guardar cambios en Firestore' : 'Crear valor en Firestore' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Guardar cambios' : 'Crear asociación' : seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'Crear invitación real' : 'Guardar (vista previa)' }}</button>
+              <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || asociacionReintentoObligatorio" @click="cerrarFormulario">Cerrar</button>
             </div>
             <p v-if="catalogoReintentoObligatorio" class="campo-completo" role="status">No se recibió confirmación. Reintenta sin cambiar los datos para evitar duplicar operaciones.</p>
+            <p v-if="asociacionReintentoObligatorio" class="campo-completo" role="status">No se confirmó el resultado. Reintenta sin cambiar los datos para conservar la misma operación.</p>
             <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
           </form>
         </section>
@@ -876,8 +1207,86 @@ async function confirmarAccionCuenta() {
           <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
         </section>
 
+        <section v-if="asociacionEstadoPendiente" class="formulario" aria-labelledby="titulo-estado-asociacion">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-estado-asociacion">{{ asociacionEstadoPendiente.activo ? 'Reactivar asociación' : 'Desactivar asociación' }}</h2>
+              <p>{{ asociacionEstadoPendiente.item.titulo }}</p>
+            </div>
+          </div>
+          <p>{{ asociacionEstadoPendiente.activo ? 'La asociación volverá a estar activa para la administración.' : 'La asociación dejará de estar disponible. Sus integrantes y registros históricos se conservarán.' }}</p>
+          <p v-if="asociacionEstadoPendiente.reintentoObligatorio" role="status">No se confirmó la respuesta. Reintenta esta misma operación para verificar el resultado.</p>
+          <div class="acciones-formulario">
+            <button class="boton boton-primario" type="button" :disabled="enviando" @click="confirmarCambioEstadoAsociacion">{{ enviando ? 'Guardando…' : asociacionEstadoPendiente.activo ? 'Confirmar reactivación' : 'Confirmar desactivación' }}</button>
+            <button class="editar" type="button" :disabled="enviando || asociacionEstadoPendiente.reintentoObligatorio" @click="asociacionEstadoPendiente = null">Cancelar</button>
+          </div>
+          <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
+        </section>
+
+        <section v-if="asociacionEnGestion" class="formulario" aria-labelledby="titulo-integrantes-asociacion">
+          <div class="formulario-encabezado">
+            <div>
+              <h2 id="titulo-integrantes-asociacion">Integrantes · {{ asociacionEnGestion.nombre }}</h2>
+              <p>Una emprendedora puede pertenecer a más de una asociación. Retirar a alguien conserva el historial de la relación.</p>
+            </div>
+            <div class="acciones-formulario">
+              <button class="editar" type="button" :disabled="cargandoDatos || enviando" @click="actualizarIntegrantes">Actualizar</button>
+              <button class="editar" type="button" :disabled="enviando || operacionIntegrantePendiente?.reintentoObligatorio" @click="cerrarGestionAsociacion">Cerrar</button>
+            </div>
+          </div>
+
+          <p v-if="!escrituraAsociacionesDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. Conecta la API autenticada para modificar integrantes.</p>
+          <p v-if="!detalleIntegrantes && cargandoDatos" role="status">Cargando integrantes y emprendedoras activas…</p>
+          <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
+
+          <template v-if="detalleIntegrantes">
+            <p v-if="!detalleIntegrantes.asociacion.activo" class="aviso-carga" role="status">La asociación está inactiva. Reactívala antes de asignar integrantes.</p>
+            <form class="acciones-integrantes" @submit.prevent="prepararAsignacionEmprendedora">
+              <label>Emprendedora activa
+                <select v-model="emprendedoraSeleccionada" :disabled="enviando || !!operacionIntegrantePendiente || !escrituraAsociacionesDisponible || !detalleIntegrantes.asociacion.activo || !detalleIntegrantes.disponibles.length" required>
+                  <option value="">{{ detalleIntegrantes.disponibles.length ? 'Seleccionar emprendedora' : 'No hay emprendedoras disponibles' }}</option>
+                  <option v-for="persona in detalleIntegrantes.disponibles" :key="persona.uid" :value="persona.uid">{{ persona.nombreTienda }} · {{ persona.nombreMostrar }}</option>
+                </select>
+              </label>
+              <button class="boton boton-primario" type="submit" :disabled="enviando || !!operacionIntegrantePendiente || !escrituraAsociacionesDisponible || !detalleIntegrantes.asociacion.activo || !emprendedoraSeleccionada">Asignar a la asociación</button>
+            </form>
+
+            <section v-if="operacionIntegrantePendiente" class="aviso-carga" aria-live="polite">
+              <p>{{ operacionIntegrantePendiente.accion === 'asignarEmprendedora' ? 'Asignando' : 'Retirando' }}: <strong>{{ operacionIntegrantePendiente.nombre }}</strong>.</p>
+              <p v-if="operacionIntegrantePendiente.reintentoObligatorio">No se confirmó el resultado. Reintenta esta solicitud sin cambiar de asociación ni iniciar otra operación.</p>
+              <button class="editar" type="button" :disabled="enviando" @click="enviarOperacionIntegrante">{{ enviando ? 'Procesando…' : 'Reintentar / confirmar operación' }}</button>
+              <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
+            </section>
+
+            <div v-if="integranteParaQuitar" class="aviso-carga" role="group" aria-labelledby="titulo-retiro-integrante">
+              <h3 id="titulo-retiro-integrante">Retirar a {{ integranteParaQuitar.nombreTienda }} de esta asociación</h3>
+              <p>La cuenta de la emprendedora y su tienda no se desactivarán.</p>
+              <div class="acciones-formulario">
+                <button class="boton boton-primario" type="button" :disabled="enviando || !!operacionIntegrantePendiente" @click="confirmarRetiroEmprendedora">Confirmar retiro</button>
+                <button class="editar" type="button" :disabled="enviando || !!operacionIntegrantePendiente" @click="integranteParaQuitar = null">Volver</button>
+              </div>
+            </div>
+
+            <h3>Emprendedoras asociadas</h3>
+            <ul v-if="detalleIntegrantes.miembros.length" class="lista lista-integrantes">
+              <li v-for="miembro in detalleIntegrantes.miembros" :key="miembro.uid" class="fila">
+                <span class="avatar" aria-hidden="true">{{ iniciales(miembro.nombreTienda) }}</span>
+                <div class="fila-texto">
+                  <b>{{ miembro.nombreTienda }}</b>
+                  <small>{{ miembro.nombreMostrar }} · {{ miembro.estadoCuenta === 'activo' ? 'Cuenta activa' : 'Cuenta ' + miembro.estadoCuenta }}</small>
+                </div>
+                <span class="etiqueta" :class="miembro.estadoRelacion === 'activa' ? 'ok' : 'off'">{{ miembro.estadoRelacion === 'activa' ? 'Integrante' : 'Retirada' }}</span>
+                <button v-if="miembro.estadoRelacion === 'activa' && escrituraAsociacionesDisponible" class="editar" type="button" :disabled="enviando || !!operacionIntegrantePendiente" @click="prepararRetiroEmprendedora(miembro)">Retirar</button>
+              </li>
+            </ul>
+            <p v-else class="vacio">Todavía no hay relaciones registradas para esta asociación.</p>
+          </template>
+        </section>
+
         <p v-if="seccion.id === 'catalogos' && !escrituraCatalogosDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. Para administrar valores, conecta el panel a la API autenticada real.</p>
+        <p v-if="seccion.id === 'asociaciones' && !escrituraAsociacionesDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. La ficha y los integrantes solo se pueden cambiar con la API autenticada.</p>
         <p v-if="seccion.id === 'catalogos'">Los sectores se usan al invitar emprendedoras. Desactiva los valores que ya no deban seleccionarse; se conservan para no borrar referencias históricas.</p>
+        <p v-if="seccion.id === 'asociaciones'">Las asociaciones guardan una ficha administrativa y relaciones de integrantes. Las bajas son lógicas para conservar historial.</p>
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
         <p v-else-if="seccion.id !== 'catalogos'">Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
         <button v-if="lecturaDisponible" class="editar" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
@@ -932,6 +1341,11 @@ async function confirmarAccionCuenta() {
               v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && item.estado === 'desactivado' && config.firebaseModo === 'real-api'"
               class="editar" type="button" @click="prepararAccionCuenta(item, 'reactivarEmprendedora')"
             >Reactivar</button>
+            <template v-else-if="seccion.id === 'asociaciones' && item.asociacion">
+              <button class="editar" type="button" :disabled="cargandoDatos || cargandoCatalogos || !!operacionIntegrantePendiente" @click="gestionarIntegrantes(item.asociacion)">Integrantes</button>
+              <button v-if="escrituraAsociacionesDisponible" class="editar" type="button" :disabled="enviando || !!asociacionEstadoPendiente || !!asociacionEnGestion" @click="prepararEdicionAsociacion(item)">Editar</button>
+              <button v-if="escrituraAsociacionesDisponible" class="editar" type="button" :disabled="enviando || !!asociacionEstadoPendiente || !!asociacionEnGestion" @click="prepararCambioEstadoAsociacion(item, item.estado !== 'Activa')">{{ item.estado === 'Activa' ? 'Desactivar' : 'Reactivar' }}</button>
+            </template>
             <button v-else-if="seccion.id !== 'catalogos'" class="editar" type="button" disabled :title="item.versionEsperada ? 'Acción no disponible en este entorno o pendiente de integrar' : 'El registro no tiene una versión válida para modificar'">Sin acción</button>
           </li>
         </ul>
@@ -1415,6 +1829,44 @@ input:focus-visible {
   grid-column: 1 / -1;
   padding-top: 0.25rem;
 }
+
+.acciones-integrantes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.8rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  background: var(--crema);
+}
+
+.acciones-integrantes label {
+  display: grid;
+  flex: 1;
+  min-width: min(100%, 250px);
+  gap: 0.4rem;
+  color: var(--tinta);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.acciones-integrantes select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.8rem;
+  box-sizing: border-box;
+  color: var(--tinta);
+  background: #fff;
+  border: 1.5px solid var(--borde);
+  border-radius: 12px;
+  font: inherit;
+}
+
+.lista-integrantes { margin-top: 0.75rem; }
+.formulario > h3 { margin: 1.2rem 0 0.6rem; color: var(--vino); }
+.formulario .aviso-carga { margin: 1rem 0; }
 
 .aviso-error,
 .aviso-carga {

@@ -4,10 +4,13 @@ import type { Auth } from 'firebase/auth'
 import type { Operacion } from '~/lib/cliente-base'
 import type {
   Acceso,
+  Asociacion,
   Catalogos,
   DatosAdmin,
   ElementoCatalogo,
   CampoTipoProducto,
+  ContactoAsociacion,
+  IntegrantesAsociacion,
   Emprendedora,
   Invitacion,
   InvitacionAlta,
@@ -178,6 +181,77 @@ export async function listarCatalogosAdmin(cliente: ClienteAmancay): Promise<Cat
   return { sectores, categorias, tiposEmprendimiento, tiposProducto }
 }
 
+function mapearAsociacion(value: unknown): Asociacion {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una asociación inválida.')
+  const data = value as Record<string, unknown>
+  const contacto = data.contacto as Partial<ContactoAsociacion> | undefined
+  if (typeof data.id !== 'string' || typeof data.nombre !== 'string' || typeof data.sectorId !== 'string'
+    || typeof data.activo !== 'boolean' || !contacto || !['whatsapp', 'correo', 'web'].includes(String(contacto.tipo))
+    || typeof contacto.valor !== 'string') throw new Error('La API devolvió una asociación incompleta.')
+  return {
+    id: data.id,
+    nombre: data.nombre,
+    descripcion: typeof data.descripcion === 'string' ? data.descripcion : '',
+    sectorId: data.sectorId,
+    contacto: { tipo: contacto.tipo as ContactoAsociacion['tipo'], valor: contacto.valor },
+    ...(typeof data.logoUrl === 'string' ? { logoUrl: data.logoUrl } : {}),
+    activo: data.activo,
+    ...(typeof data.versionEsperada === 'string' ? { versionEsperada: data.versionEsperada } : {}),
+  }
+}
+
+export async function listarAsociacionesAdmin(cliente: ClienteAdminConApi): Promise<Asociacion[]> {
+  await comprobarAdmin(cliente)
+  const data = await cliente.llamar('listarAsociaciones', {})
+  if (!Array.isArray(data.asociaciones)) throw new Error('La API no devolvió el listado de asociaciones.')
+  return data.asociaciones.map(mapearAsociacion)
+}
+
+export async function leerIntegrantesAsociacion(cliente: ClienteAdminConApi, asociacionId: string): Promise<IntegrantesAsociacion> {
+  const data = await cliente.llamar('leerIntegrantesAsociacion', { asociacionId })
+  if (!data.asociacion || !Array.isArray(data.miembros) || !Array.isArray(data.disponibles)) {
+    throw new Error('La API no devolvió los integrantes de la asociación.')
+  }
+  return data as unknown as IntegrantesAsociacion
+}
+
+export type SolicitudAsociacion = {
+  nombre: string
+  descripcion: string
+  sectorId: string
+  contacto: ContactoAsociacion
+  logoUrl?: string
+}
+
+export function crearAsociacion(cliente: ClienteAdminConApi, solicitud: SolicitudAsociacion & { operacionId: string }) {
+  return cliente.llamar('crearAsociacion', solicitud)
+}
+
+export function editarAsociacion(cliente: ClienteAdminConApi, solicitud: SolicitudAsociacion & {
+  operacionId: string; asociacionId: string; versionEsperada: string
+}) {
+  return cliente.llamar('editarAsociacion', solicitud)
+}
+
+export function cambiarEstadoAsociacion(cliente: ClienteAdminConApi, solicitud: {
+  operacionId: string; asociacionId: string; versionEsperada: string; activo: boolean
+}) {
+  return cliente.llamar('cambiarEstadoAsociacion', solicitud)
+}
+
+export function asignarEmprendedora(cliente: ClienteAdminConApi, solicitud: {
+  operacionId: string; asociacionId: string; versionAsociacionEsperada: string
+  uidEmprendedora: string; versionRelacionEsperada?: string
+}) {
+  return cliente.llamar('asignarEmprendedora', solicitud)
+}
+
+export function quitarEmprendedora(cliente: ClienteAdminConApi, solicitud: {
+  operacionId: string; asociacionId: string; uidEmprendedora: string; versionRelacionEsperada: string
+}) {
+  return cliente.llamar('quitarEmprendedora', solicitud)
+}
+
 export type ColeccionCatalogoEditable = 'sectores' | 'categorias' | 'tiposEmprendimiento' | 'tiposProducto'
 export type DefinicionCatalogoProducto = { campos: CampoTipoProducto[]; opcionesVariante: string[] }
 
@@ -211,5 +285,5 @@ export async function cargarDatosAdmin(cliente: ClienteAmancay): Promise<DatosAd
     listarInvitaciones(cliente),
     listarCatalogos(cliente),
   ])
-  return { accesos, emprendedoras, invitaciones, catalogos }
+  return { accesos, emprendedoras, invitaciones, catalogos, asociaciones: [] }
 }

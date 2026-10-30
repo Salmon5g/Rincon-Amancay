@@ -12,7 +12,8 @@ import { crearProductos } from './modules/productos.ts';
 import { crearStock } from './modules/stock.ts';
 import { crearDesactivacion } from './modules/desactivacion.ts';
 import { crearCatalogos } from './modules/catalogos.ts';
+import { crearAsociaciones } from './modules/asociaciones.ts';
 
 export function montarApi(auth:Auth,db:Firestore,bucket:ReturnType<ReturnType<typeof getStorage>['bucket']>,config?:ConfigHttp) {
-  return crearApi(auth,crearPublicacion(db,crearProcesadorImagenes(bucket)),crearCuentas(db,auth),crearProductos(db),crearStock(db),crearDesactivacion(db,auth),crearCicloCuentas(db,auth),crearValidadorSesion(db),config,crearCatalogos(db));
+  return crearApi(auth,crearPublicacion(db,crearProcesadorImagenes(bucket)),crearCuentas(db,auth),crearProductos(db),crearStock(db),crearDesactivacion(db,auth),crearCicloCuentas(db,auth),crearValidadorSesion(db),config,crearCatalogos(db),crearAsociaciones(db));
 }

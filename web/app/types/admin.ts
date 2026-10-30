@@ -58,9 +58,50 @@ export interface Catalogos {
   tiposProducto: ElementoCatalogo[]
 }
 
+export interface ContactoAsociacion {
+  tipo: 'whatsapp' | 'correo' | 'web'
+  valor: string
+}
+
+export interface Asociacion {
+  id: string
+  nombre: string
+  descripcion: string
+  sectorId: string
+  contacto: ContactoAsociacion
+  logoUrl?: string
+  activo: boolean
+  versionEsperada?: string
+}
+
+export interface IntegranteAsociacion {
+  uid: string
+  tiendaId: string
+  nombreMostrar: string
+  nombreTienda: string
+  estadoRelacion: 'activa' | 'retirada'
+  estadoCuenta: string
+  versionEsperada?: string
+}
+
+export interface EmprendedoraDisponible {
+  uid: string
+  tiendaId: string
+  nombreMostrar: string
+  nombreTienda: string
+  versionRelacionEsperada?: string
+}
+
+export interface IntegrantesAsociacion {
+  asociacion: { id: string; activo: boolean; versionEsperada?: string }
+  miembros: IntegranteAsociacion[]
+  disponibles: EmprendedoraDisponible[]
+}
+
 export interface DatosAdmin {
   accesos: Acceso[]
   emprendedoras: Emprendedora[]
   invitaciones: Invitacion[]
   catalogos: Catalogos
+  asociaciones: Asociacion[]
 }

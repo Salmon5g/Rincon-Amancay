@@ -10,6 +10,8 @@ La [desactivación de emprendedoras](09-desactivacion-cuentas.md) coordina el bl
 
 La [administración de catálogos](12-administracion-catalogos.md) permite gestionar sectores, categorías, tipos de emprendimiento y tipos de producto mediante la API autenticada. Las definiciones de tipos de producto son versionadas para preservar las fichas existentes.
 
+La [administración de asociaciones](13-administracion-asociaciones.md) cubre la ficha, su estado y las relaciones de integrantes mediante la API autenticada. No incluye la vista pública de asociaciones (RF-ASO-03) ni carga de logos a Storage.
+
 El [ciclo de cuentas](10-ciclo-cuentas.md) define registro, invitaciones, recuperación de contraseña y reactivación. Las pantallas administrativas usan invitaciones; el alta directa del contrato 06 queda como apoyo técnico local. Las reservas interrumpidas tienen [procedimiento técnico](../docs/recuperacion-cuentas.md), fuera de las pantallas.
 
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
