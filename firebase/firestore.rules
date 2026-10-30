@@ -82,6 +82,16 @@ service cloud.firestore {
         }
       }
     }
+    match /configuracionAplicacion/{configId} {
+      allow get: if configId == 'navegacion';
+      allow list: if admin();
+    }
+    match /ferias/{feriaId} {
+      allow get, list: if resource.data.estado == 'publicada' || admin();
+      match /participantes/{participanteId} {
+        allow read: if admin();
+      }
+    }
     match /sectores/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
     // Un tipo o categoría inactiva deja de ofrecerse al crear productos, pero
     // una emprendedora puede leer su definición histórica para mantener fichas existentes.
@@ -96,8 +106,8 @@ service cloud.firestore {
     }
     match /operacionesAdministracion/{operationId} { allow read: if admin(); }
     match /auditoriaAdministracion/{auditId} { allow read: if admin(); }
-    // Altas, roles, publicaciones, stock, ventas y módulos no implementados
-    // no admiten escrituras de cliente; ni siquiera por rol administrador.
+    // Las operaciones privilegiadas de ferias, configuración, cuentas,
+    // publicaciones, stock y catálogos pasan por la API; el cliente no escribe.
     match /{document=**} {
       allow read, write: if false;
     }

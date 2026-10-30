@@ -178,6 +178,5 @@ y TypeScript. Los más relevantes para el comprador:
 
 - La **nube no está desplegada**: reglas, web y servidor corren solo en local.
 - El registro en Firebase real (coordinado con Juan Pablo) es **preparación**, no cambia el trabajo local.
-- Ventas, ferias y **asociaciones** no están implementadas en la base (por eso faltan la ficha y el
-  filtro de asociación del comprador).
+- Ventas y la vista pública de ferias/asociaciones no están implementadas en la app. La API web ahora administra ferias, asociaciones e integrantes; consulta `contratos/13-administracion-asociaciones.md` y `contratos/16-administracion-ferias.md`. Esto todavía no significa que Android consuma esas operaciones ni que exista una ficha o filtro público.
 - Las **imágenes** de productos/variantes aún no se usan en la app (RF-CMP-03 completo queda pendiente).

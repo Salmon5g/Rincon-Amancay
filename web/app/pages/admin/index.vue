@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
+import FeriasAdmin from '~/components/admin/FeriasAdmin.vue'
+import ConfiguracionAdmin from '~/components/admin/ConfiguracionAdmin.vue'
+import AdministradoresAdmin from '~/components/admin/AdministradoresAdmin.vue'
 import { esAdministrador, type SeccionLectura } from '~/lib/admin-lecturas'
 import {
   asignarEmprendedora,
@@ -83,7 +86,6 @@ const datosVacios: DatosAdmin = {
   asociaciones: [],
 }
 const datos = ref<DatosAdmin>(datosVacios)
-const SIN_MODELO = 'Sección en preparación. Este formulario es una vista previa y todavía no guarda datos.'
 const formularioAbierto = ref(false)
 const aviso = ref('')
 let temporizador: ReturnType<typeof setTimeout>
@@ -106,10 +108,10 @@ function activos(lista: ElementoCatalogo[]) {
 const secciones = ref<Seccion[]>([
   { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, datos visibles, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
   { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Ficha, estado e integrantes de cada asociación.', accion: '+ Crear asociación', items: [] },
-  { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: '+ Crear feria', items: [], aviso: SIN_MODELO },
+  { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Crear actividades, gestionar participantes y registrar asistencia.', accion: '+ Crear feria', items: [] },
   { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Sectores, tipos de emprendimiento, tipos de producto y categorías.', accion: '+ Nuevo valor', items: [] },
-  { id: 'configuracion', icono: '⚙️', titulo: 'Configuración general', descripcion: 'Sin modelo en Firestore todavía; pendiente de contrato.', accion: 'Guardar cambios', items: [], aviso: SIN_MODELO },
-  { id: 'administradores', icono: '🛡️', titulo: 'Administradores', descripcion: 'Cuentas con rol administrador de la plataforma.', accion: '+ Agregar administrador', items: [] },
+  { id: 'configuracion', icono: '⚙️', titulo: 'Configuración general', descripcion: 'Preferencias globales para el acceso y la navegación del comprador.', accion: 'Guardar configuración', items: [] },
+  { id: 'administradores', icono: '🛡️', titulo: 'Administradores', descripcion: 'Gestionar otras cuentas administradoras de la plataforma.', accion: '+ Agregar administrador', items: [] },
 ])
 
 const activa = ref('inicio')
@@ -154,7 +156,7 @@ const cuentaPendiente = ref<{
 } | null>(null)
 const cargandoDatos = ref(false)
 const cargandoCatalogos = ref(false)
-const lecturaDisponible = computed(() => ['administradores', 'emprendedoras', 'asociaciones', 'catalogos'].includes(activa.value))
+const lecturaDisponible = computed(() => ['emprendedoras', 'asociaciones', 'catalogos'].includes(activa.value))
 const escrituraCatalogosDisponible = computed(() => ['local', 'real-api'].includes(config.firebaseModo))
 const escrituraAsociacionesDisponible = computed(() => ['local', 'real-api'].includes(config.firebaseModo))
 const asociacionEnEdicion = ref<Asociacion | null>(null)
@@ -331,6 +333,7 @@ async function cargarSeccion() {
   if (!autorizado.value || !lecturaDisponible.value) return
   const destino = seccion.value
   if (!destino) return
+  if (['ferias', 'configuracion', 'administradores'].includes(destino.id)) return
   if (destino.id === 'catalogos') {
     await cargarDatosCatalogos()
     return
@@ -1180,7 +1183,7 @@ async function guardarEdicionCuentaEmprendedora() {
             <p class="sub">{{ seccion.descripcion }}</p>
           </div>
           <button
-            v-if="seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true"
+            v-if="!['ferias', 'configuracion', 'administradores'].includes(seccion.id) && (seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true)"
             class="boton boton-primario" type="button"
             :disabled="seccion.id === 'emprendedoras' && !!cuentaEmprendedoraEnEdicion"
             @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : seccion.id === 'asociaciones' ? prepararNuevaAsociacion() : abrirFormulario()"
@@ -1188,6 +1191,11 @@ async function guardarEdicionCuentaEmprendedora() {
             {{ seccion.accion }}
           </button>
         </header>
+
+        <FeriasAdmin v-if="seccion.id === 'ferias'" />
+        <ConfiguracionAdmin v-else-if="seccion.id === 'configuracion'" />
+        <AdministradoresAdmin v-else-if="seccion.id === 'administradores'" />
+        <template v-else>
 
         <section v-if="formularioAbierto" class="formulario" aria-labelledby="titulo-formulario">
           <div class="formulario-encabezado">
@@ -1518,6 +1526,7 @@ async function guardarEdicionCuentaEmprendedora() {
             Limpiar filtros
           </button>
         </div>
+        </template>
       </template>
     </main>
 

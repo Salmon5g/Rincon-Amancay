@@ -124,3 +124,64 @@ export interface DatosAdmin {
   catalogos: Catalogos
   asociaciones: Asociacion[]
 }
+
+export interface AdministradorPlataforma {
+  uid: string
+  correo: string
+  nombreMostrar: string
+  estado: 'activo' | 'desactivado'
+  roles: string[]
+  consistente: boolean
+  versionEsperada: string
+}
+
+export type ModoNavegacionComprador = 'permitir' | 'invitar' | 'exigir'
+export interface ConfiguracionNavegacion {
+  modo: ModoNavegacionComprador
+  versionEsperada: string
+  actualizadoEn: string | null
+}
+
+export type EstadoFeria = 'borrador' | 'publicada' | 'cancelada'
+export type TipoParticipanteFeria = 'emprendedora' | 'asociacion'
+export type EstadoParticipanteFeria = 'invitada' | 'confirmada' | 'rechazada' | 'agregada_admin' | 'retirada'
+export type AsistenciaFeria = 'pendiente' | 'asistio' | 'no_asistio'
+
+export interface FeriaAdmin {
+  id: string
+  nombre: string
+  descripcion: string
+  organizador: string
+  direccion: string
+  fechaInicio: string | null
+  fechaFin: string | null
+  imagenUrl: string
+  latitud: number | null
+  longitud: number | null
+  estado: EstadoFeria
+  versionEsperada: string
+}
+
+export interface ParticipanteFeria {
+  id: string
+  tipo: TipoParticipanteFeria
+  entidadId: string
+  nombre: string
+  nombreTienda: string
+  estado: EstadoParticipanteFeria
+  asistencia: AsistenciaFeria
+  versionEsperada: string
+}
+
+export interface DisponibleFeria {
+  tipo: TipoParticipanteFeria
+  entidadId: string
+  nombre: string
+  nombreTienda?: string
+}
+
+export interface ParticipantesFeria {
+  feria: { id: string; estado: EstadoFeria; versionEsperada: string }
+  participantes: ParticipanteFeria[]
+  disponibles: DisponibleFeria[]
+}

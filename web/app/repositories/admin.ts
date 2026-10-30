@@ -16,6 +16,11 @@ import type {
   Emprendedora,
   Invitacion,
   InvitacionAlta,
+  AdministradorPlataforma,
+  ConfiguracionNavegacion,
+  ModoNavegacionComprador,
+  FeriaAdmin,
+  ParticipantesFeria,
 } from '~/types/admin'
 
 // Estas lecturas requieren solo Firestore y funcionan con cliente local o real.
@@ -301,6 +306,83 @@ export function quitarEmprendedora(cliente: ClienteAdminConApi, solicitud: {
   operacionId: string; asociacionId: string; uidEmprendedora: string; versionRelacionEsperada: string
 }) {
   return cliente.llamar('quitarEmprendedora', solicitud)
+}
+
+export async function listarAdministradoresPlataforma(cliente: ClienteAdminConApi): Promise<AdministradorPlataforma[]> {
+  await comprobarAdmin(cliente)
+  const data = await cliente.llamar('listarAdministradores', {})
+  if (!Array.isArray(data.administradores)) throw new Error('La API no devolvió las cuentas administradoras.')
+  return data.administradores.map((value): AdministradorPlataforma => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una cuenta administradora inválida.')
+    const item = value as Record<string, unknown>
+    if (typeof item.uid !== 'string' || typeof item.estado !== 'string' || typeof item.consistente !== 'boolean') throw new Error('La API devolvió una cuenta administradora incompleta.')
+    return {
+      uid: item.uid,
+      correo: texto(item.correo),
+      nombreMostrar: texto(item.nombreMostrar),
+      estado: item.estado === 'activo' ? 'activo' : 'desactivado',
+      roles: listaDeTextos(item.roles),
+      consistente: item.consistente,
+      versionEsperada: texto(item.versionEsperada),
+    }
+  })
+}
+
+export function agregarAdministradorPlataforma(cliente: ClienteAdminConApi, solicitud: { operacionId: string; correo: string }) {
+  return cliente.llamar('agregarAdministrador', solicitud)
+}
+
+export function quitarAdministradorPlataforma(cliente: ClienteAdminConApi, solicitud: { operacionId: string; uidDestino: string; versionEsperada: string }) {
+  return cliente.llamar('quitarAdministrador', solicitud)
+}
+
+export async function leerConfiguracionNavegacion(cliente: ClienteAdminConApi): Promise<ConfiguracionNavegacion> {
+  await comprobarAdmin(cliente)
+  const data = await cliente.llamar('leerConfiguracionNavegacion', {})
+  if (!['permitir', 'invitar', 'exigir'].includes(String(data.modo)) || typeof data.versionEsperada !== 'string') throw new Error('La API devolvió una configuración de acceso inválida.')
+  return { modo: data.modo as ModoNavegacionComprador, versionEsperada: data.versionEsperada, actualizadoEn: typeof data.actualizadoEn === 'string' ? data.actualizadoEn : null }
+}
+
+export function guardarConfiguracionNavegacion(cliente: ClienteAdminConApi, solicitud: { operacionId: string; versionEsperada: string; modo: ModoNavegacionComprador }) {
+  return cliente.llamar('guardarConfiguracionNavegacion', solicitud)
+}
+
+function mapearFeria(value: unknown): FeriaAdmin {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una feria inválida.')
+  const data = value as Record<string, unknown>
+  if (typeof data.id !== 'string' || typeof data.nombre !== 'string' || typeof data.estado !== 'string' || typeof data.versionEsperada !== 'string') throw new Error('La API devolvió una feria incompleta.')
+  return {
+    id: data.id, nombre: data.nombre, descripcion: texto(data.descripcion), organizador: texto(data.organizador),
+    direccion: texto(data.direccion), fechaInicio: typeof data.fechaInicio === 'string' ? data.fechaInicio : null,
+    fechaFin: typeof data.fechaFin === 'string' ? data.fechaFin : null, imagenUrl: texto(data.imagenUrl),
+    latitud: typeof data.latitud === 'number' ? data.latitud : null, longitud: typeof data.longitud === 'number' ? data.longitud : null,
+    estado: data.estado === 'publicada' || data.estado === 'cancelada' ? data.estado : 'borrador', versionEsperada: data.versionEsperada,
+  }
+}
+
+export async function listarFeriasAdmin(cliente: ClienteAdminConApi): Promise<FeriaAdmin[]> {
+  await comprobarAdmin(cliente)
+  const data = await cliente.llamar('listarFeriasAdmin', {})
+  if (!Array.isArray(data.ferias)) throw new Error('La API no devolvió las ferias.')
+  return data.ferias.map(mapearFeria)
+}
+
+export async function leerParticipantesFeria(cliente: ClienteAdminConApi, feriaId: string): Promise<ParticipantesFeria> {
+  const data = await cliente.llamar('leerParticipantesFeria', { feriaId })
+  if (!data.feria || !Array.isArray(data.participantes) || !Array.isArray(data.disponibles)) throw new Error('La API no devolvió los participantes de la feria.')
+  return data as unknown as ParticipantesFeria
+}
+
+export function crearFeria(cliente: ClienteAdminConApi, solicitud: Record<string, unknown>) { return cliente.llamar('crearFeria', solicitud) }
+export function editarFeria(cliente: ClienteAdminConApi, solicitud: Record<string, unknown>) { return cliente.llamar('editarFeria', solicitud) }
+export function cambiarEstadoFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionEsperada: string; estado: 'publicada' | 'cancelada' }) { return cliente.llamar('cambiarEstadoFeria', solicitud) }
+export function invitarParticipanteFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; tipo: 'emprendedora' | 'asociacion'; entidadId: string }) { return cliente.llamar('invitarParticipanteFeria', solicitud) }
+export function agregarParticipanteFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; tipo: 'emprendedora' | 'asociacion'; entidadId: string }) { return cliente.llamar('agregarParticipanteFeria', solicitud) }
+export function retirarParticipanteFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; participanteId: string }) { return cliente.llamar('retirarParticipanteFeria', solicitud) }
+export function registrarAsistenciaFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; participanteId: string; asistencia: 'asistio' | 'no_asistio' }) { return cliente.llamar('registrarAsistenciaFeria', solicitud) }
+
+export function responderInvitacionFeria(cliente: ClienteAdminConApi, solicitud: { feriaId: string; respuesta: 'confirmar' | 'rechazar' }) {
+  return cliente.llamar('responderInvitacionFeria', solicitud)
 }
 
 export type ColeccionCatalogoEditable = 'sectores' | 'categorias' | 'tiposEmprendimiento' | 'tiposProducto'

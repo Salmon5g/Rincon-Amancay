@@ -13,7 +13,7 @@ La base `(default)` de `rincon-amancay` existe en `southamerica-west1`. El respo
 1. Verificar que Correo electrónico/contraseña permanezca habilitado.
 2. Usar la cuenta ya creada; no recrearla ni compartir su contraseña.
 3. Comparar y publicar las reglas acordadas de `firebase/firestore.rules`. No abrir la base indiscriminadamente.
-4. Comprobar que la cuenta autorizada tenga `usuarios/{uid}` y `accesos/{uid}` con estado `activo` y el rol `administrador`. Las fechas son Timestamp y el ID es el UID de Authentication. La asignación del rol es una operación privilegiada del responsable, no una escritura desde el navegador.
+4. Comprobar que la primera cuenta administradora tenga `usuarios/{uid}` y `accesos/{uid}` con estado `activo` y el rol `administrador`. Las fechas son Timestamp y el ID es el UID de Authentication. El primer rol debe asignarlo el responsable por un medio privilegiado; luego, en `real-api`, el panel puede administrar otras cuentas verificadas. Nunca se escribe el rol directamente desde el navegador.
 
 Las reglas permiten al usuario leer su propio acceso y al administrador consultar accesos y perfiles de emprendedoras. No permiten leer perfiles privados de otros usuarios ni otorgarse roles desde el cliente. Los catálogos se consultan con `activo == true`. No ejecutar los scripts seed/cuentas:demo contra la nube.
 
@@ -32,7 +32,7 @@ El único plugin es `web/app/plugins/firebase.client.ts`. Selecciona el entorno;
 
 - El adaptador de lectura usa Authentication y Firestore directamente, bajo las reglas publicadas.
 - Listados de hasta 50 registros por colección, sin paginación todavía. Los contadores representan los registros cargados, no totales globales. Administradores y emprendedoras se identifican por UID cuando el contrato no permite leer el nombre privado.
-- Asociaciones, ferias y configuración todavía requieren modelo y operaciones de servidor. En el modo `real-lectura` las escrituras están deshabilitadas; el modo `real-api` permite crear/cancelar invitaciones, desactivar/reactivar emprendedoras y administrar sectores, categorías, tipos de emprendimiento y tipos de producto desde la web, como explica la [guía de API local real](admin-firebase-real-api-local.md). Las reglas locales deben publicarse para que la web lea los catálogos inactivos.
+- El modo `real-lectura` sigue siendo solo lectura. En `real-api` se pueden administrar asociaciones, catálogos, ferias, la preferencia de acceso y otras cuentas administradoras, además de invitar/desactivar/reactivar emprendedoras, según la [guía de API local real](admin-firebase-real-api-local.md). Antes de usar estas operaciones, actualiza la API y publica las reglas e índices revisados. La política de navegación aún no la consumen los clientes comprador; mantén `permitir`.
 - La prueba anónima `npm --prefix web run check:firebase` debe dar `permission-denied`; eso no verifica el acceso autenticado. Durante el login, ese mismo error al consultar `accesos/{uid}` indica revisar reglas y permisos.
 - Cambios de roles se comprueban al iniciar/restaurar sesión y antes de consultar un listado. Las reglas son la autoridad para cada petición; la interfaz no observa cambios de rol en tiempo real.
 - No hay conexión a Storage ni API de negocio en el modo real-lectura. Para operaciones, `real-api` conecta con la API local por loopback o con un servicio desplegado mediante HTTPS.

@@ -14,6 +14,10 @@ La [administración de asociaciones](13-administracion-asociaciones.md) cubre la
 
 La [edición de cuentas emprendedoras](14-edicion-cuentas-emprendedoras.md) permite cambiar el nombre visible con control de versión y auditoría. Correo, contraseña y ficha de tienda se mantienen en flujos separados.
 
+La [configuración de acceso y administración de cuentas](15-configuracion-y-administradores.md) permite guardar la política global de navegación y asignar o retirar el rol de administrador de cuentas de Authentication existentes.
+
+La [administración de ferias](16-administracion-ferias.md) cubre fichas, publicación/cancelación, participantes, respuestas a invitaciones y asistencia; no implementa envío de notificaciones, carga de fotos ni página pública de ferias.
+
 El [ciclo de cuentas](10-ciclo-cuentas.md) define registro, invitaciones, recuperación de contraseña y reactivación. Las pantallas administrativas usan invitaciones; el alta directa del contrato 06 queda como apoyo técnico local. Las reservas interrumpidas tienen [procedimiento técnico](../docs/recuperacion-cuentas.md), fuera de las pantallas.
 
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).
