@@ -103,7 +103,7 @@ const resultado = await $amancay.llamar('invitarEmprendedora', solicitud);
 
 ## 2. Equipo app Android
 
-La app unificada de demostración está en `android/app-combinada`. En Android Studio abre esa carpeta y ejecuta el módulo `app`; desde PowerShell:
+La app unificada está en `android/app-combinada`. En Android Studio abre esa carpeta y ejecuta el módulo `app`; desde PowerShell:
 
 ```powershell
 cd android/app-combinada
@@ -112,10 +112,12 @@ cd android/app-combinada
 
 El modo comprador de la app unificada lee en tiempo real desde Firestore las tiendas habilitadas/publicadas y sus productos publicados. Configura el archivo local `android/app-combinada/app/google-services.json` para el ID `com.example.amancay`; Firebase debe tener publicadas las reglas de `firebase/firestore.rules`. Para aparecer en el comprador, la tienda debe tener `estadoPublicacion = publicado`, `habilitada = true` y `mostrarPrecios = true`; los productos deben tener `estadoPublicacion = publicado`. Esta lectura es pública y de solo lectura; no requiere iniciar sesión.
 
-El modo emprendedora sigue con un repositorio de demostración en memoria. Sus altas, ventas y ajustes no se guardan ni se comparten con web o Firebase. La app unificada aún no carga imágenes de Storage. El proyecto comprador anterior sigue en la raíz `android/`; es independiente. No uses rutas `APP` y `app` que solo difieran por mayúsculas en Windows, porque representan la misma carpeta.
+El modo emprendedora inicia sesión con correo/contraseña de Firebase, comprueba el rol activo y la tienda asignada, y lee la ficha y productos propios desde Firestore. Editar la tienda y los borradores de producto, publicar/retirar y ajustar stock usan la API autenticada. Para Firebase real desde Android, la API local debe correr en el computador y `local.properties` debe usar `amancay.api.baseUrl=http://10.0.2.2:8080/api/v1/`; sigue [la guía Android](android-emprendedora-firebase.md). Para datos ficticios, configura también `amancay.firebase.emulators=true` y el puerto API `8787` según la misma guía.
+
+La app no carga imágenes todavía: se pueden guardar borradores, pero publicar un producto exige una imagen que el backend actual valide en Firebase Storage. Supabase queda pendiente de política de carga y verificación compatibles. El inicio de sesión con huella, ventas y ferias tampoco está conectado en este incremento. El proyecto comprador anterior sigue en la raíz `android/`; es independiente. No uses rutas `APP` y `app` que solo difieran por mayúsculas en Windows, porque representan la misma carpeta.
 ## 3. Verificación conjunta
 
-Con los tres clientes conectados a los emuladores de una misma máquina, seguir el **escenario común** de [integración de equipos](integracion-equipos.md#escenario-común-para-revisar-juntos). No hace falta terminar las pantallas: basta una vista de catálogo y una acción de prueba. Las operaciones de emprendedora pueden comprobarse mediante los adaptadores mientras su interfaz no exista.
+Para comprobar una actualización entre Android y comprador web, usa la [guía de conexión Android](android-emprendedora-firebase.md) y ejecuta ambos clientes contra el mismo proyecto/emulador y API. El documento [integración de equipos](integracion-equipos.md) conserva escenarios útiles de emuladores, pero sus rutas de ejemplo Android y su afirmación de que faltaba la interfaz emprendedora son anteriores a esta integración.
 
 ## 4. Alcance provisional y mantenimiento
 

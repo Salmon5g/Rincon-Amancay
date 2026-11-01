@@ -1,5 +1,7 @@
 # Conexión para los equipos — desarrollo local
 
+> **Nota de estado:** los comandos de emuladores siguen siendo referencia para desarrollo aislado, pero este documento describe una versión anterior de Android y no incluye la app combinada actual. Para conectar Authentication, Firestore y la API local desde Android Studio, sigue [la guía vigente](android-emprendedora-firebase.md). El servicio HTTPS compartido aún no se ha desplegado.
+
 Atajo de inicio por rol (web comprador, web administrador, app comprador): [arranque por equipo](arranque-equipos.md).
 
 Punto de entrada para web comprador, web administrador y Android. Todos usan el mismo modelo, reglas y API del repositorio. En esta etapa cada computador ejecuta su propia instancia de emuladores: no comparte automáticamente sus datos con los otros computadores. Web y Android conectados al mismo computador sí ven los mismos datos.

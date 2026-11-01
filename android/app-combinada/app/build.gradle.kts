@@ -1,3 +1,15 @@
+import java.util.Properties
+
+val amancayLocalProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
+val amancayFirebaseEmulators = amancayLocalProperties.getProperty("amancay.firebase.emulators", "false").toBoolean()
+val amancayApiBaseUrl = amancayLocalProperties.getProperty(
+    "amancay.api.baseUrl",
+    if (amancayFirebaseEmulators) "http://10.0.2.2:8787/api/v1/" else "http://10.0.2.2:8080/api/v1/"
+).replace("\\", "\\\\").replace("\"", "\\\"")
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,6 +30,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "FIREBASE_EMULATORS", amancayFirebaseEmulators.toString())
+        buildConfigField("String", "API_BASE_URL", "\"$amancayApiBaseUrl\"")
     }
 
     buildTypes {
@@ -35,6 +49,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

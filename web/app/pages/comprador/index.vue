@@ -33,6 +33,7 @@ function fichaTienda(elemento: TiendaPublica): FichaComprador {
             tipoEmprendimientoId: elemento.tipoEmprendimientoId,
             sectorId: elemento.sectorId,
             mostrarPrecios: elemento.mostrarPrecios,
+            contacto: elemento.contacto,
         },
     };
 }
@@ -76,6 +77,17 @@ const mensajeVacio = computed(() => busqueda.value
         ? 'Esta tienda todavía no tiene productos publicados.'
         : 'Todavía no hay tiendas publicadas.');
 const imagenes = computed<string[]>(() => (producto.value?.datos.imagenes ?? []).filter((r: unknown) => typeof r === 'string'));
+const enlaceContacto = computed(() => {
+    const contacto = tienda.value?.datos.contacto;
+    if (!contacto) return null;
+    if (contacto.tipo === 'whatsapp') {
+        const telefono = contacto.valor.replace(/\D/g, '');
+        return telefono ? { href: `https://wa.me/${telefono}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}`, texto: 'Consultar por WhatsApp' } : null;
+    }
+    if (contacto.tipo === 'correo') return { href: `mailto:${contacto.valor}`, texto: 'Contactar por correo' };
+    if (contacto.tipo === 'web' && contacto.valor.startsWith('https://')) return { href: contacto.valor, texto: 'Visitar sitio de la tienda' };
+    return null;
+});
 
 // Formato de precios, disponibilidad y errores
 
@@ -327,6 +339,7 @@ onBeforeUnmount(() => {
               <dd>{{ valor }}</dd>
             </template>
           </dl>
+          <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">{{ enlaceContacto.texto }}</a>
           <button class="boton boton-primario" @click="volver">Volver a los productos</button>
         </div>
       </section>

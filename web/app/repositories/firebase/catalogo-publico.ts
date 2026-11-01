@@ -3,7 +3,7 @@ import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, PaginaRepositorio } from '~/repositories/catalogo-publico'
-import type { ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { ContactoPublico, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
 const MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024
@@ -47,6 +47,10 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
 
 function mapearTienda(documento: QueryDocumentSnapshot<DocumentData>): TiendaPublica {
   const datos = documento.data()
+  const contactoDatos = datos.contacto as Record<string, unknown> | undefined
+  const contacto = contactoDatos && ['whatsapp', 'correo', 'web'].includes(String(contactoDatos.tipo)) && typeof contactoDatos.valor === 'string'
+    ? { tipo: contactoDatos.tipo as ContactoPublico['tipo'], valor: contactoDatos.valor }
+    : undefined
   return {
     id: documento.id,
     nombre: texto(datos.nombre, documento.id),
@@ -54,6 +58,7 @@ function mapearTienda(documento: QueryDocumentSnapshot<DocumentData>): TiendaPub
     tipoEmprendimientoId: texto(datos.tipoEmprendimientoId),
     sectorId: texto(datos.sectorId),
     mostrarPrecios: datos.mostrarPrecios === true,
+    ...(contacto ? { contacto } : {}),
   }
 }
 

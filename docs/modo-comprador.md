@@ -1,5 +1,7 @@
 # Módulo Comprador (app Android) — avance
 
+> **Guía de proyecto anterior.** Las rutas de variante `debug`, `ConexionLocal.kt` y las instrucciones de emulador de este documento corresponden al comprador Android independiente que quedó en `android/`. Para ejecutar la aplicación unificada actual, abre `android/app-combinada` y sigue [Android README](../android/README.md) y [guía de Firebase](android-emprendedora-firebase.md).
+
 > **Aviso:** este documento describe un **avance teórico, no definitivo**. Se irá **modificando después de la feria** y **actualizando a medida que se agreguen otras funciones**. No es una versión cerrada.
 >
 > El **diseño visual de las pantallas usa el sistema Amancay del Figma

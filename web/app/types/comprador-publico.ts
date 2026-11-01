@@ -9,6 +9,12 @@ export interface TiendaPublica {
   tipoEmprendimientoId: string;
   sectorId: string;
   mostrarPrecios: boolean;
+  contacto?: ContactoPublico;
+}
+
+export interface ContactoPublico {
+  tipo: 'whatsapp' | 'correo' | 'web';
+  valor: string;
 }
 
 export interface ProductoPublico {
@@ -43,6 +49,7 @@ export interface FichaComprador {
     tipoEmprendimientoId?: string;
     sectorId?: string;
     mostrarPrecios?: boolean;
+    contacto?: ContactoPublico;
     imagenes?: string[];
     tieneVariantes?: boolean;
     estadoDisponibilidad?: string;

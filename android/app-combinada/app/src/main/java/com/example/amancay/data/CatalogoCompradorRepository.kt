@@ -41,10 +41,9 @@ interface CatalogoCompradorRepository {
     fun cerrar()
 }
 
-fun crearCatalogoCompradorFirebase(): CatalogoCompradorRepository = FirestoreCatalogoCompradorRepository()
+fun crearCatalogoCompradorFirebase(db: FirebaseFirestore): CatalogoCompradorRepository = FirestoreCatalogoCompradorRepository(db)
 
-private class FirestoreCatalogoCompradorRepository : CatalogoCompradorRepository {
-    private val db = FirebaseFirestore.getInstance()
+private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFirestore) : CatalogoCompradorRepository {
     private val _productos = MutableStateFlow<List<ProductoCatalogoComprador>>(emptyList())
     override val productos: StateFlow<List<ProductoCatalogoComprador>> = _productos.asStateFlow()
     private val _cargando = MutableStateFlow(true)

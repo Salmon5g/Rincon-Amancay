@@ -31,8 +31,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.buyer.ModoCompradorScreen
+import com.example.amancay.emprendedora.ModoEmprendedoraConectada
 import com.example.amancay.data.AmancayRepository
 import com.example.amancay.data.DraftState
+import com.example.amancay.data.FirebaseClientServicesProvider
 import com.example.amancay.data.Product
 import com.example.amancay.data.crearCatalogoCompradorFirebase
 import com.example.amancay.data.crearRepositorioDemostracion
@@ -60,15 +62,16 @@ class MainActivity : FragmentActivity() {
 
 @Composable
 fun AmancayApp() {
-    val repositorio = remember { crearRepositorioDemostracion() }
-    val catalogoComprador = remember { crearCatalogoCompradorFirebase() }
+    val context = LocalContext.current
+    val firebaseServices = remember(context) { FirebaseClientServicesProvider.initialize(context) }
+    val catalogoComprador = remember(firebaseServices) { crearCatalogoCompradorFirebase(firebaseServices.firestore) }
     DisposableEffect(catalogoComprador) {
         onDispose { catalogoComprador.cerrar() }
     }
     var modo by remember { mutableStateOf<String?>(null) }
     when (modo) {
         "comprador" -> ModoCompradorScreen(catalogoComprador) { modo = null }
-        "emprendedora" -> EmprendedoraApp(repositorio, onExit = { modo = null })
+        "emprendedora" -> ModoEmprendedoraConectada(firebaseServices) { modo = null }
         else -> Column(
             modifier = Modifier.fillMaxSize().background(Cream).padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.Center

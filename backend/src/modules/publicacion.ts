@@ -24,6 +24,25 @@ function texto(value: unknown, max: number) {
   exigir(typeof value === 'string' && value.trim().length > 0 && value.length <= max, 'datos-invalidos', 'Texto requerido o demasiado largo.');
   return value;
 }
+function contactoPublico(store: DocumentData): { tipo: string; valor: string } | undefined {
+  if (store.mostrarContacto !== true) return undefined;
+  const contacto = store.contacto as { tipo?: unknown; valor?: unknown } | undefined;
+  exigir(contacto && ['whatsapp', 'correo', 'web'].includes(String(contacto.tipo)) && typeof contacto.valor === 'string' && contacto.valor.trim().length > 0 && contacto.valor.length <= 254, 'datos-invalidos', 'Completar un contacto válido antes de mostrarlo.');
+  const tipo = String(contacto.tipo);
+  const valor = contacto.valor.trim();
+  if (tipo === 'whatsapp') exigir(/^\+?[0-9][0-9\s()-]{6,22}$/.test(valor), 'datos-invalidos', 'WhatsApp debe incluir un número válido con código de país.');
+  if (tipo === 'correo') exigir(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor), 'datos-invalidos', 'Correo de contacto inválido.');
+  if (tipo === 'web') {
+    try {
+      const url = new URL(valor);
+      exigir(url.protocol === 'https:' && !url.username && !url.password, 'datos-invalidos', 'El sitio de contacto debe ser HTTPS.');
+    } catch (error) {
+      if (error instanceof ErrorOperacion) throw error;
+      throw new ErrorOperacion('datos-invalidos', 'El sitio de contacto debe ser HTTPS.');
+    }
+  }
+  return { tipo, valor };
+}
 function precio(value: unknown) {
   exigir(Number.isSafeInteger(value) && Number(value) >= 0, 'datos-invalidos', 'Precio CLP entero no negativo requerido.');
   return value;
@@ -95,9 +114,11 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const sector = await tx.get(db.doc(`sectores/${texto(store.sectorId, 128)}`));
           const tipo = await tx.get(db.doc(`tiposEmprendimiento/${texto(store.tipoEmprendimientoId, 128)}`));
           exigir(sector.data()?.activo === true && tipo.data()?.activo === true, 'datos-invalidos', 'Sector o tipo inactivo.');
+          const contacto = contactoPublico(store);
           escribir.push({ ref: publica, data: {
             nombre: texto(store.nombre, 120), descripcion: texto(store.descripcion, 2000),
             sectorId: store.sectorId, tipoEmprendimientoId: store.tipoEmprendimientoId,
+            ...(contacto ? { contacto } : {}),
             estadoPublicacion: 'publicado', habilitada: true, mostrarPrecios: config.mostrarPrecios, actualizadoEn: now,
           } });
         } else {

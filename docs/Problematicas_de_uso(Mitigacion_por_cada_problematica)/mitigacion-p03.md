@@ -14,10 +14,10 @@ La aplicación debería permitir actualizar la disponibilidad con pocos pasos, i
 
 ## Lo que esta mitigación todavía no resuelve
 
-- La aplicación Android combinada que está en el repositorio usa datos de demostración guardados en memoria. No los comparte entre teléfonos ni los conserva al cerrar la app; por eso, antes de que el catálogo comprador vea cambios reales, habría que conectar ambos modos con un servidor compartido y guardar ahí los productos y las ventas.
+- Android ya conecta la cuenta emprendedora, su tienda y el catálogo privado con Firebase; edición de productos y ajustes de stock pasan por la API local. Un ajuste de stock no registra una venta: la pantalla de ventas del código anterior todavía no está conectada al nuevo repositorio. La API local debe estar ejecutándose para estas escrituras; aún no hay URL HTTPS compartida. Los borradores de producto se conservan en Firestore, pero no se publican sin una imagen validada.
 - Si el teléfono no tiene internet, los cambios guardados en ese equipo no se reflejarán de inmediato para quien mira el catálogo desde otro celular. Mostrar la hora de la última actualización y ofrecer una consulta por WhatsApp ayuda a explicar esa demora, pero no la elimina.
 - Registrar las ventas sigue dependiendo de que la emprendedora tenga un momento para tocar el botón. El diseño debe ser rápido y fácil de entender, pero no puede asegurar que cada venta se registre.
-- Si varias personas actualizan el mismo producto desde distintos teléfonos sin sincronización, podrían quedar cantidades distintas. La primera versión debería usar un teléfono principal o definir cómo se combinarán los cambios pendientes.
+- Si varias personas actualizan el mismo producto, la API detecta cambios por versión y rechaza una solicitud obsoleta; la emprendedora debe recargar y revisar antes de reintentar. No hay cola offline ni registro de venta rápido, por lo que una mala conexión sigue impidiendo actualizar desde la app.
 
 ## Comprobación de aceptación
 
@@ -30,7 +30,7 @@ La aplicación debería permitir actualizar la disponibilidad con pocos pasos, i
 
 ## Implementación en esta revisión
 
-- Esta propuesta describe tres alternativas teóricas; no se implementó ninguna en el código.
-- La opción más sencilla para comenzar sería mostrar el estado del producto y la hora de actualización. Después se podría agregar el registro rápido de ventas y la sincronización con un servidor compartido.
-- No se desplegaron cambios ni se modificaron datos del proyecto.
+- La app muestra el catálogo privado y permite ajustar stock con motivo; no implementa el botón de venta rápida, modo feria, hora entendible de última revisión ni sincronización offline descritos aquí.
+- El ajuste de stock ya persiste mediante la API local y actualiza disponibilidad pública desde la última ficha aprobada. Para que esto sea compartido, la API debe estar encendida en el mismo computador o desplegarse más adelante.
+- No se modificaron datos de Firebase ni se desplegó la API.
 

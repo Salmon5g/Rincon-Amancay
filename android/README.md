@@ -1,33 +1,42 @@
 # Aplicación Android
 
-La aplicación unificada para el equipo está en `android/app-combinada/`, desarrollada con Kotlin y Jetpack Compose. Al iniciar permite elegir modo comprador o modo emprendedora. El modo comprador lee en tiempo real desde Firestore las tiendas habilitadas y publicadas y sus productos publicados. El modo emprendedora todavía usa datos de demostración en memoria; sus cambios no se escriben en Firebase.
+La aplicación unificada del equipo está en `android/app-combinada/`. Está desarrollada con Kotlin y Jetpack Compose; permite elegir modo comprador o modo emprendedora.
 
-Para conectar el comprador, registra una aplicación Android con el identificador `com.example.amancay` en el proyecto Firebase del grupo y coloca el archivo descargado como `android/app-combinada/app/google-services.json`. Ese archivo local está excluido de Git. La lectura pública depende de que las reglas de Firestore estén publicadas y de que existan tiendas con `estadoPublicacion = publicado`, `habilitada = true`, `mostrarPrecios = true` y productos con `estadoPublicacion = publicado`. Este cliente no escribe en Firestore ni lee imágenes de Storage.
+- **Comprador:** lectura pública de tiendas y productos publicados desde Firestore.
+- **Emprendedora:** inicio con Firebase Authentication por correo/contraseña; comprueba que el acceso esté activo, incluya el rol `emprendedora` y coincida con su tienda asignada. Lee su tienda y catálogo privado desde Firestore. La ficha, creación/edición de productos, publicaciones y ajustes de stock pasan por la API autenticada.
 
-El proyecto Android anterior del comprador se conserva en la carpeta `android/` (raíz del proyecto Gradle). Mantén ambos proyectos en rutas distintas; en Windows no uses nombres que solo cambian entre mayúsculas y minúsculas.
+La API local puede usar emuladores o conectarse al proyecto Firebase real mediante Application Default Credentials. En ambos casos, Android Studio debe ejecutar la app en un emulador para usar `10.0.2.2` como dirección del computador. Sigue la guía [Conexión local de la app emprendedora](../docs/android-emprendedora-firebase.md). No uses el modo real con seeds ni pruebas automatizadas.
 
-## Abrir y ejecutar
+La carga de logos/fotos desde Android todavía no está habilitada. Guardar productos como borradores sí funciona; publicar un producto exige una imagen que el backend pueda validar en Firebase Storage. Supabase se mantiene como futuro proveedor posible, pendiente de acordar permisos y validación con el profesor; una ruta de Supabase no es aceptada todavía por el validador de publicación.
+
+El proyecto Android comprador anterior se conserva en `android/` como proyecto Gradle independiente. No abras ni edites ese proyecto para probar la aplicación unificada.
+
+## Abrir y compilar
 
 1. Abre `android/app-combinada` en Android Studio.
-2. Espera a que Gradle sincronice el proyecto.
-3. Selecciona la configuración `app` y ejecútala en un emulador o dispositivo Android.
+2. Espera que Gradle sincronice el proyecto.
+3. Coloca el archivo local `google-services.json` en `android/app-combinada/app/`; debe registrar el ID `com.example.amancay`. El archivo está excluido de Git.
+4. Selecciona la configuración `app` y ejecútala en un emulador Android.
 
-Desde PowerShell puedes compilar la app:
+Desde PowerShell:
 
 ```powershell
 cd android/app-combinada
 .\gradlew.bat :app:assembleDebug --console=plain
 ```
 
-El APK de depuración se genera en `android/app-combinada/app/build/outputs/apk/debug/app-debug.apk`.
+El APK de depuración queda en `android/app-combinada/app/build/outputs/apk/debug/app-debug.apk`.
 
-## Organización
+## Organización del código
 
-- `app/src/main/java/com/example/amancay/MainActivity.kt`: navegación y coordinación de modos.
-- `app/src/main/java/com/example/amancay/buyer/`: catálogo comprador, filtros y detalles.
-- `app/src/main/java/com/example/amancay/data/AmancayData.kt`: modelos y repositorio de demostración del modo emprendedora.
-- `app/src/main/java/com/example/amancay/data/CatalogoCompradorRepository.kt`: repositorio de solo lectura de Firestore para el catálogo comprador.
-- `app/src/main/java/com/example/amancay/ui/`: pantallas, componentes, transiciones y tema visual.
-- `app/src/main/res/`: recursos e íconos.
+- `app/src/main/java/com/example/amancay/MainActivity.kt`: inicialización Firebase y selección de modo.
+- `app/src/main/java/com/example/amancay/buyer/`: catálogo comprador.
+- `app/src/main/java/com/example/amancay/emprendedora/ModoEmprendedoraConectada.kt`: ingreso y edición de la tienda.
+- `app/src/main/java/com/example/amancay/emprendedora/ProductosEmprendedoraPanel.kt`: fichas, publicación/retirada y ajuste de stock.
+- `app/src/main/java/com/example/amancay/data/CuentaEmprendedoraRepository.kt`: cuenta, permiso y tienda.
+- `app/src/main/java/com/example/amancay/data/ProductosEmprendedoraRepository.kt`: lecturas de productos/catálogos y solicitudes a la API.
+- `app/src/main/java/com/example/amancay/data/ApiEmprendedoraClient.kt`: cliente HTTP autenticado con ID token de Firebase.
+- `app/src/main/java/com/example/amancay/data/FirebaseClientServices.kt`: selección de Firebase real o emuladores.
+- `app/src/main/java/com/example/amancay/ui/`: tema visual y componentes compartidos.
 
-Para acuerdos de campos, permisos y operaciones compartidas con la web, consulta [contratos](../contratos/README.md). Para instrucciones generales, consulta [arranque por equipo](../docs/arranque-equipos.md).
+Los contratos de datos y permisos están en [contratos](../contratos/README.md). La API local y su configuración real se describen en [esta guía](../docs/admin-firebase-real-api-local.md).

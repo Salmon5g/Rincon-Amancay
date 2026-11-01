@@ -13,11 +13,11 @@ Este documento registra una separación gradual entre las pantallas y Firebase. 
 
 ### App Android unificada
 
-- `AmancayRepository` declara el acceso que usan los modos comprador y emprendedora: catálogo, ventas, preferencias, borrador guardado, invitaciones de feria y acciones asociadas.
-- `DemoAmancayRepository` implementa el contrato con datos en memoria. `crearRepositorioDemostracion()` es el punto actual de composición.
-- Las pantallas reciben el repositorio por parámetro. `DraftState` permanece como estado del formulario Android y no se mezcla con el repositorio persistente.
-- El modelo `Product` aún contiene `Uri` y `Bitmap` para la interfaz; una futura implementación remota debe subir la imagen al proveedor de archivos y persistir solo su referencia, no esos objetos Android.
-- La app continúa siendo una demostración local: no conserva esos datos al reiniciar ni sincroniza entre dispositivos.
+- El modo comprador usa `CatalogoCompradorRepository` con Firestore para leer las proyecciones públicas.
+- El modo emprendedora usa `CuentaEmprendedoraRepository` para Auth y tienda, `ProductosEmprendedoraRepository` para lecturas privadas y `ApiEmprendedoraClient` para las operaciones de escritura autorizadas.
+- La función anterior `EmprendedoraApp` y `DemoAmancayRepository` permanecen como código legado de la experiencia previa; `MainActivity` ya no los utiliza como modo emprendedora activo.
+- `DraftState` y el modelo `Product` legado todavía pertenecen a las pantallas antiguas de venta/ferias. El nuevo flujo de catálogo guarda borradores y stock en Firebase, pero todavía no registra ventas ni pone en cola operaciones sin conexión.
+- Los objetos de imagen `Uri` y `Bitmap` no se guardan en Firestore. La app nueva aún no sube imágenes; la futura capa de medios necesita un proveedor y una política de verificación compatibles con el backend antes de persistir una referencia.
 
 ## Qué sigue acoplado a Firebase
 
@@ -36,4 +36,4 @@ Este documento registra una separación gradual entre las pantallas y Firebase. 
 
 ## Límite de este avance
 
-La separación cubre el catálogo público web y el contrato de datos de la app Android. Facilita cambiar la persistencia de esos flujos, pero no elimina la adaptación de login, permisos, administración, API, seguridad, carga de imágenes ni configuración de despliegue. No se tocaron los datos o ajustes de Firebase, no se usaron las credenciales de Supabase y no se desplegó nada.
+La separación cubre el catálogo público web y los repositorios de comprador/emprendedora Android, pero no desacopla Auth, permisos, administración, API ni reglas de seguridad de Firebase. Tampoco se implementó una conexión Supabase. La API y Firebase real pueden ejecutarse localmente con ADC; no se desplegó nada ni se modificaron reglas/datos en Firebase.

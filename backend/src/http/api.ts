@@ -19,6 +19,7 @@ import { accionesAdministracion } from '../modules/administracion-plataforma.ts'
 import type { AccionAdministracion, crearAdministracionPlataforma } from '../modules/administracion-plataforma.ts';
 import { accionesFeria } from '../modules/ferias.ts';
 import type { AccionFeria, crearFerias } from '../modules/ferias.ts';
+import type { crearEdicionTiendaEmprendedora } from '../modules/tienda-emprendedora.ts';
 
 const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'];
 const status: Record<string, number> = {
@@ -58,7 +59,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -78,7 +79,8 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const accionAsociacion = asociaciones ? accionesAsociacion.find(a => req.url === `/api/v1/${a}`) as AccionAsociacion | undefined : undefined;
       const accionAdministracion = administracion ? accionesAdministracion.find(a => req.url === `/api/v1/${a}`) as AccionAdministracion | undefined : undefined;
       const accionFeria = ferias ? accionesFeria.find(a => req.url === `/api/v1/${a}`) as AccionFeria | undefined : undefined;
-      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      const esEdicionTiendaEmprendedora = req.url === '/api/v1/editarTiendaEmprendedora' && editarTiendaEmprendedora !== undefined;
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' });
         return res.end();
@@ -97,7 +99,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       }
       if(sesion && !await sesion(uid,authTime)) throw new ErrorHttp(401,'no-autenticado','Iniciar una nueva sesión después de la reactivación.');
       const input = await body(req);
-      const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : accionAsociacion ? await asociaciones!(accionAsociacion,{uid},input) : accionAdministracion ? await administracion!(accionAdministracion,{uid},input) : accionFeria ? await ferias!(accionFeria,{uid},input) : esAlta ? await alta!({uid}, input)
+      const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : accionAsociacion ? await asociaciones!(accionAsociacion,{uid},input) : accionAdministracion ? await administracion!(accionAdministracion,{uid},input) : accionFeria ? await ferias!(accionFeria,{uid},input) : esEdicionTiendaEmprendedora ? await editarTiendaEmprendedora!({uid},input) : esAlta ? await alta!({uid}, input)
         : esDesactivacion ? await desactivar!({uid}, input)
         : esStock ? await stock!({uid}, input)
         : accionProducto ? await productos!(accionProducto, {uid}, input)

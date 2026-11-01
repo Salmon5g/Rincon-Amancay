@@ -1,6 +1,6 @@
 # Demo del administrador contra Firebase real
 
-Este modo usa Authentication y Firestore del proyecto `rincon-amancay` y ejecuta la API en el computador del responsable. No usa emuladores ni requiere Cloud Run/Blaze para esa demo local. La API escucha solo en `127.0.0.1`; otros computadores no pueden conectarse. Para una URL pública y que el equipo la use desde distintos dispositivos, se debe desplegar en Cloud Run, lo que requiere vincular facturación.
+Este modo usa Authentication, Firestore y Firebase Admin del proyecto `rincon-amancay` y ejecuta la API en el computador del responsable. No usa emuladores ni requiere Blaze para esa ejecución local. La API escucha solo en `127.0.0.1`; otros computadores no pueden conectarse directamente. El proveedor para una futura URL HTTPS compartida aún debe decidirse por el grupo; se ha mencionado Railway u otro servicio compatible. No desplegar en Cloud Run sin un nuevo acuerdo sobre costos.
 
 ## Preparar la identidad local
 
@@ -53,14 +53,18 @@ En **Administradores**, se puede otorgar el rol a una cuenta de Authentication e
 
 Las reglas locales permiten que un administrador lea también los valores inactivos y mantienen bloqueadas las escrituras directas de cualquier perfil. Publica las reglas revisadas de `firebase/firestore.rules` antes de administrar catálogos desde la web real. La API usa Firebase Admin y requiere permisos IAM de la identidad ADC. El CRUD de catálogos no usa Storage; no hay que crear un bucket para estas operaciones.
 
-La vista pública de asociaciones (RF-ASO-03) y la página pública de ferias siguen pendientes. Los logos de asociación y las imágenes de feria se guardan como URL HTTPS; estas pantallas todavía no cargan archivos en Storage. La política de navegación se almacena, pero aún no es aplicada por los clientes comprador. La web todavía no integra los flujos de productos, stock e imágenes destinados a la emprendedora.
+La vista pública de asociaciones (RF-ASO-03) y la página pública de ferias siguen pendientes. Los logos de asociación y las imágenes de feria se guardan como URL HTTPS; estas pantallas todavía no cargan archivos en Storage. La política de navegación se almacena, pero aún no es aplicada por los clientes comprador. Android ahora integra Authentication, edición de tienda de texto, productos y ajustes de stock con la API local; publicación de producto requiere imagen y no hay carga Android todavía. La web aún no integra el portal de productos y stock de la emprendedora.
+
+## Uso desde Android Emulator en el mismo computador
+
+La aplicación unificada puede llamar esta misma API desde un emulador Android usando `http://10.0.2.2:8080/api/v1/`; el alias `10.0.2.2` apunta al computador anfitrión. Configura `amancay.firebase.emulators=false` y `amancay.api.baseUrl=http://10.0.2.2:8080/api/v1/` en el `local.properties` ignorado de `android/app-combinada`. La app además se conecta directamente a Authentication/Firestore reales mediante `google-services.json`. Ver [la guía completa de Android](android-emprendedora-firebase.md).
 
 ## Uso desde otro computador
 
-La API local escucha solo en `127.0.0.1`. Por eso, `http://localhost:8080` solo funciona desde el mismo computador donde corre la API; nunca reemplazarlo por una IP de red ni exponer ese puerto. Para una prueba local, cada computador debe iniciar su propia API con identidad ADC autorizada en el proyecto. Para compartir un único backend entre el equipo, desplegar el servicio en Cloud Run y usar su URL HTTPS, con facturación y permisos de servicio revisados.
+La API local escucha solo en `127.0.0.1`. Por eso, `http://localhost:8080` solo funciona desde el mismo computador donde corre la API; nunca reemplazarlo por una IP de red ni exponer ese puerto. Para una prueba local, cada computador debe iniciar su propia API con identidad ADC autorizada en el proyecto. Para compartir un único backend entre el equipo, desplegar más adelante en el proveedor HTTPS que el grupo elija (posiblemente Railway) y revisar antes credenciales, IAM, costos y límites.
 
 ## Datos reales y cuidado operativo
 
 Las operaciones modifican el proyecto real y el backend usa Admin SDK, que no está limitado por reglas Firestore. Empieza con una invitación controlada, revisa sus datos en consola y borra datos solo mediante un procedimiento administrativo. No ejecutar seeds, scripts demo ni pruebas automatizadas contra este modo. No expongas el puerto local a la red ni publiques `.env`.
 
-Para una demo compartida desde otros equipos, configura Cloud Run y los permisos de servicio siguiendo [entorno compartido](entorno-compartido.md). Eso requiere revisar facturación y despliegue por separado.
+El despliegue público de la API permanece pendiente de una decisión del grupo y de revisar proveedor, IAM, secretos, costos y URL HTTPS. La web publicada no podrá ejecutar operaciones administrativas hasta que use esa URL. El modo local permite trabajar y verificar cambios en un solo computador.

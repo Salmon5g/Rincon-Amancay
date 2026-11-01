@@ -1,6 +1,6 @@
 # Operaciones de servidor
 
-API HTTP autenticada en `src/http/api.ts` con publicación, cuentas, productos, stock e imágenes. `npm run dev` inicia `src/server.ts` en puerto 8787, solo emuladores. La entrada `src/server-compartido.ts` y Dockerfile están preparados para la propuesta Cloud Run; no están desplegados. Ver [arranque de equipos](../docs/arranque-equipos.md).
+API HTTP autenticada en `src/http/api.ts` con publicación, cuentas, productos, stock e imágenes. `npm run dev` inicia `src/server.ts` en puerto 8787, solo emuladores. `src/server-compartido.ts` ejecuta la API local contra Firebase real usando ADC y puerto 8080. El proveedor de despliegue público (se ha conversado Railway) aún no está elegido ni configurado. Ver [arranque de equipos](../docs/arranque-equipos.md).
 
 `src/config/` separa conexiones y configuración HTTP; `src/modules/` implementa operaciones por función; `src/montar-api.ts` conecta módulos y servidor. `tests/` comprueba permisos y consistencia. `src/shared/` queda reservado para futuras utilidades comunes.
 

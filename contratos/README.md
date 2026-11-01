@@ -6,6 +6,8 @@ También está implementada la [creación y edición de productos y variantes](0
 
 Los [ajustes de stock](08-ajustes-stock.md) registran cambios con historial privado y disponibilidad sincronizada desde la ficha aprobada. Ver [disponibilidad e imágenes](11-disponibilidad-e-imagenes.md) para compatibilidad con datos antiguos y procesamiento de fotos.
 
+La app Android conectada usa la API autenticada para editar la [ficha de la tienda propia](17-edicion-tienda-emprendedora.md), y para crear/editar productos, publicar/retirar y ajustar stock mediante los contratos 03, 07, 08 y 11. Esta conexión local no significa que la API esté desplegada.
+
 La [desactivación de emprendedoras](09-desactivacion-cuentas.md) coordina el bloqueo de gestión, catálogo y Authentication, con reintentos para fallos parciales.
 
 La [administración de catálogos](12-administracion-catalogos.md) permite gestionar sectores, categorías, tipos de emprendimiento y tipos de producto mediante la API autenticada. Las definiciones de tipos de producto son versionadas para preservar las fichas existentes.

@@ -1,6 +1,8 @@
 # Propuesta del entorno compartido — 9 de octubre de 2026
 
-Esta es una propuesta revisable, no un despliegue ni una autorización de gasto. El último estado de consola registrado es el del 9 de octubre en firebase-desarrollo.md. Los emuladores y sus datos ficticios siguen siendo el entorno ejecutable; esta revisión de código no modificó Firebase real.
+Este documento conserva una propuesta técnica del 9 de octubre; no es un despliegue ni una autorización de gasto. Su descripción de código y consola quedó desactualizada por los avances posteriores.
+
+> **Estado actualizado (31 de octubre):** el grupo decidió trabajar localmente con Firebase/Firestore y una API Node local mientras termina los clientes. Cloud Run descrito abajo fue una recomendación anterior y **no es una decisión vigente**. El hosting público de la API todavía no está elegido; el grupo ha considerado Railway. Para una prueba controlada contra datos reales, se usa [`start:compartido:local` con ADC](admin-firebase-real-api-local.md); no se desplegó ningún servicio por este documento.
 
 ## Decisión recomendada
 
