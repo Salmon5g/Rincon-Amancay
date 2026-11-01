@@ -7,7 +7,7 @@ La web está publicada en [rincon-amancay.web.app](https://rincon-amancay.web.ap
 ## Estado del proyecto
 
 - **Web:** una aplicación Nuxt 4, Vue y TypeScript con área pública de comprador y panel de administración. El panel permite gestionar emprendedoras, catálogos, asociaciones, ferias y cuentas administradoras mediante API autenticada en modo `real-api`; también guarda la preferencia de navegación del comprador. La web y Android todavía no aplican esa preferencia; la navegación libre sigue siendo el valor seguro. Las invitaciones a ferias se registran para coordinación manual y no envían mensajes. La página pública de ferias, cambio administrativo de credenciales y carga de imágenes a Storage siguen pendientes. La publicación de Hosting debe reconstruirse con `real-api` y una URL HTTPS para habilitar estas operaciones desde el sitio público.
-- **Android:** aplicación unificada Kotlin y Jetpack Compose en `android/app-combinada`, con entrada por modo comprador o emprendedora. Ambos modos usan el mismo catálogo durante la ejecución; el comprador busca por categoría y disponibilidad. Los datos creados en esta demo se mantienen en memoria y no se sincronizan entre dispositivos ni persisten al cerrar la app. El proyecto comprador anterior se conserva en `android/`.
+- **Android:** aplicación unificada Kotlin y Jetpack Compose en `android/app-combinada`, con entrada por modo comprador o emprendedora. El modo comprador lee tiendas y productos publicados desde Firestore en tiempo real y es de solo lectura. El modo emprendedora conserva por ahora un repositorio de demostración en memoria y no escribe en Firebase. El proyecto comprador anterior se conserva en `android/`.
 - **Backend:** API HTTP autenticada con operaciones de cuentas, invitaciones, catálogos, asociaciones, ferias, configuración de acceso y administración de roles, además de publicación, productos, stock e imágenes. Puede ejecutarse con emuladores locales o contra Firebase real mediante ADC; la API compartida todavía debe estar activa o desplegada para que otros equipos la consuman.
 - **Firebase y modelo compartido:** reglas de Firestore y Storage, índices, datos de prueba y contratos que documentan entidades, permisos y operaciones del proyecto.
 
@@ -46,9 +46,9 @@ cd android/app-combinada
 
 El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Migración a Firebase real
+## Conexión Android a Firebase
 
-El proyecto comprador anterior en `android/` puede conectarse a Firebase real según [Firebase real (nube)](docs/firebase-nube.md). La app unificada de `android/app-combinada` sigue siendo una demo local en memoria; esa guía todavía no configura su catálogo.
+La app unificada usa el proyecto Firebase configurado por `android/app-combinada/app/google-services.json`, archivo local ignorado por Git. Debe corresponder al ID Android `com.example.amancay`. El modo comprador solo puede mostrar las proyecciones públicas permitidas por las reglas de Firestore; la guía [Arranque por equipo](docs/arranque-equipos.md#2-equipo-app-android) documenta las condiciones de publicación. El modo emprendedora aún requiere integrar su acceso y operaciones para sincronizar cambios con Firestore.
 
 ## Estructura del repositorio
 

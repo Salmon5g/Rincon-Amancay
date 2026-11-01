@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -36,38 +37,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.amancay.data.AmancayRepository
-import com.example.amancay.data.Product
-import com.example.amancay.data.ProductType
+import com.example.amancay.data.CatalogoCompradorRepository
+import com.example.amancay.data.ProductoCatalogoComprador
 import java.text.NumberFormat
 import java.util.Locale
 
 @Composable
-fun ModoCompradorScreen(repositorio: AmancayRepository, alVolver: () -> Unit) {
+fun ModoCompradorScreen(repositorio: CatalogoCompradorRepository, alVolver: () -> Unit) {
     val productos by repositorio.productos.collectAsState()
+    val cargando by repositorio.cargando.collectAsState()
+    val error by repositorio.error.collectAsState()
     var busqueda by remember { mutableStateOf("") }
-    var tipoSeleccionado by remember { mutableStateOf<ProductType?>(null) }
-    var productoSeleccionado by remember { mutableStateOf<Product?>(null) }
+    var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
+    var productoSeleccionado by remember { mutableStateOf<ProductoCatalogoComprador?>(null) }
 
     BackHandler(onBack = alVolver)
 
-    val disponibles = remember(productos) {
-        productos.filter { producto ->
-            producto.publicado && !producto.esBorrador &&
-                (producto.stockTotal() > 0 || producto.disponibleEncargo)
-        }
+    val categorias = remember(productos) {
+        productos.map { it.categoriaNombre }.filter(String::isNotBlank).distinct().sorted()
     }
-    val tipos = ProductType.entries
-    val filtrados = remember(disponibles, busqueda, tipoSeleccionado) {
-        disponibles.filter { producto ->
-            val coincideTipo = tipoSeleccionado == null || producto.tipo == tipoSeleccionado
+    val filtrados = remember(productos, busqueda, categoriaSeleccionada) {
+        productos.filter { producto ->
+            val coincideTipo = categoriaSeleccionada == null || producto.categoriaNombre == categoriaSeleccionada
             val texto = busqueda.trim()
             val coincideBusqueda = texto.isBlank() || listOfNotNull(
                 producto.nombre,
-                producto.tipo?.label,
-                producto.material,
-                producto.tamano,
-                producto.cuidados
+                producto.descripcion,
+                producto.categoriaNombre,
+                producto.tipoProductoNombre,
+                producto.tiendaNombre,
+                producto.unidadVenta,
+                producto.modalidad,
+                *producto.atributosEspecificos.values.toTypedArray()
             ).any { it.contains(texto, ignoreCase = true) }
             coincideTipo && coincideBusqueda
         }
@@ -107,16 +108,29 @@ fun ModoCompradorScreen(repositorio: AmancayRepository, alVolver: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FiltroProducto("Todos", tipoSeleccionado == null) { tipoSeleccionado = null }
-                tipos.forEach { tipo ->
-                    FiltroProducto(tipo.label, tipoSeleccionado == tipo) { tipoSeleccionado = tipo }
+                FiltroProducto("Todos", categoriaSeleccionada == null) { categoriaSeleccionada = null }
+                categorias.forEach { categoria ->
+                    FiltroProducto(categoria, categoriaSeleccionada == categoria) { categoriaSeleccionada = categoria }
                 }
             }
             Spacer(Modifier.height(8.dp))
             Text(if (filtrados.size == 1) "1 producto" else "${filtrados.size} productos", style = MaterialTheme.typography.labelMedium, color = AmancayTintaSuave)
             Spacer(Modifier.height(6.dp))
+            if (error != null) {
+                MensajeCatalogo(error!!)
+                Spacer(Modifier.height(6.dp))
+            }
             when {
-                disponibles.isEmpty() -> MensajeCatalogo("Aún no hay productos disponibles para comprar.")
+                cargando && productos.isEmpty() -> Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(color = AmancayBordo)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Cargando catálogo…", color = AmancayTintaSuave)
+                }
+                productos.isEmpty() -> MensajeCatalogo("Aún no hay productos publicados para comprar.")
                 filtrados.isEmpty() -> MensajeCatalogo("No hay productos que coincidan con tu búsqueda o filtro.")
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -153,13 +167,13 @@ private fun FiltroProducto(texto: String, seleccionado: Boolean, alSeleccionar: 
 }
 
 @Composable
-private fun TarjetaProductoEmprendedora(producto: Product, alAbrir: () -> Unit) {
+private fun TarjetaProductoEmprendedora(producto: ProductoCatalogoComprador, alAbrir: () -> Unit) {
     TarjetaAmancay(modifier = Modifier.clickable(onClick = alAbrir)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MiniaturaAmancay("🏺")
+            MiniaturaAmancay("🛍️")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                EtiquetaCategoria(producto.tipo?.label.orEmpty())
+                EtiquetaCategoria(producto.categoriaNombre.ifBlank { producto.tipoProductoNombre })
                 Text(
                     producto.nombre,
                     style = MaterialTheme.typography.titleMedium,
@@ -168,8 +182,10 @@ private fun TarjetaProductoEmprendedora(producto: Product, alAbrir: () -> Unit) 
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
+                Text(producto.tiendaNombre, style = MaterialTheme.typography.bodySmall, color = AmancayTintaSuave)
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    estadoProducto(producto),
+                    etiquetaDisponibilidad(producto.estadoDisponibilidad),
                     style = MaterialTheme.typography.labelMedium,
                     color = AmancayVerdeTexto
                 )
@@ -188,21 +204,26 @@ private fun MensajeCatalogo(texto: String) {
 }
 
 @Composable
-private fun DialogoDetalleProducto(producto: Product, alCerrar: () -> Unit) {
+private fun DialogoDetalleProducto(producto: ProductoCatalogoComprador, alCerrar: () -> Unit) {
     AlertDialog(
         onDismissRequest = alCerrar,
         title = { Text(producto.nombre, fontWeight = FontWeight.Bold, color = AmancayTinta) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(producto.tipo?.label.orEmpty(), color = AmancayBordo)
-                if (producto.material.isNotBlank()) Text("Material o ingredientes: ${producto.material}")
-                if (producto.tamano.isNotBlank()) Text("Tamaño o presentación: ${producto.tamano}")
-                if (producto.cuidados.isNotBlank()) Text("Detalles: ${producto.cuidados}")
-                Text(estadoProducto(producto), color = AmancayVerdeTexto)
+                Text(producto.tiendaNombre, color = AmancayBordo)
+                Text(producto.categoriaNombre.ifBlank { producto.tipoProductoNombre }, color = AmancayTintaSuave)
+                if (producto.descripcion.isNotBlank()) Text(producto.descripcion)
+                producto.atributosEspecificos.forEach { (nombre, valor) -> Text("$nombre: $valor") }
+                if (producto.unidadVenta.isNotBlank()) Text("Venta: ${producto.unidadVenta}")
+                if (producto.modalidad.isNotBlank()) Text("Modalidad: ${producto.modalidad}")
+                Text(etiquetaDisponibilidad(producto.estadoDisponibilidad), color = AmancayVerdeTexto)
+                if (producto.variantes.isEmpty() && producto.precioBase != null) {
+                    Text(formatoPrecio(producto.precioBase), color = AmancayBordo)
+                }
                 producto.variantes.forEach { variante ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(variante.nombre.ifBlank { "Variante" }, modifier = Modifier.weight(1f))
-                        Text(formatoPrecio(variante.precioLong()), color = AmancayBordo)
+                        Text(variante.opciones.values.joinToString(" · ").ifBlank { "Opción" }, modifier = Modifier.weight(1f))
+                        Text(variante.precio?.let(::formatoPrecio) ?: "Consultar", color = AmancayBordo)
                     }
                 }
             }
@@ -212,15 +233,17 @@ private fun DialogoDetalleProducto(producto: Product, alCerrar: () -> Unit) {
     )
 }
 
-private fun estadoProducto(producto: Product): String = when {
-    producto.stockTotal() > 0 -> "Disponible"
-    producto.disponibleEncargo -> "Disponible a pedido"
-    else -> "Agotado"
+private fun etiquetaDisponibilidad(estado: String): String = when (estado) {
+    "disponible" -> "Disponible"
+    "a_pedido" -> "Disponible a pedido"
+    "agotado" -> "Agotado"
+    "no_disponible" -> "No disponible"
+    else -> "Consultar disponibilidad"
 }
 
-private fun precioProducto(producto: Product): String {
-    val precios = producto.variantes.map { it.precioLong() }.filter { it > 0 }
-    if (precios.isEmpty()) return "Consultar precio"
+private fun precioProducto(producto: ProductoCatalogoComprador): String {
+    val precios = producto.variantes.mapNotNull { it.precio }.filter { it > 0 }
+    if (precios.isEmpty()) return producto.precioBase?.let(::formatoPrecio) ?: "Consultar precio"
     val minimo = precios.minOrNull() ?: return "Consultar precio"
     return if (precios.distinct().size > 1) "Desde ${formatoPrecio(minimo)}" else formatoPrecio(minimo)
 }

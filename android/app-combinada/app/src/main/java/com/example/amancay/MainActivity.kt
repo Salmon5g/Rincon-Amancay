@@ -34,6 +34,7 @@ import com.example.amancay.buyer.ModoCompradorScreen
 import com.example.amancay.data.AmancayRepository
 import com.example.amancay.data.DraftState
 import com.example.amancay.data.Product
+import com.example.amancay.data.crearCatalogoCompradorFirebase
 import com.example.amancay.data.crearRepositorioDemostracion
 import com.example.amancay.ui.*
 import com.example.amancay.ui.theme.AmancayTheme
@@ -60,9 +61,13 @@ class MainActivity : FragmentActivity() {
 @Composable
 fun AmancayApp() {
     val repositorio = remember { crearRepositorioDemostracion() }
+    val catalogoComprador = remember { crearCatalogoCompradorFirebase() }
+    DisposableEffect(catalogoComprador) {
+        onDispose { catalogoComprador.cerrar() }
+    }
     var modo by remember { mutableStateOf<String?>(null) }
     when (modo) {
-        "comprador" -> ModoCompradorScreen(repositorio) { modo = null }
+        "comprador" -> ModoCompradorScreen(catalogoComprador) { modo = null }
         "emprendedora" -> EmprendedoraApp(repositorio, onExit = { modo = null })
         else -> Column(
             modifier = Modifier.fillMaxSize().background(Cream).padding(horizontal = 24.dp),
