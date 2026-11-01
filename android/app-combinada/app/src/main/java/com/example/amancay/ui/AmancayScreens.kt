@@ -577,7 +577,9 @@ fun PhotoStep(
     onTakePhoto: () -> Unit, onPickPhoto: () -> Unit,
     onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit,
     showSaveExit: Boolean = true,
-    imagenExistente: Boolean = false
+    imagenExistente: Boolean = false,
+    imagenPrevia: Bitmap? = null,
+    mensajeImagenExistente: String? = null
 ) {
     StepScaffold("Paso 1 de 5", "Primero, una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit) {
         Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
@@ -585,7 +587,7 @@ fun PhotoStep(
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     ProductImage(
                         fallback = Fig.VASE_BIG, size = 170.dp,
-                        uri = draft.photoUri, bitmap = draft.photoBitmap, hasPhoto = draft.fotoLista
+                        uri = draft.photoUri, bitmap = draft.photoBitmap ?: imagenPrevia, hasPhoto = draft.fotoLista || imagenExistente
                     )
                     Spacer(Modifier.height(10.dp))
                     Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
@@ -597,8 +599,8 @@ fun PhotoStep(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        if (draft.fotoLista) "La foto está seleccionada en este teléfono; todavía no se sube a la nube."
-                        else "La referencia se conservará. Su vista previa y reemplazo requieren habilitar el almacenamiento.",
+                            if (draft.fotoLista) "La foto está seleccionada. Se guardará junto con el borrador."
+                            else mensajeImagenExistente ?: "Ya hay una foto guardada de forma privada. Puedes agregar otra imagen aquí.",
                         fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
                     )
                 }
@@ -627,13 +629,11 @@ fun PhotoStep(
                 }
             }
         }
-        if (!imagenExistente || draft.fotoLista) {
-            Spacer(Modifier.height(16.dp))
-            PrimaryButton("Usar cámara", onTakePhoto)
-            Spacer(Modifier.height(10.dp))
-            OutlineButton("Elegir galería", onPickPhoto)
-            Spacer(Modifier.height(8.dp))
-        }
+        Spacer(Modifier.height(16.dp))
+        PrimaryButton("Usar cámara", onTakePhoto)
+        Spacer(Modifier.height(10.dp))
+        OutlineButton("Elegir galería", onPickPhoto)
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -796,7 +796,8 @@ fun ProductsScreen(
     onSettings: (ShopSettings) -> Unit,
     mostrarEliminar: Boolean = true,
     onAccionPublicacion: ((Product) -> Unit)? = null,
-    onAjustarStock: ((Product) -> Unit)? = null
+    onAjustarStock: ((Product) -> Unit)? = null,
+    mensajeEliminar: ((String) -> String)? = null
 ) {
     var tab by remember { mutableStateOf(0) }
     var toDelete by remember { mutableStateOf<Product?>(null) }
@@ -901,7 +902,8 @@ fun ProductsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                         Text("¿Eliminar producto?", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
                         Text(
-                            "Se eliminará \"${p.nombre}\" de tu tienda. Esta acción no se puede deshacer.",
+                            mensajeEliminar?.invoke(p.nombre)
+                                ?: "Se eliminará \"${p.nombre}\" de tu tienda. Esta acción no se puede deshacer.",
                             fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(16.dp))
@@ -925,13 +927,26 @@ fun ProductsScreen(
 // ---------- VISTA PUBLICA ----------
 
 @Composable
-fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () -> Unit) {
+fun PreviewCatalogScreen(
+    producto: Product?,
+    onShare: () -> Unit,
+    onContact: () -> Unit,
+    privateImageBitmap: Bitmap? = null,
+    privateImageLoading: Boolean = false,
+    privateImageError: String? = null,
+    onRetryPrivateImage: () -> Unit = {},
+    esVistaPrivada: Boolean = false
+) {
     val p = producto
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(8.dp))
         Text("VISTA PÚBLICA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.fillMaxWidth())
         Text("Así ven tu catálogo", fontSize = 30.sp, color = Dark, modifier = Modifier.fillMaxWidth())
         Text("Revisa cómo se muestra tu tienda antes de compartirla.", fontSize = 15.sp, color = Muted, modifier = Modifier.fillMaxWidth())
+        if (esVistaPrivada) {
+            Spacer(Modifier.height(8.dp))
+            Text("VISTA PRIVADA · Solo tú la ves hasta publicar", fontSize = 13.sp, color = Wine, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+        }
         Spacer(Modifier.height(14.dp))
         var showShare by remember { mutableStateOf(false) }
         val link = "https://rincon-amancay.tienda"
@@ -945,12 +960,21 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
                     .clip(RoundedCornerShape(24.dp))
                     .background(CardPink)
             ) {
-                if (p.tieneFoto && (p.photoBitmap != null || p.photoUri != null)) {
+                val bitmap = privateImageBitmap ?: p.photoBitmap
+                if (p.tieneFoto && (bitmap != null || p.photoUri != null)) {
                     ProductImage(
                         fallback = Fig.VASE_HERO, size = 210.dp,
-                        uri = p.photoUri, bitmap = p.photoBitmap, hasPhoto = true,
+                        uri = p.photoUri, bitmap = bitmap, hasPhoto = true,
                         modifier = Modifier.fillMaxWidth(), corner = 24.dp
                     )
+                } else if (p.tieneFoto && privateImageLoading) {
+                    CircularProgressIndicator(color = Wine)
+                } else if (p.tieneFoto) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("📷", fontSize = 36.sp)
+                        Text("No se pudo mostrar la imagen guardada", color = Muted, fontSize = 13.sp)
+                        if (privateImageError != null) TextButton(onClick = onRetryPrivateImage) { Text("Reintentar", color = Wine) }
+                    }
                 } else {
                     Image(
                         painter = painterResource(Fig.VASE_HERO), contentDescription = null,
@@ -982,10 +1006,18 @@ fun PreviewCatalogScreen(producto: Product?, onShare: () -> Unit, onContact: () 
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Tu tienda está visible", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark)
-                    Text("Comparte el enlace cuando quieras.", fontSize = 13.sp, color = Muted)
-                    Spacer(Modifier.height(10.dp))
-                    OutlineButton("Compartir", { showShare = true })
+                    Text(
+                        if (p.publicado) "Tu producto está visible" else "Tu producto aún no está publicado",
+                        fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark
+                    )
+                    Text(
+                        if (p.publicado) "Comparte el enlace cuando quieras." else "Solo tú puedes revisar esta vista. Publícalo cuando esté listo.",
+                        fontSize = 13.sp, color = Muted
+                    )
+                    if (p.publicado) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlineButton("Compartir", { showShare = true })
+                    }
                 }
             }
             if (showShare) {

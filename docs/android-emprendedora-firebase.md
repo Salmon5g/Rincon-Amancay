@@ -68,8 +68,8 @@ La app usa Authentication Emulator en `9099`, Firestore Emulator en `8080` y la 
 
 ## Alcance de imágenes y funciones pendientes
 
-La app todavía no carga fotos ni logo. Las tiendas pueden publicarse sin logo; la API no permite publicar un producto sin una imagen guardada y validada en Firebase Storage. El formulario deja crear y editar borradores, pero el botón de publicación se mantiene bloqueado cuando no existe una imagen válida.
+La app todavía no carga fotos ni logo. Las tiendas pueden publicarse sin logo. El backend compartido local ya acepta las rutas de carga a Supabase para logo e imágenes de producto y valida el original al publicar. El formulario Android deja crear/editar borradores, pero aún no llama esas rutas; por eso publicar un producto desde Android sigue bloqueado hasta conectar la selección y carga de imagen.
 
-Se dejó el límite explícito para la futura integración Supabase: la app necesitará un adaptador de medios, un campo de referencia acordado para logos/fotos y una verificación del lado servidor compatible con esa referencia. No se acepta todavía una URL o ruta de Supabase en `imagenes`; el backend actual solo valida objetos de Firebase Storage. La política y credenciales de carga deben acordarse antes de implementar el proveedor. No poner una clave `service_role` en Android ni en Git.
+El modo emulador mantiene Firebase Storage. El modo compartido local usa las políticas y rutas de Supabase del contrato 05. No poner la contraseña de la cuenta técnica ni una clave `service_role` en Android, Nuxt o Git. La adaptación de web/Android para mostrar las rutas públicas `catalogo/...` también queda pendiente.
 
-La autenticación de emprendedoras utiliza correo y contraseña asignados por la administración, con desbloqueo biométrico opcional por dispositivo. El registro de ventas, las invitaciones a ferias y la carga de imágenes no forman parte de esta integración todavía.
+La autenticación de emprendedoras utiliza correo y contraseña asignados por la administración, con desbloqueo biométrico opcional por dispositivo. El registro de ventas y las invitaciones a ferias no forman parte de esta integración todavía.

@@ -26,7 +26,7 @@ Todos los campos listados son obligatorios al completar la creación, salvo los 
 | `usuarios/{uid}` | nombreMostrar: string |
 | `accesos/{uid}` | roles: array sin duplicados de comprador, emprendedora, administrador; estado: activo o desactivado; tiendaId: string opcional |
 | `emprendedoras/{uid}` | tiendaId: string; creadaPor: UID administrador |
-| `tiendasPrivadas/{tiendaId}` | propietarioUid: UID; nombre, descripcion, tipoEmprendimientoId, sectorId: string; estadoPublicacion: borrador, publicado o archivado |
+| `tiendasPrivadas/{tiendaId}` | propietarioUid: UID; nombre, descripcion, tipoEmprendimientoId, sectorId: string; estadoPublicacion: borrador, publicado o archivado; logo: ruta privada opcional (contrato 05) |
 | `tiendasPrivadas/{tiendaId}/configuracion/general` | mostrarPrecios, historialVentasActivo: boolean; formaContacto: whatsapp, formulario o ambos |
 
 Una cuenta puede tener varios roles. Propuesta inicial: una emprendedora tiene una tienda; su tiendaId es obligatorio y coincide con emprendedoras.tiendaId y con la propiedad de la ficha privada. No se permite reasignar esas relaciones desde el cliente. Administrador no implica ser emprendedora.
@@ -35,7 +35,7 @@ El borrador de ejemplo tiene los campos mínimos completos. El procedimiento de 
 
 ## Vista pública mínima
 
-`tiendasPublicas/{tiendaId}` conserva el ID de la tienda. Lista inicial de campos permitidos: nombre, descripcion, tipoEmprendimientoId, sectorId (strings), estadoPublicacion (publicado) y actualizadoEn (Timestamp).
+`tiendasPublicas/{tiendaId}` conserva el ID de la tienda. Lista inicial de campos permitidos: nombre, descripcion, tipoEmprendimientoId, sectorId (strings), estadoPublicacion (publicado) y actualizadoEn (Timestamp). Puede incluir `logo` y `logoMiniatura`, que son rutas públicas WebP generadas por el backend según el contrato 05.
 
 La ficha privada es la fuente de edición. La pública es una proyección controlada, nunca una copia automática de todo el documento privado. No incluye propietarioUid, roles, correo de acceso, configuración ni ventas. Una tienda borrador no tiene vista pública.
 

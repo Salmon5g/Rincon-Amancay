@@ -18,7 +18,7 @@ export default defineNuxtPlugin(() => {
     projectId: config.firebaseProjectId, storageBucket: config.firebaseStorageBucket,
     messagingSenderId: config.firebaseMessagingSenderId, appId: config.firebaseAppId,
   });
-  const catalogoPublico = crearCatalogoPublicoFirebase(firebase);
+  const catalogoPublico = crearCatalogoPublicoFirebase(firebase, config.supabaseUrl);
   const lecturas = crearLecturasAdmin(firebase);
   // En real-lectura no se construye el cliente de API ni se exponen escrituras.
   if (modo === 'real-api' && !config.apiUrl) throw new Error('NUXT_PUBLIC_API_URL es obligatoria en modo real-api.');

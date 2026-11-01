@@ -9,6 +9,9 @@ export interface TiendaPublica {
   tipoEmprendimientoId: string;
   sectorId: string;
   mostrarPrecios: boolean;
+  /** Rutas WebP de Supabase; el cliente local aún requiere adaptador lector. */
+  logo?: string;
+  logoMiniatura?: string;
   contacto?: ContactoPublico;
 }
 

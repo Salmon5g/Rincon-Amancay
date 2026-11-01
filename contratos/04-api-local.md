@@ -23,8 +23,11 @@ Todos son POST y requieren Content-Type: application/json y Authorization: Beare
 | /api/v1/publicarProducto | Los anteriores y productoId |
 | /api/v1/retirarProducto | Los anteriores y productoId |
 | /api/v1/editarTiendaEmprendedora | tiendaId, operacionId, versionEsperada y ficha autorizada (contrato 17) |
+| /api/v1/eliminarProducto | tiendaId, productoId, operacionId, versionEsperada (contrato 07) |
+| /api/v1/tiendas/{tiendaId}/logo | Archivo binario y cabecera X-Archivo-Id UUID; sube el logo de la propietaria al backend compartido local |
+| /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes | Archivo binario y cabecera X-Archivo-Id UUID; agrega una imagen al borrador propio |
 
-Rutas adicionales autenticadas: altaEmprendedora (contrato 06), crearProducto y editarProducto (contrato 07), ajustarStock (contrato 08), ciclo de cuentas (contrato 10), catálogos (12), asociaciones (13), cuentas administradoras y configuración (15), y administración de ferias (16). Tienen sus propios cuerpos y conservan las comprobaciones de sesión y límites HTTP de esta API.
+Rutas adicionales autenticadas: altaEmprendedora (contrato 06), crearProducto, editarProducto y eliminarProducto (contrato 07), ajustarStock (contrato 08), ciclo de cuentas (contrato 10), catálogos (12), asociaciones (13), cuentas administradoras y configuración (15), y administración de ferias (16). Tienen sus propios cuerpos y conservan las comprobaciones de sesión y límites HTTP de esta API.
 
 ajustarStock (contrato 08) registra ajustes con historial privado y mantiene disponibilidad desde la ficha aprobada (contrato 11).
 
@@ -62,9 +65,9 @@ No reintentar automáticamente 400/401/403/409 sin resolver la causa. Ante un fa
 
 Orígenes web locales permitidos: http://localhost:3000 y http://127.0.0.1:3000. Clientes sin Origin (p. ej. Android) pueden enviar solicitudes, pero necesitan igualmente token y permisos. CORS no sustituye autenticación. La API escucha únicamente en loopback; acceso desde un dispositivo físico requiere una configuración futura revisada.
 
-Las operaciones de publicación comprueban los objetos de Storage según 05-imagenes-storage.md: sin imágenes o con referencias inválidas responden 422; si Storage no está disponible, 503. La API emuladora y la API local real usan sus propias conexiones separadas. Para Firebase real se requieren IAM/ADC y los permisos descritos en la guía local; no hay servicio desplegado ni URL pública.
+Las operaciones de publicación comprueban los objetos según 05-imagenes-storage.md: sin imágenes o con referencias inválidas responden 422; si Storage no está disponible, 503. El modo emulador usa Firebase Storage local. `start:compartido:local` usa Supabase Storage con cuenta Auth técnica normal configurada solo en el backend; no usa `service_role`. Las rutas de logos e imágenes de producto se guardan en Firestore y las derivadas se limpian al retirar o reemplazar publicaciones.
 
-La publicación de productos requiere referencias de imagen verificables en Firebase Storage; la app Android aún no carga esos archivos y la integración Supabase queda pendiente de una política segura acordada. Ventas, límites de tasa de producción y despliegue público de la API también siguen pendientes.
+La app Android aún debe llamar a las rutas de carga y web/Android deben resolver las rutas `catalogo/...` como URL pública de Supabase. Ventas, límites de tasa de producción y despliegue público de la API siguen pendientes.
 
 ## Verificación
 

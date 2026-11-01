@@ -58,6 +58,8 @@ function mapearTienda(documento: QueryDocumentSnapshot<DocumentData>): TiendaPub
     tipoEmprendimientoId: texto(datos.tipoEmprendimientoId),
     sectorId: texto(datos.sectorId),
     mostrarPrecios: datos.mostrarPrecios === true,
+    ...(typeof datos.logo === 'string' ? { logo: datos.logo } : {}),
+    ...(typeof datos.logoMiniatura === 'string' ? { logoMiniatura: datos.logoMiniatura } : {}),
     ...(contacto ? { contacto } : {}),
   }
 }
@@ -99,9 +101,36 @@ function cursorSiguiente<T>(documentos: QueryDocumentSnapshot<DocumentData>[], e
   }
 }
 
-export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente): CatalogoPublicoRepository {
+export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabaseUrl = ''): CatalogoPublicoRepository {
   const db = firebase.db
   const storage = firebase.storage
+  const baseSupabase = (() => {
+    try {
+      const parsed = new URL(supabaseUrl)
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) return ''
+      return parsed.origin
+    } catch {
+      return ''
+    }
+  })()
+
+  function resolverUrlImagen(ruta: string): string | null {
+    if (!baseSupabase) return null
+    const segmentos = ruta.split('/')
+    const logoValido = segmentos.length === 4
+      && segmentos[0] === 'catalogo'
+      && /^[a-zA-Z0-9_-]{1,128}$/.test(segmentos[1] ?? '')
+      && segmentos[2] === 'tienda'
+      && /^[0-9a-f]{64}_(1600|320)\.webp$/.test(segmentos[3] ?? '')
+    const productoValido = segmentos.length === 5
+      && segmentos[0] === 'catalogo'
+      && /^[a-zA-Z0-9_-]{1,128}$/.test(segmentos[1] ?? '')
+      && segmentos[2] === 'productos'
+      && /^[a-zA-Z0-9_-]{1,128}$/.test(segmentos[3] ?? '')
+      && /^[0-9a-f]{64}_(1600|320)\.webp$/.test(segmentos[4] ?? '')
+    if (!logoValido && !productoValido) return null
+    return `${baseSupabase}/storage/v1/object/public/amancay-catalogo/${segmentos.map(encodeURIComponent).join('/')}`
+  }
 
   return {
     async listarTiendas(cursor = null) {
@@ -146,6 +175,8 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente): Catalo
         return resultado.docs.map(mapearVariante)
       })
     },
+
+    resolverUrlImagen,
 
     leerImagen(ruta) {
       if (!ruta || ruta.startsWith('/') || ruta.includes('..')) return Promise.reject(new Error('La ruta de la imagen no es válida.'))

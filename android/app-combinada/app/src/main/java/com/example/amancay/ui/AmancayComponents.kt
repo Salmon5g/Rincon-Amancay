@@ -255,7 +255,7 @@ fun StepProgressBar(actual: Int, total: Int = 5) {
     }
 }
 
-/** Imagen de producto: foto real si existe, si no el jarrón del diseño. */
+/** Foto real si está disponible. Una ruta privada sin vista previa se marca con la cámara, no con una foto ficticia. */
 @Composable
 fun ProductImage(
     @DrawableRes fallback: Int,
@@ -283,6 +283,11 @@ fun ProductImage(
             AsyncImage(
                 model = uri, contentDescription = null,
                 modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+            )
+        } else if (foto) {
+            Image(
+                painter = painterResource(Fig.CAMERA), contentDescription = "Imagen guardada",
+                modifier = Modifier.padding(size * .28f), contentScale = ContentScale.Fit
             )
         } else {
             Image(

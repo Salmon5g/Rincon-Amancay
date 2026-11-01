@@ -1,8 +1,11 @@
 package com.example.amancay.emprendedora
 
+import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +54,8 @@ import com.example.amancay.data.DraftState
 import com.example.amancay.data.ProductoEmprendedora
 import com.example.amancay.data.ProductoSolicitud
 import com.example.amancay.data.ProductosEmprendedoraRepository
+import com.example.amancay.data.decodificarVistaPreviaProducto
+import com.example.amancay.data.prepararImagenProducto
 import com.example.amancay.data.TipoProductoEmprendedora
 import com.example.amancay.data.VarianteProductoEmprendedora
 import com.example.amancay.data.VarianteProductoSolicitud
@@ -71,6 +77,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import java.util.UUID
 import kotlinx.coroutines.launch
 
+private data class ImagenSeleccionadaProducto(val uri: Uri?, val bitmap: Bitmap?, val archivoId: String)
+
 @Composable
 internal fun ProductosEmprendedoraPanel(
     tiendaId: String,
@@ -89,11 +97,35 @@ internal fun ProductosEmprendedoraPanel(
     val tipos by repository.tipos.collectAsState()
     val categorias by repository.categorias.collectAsState()
     val errorLectura by repository.error.collectAsState()
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var editando by remember { mutableStateOf<ProductoEmprendedora?>(null) }
+    var viendo by remember { mutableStateOf<ProductoEmprendedora?>(null) }
     var nuevo by remember(tiendaId, abrirNuevoAlIniciar) { mutableStateOf(abrirNuevoAlIniciar) }
     var ajustando by remember { mutableStateOf<ProductoEmprendedora?>(null) }
     var cargandoProductoInicial by remember(productoInicialId, tiendaId) { mutableStateOf(productoInicialId != null) }
+    var imagenDetalle by remember(viendo?.id) { mutableStateOf<Bitmap?>(null) }
+    var cargandoImagenDetalle by remember(viendo?.id) { mutableStateOf(false) }
+    var errorImagenDetalle by remember(viendo?.id) { mutableStateOf<String?>(null) }
+    var intentoImagenDetalle by remember(viendo?.id) { mutableIntStateOf(0) }
+
+    LaunchedEffect(viendo?.id, viendo?.imagenes, intentoImagenDetalle) {
+        val producto = viendo ?: return@LaunchedEffect
+        imagenDetalle = null
+        errorImagenDetalle = null
+        if (producto.imagenes.isEmpty()) return@LaunchedEffect
+        cargandoImagenDetalle = true
+        try {
+            imagenDetalle = decodificarVistaPreviaProducto(
+                repository.leerImagenPrivada(tiendaId, producto.id)
+            )
+            if (imagenDetalle == null) errorImagenDetalle = "No se pudo mostrar la foto guardada."
+        } catch (e: Exception) {
+            errorImagenDetalle = e.message ?: "No se pudo cargar la foto privada."
+        } finally {
+            cargandoImagenDetalle = false
+        }
+    }
 
     LaunchedEffect(productoInicialId, tiendaId) {
         if (productoInicialId == null) return@LaunchedEffect
@@ -112,6 +144,7 @@ internal fun ProductosEmprendedoraPanel(
     if (nuevo || editando != null) {
         errorLectura?.let { AvisoEmprendedora(it, true) }
         EditorProductoEmprendedora(
+            tiendaId = tiendaId,
             original = editando,
             repository = repository,
             tipos = tipos,
@@ -122,19 +155,49 @@ internal fun ProductosEmprendedoraPanel(
                 editando = null
                 alFinalizarEdicion()
             },
-            onSave = { solicitud ->
+            onSave = { solicitud, imagen ->
                 scope.launch {
                     alEnviando(true); alError(null); alAviso(null)
                     try {
-                        repository.guardar(tiendaId, solicitud)
+                        val productoId = repository.guardar(tiendaId, solicitud)
+                        if (imagen != null) {
+                            val preparada = prepararImagenProducto(context.contentResolver, imagen.uri, imagen.bitmap)
+                            repository.subirImagen(tiendaId, productoId, imagen.archivoId, preparada)
+                        }
                         nuevo = false; editando = null
-                        alAviso("Borrador de producto guardado en Firebase.")
+                        alAviso(if (imagen == null) "Borrador guardado en Firebase." else "Borrador e imagen guardados. La foto quedó protegida hasta publicar el producto.")
                         alFinalizarEdicion()
                     } catch (e: Exception) {
                         alError(e.message ?: "No se pudo guardar el producto.")
                     } finally { alEnviando(false) }
                 }
             }
+        )
+        return
+    }
+
+    viendo?.let { producto ->
+        VistaPreviaProductoEmprendedora(
+            producto = producto,
+            tipo = tipos.firstOrNull { it.id == producto.tipoProductoId }?.nombre,
+            categoria = categorias.firstOrNull { it.id == producto.categoriaId }?.nombre,
+            imagen = imagenDetalle,
+            cargandoImagen = cargandoImagenDetalle,
+            errorImagen = errorImagenDetalle,
+            alReintentarImagen = { intentoImagenDetalle++ },
+            alVolver = { viendo = null },
+            alEditar = {
+                scope.launch {
+                    alEnviando(true); alError(null)
+                    try {
+                        editando = repository.leerCompleto(tiendaId, producto.id)
+                        viendo = null
+                    } catch (e: Exception) {
+                        alError(e.message ?: "No se pudo abrir el producto para editarlo.")
+                    } finally { alEnviando(false) }
+                }
+            },
+            enviando = enviando
         )
         return
     }
@@ -179,6 +242,7 @@ internal fun ProductosEmprendedoraPanel(
             producto = producto,
             enviando = enviando,
             tiendaPublicada = tiendaPublicada,
+            onPreview = { viendo = producto },
             onEdit = {
                 scope.launch {
                     alEnviando(true); alError(null)
@@ -237,13 +301,14 @@ private fun TarjetaProductoEmprendedora(
     producto: ProductoEmprendedora,
     enviando: Boolean,
     tiendaPublicada: Boolean,
+    onPreview: () -> Unit,
     onEdit: () -> Unit,
     onPublish: () -> Unit,
     onRetire: () -> Unit,
     onAdjustStock: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).clickable(enabled = !enviando, onClick = onPreview),
         colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
         shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Line)
     ) {
@@ -252,6 +317,7 @@ private fun TarjetaProductoEmprendedora(
                 Column(Modifier.weight(1f)) {
                     Text(producto.nombre, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
                     Text(estadoProducto(producto.estadoPublicacion), color = if (producto.estadoPublicacion == "publicado") Wine else Muted, fontWeight = FontWeight.SemiBold)
+                    Text("Ver vista previa", fontSize = 13.sp, color = Wine, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 3.dp))
                 }
                 Text(if (producto.tieneVariantes) "Variantes" else producto.precioBase?.let(::pesos) ?: "Sin precio", color = Dark, fontWeight = FontWeight.Bold)
             }
@@ -276,21 +342,127 @@ private fun TarjetaProductoEmprendedora(
             } else {
                 val puedePublicar = tiendaPublicada && producto.imagenes.isNotEmpty()
                 if (!tiendaPublicada) Text("La tienda debe estar publicada antes.", color = Muted, fontSize = 12.sp)
-                if (producto.imagenes.isEmpty()) Text("La publicación exige una imagen aprobada. La carga con Storage aún está pendiente.", color = Muted, fontSize = 12.sp)
+                if (producto.imagenes.isEmpty()) Text("Agrega una foto y guarda el borrador para habilitar la publicación.", color = Muted, fontSize = 12.sp)
             }
         }
     }
 }
 
 @Composable
+private fun VistaPreviaProductoEmprendedora(
+    producto: ProductoEmprendedora,
+    tipo: String?,
+    categoria: String?,
+    imagen: Bitmap?,
+    cargandoImagen: Boolean,
+    errorImagen: String?,
+    alReintentarImagen: () -> Unit,
+    alVolver: () -> Unit,
+    alEditar: () -> Unit,
+    enviando: Boolean
+) {
+    val precio = if (producto.tieneVariantes) {
+        producto.variantes.filter { it.activa }.minOfOrNull { it.precio }?.let { "Desde ${pesos(it)}" }
+    } else producto.precioBase?.let(::pesos)
+    val modalidad = when (producto.modalidad) {
+        "a_pedido", "por_encargo" -> "Disponible para encargo"
+        else -> if (producto.manejaStock) {
+            val unidades = if (producto.tieneVariantes) producto.variantes.filter { it.activa }.sumOf { it.stock ?: 0 }
+            else producto.stock ?: 0
+            if (unidades > 0) "Disponible · $unidades unidades" else "Agotado"
+        } else "Disponible"
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Text("VISTA PREVIA", fontSize = 12.sp, color = Wine, fontWeight = FontWeight.Bold)
+        Text("Así vería tu producto un comprador", fontSize = 28.sp, color = Dark)
+        Text("Esta ficha te permite revisar la foto y los datos antes de publicar.", fontSize = 15.sp, color = Muted)
+        Spacer(Modifier.height(12.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Line),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Box(
+                    Modifier.fillMaxWidth().height(250.dp)
+                        .background(CardPink, RoundedCornerShape(20.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when {
+                        imagen != null -> ProductImage(
+                            fallback = Fig.CAMERA, size = 250.dp, bitmap = imagen,
+                            hasPhoto = true, modifier = Modifier.fillMaxWidth(), corner = 20.dp
+                        )
+                        cargandoImagen -> androidx.compose.material3.CircularProgressIndicator(color = Wine)
+                        producto.imagenes.isNotEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("📷", fontSize = 34.sp)
+                            Text("No se pudo mostrar la foto privada", color = Muted, fontSize = 13.sp)
+                            if (errorImagen != null) TextButton(onClick = alReintentarImagen) { Text("Reintentar", color = Wine) }
+                        }
+                        else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("📷", fontSize = 38.sp)
+                            Text("Este producto aún no tiene una foto", color = Muted, fontSize = 13.sp)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    listOfNotNull(tipo?.takeIf(String::isNotBlank), categoria?.takeIf(String::isNotBlank))
+                        .joinToString(" · ").ifBlank { "PRODUCTO" }.uppercase(),
+                    fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(producto.nombre, fontSize = 26.sp, color = Dark)
+                if (producto.descripcion.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(producto.descripcion, fontSize = 15.sp, color = Muted)
+                }
+                if (producto.atributosEspecificos.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        producto.atributosEspecificos.entries.joinToString(" · ") { (clave, valor) ->
+                            "${clave.replaceFirstChar { it.uppercase() }}: $valor"
+                        },
+                        fontSize = 13.sp, color = Muted
+                    )
+                }
+                precio?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(it, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Dark)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(modalidad, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = com.example.amancay.ui.theme.GreenText)
+                Spacer(Modifier.height(12.dp))
+                if (producto.estadoPublicacion == "publicado") {
+                    Text("Este producto ya está publicado en el catálogo.", fontSize = 13.sp, color = Muted)
+                } else {
+                    Text(
+                        "Solo tú puedes ver esta vista previa. El producto aparecerá para compradores cuando lo publiques.",
+                        fontSize = 13.sp, color = Muted
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    PrimaryButton("Contactar a la vendedora", onClick = {}, enabled = false)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlineButton("Volver a mis productos", alVolver)
+        Spacer(Modifier.height(8.dp))
+        PrimaryButton("Editar producto", alEditar, enabled = !enviando)
+    }
+}
+
+@Composable
 private fun EditorProductoEmprendedora(
+    tiendaId: String,
     original: ProductoEmprendedora?,
     repository: ProductosEmprendedoraRepository,
     tipos: List<TipoProductoEmprendedora>,
     categorias: List<CategoriaEmprendedora>,
     enviando: Boolean,
     onCancel: () -> Unit,
-    onSave: (ProductoSolicitud) -> Unit
+    onSave: (ProductoSolicitud, ImagenSeleccionadaProducto?) -> Unit
 ) {
     val tiposNuevos = tipos.filter { it.activo }
     val tiposDisponibles = if (original == null) tiposNuevos else tipos.filter { it.activo || it.id == original.tipoProductoId }
@@ -307,11 +479,16 @@ private fun EditorProductoEmprendedora(
     var stockInicial by remember(original?.id) { mutableStateOf(original?.stock?.toString().orEmpty()) }
     var paso by remember(original?.id) { mutableIntStateOf(1) }
     val fotoLocal = remember(original?.id) { DraftState() }
+    var imagenPrivada by remember(original?.id, original?.imagenes) { mutableStateOf<Bitmap?>(null) }
+    var cargandoVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf(false) }
+    var errorVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf<String?>(null) }
+    var archivoId by remember(original?.id) { mutableStateOf(UUID.randomUUID().toString()) }
     val selectorGaleria = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             fotoLocal.photoUri = uri
             fotoLocal.photoBitmap = null
             fotoLocal.fotoLista = true
+            archivoId = UUID.randomUUID().toString()
         }
     }
     val selectorCamara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
@@ -319,6 +496,7 @@ private fun EditorProductoEmprendedora(
             fotoLocal.photoBitmap = bitmap
             fotoLocal.photoUri = null
             fotoLocal.fotoLista = true
+            archivoId = UUID.randomUUID().toString()
         }
     }
     var atributos by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.atributosEspecificos.orEmpty()) }
@@ -329,6 +507,20 @@ private fun EditorProductoEmprendedora(
     }
     var tipoHistorico by remember(original?.id, original?.versionEsperada) { mutableStateOf<TipoProductoEmprendedora?>(null) }
     var falloTipoHistorico by remember(original?.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(tiendaId, original?.id, original?.imagenes) {
+        val producto = original?.takeIf { it.imagenes.isNotEmpty() } ?: return@LaunchedEffect
+        cargandoVistaPrevia = true
+        errorVistaPrevia = null
+        try {
+            val bytes = repository.leerImagenPrivada(tiendaId, producto.id)
+            imagenPrivada = decodificarVistaPreviaProducto(bytes)
+            if (imagenPrivada == null) errorVistaPrevia = "No se pudo decodificar la foto guardada."
+        } catch (e: Exception) {
+            errorVistaPrevia = e.message ?: "No se pudo cargar la vista previa privada."
+        } finally {
+            cargandoVistaPrevia = false
+        }
+    }
     LaunchedEffect(original?.tipoProductoId, original?.versionTipoProducto) {
         if (original != null) {
             try { tipoHistorico = repository.leerTipo(original.tipoProductoId, original.versionTipoProducto) }
@@ -375,7 +567,7 @@ private fun EditorProductoEmprendedora(
         }
         if (error == null && tipo != null) {
             val solicitudes = variantes.map { v -> VarianteProductoSolicitud(v.id, v.opciones, v.precio.toLong(), if (v.existente || !manejaStock) null else v.stock.toInt(), v.activa) }
-            onSave(ProductoSolicitud(
+            val solicitud = ProductoSolicitud(
                 id=original?.id, versionEsperada=original?.versionEsperada, operacionId=operacionId,
                 productoIdNuevo=productoIdNuevo, nombre=nombre.trim(), descripcion=descripcion.trim(),
                 tipo=tipo, categoriaId=categoriaId, atributos=atributos.filterValues { it.isNotBlank() },
@@ -383,14 +575,25 @@ private fun EditorProductoEmprendedora(
                 precioBase=if (conVariantes) null else precioBase.toLong(),
                 stockInicial=if (!conVariantes && manejaStock && original == null) stockValue else null,
                 variantes=solicitudes
-            ))
+            )
+            val imagen = if (fotoLocal.fotoLista && (fotoLocal.photoUri != null || fotoLocal.photoBitmap != null)) {
+                ImagenSeleccionadaProducto(fotoLocal.photoUri, fotoLocal.photoBitmap, archivoId)
+            } else null
+            onSave(solicitud, imagen)
         }
     }
     if (paso == 1) {
         PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ selectorCamara.launch(null) },
             onPickPhoto={ selectorGaleria.launch("image/*") }, onNext={ paso=2 },
             onBack=onCancel, onSaveExit=onCancel, showSaveExit=false,
-            imagenExistente=original?.imagenes?.isNotEmpty() == true)
+            imagenExistente=original?.imagenes?.isNotEmpty() == true,
+            imagenPrevia=imagenPrivada,
+            mensajeImagenExistente=when {
+                imagenPrivada != null -> "Vista previa de tu imagen privada. Solo tú puedes verla hasta publicar el producto."
+                cargandoVistaPrevia -> "Cargando la vista previa segura…"
+                errorVistaPrevia != null -> errorVistaPrevia
+                else -> "La imagen está guardada de forma privada. Puedes agregar otra foto aquí."
+            })
     } else if (paso == 2) {
         StepScaffold("Paso 2 de 5", "Cuéntanos lo básico", "Usaremos estos datos para mostrar tu producto.",
             onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=onCancel,
@@ -483,7 +686,7 @@ private fun EditorProductoEmprendedora(
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
-                        ProductImage(fallback=Fig.VASE_REVIEW, size=92.dp, uri=fotoLocal.photoUri, bitmap=fotoLocal.photoBitmap, hasPhoto=fotoLocal.fotoLista)
+                        ProductImage(fallback=Fig.VASE_REVIEW, size=92.dp, uri=fotoLocal.photoUri, bitmap=fotoLocal.photoBitmap ?: imagenPrivada, hasPhoto=true)
                         Spacer(Modifier.size(14.dp))
                         Column {
                             Text(tipo?.nombre?.uppercase() ?: "PRODUCTO", fontSize=12.sp, fontWeight=FontWeight.Bold, color=Wine)
@@ -511,9 +714,9 @@ private fun EditorProductoEmprendedora(
             }
             Spacer(Modifier.height(12.dp))
             val mensajeImagen = when {
-                fotoLocal.fotoLista -> "La foto elegida está en este teléfono y aún no se ha subido. Se guardará el producto como borrador; publicarlo requiere una imagen verificada en Storage."
-                original?.imagenes?.isNotEmpty() == true -> "La imagen guardada se conservará. Al guardar se actualiza el borrador; publicar requiere que la tienda esté publicada."
-                else -> "Se guardará como borrador. La publicación requiere una imagen verificada en Storage y que la tienda esté publicada."
+                fotoLocal.fotoLista -> "Al guardar, primero se conservará el borrador y luego se subirá la foto. Si falla la carga, podrás reintentar sin perder el producto."
+                original?.imagenes?.isNotEmpty() == true -> "La imagen guardada se conserva de forma privada. Puedes agregar otra foto; la tienda debe estar publicada para publicar el producto."
+                else -> "Puedes guardar el borrador sin foto, pero tendrás que agregar una imagen antes de publicarlo."
             }
             AvisoEmprendedora(mensajeImagen, false)
             error?.let { AvisoEmprendedora(it, true) }
@@ -636,7 +839,8 @@ private fun estadoProducto(estado: String) = when (estado) { "publicado" -> "Pub
 private fun pesos(valor: Long) = "$" + java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("es-CL")).format(valor)
 private fun resumenOpciones(variante: VarianteProductoEmprendedora) = variante.opciones.values.joinToString(" / ").ifBlank { variante.id }
 internal fun mensajeProducto(error: Exception): String = when ((error as? ApiEmprendedoraException)?.codigo) {
-    "imagen-requerida", "imagen-no-autorizada" -> "La publicación requiere imágenes guardadas y verificadas. La carga de imágenes aún no está habilitada."
+    "imagen-requerida" -> "Agrega una foto y guarda el borrador antes de publicar."
+    "imagen-no-autorizada" -> "No se pudo validar la foto. Elige otra imagen JPEG, PNG o WebP de hasta 5 MiB."
     "tienda-no-publicada" -> "Publica primero tu tienda."
     "conflicto" -> "Los datos cambiaron desde que abriste la ficha. Vuelve a cargarla e inténtalo otra vez."
     "sin-permiso" -> "La sesión ya no tiene permiso para esta tienda. Inicia sesión de nuevo o consulta a administración."

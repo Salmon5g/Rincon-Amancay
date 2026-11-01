@@ -5,24 +5,35 @@ const { $catalogoPublico } = useNuxtApp()
 const url = ref('')
 const estado = ref('Sin imagen')
 let revision = 0
+let urlTemporal = ''
+function liberarUrlTemporal() {
+  if (urlTemporal) URL.revokeObjectURL(urlTemporal)
+  urlTemporal = ''
+}
 function imagenFallida() {
-  if (url.value) URL.revokeObjectURL(url.value)
+  liberarUrlTemporal()
   url.value = ''
   estado.value = 'Imagen no disponible'
 }
 watch(() => props.ruta, async (ruta) => {
   const actual = ++revision
-  if (url.value) URL.revokeObjectURL(url.value)
+  liberarUrlTemporal()
   url.value = ''
   estado.value = ruta ? 'Cargando imagen…' : 'Sin imagen'
   if (!ruta) return
+  const urlPublica = $catalogoPublico.resolverUrlImagen(ruta)
+  if (urlPublica) {
+    url.value = urlPublica
+    return
+  }
   try {
     const blob = await $catalogoPublico.leerImagen(ruta)
     if (actual !== revision) return
-    url.value = URL.createObjectURL(blob)
+    urlTemporal = URL.createObjectURL(blob)
+    url.value = urlTemporal
   } catch { if (actual === revision) estado.value = 'Imagen no disponible' }
 }, { immediate: true })
-onBeforeUnmount(() => { revision++; if (url.value) URL.revokeObjectURL(url.value) })
+onBeforeUnmount(() => { revision++; liberarUrlTemporal() })
 </script>
 <template>
   <div class="imagen-publica">

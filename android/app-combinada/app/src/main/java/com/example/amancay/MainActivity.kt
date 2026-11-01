@@ -1,6 +1,7 @@
 package com.example.amancay
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -48,6 +49,7 @@ import com.example.amancay.data.ShopSettings
 import com.example.amancay.data.Variant
 import com.example.amancay.data.crearCatalogoCompradorFirebase
 import com.example.amancay.data.crearRepositorioDemostracion
+import com.example.amancay.data.decodificarVistaPreviaProducto
 import com.example.amancay.emprendedora.PantallaEdicionTienda
 import com.example.amancay.emprendedora.ProductosEmprendedoraPanel
 import com.example.amancay.emprendedora.AvisoEmprendedora
@@ -572,10 +574,50 @@ internal fun EmprendedoraAppConectada(
     var showHelp by remember { mutableStateOf(false) }
     var linkCompartido by remember(sesion.uid) { mutableStateOf(false) }
     var productoVista by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var fotoVistaProducto by remember(sesion.uid) { mutableStateOf<Bitmap?>(null) }
+    var cargandoFotoVista by remember(sesion.uid) { mutableStateOf(false) }
+    var errorFotoVista by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var reintentoFotoVista by remember(sesion.uid) { mutableIntStateOf(0) }
+    var miniaturasProductos by remember(sesion.uid) { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    val firmaImagenesProductos = productos.joinToString("|") { "${it.id}:${it.imagenes.joinToString(",")}" }
     var enviandoProducto by remember(sesion.uid) { mutableStateOf(false) }
     var avisoProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var errorProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var productoAjustando by remember(sesion.uid) { mutableStateOf<ProductoEmprendedora?>(null) }
+
+    LaunchedEffect(screen, productoVista, reintentoFotoVista) {
+        val preview = screen as? Screen.Preview ?: return@LaunchedEffect
+        val id = preview.productId ?: productoVista ?: return@LaunchedEffect
+        val producto = productos.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        fotoVistaProducto = null
+        errorFotoVista = null
+        if (producto.imagenes.isEmpty()) return@LaunchedEffect
+        cargandoFotoVista = true
+        try {
+            fotoVistaProducto = decodificarVistaPreviaProducto(
+                productosRepository.leerImagenPrivada(sesion.tiendaId, producto.id)
+            )
+            if (fotoVistaProducto == null) errorFotoVista = "La imagen guardada no se pudo abrir."
+        } catch (e: Exception) {
+            errorFotoVista = e.message ?: "No se pudo cargar la imagen privada."
+        } finally {
+            cargandoFotoVista = false
+        }
+    }
+
+    LaunchedEffect(screen, editandoProducto, sesion.tiendaId, firmaImagenesProductos) {
+        if (screen != Screen.Products || editandoProducto) return@LaunchedEffect
+        productos.filter { it.imagenes.isNotEmpty() && it.id !in miniaturasProductos }.forEach { producto ->
+            try {
+                val bitmap = decodificarVistaPreviaProducto(
+                    productosRepository.leerImagenPrivada(sesion.tiendaId, producto.id)
+                )
+                if (bitmap != null) miniaturasProductos = miniaturasProductos + (producto.id to bitmap)
+            } catch (_: Exception) {
+                // La miniatura no impide abrir el detalle: allí se puede reintentar la carga privada.
+            }
+        }
+    }
 
     fun abrirTab(nuevoTab: Tab) {
         tab = nuevoTab
@@ -589,7 +631,7 @@ internal fun EmprendedoraAppConectada(
         if (nuevoTab != Tab.MAS) editandoTienda = false
     }
 
-    fun productoLegado(producto: ProductoEmprendedora): Product {
+    fun productoLegado(producto: ProductoEmprendedora, miniatura: Bitmap? = null): Product {
         val tipoNombre = tiposProducto.firstOrNull { it.id == producto.tipoProductoId }?.nombre.orEmpty()
             .lowercase()
         val tipo = when {
@@ -631,6 +673,7 @@ internal fun EmprendedoraAppConectada(
                 "archivado" -> "Retirado"
                 else -> "Borrador"
             },
+            photoBitmap = miniatura,
             tieneFoto = producto.imagenes.isNotEmpty()
         )
     }
@@ -743,13 +786,28 @@ internal fun EmprendedoraAppConectada(
                         )
                     } else {
                         ProductsScreen(
-                            productos = productos.map(::productoLegado),
+                            productos = productos.map { productoLegado(it, miniaturasProductos[it.id]) },
                             onEdit = {
                                 productoInicialId = it.id
                                 editandoProducto = true
                                 tab = Tab.AGREGAR
                             },
-                            onDelete = {},
+                            onDelete = { legado ->
+                                val remoto = productos.firstOrNull { it.id == legado.id }
+                                if (remoto != null) scope.launch {
+                                    enviandoProducto = true
+                                    errorProducto = null
+                                    avisoProducto = null
+                                    try {
+                                        productosRepository.eliminar(sesion.tiendaId, remoto)
+                                        avisoProducto = "Producto quitado de tu lista y del catálogo. Se conservó su historial."
+                                    } catch (e: Exception) {
+                                        errorProducto = mensajeProducto(e)
+                                    } finally {
+                                        enviandoProducto = false
+                                    }
+                                }
+                            },
                             onCreate = {
                                 productoInicialId = null
                                 editandoProducto = true
@@ -761,7 +819,10 @@ internal fun EmprendedoraAppConectada(
                             },
                             settings = ShopSettings(),
                             onSettings = {},
-                            mostrarEliminar = false,
+                            mostrarEliminar = true,
+                            mensajeEliminar = { nombre ->
+                                "\"$nombre\" dejará de aparecer en tu lista y en el catálogo público. Se conservarán el historial de stock y la imagen original como respaldo."
+                            },
                             onAccionPublicacion = { legado ->
                                 val remoto = productos.firstOrNull { it.id == legado.id }
                                 if (remoto != null) scope.launch {
@@ -817,6 +878,11 @@ internal fun EmprendedoraAppConectada(
                     }
                     is Screen.Preview -> PreviewCatalogScreen(
                         producto = productoDeVista,
+                        privateImageBitmap = fotoVistaProducto,
+                        privateImageLoading = cargandoFotoVista,
+                        privateImageError = errorFotoVista,
+                        onRetryPrivateImage = { reintentoFotoVista++ },
+                        esVistaPrivada = productoDeVista?.esBorrador == true,
                         onShare = {
                             clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
                             linkCompartido = true

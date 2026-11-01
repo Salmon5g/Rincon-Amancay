@@ -36,10 +36,10 @@ POST `/api/v1/editarTiendaEmprendedora`, con `Authorization: Bearer <Firebase ID
 
 - Escribe nombre, descripción, tipo, sector, contacto, `mostrarContacto` y `actualizadoEn` en la ficha privada.
 - Si la tienda está publicada, aplica los campos públicos aprobados a `tiendasPublicas/{tiendaId}` dentro de la misma transacción. Al ocultar contacto, lo elimina de la proyección pública.
-- No modifica productos publicados, imágenes, propietario, fecha de creación ni estado de publicación.
+- No modifica productos publicados, propietario, fecha de creación ni estado de publicación.
 - Guarda un recibo idempotente en `tiendasPrivadas/{tiendaId}/operacionesEdicion/{operacionId}`. La propietaria no puede leer ni escribir esos recibos mediante reglas de cliente.
 
-Cambiar el logo/foto todavía no se incluye porque no existe una política de subida validada. La forma de guardar la futura referencia debe acordarse con el proveedor de medios y el backend.
+El logo se carga por separado mediante `POST /api/v1/tiendas/{tiendaId}/logo`, con el archivo binario, el ID token Firebase y `X-Archivo-Id` UUID. La API valida la propiedad, guarda el original privado en Supabase y actualiza `tiendasPrivadas/{tiendaId}.logo`. Si la tienda está publicada, también genera y sincroniza `logo` y `logoMiniatura` en la proyección pública. Las rutas y políticas están en el contrato 05. La pantalla Android aún no llama a esta operación ni muestra el logo cargado.
 
 ## Errores y reintentos
 

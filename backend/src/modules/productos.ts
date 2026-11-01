@@ -3,7 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore, DocumentData } from 'firebase-admin/firestore';
 import { ErrorOperacion, version } from './publicacion.ts';
 
-export type AccionProducto = 'crearProducto' | 'editarProducto';
+export type AccionProducto = 'crearProducto' | 'editarProducto' | 'eliminarProducto';
 function exigir(ok: unknown, code: string, message: string): asserts ok {
   if (!ok) throw new ErrorOperacion(code, message);
 }
@@ -23,10 +23,65 @@ function canon(v: any): string {
   return JSON.stringify(v);
 }
 
-export function crearProductos(db: Firestore) {
+export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: string[]) => Promise<void>) {
   return async (accion: AccionProducto, identidad: {uid: string}, input: unknown) => {
-    exigir(accion === 'crearProducto' || accion === 'editarProducto', 'datos-invalidos', 'Acción inválida.');
+    exigir(accion === 'crearProducto' || accion === 'editarProducto' || accion === 'eliminarProducto', 'datos-invalidos', 'Acción inválida.');
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
+
+    if (accion === 'eliminarProducto') {
+      const d = objeto(input);
+      campos(d, ['tiendaId', 'productoId', 'operacionId', 'versionEsperada']);
+      exigir(id(d.tiendaId) && id(d.productoId) && id(d.operacionId), 'datos-invalidos', 'IDs inválidos.');
+      exigir(typeof d.versionEsperada === 'string' && /^[0-9]{1,12}:[0-9]{1,9}$/.test(d.versionEsperada), 'datos-invalidos', 'Versión inválida.');
+      const firma = createHash('sha256').update(canon({accion, uid: identidad.uid, tiendaId: d.tiendaId, productoId: d.productoId, versionEsperada: d.versionEsperada})).digest('hex');
+      const storeRef = db.doc(`tiendasPrivadas/${d.tiendaId}`);
+      const productRef = storeRef.collection('productos').doc(d.productoId);
+      const publicRef = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`);
+      const approvalRef = productRef.collection('publicacion').doc('vigente');
+      const receiptRef = storeRef.collection('operacionesProductos').doc(d.operacionId);
+      const confirmado = await db.runTransaction(async tx => {
+        const [access, store, product, receipt, publicProduct, approval] = await tx.getAll(
+          db.doc(`accesos/${identidad.uid}`), storeRef, productRef, receiptRef, publicRef, approvalRef
+        );
+        const a = access.data();
+        exigir(a?.estado === 'activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId === d.tiendaId && store.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere la propietaria activa de esta tienda.');
+        if (receipt.exists) {
+          exigir(receipt.data()?.firma === firma, 'id-reutilizado', 'operacionId corresponde a otra solicitud.');
+          return {resultado: receipt.data()!.resultado as Record<string, unknown>, limpieza: receipt.data()?.limpiezaImagenes as string[] | undefined};
+        }
+        const data = product.data();
+        exigir(data, 'no-encontrado', 'El producto ya no existe en esta tienda.');
+        exigir(data.estadoPublicacion !== 'eliminado', 'conflicto', 'El producto ya fue eliminado.');
+        exigir(version(data) === d.versionEsperada, 'conflicto', 'El producto cambió; vuelve a cargar la lista e inténtalo de nuevo.');
+
+        const publicVariants = await tx.get(publicRef.collection('variantes').limit(21));
+        exigir(publicVariants.size <= 20, 'limite-local', 'Este incremento admite hasta 20 variantes públicas por producto.');
+        const now = FieldValue.serverTimestamp();
+        const result = {accion, productoId: d.productoId, operacionId: d.operacionId, estadoPublicacion: 'eliminado'};
+        const projection = publicProduct.data();
+        const approved = approval.data()?.producto as DocumentData | undefined;
+        const paths = new Set<string>();
+        for (const value of [
+          ...(Array.isArray(projection?.imagenes) ? projection.imagenes : []),
+          ...(Array.isArray(projection?.miniaturas) ? projection.miniaturas : []),
+          ...(Array.isArray(approved?.imagenes) ? approved.imagenes : []),
+          ...(Array.isArray(approved?.miniaturas) ? approved.miniaturas : []),
+        ]) if (typeof value === 'string') paths.add(value);
+
+        for (const variant of publicVariants.docs) tx.delete(variant.ref);
+        if (approval.exists) tx.delete(approvalRef);
+        if (publicProduct.exists) tx.delete(publicRef);
+        // Tombstone privado: desaparece de la aplicación, pero conserva ficha,
+        // variantes, imágenes originales e historial de stock para trazabilidad.
+        tx.update(productRef, {estadoPublicacion: 'eliminado', disponible: false, eliminadoEn: now, actualizadoEn: now});
+        const limpieza = [...paths];
+        tx.create(receiptRef, {firma, resultado: result, limpiezaImagenes: limpieza, creadoEn: now});
+        return {resultado: result, limpieza};
+      });
+      if (confirmado.limpieza?.length && limpiarImagenesPublicas) await limpiarImagenesPublicas(confirmado.limpieza);
+      return confirmado.resultado;
+    }
+
     const crear = accion === 'crearProducto';
     const d = objeto(input);
     campos(d, ['tiendaId','productoId','operacionId','producto','variantes', ...(!crear ? ['versionEsperada'] : [])]);

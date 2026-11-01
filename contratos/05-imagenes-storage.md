@@ -1,45 +1,46 @@
-# Imágenes de productos — desarrollo local
+# Imágenes de tiendas y productos
 
-Implementado y probado únicamente en los emuladores de demo-rincon-amancay. No se creó un bucket ni se desplegaron reglas en la nube.
+Firestore guarda rutas relativas, no archivos, base64 ni URLs de descarga. La ficha privada guarda originales; las proyecciones públicas guardan las rutas WebP procesadas. El comprador anónimo solo necesita acceder a las derivadas del bucket público.
 
-## Acuerdo compartido para web y Android
+## Rutas reales
 
-Firestore guarda rutas de objetos, no archivos, base64 ni URLs de descarga. El campo imagenes es una lista ordenada de hasta cinco rutas; la primera es la portada. Publicar exige al menos una imagen y no admite rutas repetidas.
+| Uso | Ruta en `amancay-originales` | Ruta en `amancay-catalogo` |
+|---|---|---|
+| Logo de tienda | `tiendas/{tiendaId}/tienda/{archivoId}.{jpg|png|webp}` | `catalogo/{tiendaId}/tienda/{sha256}_{1600|320}.webp` |
+| Imagen de producto | `tiendas/{tiendaId}/productos/{productoId}/{archivoId}.{jpg|png|webp}` | `catalogo/{tiendaId}/productos/{productoId}/{sha256}_{1600|320}.webp` |
 
-Ruta: `tiendas/{tiendaId}/productos/{productoId}/{archivoId}.png`, `.jpg` o `.webp`. Los identificadores contienen letras, números, guion o guion bajo (1–128 caracteres); generar un archivoId nuevo, por ejemplo UUID. Máximo 5 MiB por archivo. No usar nombres personales ni el nombre original de la foto.
+`tiendaId` y `productoId` admiten letras, números, guion y guion bajo, entre 1 y 128 caracteres. `archivoId` es UUID. Los originales pueden ser JPEG, PNG o WebP y miden hasta 5 MiB. El bucket público solo acepta WebP generado por la API.
 
-El bucket local es `demo-rincon-amancay.appspot.com`, con Storage en `127.0.0.1:9199`. Configurar explícitamente los tres SDK cliente contra los emuladores: Auth 9099, Firestore 8080 y Storage 9199. Los adaptadores locales están en web/app/lib y android/ejemplos; Android sigue pendiente de integrar y compilar. No usar la configuración real para estas pruebas.
+Para la tienda, `tiendasPrivadas/{tiendaId}.logo` contiene la ruta privada. Si se publica, `tiendasPublicas/{tiendaId}.logo` y `logoMiniatura` contienen las rutas públicas grande y pequeña. Para productos, `imagenes` conserva las rutas originales en privado y recibe las rutas públicas en la proyección del catálogo; `miniaturas` conserva las rutas públicas pequeñas en esa proyección.
 
-## Flujo
+## Modo compartido local
 
-1. Iniciar sesión. La cuenta debe tener acceso activo, rol emprendedora, tienda asignada y ser su propietaria. El producto privado debe existir.
-2. Subir un archivo con el SDK cliente de Storage a una ruta nueva. Enviar contentType concordante con la extensión, sin customMetadata ni contentEncoding.
-3. Guardar las rutas seleccionadas en imagenes del producto privado, junto con actualizadoEn usando serverTimestamp. Esta escritura solo modifica esos dos campos. El contenido público anterior permanece igual.
-4. Releer el producto privado para obtener su nueva versionEsperada y llamar a publicarProducto con ID token y operacionId, según 04-api-local.md.
-5. El servidor decodifica y prepara cada imagen, genera WebP y miniatura sin metadatos y publica las rutas procesadas. Límites, formato y pruebas en [contrato 11](11-disponibilidad-e-imagenes.md).
-6. Leer las imágenes con el SDK aplicando reglas: getBlob/getBytes en web o getBytes/getStream en Android. Para la vista web puede usarse una URL de objeto temporal, revocándola al desmontar el componente.
+Firebase Authentication identifica a la emprendedora y Firestore conserva sus datos. La app envía el archivo binario a la API local, con el ID token de Firebase y un `X-Archivo-Id` UUID:
 
-Seleccionar una ruta en el borrador no prueba que el objeto exista; el backend hace esa comprobación al publicar. Borrador puede tener cero imágenes. Crear/editar productos y ajustar stock están implementados según contratos 07, 08 y 11.
+```text
+POST /api/v1/tiendas/{tiendaId}/logo
+POST /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes
+Authorization: Bearer <Firebase ID token>
+Content-Type: image/jpeg | image/png | image/webp
+X-Archivo-Id: <UUID>
+```
 
-## Permisos y límites
+La API verifica sesión, rol activo, tienda asignada y propiedad en Firestore. Usa una sesión normal de Supabase Auth con una cuenta técnica guardada solo en el entorno del backend, comprueba su UID y sube el original privado. El cliente nunca recibe credenciales Supabase.
 
-La propietaria activa puede subir y leer las imágenes de sus productos. Los originales en tiendas/ son privados. El visitante solo puede leer una copia procesada en catalogo/ que figure en imagenes o miniaturas de la proyección pública del producto, con producto publicado y tienda publicada, habilitada y con precios visibles. No se permite listar archivos, sobrescribirlos, cambiar metadatos ni borrarlos desde un cliente. Reemplazar implica subir a otra ruta; se conservan los archivos anteriores hasta implementar limpieza desde servidor.
+La subida de logo actualiza `tiendasPrivadas/{tiendaId}.logo`. Si la tienda ya está publicada, procesa el logo y actualiza sus dos rutas públicas dentro de Firestore; la derivada anterior se elimina después de la transacción. Si aún es borrador, el procesamiento público se hace al publicar la tienda.
 
-Retirar un producto o tienda bloquea nuevas lecturas públicas sujetas a reglas. No elimina archivos, copias descargadas ni cachés. No guardar ni compartir getDownloadURL o URLs con token: son enlaces de acceso duradero y no deben usarse para garantizar retirada inmediata. La integración de entrega/caché y revocación de enlaces debe revisarse antes del despliegue.
+La carga de imagen de producto agrega la ruta privada a `tiendasPrivadas/{tiendaId}/productos/{productoId}.imagenes`. Al publicar, la API vuelve a leer y decodificar el original, elimina metadatos y crea WebP de hasta 1600 × 1600 y 320 × 320. Los objetos se guardan con nombres derivados del hash del contenido y no se sobrescriben.
 
-El procesamiento completo está implementado en el contrato 11: decodificación, orientación, reducción, eliminación de metadatos y miniaturas. No se admiten SVG, animaciones ni otros documentos. Las reglas validan metadatos y permisos; el servidor valida y transforma el contenido.
+Las políticas RLS permiten a la cuenta técnica operar solo en las rutas reales indicadas y solo dentro de los dos buckets Amancay. La autorización de la emprendedora ocurre en la API mediante Firebase/Firestore. No se utiliza `service_role`.
 
-Storage no participa en la transacción Firestore. La inmutabilidad de los archivos evita cambios por clientes durante la publicación; los procesos futuros de limpieza con SDK Admin deberán coordinarse con las referencias privadas/públicas, aprobaciones internas y publicaciones. No eliminar archivos por antigüedad sin comprobar referencias.
+Los originales son privados. El bucket de derivadas es público: quien conozca una ruta válida puede abrirla sin iniciar sesión, incluso si el producto o tienda se retira o existe una copia en caché. La API elimina las derivadas al retirar una publicación o reemplazar una imagen y conserva las rutas para reintentar la limpieza si Storage falla. El borrado no invalida descargas ni todas las cachés. Los originales reemplazados se conservan privados por ahora.
 
-Las reglas consultan Firestore para permisos. En producción habrá que configurar y verificar esa integración, permisos del servicio, bucket, costos y CORS; las pruebas locales no equivalen a ese despliegue.
+## Emuladores Firebase
 
-## Verificación reproducible
+El flujo de emulador mantiene Firebase Storage en `127.0.0.1:9199`, proyecto `demo-rincon-amancay`. Las reglas de `firebase/storage.rules` y los adaptadores actuales corresponden al entorno de emuladores. La API compartida local usa Supabase Storage y no apunta a ese bucket.
 
-Con los emuladores iniciados mediante `npm run emulators` desde firebase/:
+## Lectores de imagen
 
-- En firebase/: `npm run test:rules` y luego `npm run test:storage`.
-- En backend/: `npm run typecheck` y `npm test`.
+Las rutas persistidas por Firestore siguen siendo relativas. El comprador web convierte las rutas validadas `catalogo/...` en URLs públicas del bucket `amancay-catalogo` de Supabase y las carga como imágenes públicas sin enviar credenciales. Las rutas del emulador continúan leyéndose mediante Firebase Storage. Android debe aplicar la misma conversión para las pantallas compradoras. Los originales solo los necesita la API; los clientes no deben leerlos directamente.
 
-No ejecutar suites simultáneas: reponen los mismos documentos ficticios. Las pruebas de Storage limpian sus archivos; las de API eliminan su usuario temporal. Las comprobaciones de Storage incluyen selección privada, lectura pública, retiro, tamaño, MIME, propiedad e inmutabilidad. Backend cubre además publicación HTTP con un objeto del emulador y rechazo de objetos inexistentes o inválidos.
-
-Referencias oficiales: [emulador Storage](https://firebase.google.com/docs/emulator-suite/connect_storage), [reglas y consultas a Firestore](https://firebase.google.com/docs/storage/security/rules-conditions), [descargas mediante SDK](https://firebase.google.com/docs/storage/web/download-files).
+El SQL de buckets y políticas está en [infra/supabase/storage-imagenes.sql](../infra/supabase/storage-imagenes.sql). Pasos y variables locales están en [docs/supabase-storage-imagenes.md](../docs/supabase-storage-imagenes.md).

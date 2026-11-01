@@ -122,6 +122,7 @@ class ProductosEmprendedoraRepository(
                 }
                 val docs = snapshot?.documents.orEmpty()
                 val actuales = docs.mapNotNull { runCatching { it.aProducto() }.getOrNull() }
+                    .filterNot { it.estadoPublicacion == "eliminado" }
                 val ids = actuales.filter { it.tieneVariantes }.map { it.id }.toSet()
                 (variantSubscriptions.keys - ids).forEach { id ->
                     variantSubscriptions.remove(id)?.remove()
@@ -230,6 +231,22 @@ class ProductosEmprendedoraRepository(
         return productoId
     }
 
+    suspend fun subirImagen(
+        tiendaId: String,
+        productoId: String,
+        archivoId: String,
+        imagen: ImagenProductoPreparada
+    ): String = api.subirImagenProducto(
+        tiendaId = tiendaId,
+        productoId = productoId,
+        archivoId = archivoId,
+        contentType = imagen.contentType,
+        bytes = imagen.bytes
+    )
+
+    suspend fun leerImagenPrivada(tiendaId: String, productoId: String, indice: Int = 0): ByteArray =
+        api.leerImagenPrivadaProducto(tiendaId, productoId, indice)
+
     suspend fun leerCompleto(tiendaId: String, productoId: String): ProductoEmprendedora = withContext(Dispatchers.IO) {
         val referencia = db.collection("tiendasPrivadas").document(tiendaId).collection("productos").document(productoId)
         val documento = Tasks.await(referencia.get())
@@ -253,6 +270,15 @@ class ProductosEmprendedoraRepository(
             "tiendaId" to tiendaId,
             "productoId" to producto.id,
             "operacionId" to operationId("retirar", tiendaId, producto.id, producto.versionEsperada),
+            "versionEsperada" to producto.versionEsperada
+        ))
+    }
+
+    suspend fun eliminar(tiendaId: String, producto: ProductoEmprendedora) {
+        api.llamar("eliminarProducto", mapOf(
+            "tiendaId" to tiendaId,
+            "productoId" to producto.id,
+            "operacionId" to operationId("eliminar", tiendaId, producto.id, producto.versionEsperada),
             "versionEsperada" to producto.versionEsperada
         ))
     }

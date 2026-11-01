@@ -29,7 +29,8 @@ data class TiendaEmprendedora(
     val contacto: ContactoEmprendedora?,
     val mostrarContacto: Boolean,
     val estadoPublicacion: String,
-    val versionEsperada: String
+    val versionEsperada: String,
+    val logo: String? = null
 )
 
 data class OpcionCatalogoEmprendedora(val id: String, val nombre: String)
@@ -189,7 +190,8 @@ class CuentaEmprendedoraRepository(
             contacto = contacto,
             mostrarContacto = data["mostrarContacto"] == true,
             estadoPublicacion = data["estadoPublicacion"] as? String ?: "borrador",
-            versionEsperada = "${actualizadoEn.seconds}:${actualizadoEn.nanoseconds}"
+            versionEsperada = "${actualizadoEn.seconds}:${actualizadoEn.nanoseconds}",
+            logo = data["logo"] as? String
         )
     }
 

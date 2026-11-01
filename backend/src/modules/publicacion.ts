@@ -61,7 +61,7 @@ async function hijos(tx: Transaction, ref: DocumentReference, nombre: string) {
   return result.docs;
 }
 
-export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string, tiendaId: string, productoId: string) => Promise<boolean | ImagenPreparada>) {
+export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string, tiendaId: string, productoId: string) => Promise<boolean | ImagenPreparada>, limpiarImagenes?: (rutas:string[])=>Promise<void>, imagenTiendaAutorizada?: (ruta:string,tiendaId:string)=>Promise<ImagenPreparada|false>) {
   return async function ejecutar(accion: Accion, identidad: IdentidadVerificada, solicitud: Solicitud) {
     exigir(['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'].includes(accion), 'datos-invalidos', 'Acción inválida.');
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
@@ -78,14 +78,14 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
     const imagenesPreparadas = new Map<string, boolean | ImagenPreparada>();
     const recibo = privada.collection('operacionesPublicacion').doc(solicitud.operacionId);
 
-    return db.runTransaction(async tx => {
+    const confirmado=await db.runTransaction(async tx => {
       const access = (await tx.get(db.doc(`accesos/${identidad.uid}`))).data();
       const store = (await tx.get(privada)).data();
       exigir(access?.estado === 'activo' && access.roles?.includes('emprendedora') && access.tiendaId === solicitud.tiendaId && store?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
       const previous = await tx.get(recibo);
       if (previous.exists) {
         exigir(previous.data()!.firma === firma, 'id-reutilizado', 'operacionId ya corresponde a otra solicitud.');
-        return previous.data()!.resultado as { accion: Accion; operacionId: string };
+        return {resultado:previous.data()!.resultado as { accion: Accion; operacionId: string },limpieza:previous.data()!.limpiezaImagenes as string[]|undefined};
       }
       const snapshot = esProducto ? await tx.get(source) : null;
       const data = esProducto ? snapshot?.data() : store;
@@ -94,17 +94,24 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
       const now = FieldValue.serverTimestamp();
       const resultado = { accion, operacionId: solicitud.operacionId };
       const borrar: DocumentReference[] = [];
+      const limpiar=new Set<string>();
       const escribir: { ref: DocumentReference; data: DocumentData }[] = [];
 
       if (accion === 'retirarTienda') {
+        const publicStore=(await tx.get(publica)).data();
+        for(const path of [publicStore?.logo,publicStore?.logoMiniatura])if(typeof path==='string')limpiar.add(path);
         const products = await hijos(tx, publica, 'productos');
         for (const product of products) {
+          const data=product.data();
+          for(const path of [...(Array.isArray(data.imagenes)?data.imagenes:[]),...(Array.isArray(data.miniaturas)?data.miniaturas:[])])if(typeof path==='string')limpiar.add(path);
           const variants = await hijos(tx, product.ref, 'variantes');
           borrar.push(...variants.map(v => v.ref), product.ref);
           exigir(borrar.length <= 199, 'limite-local', 'Retirada demasiado grande para este incremento; no se aplicó ningún cambio.');
         }
         borrar.push(publica);
       } else if (accion === 'retirarProducto') {
+        const oldPublic=(await tx.get(target)).data();
+        for(const path of [...(Array.isArray(oldPublic?.imagenes)?oldPublic!.imagenes:[]),...(Array.isArray(oldPublic?.miniaturas)?oldPublic!.miniaturas:[])])if(typeof path==='string')limpiar.add(path);
         borrar.push(aprobacion!);
         borrar.push(...(await hijos(tx, target, 'variantes')).map(v => v.ref), target);
       } else {
@@ -115,10 +122,21 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const tipo = await tx.get(db.doc(`tiposEmprendimiento/${texto(store.tipoEmprendimientoId, 128)}`));
           exigir(sector.data()?.activo === true && tipo.data()?.activo === true, 'datos-invalidos', 'Sector o tipo inactivo.');
           const contacto = contactoPublico(store);
+          const logoRuta=store.logo;
+          exigir(logoRuta===undefined || typeof logoRuta==='string','imagen-no-autorizada','La ruta de logo de la tienda es inválida.');
+          let logo:ImagenPreparada|false|undefined;
+          if(typeof logoRuta==='string') {
+            exigir(imagenTiendaAutorizada,'imagen-no-autorizada','El procesamiento de logos de tienda no está configurado.');
+            logo=await imagenTiendaAutorizada(logoRuta,solicitud.tiendaId);
+            exigir(logo,'imagen-no-autorizada','El logo de la tienda no pudo validarse.');
+          }
+          const oldPublic=(await tx.get(publica)).data();
+          for(const path of [oldPublic?.logo,oldPublic?.logoMiniatura])if(typeof path==='string' && (!logo || (path!==logo.imagen && path!==logo.miniatura)))limpiar.add(path);
           escribir.push({ ref: publica, data: {
             nombre: texto(store.nombre, 120), descripcion: texto(store.descripcion, 2000),
             sectorId: store.sectorId, tipoEmprendimientoId: store.tipoEmprendimientoId,
             ...(contacto ? { contacto } : {}),
+            ...(logo ? {logo:logo.imagen,logoMiniatura:logo.miniatura} : {}),
             estadoPublicacion: 'publicado', habilitada: true, mostrarPrecios: config.mostrarPrecios, actualizadoEn: now,
           } });
         } else {
@@ -153,6 +171,9 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             else exigir(!field.obligatorio, 'datos-invalidos', `Falta atributo ${field.clave}`);
           }
           const variants = await hijos(tx, source, 'variantes');
+          const oldPublic=(await tx.get(target)).data();
+          const nuevasRutas=new Set([...imagenes,...miniaturas]);
+          for(const path of [...(Array.isArray(oldPublic?.imagenes)?oldPublic!.imagenes:[]),...(Array.isArray(oldPublic?.miniaturas)?oldPublic!.miniaturas:[])])if(typeof path==='string' && !nuevasRutas.has(path))limpiar.add(path);
           const oldVariants = await hijos(tx, target, 'variantes');
           borrar.push(...oldVariants.map(v => v.ref));
           const projection: DocumentData = {
@@ -197,8 +218,11 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
       for (const ref of borrar) if (!nuevos.has(ref.path)) tx.delete(ref);
       for (const item of escribir) tx.set(item.ref, item.data);
       tx.update(source, { ...(accion==='retirarTienda'?{cicloCatalogo:(store.cicloCatalogo??0)+1}:{}), estadoPublicacion: accion.startsWith('publicar') ? 'publicado' : 'archivado', actualizadoEn: now });
-      tx.create(recibo, { firma, resultado, creadoEn: now });
-      return resultado;
+      const rutasLimpieza=[...limpiar];
+      tx.create(recibo, { firma, resultado, ...(rutasLimpieza.length?{limpiezaImagenes:rutasLimpieza}:{}), creadoEn: now });
+      return {resultado,limpieza:rutasLimpieza};
     });
+    if(confirmado.limpieza?.length && limpiarImagenes)await limpiarImagenes(confirmado.limpieza);
+    return confirmado.resultado;
   };
 }

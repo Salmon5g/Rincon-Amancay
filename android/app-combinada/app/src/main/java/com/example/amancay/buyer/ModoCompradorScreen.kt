@@ -1,5 +1,6 @@
 package com.example.amancay.buyer
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -39,6 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.amancay.data.CatalogoCompradorRepository
 import com.example.amancay.data.ProductoCatalogoComprador
+import com.example.amancay.ui.Fig
+import com.example.amancay.ui.ProductImage
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -170,7 +173,11 @@ private fun FiltroProducto(texto: String, seleccionado: Boolean, alSeleccionar: 
 private fun TarjetaProductoEmprendedora(producto: ProductoCatalogoComprador, alAbrir: () -> Unit) {
     TarjetaAmancay(modifier = Modifier.clickable(onClick = alAbrir)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MiniaturaAmancay("🛍️")
+            if (producto.imagenUrl != null) {
+                ProductImage(fallback = Fig.VASE_THUMB, size = 72.dp, uri = Uri.parse(producto.imagenUrl), hasPhoto = true, corner = 16.dp)
+            } else {
+                MiniaturaAmancay("🛍️")
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 EtiquetaCategoria(producto.categoriaNombre.ifBlank { producto.tipoProductoNombre })
@@ -210,6 +217,9 @@ private fun DialogoDetalleProducto(producto: ProductoCatalogoComprador, alCerrar
         title = { Text(producto.nombre, fontWeight = FontWeight.Bold, color = AmancayTinta) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (producto.imagenUrl != null) {
+                    ProductImage(fallback = Fig.VASE_REVIEW, size = 184.dp, uri = Uri.parse(producto.imagenUrl), hasPhoto = true)
+                }
                 Text(producto.tiendaNombre, color = AmancayBordo)
                 Text(producto.categoriaNombre.ifBlank { producto.tipoProductoNombre }, color = AmancayTintaSuave)
                 if (producto.descripcion.isNotBlank()) Text(producto.descripcion)

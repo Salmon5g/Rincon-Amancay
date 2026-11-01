@@ -9,5 +9,6 @@ export interface CatalogoPublicoRepository {
   listarTiendas(cursor?: string | null): Promise<PaginaRepositorio<TiendaPublica>>
   listarProductos(tiendaId: string, cursor?: string | null): Promise<PaginaRepositorio<ProductoPublico>>
   listarVariantes(tiendaId: string, productoId: string): Promise<VariantePublica[]>
+  resolverUrlImagen(ruta: string): string | null
   leerImagen(ruta: string): Promise<Blob>
 }

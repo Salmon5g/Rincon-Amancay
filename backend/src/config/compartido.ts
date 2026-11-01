@@ -12,11 +12,9 @@ export function exigirEntornoCompartido(env:NodeJS.ProcessEnv):string {
 }
 export function leerConfigCompartida(env:NodeJS.ProcessEnv) {
   const proyecto=exigirEntornoCompartido(env);
-  const bucket=env.AMANCAY_STORAGE_BUCKET;
-  if(bucket!==`${proyecto}.firebasestorage.app`)throw new Error('Confirmar el bucket del proyecto antes de arrancar.');
   const port=Number(env.PORT??8080);
   if(!Number.isInteger(port) || port<1 || port>65535)throw new Error('PORT inválido.');
   const origenes=(env.AMANCAY_ORIGENES_WEB??'').split(',').map(v=>v.trim()).filter(Boolean);
   const http=validarConfigHttp({entorno:'compartido',proyecto,origenes});
-  return {proyecto,bucket,port,http};
+  return {proyecto,port,http};
 }

@@ -52,6 +52,21 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   const data = input as Record<string, unknown>;
   return data;
 }
+async function cuerpoImagen(req:IncomingMessage):Promise<Buffer> {
+  const contentType=req.headers['content-type']?.split(';')[0].trim();
+  if(!['image/jpeg','image/png','image/webp'].includes(contentType??''))throw new ErrorHttp(415,'tipo-no-admitido','Usar una imagen JPEG, PNG o WebP.');
+  if(req.headers['content-encoding'] && req.headers['content-encoding']!=='identity')throw new ErrorHttp(415,'tipo-no-admitido','No se admite contenido comprimido.');
+  const declared=Number(req.headers['content-length']??0);
+  if(declared>5*1024*1024)throw new ErrorHttp(413,'cuerpo-demasiado-grande','Máximo 5 MiB.');
+  const chunks:Buffer[]=[];let size=0;
+  for await(const chunk of req) {
+    size+=chunk.length;
+    if(size>5*1024*1024)throw new ErrorHttp(413,'cuerpo-demasiado-grande','Máximo 5 MiB.');
+    chunks.push(Buffer.from(chunk));
+  }
+  if(size===0)throw new ErrorHttp(400,'datos-invalidos','La imagen está vacía.');
+  return Buffer.concat(chunks);
+}
 function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): Solicitud {
   const required = ['tiendaId', 'operacionId', 'versionEsperada', ...(accion.endsWith('Producto') ? ['productoId'] : [])];
   if (Object.keys(data).some(k => !required.includes(k)) || required.some(k => typeof data[k] !== 'string')) throw new ErrorHttp(400, 'datos-invalidos', 'Campos ausentes o no permitidos. No enviar uid ni roles.');
@@ -59,7 +74,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -74,18 +89,25 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;
       const esStock = req.url === '/api/v1/ajustarStock' && stock !== undefined;
       const esDesactivacion = req.url === '/api/v1/desactivarEmprendedora' && desactivar !== undefined;
-      const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto)$/)?.[1] as AccionProducto | undefined;
+      const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto|eliminarProducto)$/)?.[1] as AccionProducto | undefined;
       const accionCatalogo = catalogos ? accionesCatalogo.find(a => req.url === `/api/v1/${a}`) as AccionCatalogo | undefined : undefined;
       const accionAsociacion = asociaciones ? accionesAsociacion.find(a => req.url === `/api/v1/${a}`) as AccionAsociacion | undefined : undefined;
       const accionAdministracion = administracion ? accionesAdministracion.find(a => req.url === `/api/v1/${a}`) as AccionAdministracion | undefined : undefined;
       const accionFeria = ferias ? accionesFeria.find(a => req.url === `/api/v1/${a}`) as AccionFeria | undefined : undefined;
       const esEdicionTiendaEmprendedora = req.url === '/api/v1/editarTiendaEmprendedora' && editarTiendaEmprendedora !== undefined;
-      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      const subidaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes$/);
+      const lecturaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes\/([0-4])$/);
+      const subidaLogo=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/logo$/);
+      const esSubidaImagen=Boolean(subidaImagen && imagenes);
+      const esLecturaImagen=Boolean(lecturaImagen && imagenes?.leer);
+      const esSubidaLogo=Boolean(subidaLogo && imagenes?.subirTienda);
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
-        res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' });
+        res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id', 'Cache-Control': 'no-store' });
         return res.end();
       }
-      if (req.method !== 'POST') { res.setHeader('Allow', 'POST, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar POST.'); }
+      if (esLecturaImagen && req.method !== 'GET') { res.setHeader('Allow', 'GET, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar GET.'); }
+      if (!esLecturaImagen && req.method !== 'POST') { res.setHeader('Allow', 'POST, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar POST.'); }
       const match = req.headers.authorization?.match(/^Bearer ([^\s]+)$/i);
       if (!match) throw new ErrorHttp(401, 'no-autenticado', 'Se requiere un ID token de Firebase.');
       let uid: string, authTime: number;
@@ -98,6 +120,26 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         throw new ErrorHttp(503, 'autenticacion-no-disponible', 'No se pudo comprobar la sesión.');
       }
       if(sesion && !await sesion(uid,authTime)) throw new ErrorHttp(401,'no-autenticado','Iniciar una nueva sesión después de la reactivación.');
+      if(esLecturaImagen) {
+        const imagen=await imagenes!.leer!(uid,lecturaImagen![1],lecturaImagen![2],Number(lecturaImagen![3]));
+        res.writeHead(200,{
+          'Content-Type':imagen.contentType,
+          'Content-Length':imagen.bytes.length,
+          'Cache-Control':'private, no-store',
+          'X-Content-Type-Options':'nosniff',
+        });
+        return res.end(imagen.bytes);
+      }
+      if(esSubidaImagen || esSubidaLogo) {
+        const archivoId=req.headers['x-archivo-id'];
+        if(typeof archivoId!=='string' || archivoId.length>64)throw new ErrorHttp(400,'datos-invalidos','Enviar un X-Archivo-Id UUID para que el reintento sea idempotente.');
+        const bytes=await cuerpoImagen(req);
+        const contentType=req.headers['content-type']!.split(';')[0].trim();
+        const ruta=esSubidaImagen
+          ? await imagenes!.subir(uid,subidaImagen![1],subidaImagen![2],archivoId,contentType,bytes)
+          : await imagenes!.subirTienda!(uid,subidaLogo![1],archivoId,contentType,bytes);
+        return json(res,200,{datos:{ruta}});
+      }
       const input = await body(req);
       const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : accionAsociacion ? await asociaciones!(accionAsociacion,{uid},input) : accionAdministracion ? await administracion!(accionAdministracion,{uid},input) : accionFeria ? await ferias!(accionFeria,{uid},input) : esEdicionTiendaEmprendedora ? await editarTiendaEmprendedora!({uid},input) : esAlta ? await alta!({uid}, input)
         : esDesactivacion ? await desactivar!({uid}, input)
@@ -113,7 +155,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       json(res, 500, { error: { code: 'error-interno', mensaje: 'No se pudo completar la operación.' } });
     }
   });
-  server.requestTimeout = 15000;
+  server.requestTimeout = 45000;
   server.headersTimeout = 10000;
   return server;
 }

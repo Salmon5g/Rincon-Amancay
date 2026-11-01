@@ -12,6 +12,7 @@ export default defineNuxtConfig({
       firebaseMessagingSenderId: '',
       firebaseAppId: '',
       apiUrl: '',
+      supabaseUrl: 'https://supabase-fixmol.codepulse.cl',
     },
   },
 })

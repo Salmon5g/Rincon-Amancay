@@ -5,14 +5,12 @@ import { leerConfigCompartida } from '../src/config/compartido.ts';
 const base = {
   AMANCAY_ENTORNO: 'compartido',
   AMANCAY_PROJECT_ID: 'rincon-amancay',
-  AMANCAY_STORAGE_BUCKET: 'rincon-amancay.firebasestorage.app',
   AMANCAY_ORIGENES_WEB: 'https://rincon-amancay.web.app',
 };
 
-test('config compartida: proyecto, bucket, puerto y HTTP explícitos', () => {
+test('config compartida: proyecto, puerto y HTTP explícitos', () => {
   const config = leerConfigCompartida({ ...base, PORT: '9090' });
   assert.equal(config.proyecto, 'rincon-amancay');
-  assert.equal(config.bucket, 'rincon-amancay.firebasestorage.app');
   assert.equal(config.port, 9090);
   assert.deepEqual(config.http, { entorno: 'compartido', proyecto: 'rincon-amancay', origenes: ['https://rincon-amancay.web.app'] });
   assert.equal(leerConfigCompartida({ ...base }).port, 8080);
@@ -25,7 +23,6 @@ test('config compartida rechaza emuladores, credenciales y proyectos ajenos', ()
   assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_ENTORNO: 'emulador' }));
   assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_ENTORNO: undefined }));
   assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_PROJECT_ID: 'demo-rincon-amancay' }));
-  assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_STORAGE_BUCKET: 'rincon-amancay.appspot.com' }));
   assert.throws(() => leerConfigCompartida({ ...base, GCLOUD_PROJECT: 'otro-proyecto' }));
   assert.throws(() => leerConfigCompartida({ ...base, GOOGLE_CLOUD_PROJECT: 'otro-proyecto' }));
   assert.throws(() => leerConfigCompartida({ ...base, PORT: '0' }));

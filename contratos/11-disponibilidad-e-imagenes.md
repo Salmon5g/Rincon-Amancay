@@ -1,6 +1,6 @@
 # Disponibilidad e imágenes publicadas
 
-Implementado y probado en emuladores. Mantiene las rutas de API y cuerpos existentes de publicación y ajuste de stock. No se creó infraestructura en Firebase real.
+La lógica de publicación y disponibilidad se probó en emuladores. El adaptador compartido local ahora procesa imágenes con Supabase Storage; su SQL definitivo debe aplicarse en la instancia del curso y el flujo de cliente sigue pendiente.
 
 ## Una ficha aprobada y un borrador
 
@@ -45,7 +45,7 @@ Los comprobantes históricos de operaciones anteriores conservan su respuesta or
 
 ## Imágenes preparadas por el servidor
 
-La propietaria sigue subiendo originales a `tiendas/{tiendaId}/productos/{productoId}/{archivoId}.{jpg|png|webp}`. **Los originales ahora son privados**, aunque una proyección antigua todavía tenga su ruta. Para restaurar las fotos de una publicación anterior, publicar el producto de nuevo.
+En el entorno compartido, la app envía originales a la API local con un ID token de Firebase. La API verifica que la cuenta esté activa, tenga rol `emprendedora` y sea propietaria de la tienda y del producto. Usa una sesión normal de la cuenta técnica Supabase configurada solo en el backend. No utiliza `service_role` ni credenciales Supabase desde Android o web. Los originales quedan privados en `amancay-originales` con ruta `tiendas/{tiendaId}/productos/{productoId}/{uuid}.{jpg|png|webp}`.
 
 Al publicar, el servidor comprueba pertenencia, MIME y tamaño (hasta 5 MiB), decodifica la imagen completa con Sharp, rechaza formatos reales distintos, archivos dañados, animaciones, más de 20 millones de píxeles o dimensiones superiores a 10.000 px. Aplica orientación EXIF antes de eliminar los metadatos y genera:
 
@@ -54,17 +54,17 @@ Al publicar, el servidor comprueba pertenencia, MIME y tamaño (hasta 5 MiB), de
 
 Se mantiene la proporción y no se amplían imágenes pequeñas. Las copias no conservan EXIF/GPS, XMP, IPTC ni perfiles ICC. Hay un límite de cinco segundos por transformación; no es un análisis antivirus ni una moderación del contenido visual.
 
-Las copias usan rutas por contenido: `catalogo/{tiendaId}/productos/{productoId}/{hash}_1600.webp` y `{hash}_320.webp`. Solo el servidor puede crearlas. Un reintento reutiliza las mismas rutas; se evita sobrescribirlas. No se crean URLs con tokens de descarga. Las reglas permiten leerlas públicamente solo mientras estén referenciadas por un producto publicado de una tienda habilitada y con precios visibles.
+Las copias usan rutas por contenido: `catalogo/{tiendaId}/productos/{productoId}/{hash}_1600.webp` y `{hash}_320.webp`. Solo la identidad técnica de Supabase puede crearlas o borrarlas. Un reintento reutiliza las mismas rutas; se evita sobrescribirlas. Las rutas se guardan en Firestore, no URLs con tokens. El bucket de derivadas es público: conocer una ruta basta para descargar el archivo, aunque Firestore ya no lo muestre o siga existiendo una caché.
 
-Storage y Firestore no comparten transacción. Las copias se preparan antes de confirmar la proyección: si la publicación falla o cambia la versión, pueden quedar copias sin referencia. Esas copias no son públicas y no se eliminan automáticamente. La futura limpieza deberá consultar borradores, proyecciones y aprobaciones internas: una imagen de un producto agotado puede necesitarse al reponerlo.
+Storage y Firestore no comparten transacción. Las copias se preparan antes de confirmar la proyección; si falla la publicación, pueden quedar objetos públicos sin referencia conocida. Al retirar una tienda o producto se guardan en el comprobante las rutas a limpiar y la API las elimina después de confirmar Firestore. Si la eliminación falla, repetir la misma solicitud con el mismo `operacionId` vuelve a intentar. La limpieza no invalida archivos ya descargados ni todas las cachés.
 
 Sharp requiere su binario nativo de la plataforma; `npm ci` instala la dependencia fijada por el lockfile. Antes de producción aún deben dimensionarse CPU/memoria, concurrencia y cuotas, definir procesamiento en cola y limpieza, y revisar costos/caché. Las pruebas locales no equivalen a desplegar ese servicio.
 
 ## Acuerdo para web y Android
 
-La ficha privada conserva `imagenes` con originales. La ficha pública devuelve `imagenes` con copias WebP y `miniaturas` en el mismo orden. La primera sigue siendo la portada. Para listas, preferir `miniaturas[index]` y usar `imagenes[index]` si la miniatura no existe en un dato anterior. Para detalle, leer la imagen principal.
+La ficha privada conserva `imagenes` con rutas a originales. La ficha pública devuelve `imagenes` con WebP grandes y `miniaturas` en el mismo orden. La primera sigue siendo la portada. Para listas, preferir `miniaturas[index]`; para detalle, leer `imagenes[index]`.
 
-Usar las rutas entregadas por Firestore mediante SDK Storage; no deducirlas del nombre original ni usar URLs públicas permanentes. El adaptador web `leerImagen` sirve para ambas. Los originales se usan únicamente al editar desde la sesión propietaria.
+En emuladores se leen rutas mediante Firebase Storage. En el entorno compartido, los lectores deben construir la URL pública de Supabase con la ruta `catalogo/...`; esa adaptación aún no está conectada en web ni Android. No deducir rutas desde el nombre original ni guardar URLs de descarga con tokens. La app no necesita leer los originales privados.
 
 Después de ajustar stock, la pantalla puede releer el catálogo o mantener una suscripción Firestore. La transacción actualiza los datos públicos, pero no añade automáticamente suscripciones a las pantallas que construya el grupo. `requiereRepublicar:false` no significa que se hayan publicado los cambios pendientes del borrador.
 

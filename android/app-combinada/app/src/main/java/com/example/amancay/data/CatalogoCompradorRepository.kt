@@ -1,5 +1,6 @@
 package com.example.amancay.data
 
+import android.net.Uri
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -31,7 +32,8 @@ data class ProductoCatalogoComprador(
     val precioBase: Long?,
     val tieneVariantes: Boolean,
     val atributosEspecificos: Map<String, String>,
-    val variantes: List<VarianteCatalogoComprador> = emptyList()
+    val variantes: List<VarianteCatalogoComprador> = emptyList(),
+    val imagenUrl: String? = null
 )
 
 interface CatalogoCompradorRepository {
@@ -194,7 +196,8 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         estadoDisponibilidad = getString("estadoDisponibilidad") ?: "consultar",
         precioBase = getLong("precioBase"),
         tieneVariantes = getBoolean("tieneVariantes") == true,
-        atributosEspecificos = mapaTexto("atributosEspecificos")
+        atributosEspecificos = mapaTexto("atributosEspecificos"),
+        imagenUrl = urlImagenCatalogo(tienda.id, id, (get("imagenes") as? List<*>).orEmpty().filterIsInstance<String>())
     )
 
     private fun DocumentSnapshot.aVariante() = VarianteCatalogoComprador(
@@ -240,4 +243,11 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     }
 
     private fun clave(tiendaId: String, productoId: String) = "$tiendaId/$productoId"
+}
+
+private fun urlImagenCatalogo(tiendaId: String, productoId: String, rutas: List<String>): String? {
+    val patron = Regex("^catalogo/${Regex.escape(tiendaId)}/productos/${Regex.escape(productoId)}/[0-9a-f]{64}_1600\\.webp$")
+    val ruta = rutas.firstOrNull(patron::matches) ?: return null
+    val segmentos = ruta.split('/').joinToString("/") { Uri.encode(it) }
+    return "https://supabase-fixmol.codepulse.cl/storage/v1/object/public/amancay-catalogo/$segmentos"
 }

@@ -73,8 +73,14 @@ La ficha, las variantes y el comprobante privado en tiendasPrivadas/{tiendaId}/o
 
 Respuesta 200: `{"datos":{"accion":"crearProducto","productoId":"...","operacionId":"..."}}`. Releer la ficha para conocer su versión confirmada. 400: datos inválidos; 401/403: sesión/permisos; 404: producto a editar inexistente; 409: conflicto, ID reutilizado o cambio estructural; 422: límite de variantes existentes. Se conserva el límite HTTP de 16 KiB: 20 variantes es un máximo, y una ficha con textos largos puede necesitar una solicitud menor.
 
+## Eliminar
+
+`/api/v1/eliminarProducto` recibe `tiendaId`, `productoId`, `operacionId` y `versionEsperada`. Solo la emprendedora activa propietaria puede eliminar una ficha vigente. La operación retira de Firestore la proyección pública, sus variantes y el comprobante de publicación; el producto deja de aparecer en **Mis productos**. En la ficha privada se conserva un tombstone (`estadoPublicacion: eliminado`), las variantes, el historial de stock y los originales privados para mantener trazabilidad. Las imágenes derivadas públicas se limpian después de la transacción; si la limpieza falla, un reintento con el mismo `operacionId` vuelve a intentarla.
+
+La operación es idempotente y usa control de versión: volver a enviar el mismo `operacionId` devuelve el resultado confirmado; una versión obsoleta responde 409. La confirmación de la app advierte qué se retira y qué se conserva.
+
 ## Pruebas y pendientes
 
 Con emuladores activos: npm run typecheck y npm run test:productos desde backend/. Se probaron 21 casos de sesión, propiedad, validación, modalidades, stock inicial, variantes, publicación explícita, reintentos y concurrencia. La prueba de edición/publicación usa un sustituto de imágenes; la suite api.test.ts prueba por separado el verificador de Storage.
 
-El editor no registra ventas, reservas, devoluciones ni elimina productos. Los ajustes de stock tienen su propia operación, descrita en 08-ajustes-stock.md. No admite cantidades fraccionarias, tipos específicos no textuales ni migraciones de estructura. El modelo puede ampliarse después del levantamiento de requerimientos conservando contratos versionados.
+El editor no registra ventas, reservas ni devoluciones. Los ajustes de stock tienen su propia operación, descrita en 08-ajustes-stock.md. No admite cantidades fraccionarias, tipos específicos no textuales ni migraciones de estructura. El modelo puede ampliarse después del levantamiento de requerimientos conservando contratos versionados.
