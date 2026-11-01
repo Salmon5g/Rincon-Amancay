@@ -45,6 +45,14 @@ Esta opción conecta el emulador Android con Authentication/Firestore reales y c
 6. Comprueba en **Mi tienda** la lectura y edición de nombre, descripción, tipo, sector y contacto. Si está publicada, el backend actualiza la proyección pública de la tienda en la misma operación.
 7. En **Productos**, crea un borrador, edítalo, revisa catálogo, publica/retira productos y ajusta stock. El stock se cambia solo por la API y queda en el historial privado.
 
+## Acceso biométrico en el dispositivo
+
+Después de ingresar con las credenciales entregadas por la administración, la emprendedora puede activar **Acceso con huella** desde **Inicio**. Android solicita una verificación biométrica del dispositivo. En los siguientes ingresos al modo emprendedora, la app pide esa verificación antes de volver a validar en Firebase la sesión, rol, estado y tienda asignada.
+
+La app no guarda la contraseña. Firebase Authentication conserva su sesión local; la preferencia local solo indica que ese UID activó el bloqueo biométrico en ese dispositivo. **Salir** cierra la sesión de Firebase y desactiva esa preferencia. Si no hay biometría registrada o disponible, se debe ingresar con correo y contraseña. La prueba requiere un emulador con biometría inscrita o un dispositivo compatible con biometría fuerte.
+
+Para comprobar el siguiente ingreso, activa la huella, cierra completamente la app sin usar **Salir**, vuelve a abrirla y entra a **Modo emprendedora**. La pantalla debe pedir biometría y después validar la cuenta. Desactiva la huella y repite para confirmar que vuelve al ingreso habitual. Finalmente, prueba **Salir**: debe cerrar Firebase y borrar la preferencia biométrica de ese dispositivo.
+
 La URL local de la API no es pública: solo la app del mismo emulador en ese computador puede alcanzarla. Otros integrantes deben iniciar su propia API con una identidad ADC autorizada o esperar una URL HTTPS compartida cuando el grupo decida dónde desplegarla.
 
 ## Modo de emuladores
@@ -64,4 +72,4 @@ La app todavía no carga fotos ni logo. Las tiendas pueden publicarse sin logo; 
 
 Se dejó el límite explícito para la futura integración Supabase: la app necesitará un adaptador de medios, un campo de referencia acordado para logos/fotos y una verificación del lado servidor compatible con esa referencia. No se acepta todavía una URL o ruta de Supabase en `imagenes`; el backend actual solo valida objetos de Firebase Storage. La política y credenciales de carga deben acordarse antes de implementar el proveedor. No poner una clave `service_role` en Android ni en Git.
 
-La autenticación actual utiliza correo y contraseña. La activación de huella, el registro de ventas, las invitaciones a ferias y la carga de imágenes no forman parte de esta integración todavía.
+La autenticación de emprendedoras utiliza correo y contraseña asignados por la administración, con desbloqueo biométrico opcional por dispositivo. El registro de ventas, las invitaciones a ferias y la carga de imágenes no forman parte de esta integración todavía.
