@@ -43,7 +43,7 @@ Esta opción conecta el emulador Android con Authentication/Firestore reales y c
 4. Sincroniza Gradle y ejecuta la configuración `app` en un emulador.
 5. Entra a **Modo emprendedora** con el correo y contraseña asignados. La app valida sesión, rol, estado y vínculo con la tienda antes de abrir las pantallas acordadas en el commit `23ceb82`.
 6. En **Más → Mi tienda**, comprueba la lectura y edición de nombre, descripción, tipo, sector y contacto. Si está publicada, el backend actualiza la proyección pública de la tienda en la misma operación.
-7. En **Productos**, la lista conserva el diseño acordado. Crear o editar abre el asistente guiado de cinco pasos de a251d70: foto; nombre, descripción, tipo y categoría; detalles que dependen del tipo activo; modalidad, precio, variantes y stock inicial; revisión final. El formulario conserva validaciones y operaciones Firebase/API. El selector de cámara o galería solo guarda la foto temporalmente en el teléfono: aún no se carga a Storage. Por eso el botón final guarda un borrador y avisa que publicar requiere una imagen autorizada. Desde la lista también se puede publicar/retirar y ajustar stock; los ajustes se hacen por API y quedan en el historial privado.
+7. En **Productos**, la lista conserva el diseño acordado. Crear o editar abre el asistente guiado de cinco pasos de a251d70: foto; nombre, descripción, tipo y categoría; detalles que dependen del tipo activo; modalidad, precio, variantes y stock inicial; revisión final. Al guardar, la app envía la imagen seleccionada a la API local autenticada; el original queda privado en Supabase y la emprendedora puede verlo en su vista previa. Publicar crea las derivadas WebP públicas del catálogo. Desde la lista también se puede publicar/retirar, ajustar stock y eliminar; los ajustes se hacen por API y quedan en el historial privado.
 
 ## Acceso biométrico en el dispositivo
 
@@ -68,8 +68,8 @@ La app usa Authentication Emulator en `9099`, Firestore Emulator en `8080` y la 
 
 ## Alcance de imágenes y funciones pendientes
 
-La app todavía no carga fotos ni logo. Las tiendas pueden publicarse sin logo. El backend compartido local ya acepta las rutas de carga a Supabase para logo e imágenes de producto y valida el original al publicar. El formulario Android deja crear/editar borradores, pero aún no llama esas rutas; por eso publicar un producto desde Android sigue bloqueado hasta conectar la selección y carga de imagen.
+En el modo compartido, la app carga imágenes de productos mediante la API local: los originales se guardan en el bucket privado de Supabase y la vista previa de la emprendedora los solicita con su sesión. Al publicar, la API genera WebP públicas para el catálogo; el comprador Android y la web convierten las rutas `catalogo/...` en imágenes públicas de Supabase. La carga del logo de tienda desde Android aún no está integrada.
 
-El modo emulador mantiene Firebase Storage. El modo compartido local usa las políticas y rutas de Supabase del contrato 05. No poner la contraseña de la cuenta técnica ni una clave `service_role` en Android, Nuxt o Git. La adaptación de web/Android para mostrar las rutas públicas `catalogo/...` también queda pendiente.
+El modo emulador mantiene Firebase Storage. El modo compartido local usa las políticas y rutas de Supabase del contrato 05. No poner la contraseña de la cuenta técnica ni una clave `service_role` en Android, Nuxt o Git.
 
 La autenticación de emprendedoras utiliza correo y contraseña asignados por la administración, con desbloqueo biométrico opcional por dispositivo. El registro de ventas y las invitaciones a ferias no forman parte de esta integración todavía.

@@ -67,4 +67,4 @@ Publicar usa las operaciones existentes `publicarTienda` y `publicarProducto`. L
 
 ## Alcance de este avance
 
-La API compartida local integra Supabase Storage y el comprador web resuelve las rutas públicas `catalogo/...` a URLs directas del bucket público para evitar solicitar los originales desde Firebase Storage. El adaptador Firebase para emuladores sigue separado. La app Android todavía debe llamar a la ruta de carga al guardar una foto y convertir las rutas públicas del catálogo en URLs de Supabase para sus pantallas compradoras.
+La API compartida local integra Supabase Storage. Android carga fotos de productos a la API, que conserva el original en privado y genera derivadas WebP públicas al publicar; la emprendedora puede ver el original privado desde su vista previa. La web y el comprador Android resuelven las rutas públicas `catalogo/...` a URLs del bucket público. El adaptador Firebase para emuladores sigue separado. La carga de logo desde Android todavía está pendiente.

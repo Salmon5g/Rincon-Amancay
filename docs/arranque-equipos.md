@@ -1,8 +1,8 @@
-# Arranque por equipo (desarrollo local)
+# Arranque por equipo (emuladores locales)
 
-Guía corta para que los tres equipos empiecen **en local** sin depender de la nube. Primero todos hacen la **preparación común**; después cada equipo sigue su sección. Para el detalle, ver [integración de equipos](integracion-equipos.md) y los [contratos](../contratos/).
+Guía para ejecutar el proyecto con **emuladores locales y datos ficticios**. Primero todos hacen la **preparación común**; después cada equipo sigue su sección. Para probar Firebase y Supabase reales con la API local, sigue los pasos del [README principal](../README.md#prueba-local-integrada-con-firebase-y-supabase). Para el detalle de contratos, ver [integración de equipos](integracion-equipos.md) y los [contratos](../contratos/).
 
-> Esta guía describe los emuladores. Para probar Authentication y lecturas de Firestore real, seguir [admin-firestore-real.md](admin-firestore-real.md). La API compartida y Storage siguen pendientes; no usar el adaptador completo sin su despliegue.
+> Esta guía configura fixtures aislados; sus emuladores y seeds no son el proyecto real. La API compartida puede ejecutarse localmente contra Firebase real y Supabase siguiendo el README. No ejecutes seeds ni pruebas demo contra ese entorno.
 
 ## 0. Preparación común (una vez por computador)
 
@@ -114,7 +114,7 @@ El modo comprador de la app unificada lee en tiempo real desde Firestore las tie
 
 El modo emprendedora inicia sesión con correo/contraseña de Firebase, comprueba el rol activo y la tienda asignada, y lee la ficha y productos propios desde Firestore. Editar la tienda y los borradores de producto, publicar/retirar y ajustar stock usan la API autenticada. Para Firebase real desde Android, la API local debe correr en el computador y `local.properties` debe usar `amancay.api.baseUrl=http://10.0.2.2:8080/api/v1/`; sigue [la guía Android](android-emprendedora-firebase.md). Para datos ficticios, configura también `amancay.firebase.emulators=true` y el puerto API `8787` según la misma guía.
 
-La app Android todavía no conecta sus formularios de imagen a la API. El backend compartido local ya ofrece rutas seguras para subir logos e imágenes de productos a Supabase; ver [contrato de imágenes](../contratos/05-imagenes-storage.md). El modo emulador conserva Firebase Storage. Los lectores web/Android aún deben resolver las rutas públicas de Supabase. El registro de ventas y las invitaciones a ferias siguen pendientes. El proyecto comprador anterior sigue en la raíz `android/`; es independiente. No uses rutas `APP` y `app` que solo difieran por mayúsculas en Windows, porque representan la misma carpeta.
+En el modo compartido, Android carga fotos de productos mediante la API local y las vistas compradoras web/Android leen las derivadas públicas de Supabase; ver [contrato de imágenes](../contratos/05-imagenes-storage.md) y el [README principal](../README.md). En el modo emulador se conserva Firebase Storage. El registro de ventas, las invitaciones a ferias y la carga de logos desde Android siguen pendientes. El proyecto comprador anterior sigue en la raíz `android/`; es independiente. No uses rutas `APP` y `app` que solo difieran por mayúsculas en Windows, porque representan la misma carpeta.
 ## 3. Verificación conjunta
 
 Para comprobar una actualización entre Android y comprador web, usa la [guía de conexión Android](android-emprendedora-firebase.md) y ejecuta ambos clientes contra el mismo proyecto/emulador y API. El documento [integración de equipos](integracion-equipos.md) conserva escenarios útiles de emuladores, pero sus rutas de ejemplo Android y su afirmación de que faltaba la interfaz emprendedora son anteriores a esta integración.
