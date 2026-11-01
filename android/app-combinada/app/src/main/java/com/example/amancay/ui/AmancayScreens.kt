@@ -65,6 +65,7 @@ fun StepScaffold(
     paso: String, titulo: String, subtitulo: String,
     onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit,
     nextLabel: String = "Continuar", nextEnabled: Boolean = true, pasoActual: Int = 1,
+    showSaveExit: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
@@ -82,7 +83,7 @@ fun StepScaffold(
             OutlineButton("Atrás", onBack, modifier = Modifier.weight(1f), fontSize = 14.sp)
             PrimaryButton(nextLabel, onNext, modifier = Modifier.weight(1f), enabled = nextEnabled, fontSize = 14.sp)
         }
-        GhostButton("Salir y guardar", onSaveExit)
+        if (showSaveExit) GhostButton("Salir y guardar", onSaveExit)
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -101,7 +102,9 @@ fun HomeScreen(
     onContinuarBorrador: () -> Unit,
     onMisProductos: () -> Unit,
     onVerCatalogo: () -> Unit,
-    onVerFerias: () -> Unit
+    onVerFerias: () -> Unit,
+    invitacionesDisponibles: Boolean = true,
+    contenidoAdicional: @Composable ColumnScope.() -> Unit = {}
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
@@ -130,12 +133,12 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(16.dp))
                 Button(
-                    onClick = onAgregar, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                    onClick = onAgregar, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White),
                     shape = RoundedCornerShape(16.dp),
                     contentPadding = PaddingValues(vertical = 18.dp)
                 ) {
-                    Text("+ Agregar producto", color = Dark,fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("+ Agregar producto", color = Dark,fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
         }
@@ -174,7 +177,8 @@ fun HomeScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Invitaciones a ferias", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
                     Text(
-                        if (invitacionesPendientes > 0) "$invitacionesPendientes por responder"
+                        if (!invitacionesDisponibles) "Consulta de invitaciones no disponible"
+                        else if (invitacionesPendientes > 0) "$invitacionesPendientes por responder"
                         else "Sin invitaciones pendientes",
                         fontSize = 13.sp, color = Muted
                     )
@@ -197,6 +201,7 @@ fun HomeScreen(
             onVerCatalogo = onVerCatalogo
         )
         Spacer(Modifier.height(16.dp))
+        contenidoAdicional()
     }
 }
 
@@ -570,25 +575,32 @@ fun CameraScreen(
 fun PhotoStep(
     draft: DraftState, bump: () -> Unit,
     onTakePhoto: () -> Unit, onPickPhoto: () -> Unit,
-    onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit
+    onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit,
+    showSaveExit: Boolean = true,
+    imagenExistente: Boolean = false
 ) {
-    StepScaffold("Paso 1 de 5", "Primero, una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1) {
-        Crossfade(targetState = draft.fotoLista, label = "foto") { lista ->
+    StepScaffold("Paso 1 de 5", "Primero, una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit) {
+        Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
             if (lista) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     ProductImage(
                         fallback = Fig.VASE_BIG, size = 170.dp,
-                        uri = draft.photoUri, bitmap = draft.photoBitmap, hasPhoto = true
+                        uri = draft.photoUri, bitmap = draft.photoBitmap, hasPhoto = draft.fotoLista
                     )
                     Spacer(Modifier.height(10.dp))
                     Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
                         Text(
-                            "Foto lista", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText,
+                            if (draft.fotoLista) "Foto elegida" else "Referencia de imagen existente",
+                            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
                     Spacer(Modifier.height(4.dp))
-                    Text("La imagen está preparada para subir.", fontSize = 13.sp, color = Muted)
+                    Text(
+                        if (draft.fotoLista) "La foto está seleccionada en este teléfono; todavía no se sube a la nube."
+                        else "La referencia se conservará. Su vista previa y reemplazo requieren habilitar el almacenamiento.",
+                        fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
+                    )
                 }
             } else {
                 Surface(
@@ -608,18 +620,20 @@ fun PhotoStep(
                         Spacer(Modifier.height(10.dp))
                         Text("Agrega una foto", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Dark)
                         Text(
-                            "La comprimiremos antes de subirla para ahorrar datos.",
+                            "Elige una foto clara; podrás revisarla antes de guardar el producto.",
                             fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
                         )
                     }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        PrimaryButton("Usar cámara", onTakePhoto)
-        Spacer(Modifier.height(10.dp))
-        OutlineButton("Elegir galería", onPickPhoto)
-        Spacer(Modifier.height(8.dp))
+        if (!imagenExistente || draft.fotoLista) {
+            Spacer(Modifier.height(16.dp))
+            PrimaryButton("Usar cámara", onTakePhoto)
+            Spacer(Modifier.height(10.dp))
+            OutlineButton("Elegir galería", onPickPhoto)
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
@@ -779,7 +793,10 @@ fun ProductsScreen(
     onCreate: () -> Unit,
     onPreview: (Product) -> Unit,
     settings: ShopSettings,
-    onSettings: (ShopSettings) -> Unit
+    onSettings: (ShopSettings) -> Unit,
+    mostrarEliminar: Boolean = true,
+    onAccionPublicacion: ((Product) -> Unit)? = null,
+    onAjustarStock: ((Product) -> Unit)? = null
 ) {
     var tab by remember { mutableStateOf(0) }
     var toDelete by remember { mutableStateOf<Product?>(null) }
@@ -822,52 +839,54 @@ fun ProductsScreen(
                         Text(
                             p.nombre,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            lineHeight = 26.sp,
+                            fontSize = 16.sp,
                             color = Dark
                         )
                         Text(
                             "${formatPrice(p.precioPrincipal())} · ${p.stockTotal()} ${if (p.stockTotal() == 1) "unidad" else "unidades"}",
-                            fontSize = 16.sp,
-                            lineHeight = 22.sp,
+                            fontSize = 13.sp,
                             color = Muted
                         )
-                        if (!p.esBorrador) {
-                            Text("Visible", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = GreenText)
-                        } else {
-                            Text("Borrador", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Muted)
-                        }
+                        Text(
+                            p.estadoCatalogo ?: if (p.publicado) "Visible" else "Borrador",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (p.publicado) GreenText else Muted
+                        )
                     }
                     Column(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        TextButton(
-                            onClick = { onEdit(p) },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Editar", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Wine)
+                        Text(
+                            "Editar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine,
+                            modifier = Modifier.clickable { onEdit(p) }.padding(4.dp)
+                        )
+                        onAccionPublicacion?.let { accion ->
+                            Text(
+                                if (p.publicado) "Retirar" else "Publicar",
+                                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine,
+                                modifier = Modifier.clickable { accion(p) }.padding(4.dp)
+                            )
                         }
-                        TextButton(
-                            onClick = { toDelete = p },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Eliminar", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                        onAjustarStock?.let { ajustar ->
+                            Text(
+                                "Stock", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine,
+                                modifier = Modifier.clickable { ajustar(p) }.padding(4.dp)
+                            )
+                        }
+                        if (mostrarEliminar) {
+                            Text(
+                                "Eliminar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AccentRed,
+                                modifier = Modifier.clickable { toDelete = p }.padding(4.dp)
+                            )
                         }
                     }
                 }
             }
         }
         item {
-            Button(
-                onClick = onCreate,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Wine),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
-            ) {
-                Text("+ Crear otro producto", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
+            PrimaryButton("+ Crear otro producto", onCreate)
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -1226,7 +1245,13 @@ fun SalesHistoryScreen(ventas: List<Sale>, eventos: List<CatalogEvent>) {
 fun SettingsScreen(
     settings: ShopSettings,
     onChange: (ShopSettings) -> Unit,
-    onGuardar: () -> Unit
+    onGuardar: () -> Unit,
+    mostrarPreferenciasProducto: Boolean = true,
+    nombreTienda: String? = null,
+    estadoTienda: String? = null,
+    onEditarTienda: (() -> Unit)? = null,
+    errorAcceso: String? = null,
+    onCerrarSesion: (() -> Unit)? = null
 ) {
     var s = settings
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -1235,6 +1260,7 @@ fun SettingsScreen(
         Text("Tu forma de trabajar", fontSize = 30.sp, color = Dark)
         Text("Ajusta la app una sola vez y úsala con tranquilidad.", fontSize = 15.sp, color = Muted)
         Spacer(Modifier.height(16.dp))
+        if (mostrarPreferenciasProducto) {
         Text("VALORES PARA PRODUCTOS NUEVOS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
         Spacer(Modifier.height(4.dp))
         Text("Manejo de stock", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark)
@@ -1260,6 +1286,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(14.dp))
         PrimaryButton("Guardar valores por defecto", onGuardar)
         Spacer(Modifier.height(16.dp))
+        }
         Text("ACCESO", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
         Spacer(Modifier.height(4.dp))
         Card(
@@ -1274,9 +1301,36 @@ fun SettingsScreen(
                     "Más rápido y seguro en tu teléfono.",
                     settings.huella
                 ) { onChange(settings.copy(huella = it)) }
+                errorAcceso?.let {
+                    Text(it, fontSize = 13.sp, color = AccentRed, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                }
+                if (onCerrarSesion != null) {
+                    HorizontalDivider(color = Line, modifier = Modifier.padding(horizontal = 10.dp))
+                    TextButton(onClick = onCerrarSesion, modifier = Modifier.fillMaxWidth()) {
+                        Text("Cerrar sesión", color = Wine, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
         Spacer(Modifier.height(16.dp))
+        if (onEditarTienda != null) {
+            Text("MI TIENDA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
+            Spacer(Modifier.height(4.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(nombreTienda.orEmpty(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
+                    Text(estadoTienda.orEmpty(), fontSize = 14.sp, color = Muted)
+                    Spacer(Modifier.height(10.dp))
+                    PrimaryButton("Editar ficha de tienda", onEditarTienda)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
     }
 }
 

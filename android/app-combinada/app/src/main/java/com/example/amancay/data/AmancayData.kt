@@ -58,6 +58,7 @@ data class Product(
     var disponibleEncargo: Boolean = true,
     var publicado: Boolean = false,
     var esBorrador: Boolean = true,
+    val estadoCatalogo: String? = null,
     var photoUri: Uri? = null,
     var photoBitmap: Bitmap? = null,
     var tieneFoto: Boolean = false

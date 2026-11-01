@@ -58,7 +58,7 @@ object Fig {
 }
 
 @Composable
-fun AmancayTopBar(onHelp: () -> Unit, onExit: () -> Unit) {
+fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -77,11 +77,13 @@ fun AmancayTopBar(onHelp: () -> Unit, onExit: () -> Unit) {
             Text("Amancay", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Wine)
         }
         Spacer(Modifier.weight(1f))
-        TextButton(
-            onClick = onExit,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text("Salir", fontWeight = FontWeight.Bold, color = Wine)
+        if (onExit != null) {
+            TextButton(
+                onClick = onExit,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text("Salir", fontWeight = FontWeight.Bold, color = Wine)
+            }
         }
         Text(
             "?",
@@ -187,11 +189,12 @@ fun StepHeader(paso: String, titulo: String, subtitulo: String) {
 }
 
 @Composable
-fun SelectableChip(text: String, selected: Boolean, onClick: () -> Unit) {
+fun SelectableChip(text: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val bg = if (selected) Wine else Color.White
     val fg = if (selected) Color.White else Dark
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(20.dp),
         color = bg,
         border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) Wine else Line)

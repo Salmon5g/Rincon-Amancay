@@ -41,17 +41,17 @@ Esta opción conecta el emulador Android con Authentication/Firestore reales y c
    `local.properties` está ignorado por Git. `10.0.2.2` permite que el emulador Android alcance el servidor local del computador; no sirve desde un teléfono físico.
 
 4. Sincroniza Gradle y ejecuta la configuración `app` en un emulador.
-5. Entra a **Modo emprendedora** con el correo y contraseña asignados. La app valida sesión, rol, estado y vínculo con la tienda antes de abrir las pantallas.
-6. Comprueba en **Mi tienda** la lectura y edición de nombre, descripción, tipo, sector y contacto. Si está publicada, el backend actualiza la proyección pública de la tienda en la misma operación.
-7. En **Productos**, crea un borrador, edítalo, revisa catálogo, publica/retira productos y ajusta stock. El stock se cambia solo por la API y queda en el historial privado.
+5. Entra a **Modo emprendedora** con el correo y contraseña asignados. La app valida sesión, rol, estado y vínculo con la tienda antes de abrir las pantallas acordadas en el commit `23ceb82`.
+6. En **Más → Mi tienda**, comprueba la lectura y edición de nombre, descripción, tipo, sector y contacto. Si está publicada, el backend actualiza la proyección pública de la tienda en la misma operación.
+7. En **Productos**, la lista conserva el diseño acordado. Crear o editar abre el asistente guiado de cinco pasos de a251d70: foto; nombre, descripción, tipo y categoría; detalles que dependen del tipo activo; modalidad, precio, variantes y stock inicial; revisión final. El formulario conserva validaciones y operaciones Firebase/API. El selector de cámara o galería solo guarda la foto temporalmente en el teléfono: aún no se carga a Storage. Por eso el botón final guarda un borrador y avisa que publicar requiere una imagen autorizada. Desde la lista también se puede publicar/retirar y ajustar stock; los ajustes se hacen por API y quedan en el historial privado.
 
 ## Acceso biométrico en el dispositivo
 
-Después de ingresar con las credenciales entregadas por la administración, la emprendedora puede activar **Acceso con huella** desde **Inicio**. Android solicita una verificación biométrica del dispositivo. En los siguientes ingresos al modo emprendedora, la app pide esa verificación antes de volver a validar en Firebase la sesión, rol, estado y tienda asignada.
+Después de ingresar con las credenciales entregadas por la administración, la emprendedora puede activar **Entrar con huella digital** desde **Más → Configuración → Acceso**. Android solicita una verificación biométrica del dispositivo. En los siguientes ingresos al modo emprendedora, la pantalla original de bloqueo pide esa verificación antes de volver a validar en Firebase la sesión, rol, estado y tienda asignada.
 
-La app no guarda la contraseña. Firebase Authentication conserva su sesión local; la preferencia local solo indica que ese UID activó el bloqueo biométrico en ese dispositivo. **Salir** cierra la sesión de Firebase y desactiva esa preferencia. Si no hay biometría registrada o disponible, se debe ingresar con correo y contraseña. La prueba requiere un emulador con biometría inscrita o un dispositivo compatible con biometría fuerte.
+La app no guarda la contraseña. Firebase Authentication conserva su sesión local; la preferencia local solo indica que ese UID activó el bloqueo biométrico en ese dispositivo. **Cerrar sesión**, desde Configuración, cierra Firebase y elimina esa preferencia. Si no hay biometría registrada o disponible, se debe ingresar con correo y contraseña. La prueba requiere un emulador con biometría inscrita o un dispositivo compatible con biometría fuerte.
 
-Para comprobar el siguiente ingreso, activa la huella, cierra completamente la app sin usar **Salir**, vuelve a abrirla y entra a **Modo emprendedora**. La pantalla debe pedir biometría y después validar la cuenta. Desactiva la huella y repite para confirmar que vuelve al ingreso habitual. Finalmente, prueba **Salir**: debe cerrar Firebase y borrar la preferencia biométrica de ese dispositivo.
+Para comprobar el siguiente ingreso, activa la huella, cierra completamente la app sin usar **Cerrar sesión**, vuelve a abrirla y entra a **Modo emprendedora**. La pantalla debe pedir biometría y después validar la cuenta. Desactiva la huella desde **Más → Configuración** y repite para confirmar que vuelve al ingreso habitual. Finalmente, prueba **Cerrar sesión**: debe cerrar Firebase y borrar la preferencia biométrica de ese dispositivo.
 
 La URL local de la API no es pública: solo la app del mismo emulador en ese computador puede alcanzarla. Otros integrantes deben iniciar su propia API con una identidad ADC autorizada o esperar una URL HTTPS compartida cuando el grupo decida dónde desplegarla.
 

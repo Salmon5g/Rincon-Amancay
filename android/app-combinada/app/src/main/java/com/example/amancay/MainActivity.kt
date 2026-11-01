@@ -15,8 +15,10 @@ import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,9 +37,22 @@ import com.example.amancay.emprendedora.ModoEmprendedoraConectada
 import com.example.amancay.data.AmancayRepository
 import com.example.amancay.data.DraftState
 import com.example.amancay.data.FirebaseClientServicesProvider
+import com.example.amancay.data.CuentaEmprendedora
+import com.example.amancay.data.OpcionCatalogoEmprendedora
+import com.example.amancay.data.ProductoEmprendedora
+import com.example.amancay.data.ProductosEmprendedoraRepository
+import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.data.Product
+import com.example.amancay.data.ProductType
+import com.example.amancay.data.ShopSettings
+import com.example.amancay.data.Variant
 import com.example.amancay.data.crearCatalogoCompradorFirebase
 import com.example.amancay.data.crearRepositorioDemostracion
+import com.example.amancay.emprendedora.PantallaEdicionTienda
+import com.example.amancay.emprendedora.ProductosEmprendedoraPanel
+import com.example.amancay.emprendedora.AvisoEmprendedora
+import com.example.amancay.emprendedora.DialogoAjusteStock
+import com.example.amancay.emprendedora.mensajeProducto
 import com.example.amancay.ui.*
 import com.example.amancay.ui.theme.AmancayTheme
 import com.example.amancay.ui.theme.Cream
@@ -523,5 +538,337 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
             confirmButton = {}
         )
     }
+    }
+}
+
+@Composable
+internal fun EmprendedoraAppConectada(
+    sesion: CuentaEmprendedora,
+    tienda: TiendaEmprendedora,
+    sectores: List<OpcionCatalogoEmprendedora>,
+    tipos: List<OpcionCatalogoEmprendedora>,
+    productosRepository: ProductosEmprendedoraRepository,
+    huellaHabilitada: Boolean,
+    aviso: String?,
+    error: String?,
+    errorHuella: String?,
+    enviando: Boolean,
+    alCambiarHuella: (Boolean) -> Unit,
+    alEditarTienda: (TiendaEmprendedora) -> Unit,
+    alPublicarTienda: () -> Unit,
+    alRetirarTienda: () -> Unit,
+    alSalir: () -> Unit
+) {
+    val productos by productosRepository.productos.collectAsState()
+    val tiposProducto by productosRepository.tipos.collectAsState()
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var tab by remember(sesion.uid) { mutableStateOf(Tab.INICIO) }
+    var screen by remember(sesion.uid) { mutableStateOf<Screen>(Screen.Home) }
+    var editandoTienda by remember(sesion.uid) { mutableStateOf(false) }
+    var editandoProducto by remember(sesion.uid) { mutableStateOf(false) }
+    var productoInicialId by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var showHelp by remember { mutableStateOf(false) }
+    var linkCompartido by remember(sesion.uid) { mutableStateOf(false) }
+    var productoVista by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var enviandoProducto by remember(sesion.uid) { mutableStateOf(false) }
+    var avisoProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var errorProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var productoAjustando by remember(sesion.uid) { mutableStateOf<ProductoEmprendedora?>(null) }
+
+    fun abrirTab(nuevoTab: Tab) {
+        tab = nuevoTab
+        screen = when (nuevoTab) {
+            Tab.INICIO -> Screen.Home
+            Tab.PRODUCTOS, Tab.AGREGAR -> Screen.Products
+            Tab.MAS -> Screen.Settings
+        }
+        editandoProducto = nuevoTab == Tab.AGREGAR
+        productoInicialId = null
+        if (nuevoTab != Tab.MAS) editandoTienda = false
+    }
+
+    fun productoLegado(producto: ProductoEmprendedora): Product {
+        val tipoNombre = tiposProducto.firstOrNull { it.id == producto.tipoProductoId }?.nombre.orEmpty()
+            .lowercase()
+        val tipo = when {
+            "alimento" in tipoNombre || "reposter" in tipoNombre -> ProductType.ALIMENTOS
+            "bienestar" in tipoNombre || "cosm" in tipoNombre || "cuidado" in tipoNombre -> ProductType.BIENESTAR
+            "papel" in tipoNombre -> ProductType.PAPELERIA
+            "textil" in tipoNombre || "vestuario" in tipoNombre || "tej" in tipoNombre -> ProductType.TEXTIL
+            else -> ProductType.DECORACION
+        }
+        val variantes = if (producto.tieneVariantes) {
+            producto.variantes.filter { it.activa }.map { variante ->
+                Variant(
+                    id = variante.id,
+                    nombre = variante.opciones.values.joinToString(" · ").ifBlank { "Variante" },
+                    precio = variante.precio.toString(),
+                    stock = (variante.stock ?: 0).toString()
+                )
+            }.toMutableList()
+        } else {
+            mutableListOf(
+                Variant(
+                    nombre = "Único",
+                    precio = (producto.precioBase ?: 0L).toString(),
+                    stock = (producto.stock ?: 0).toString()
+                )
+            )
+        }
+        return Product(
+            id = producto.id,
+            nombre = producto.nombre,
+            tipo = tipo,
+            material = producto.atributosEspecificos.values.joinToString(" · ").ifBlank { producto.descripcion },
+            variantes = variantes.ifEmpty { mutableListOf(Variant(nombre = "Variante")) },
+            disponibleEncargo = producto.modalidad == "a_pedido" || producto.modalidad == "regular",
+            publicado = producto.estadoPublicacion == "publicado",
+            esBorrador = producto.estadoPublicacion != "publicado",
+            estadoCatalogo = when (producto.estadoPublicacion) {
+                "publicado" -> "Visible"
+                "archivado" -> "Retirado"
+                else -> "Borrador"
+            },
+            tieneFoto = producto.imagenes.isNotEmpty()
+        )
+    }
+
+    val productoDeVista = productos.firstOrNull { it.id == productoVista }?.let(::productoLegado)
+
+    Scaffold(
+        containerColor = Cream,
+        topBar = { AmancayTopBar(onHelp = { showHelp = true }) },
+        bottomBar = {
+            Column {
+                HorizontalDivider(color = Line, thickness = 1.dp)
+                NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                    Tab.entries.forEach { item ->
+                        val selected = tab == item
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { abrirTab(item) },
+                            icon = {
+                                Image(
+                                    painter = painterResource(item.icon),
+                                    contentDescription = item.label,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    item.label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) Wine else Muted
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(indicatorColor = CardPink)
+                        )
+                    }
+                }
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(snackbar) { data ->
+                Snackbar(snackbarData = data, containerColor = Wine, contentColor = Color.White, shape = RoundedCornerShape(16.dp))
+            }
+        }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            aviso?.let { AvisoEmprendedora(it, false) }
+            error?.let { AvisoEmprendedora(it, true) }
+            avisoProducto?.let { AvisoEmprendedora(it, false) }
+            errorProducto?.let { AvisoEmprendedora(it, true) }
+            Box(Modifier.weight(1f)) {
+                when (screen) {
+                    Screen.Home -> HomeScreen(
+                        borrador = null,
+                        publicados = productos.count { it.estadoPublicacion == "publicado" },
+                        borradores = productos.count { it.estadoPublicacion == "borrador" },
+                        ventasCount = 0,
+                        linkCompartido = linkCompartido,
+                        invitacionesPendientes = 0,
+                        invitacionesDisponibles = false,
+                        onAgregar = { abrirTab(Tab.AGREGAR) },
+                        onContinuarBorrador = { abrirTab(Tab.PRODUCTOS) },
+                        onMisProductos = { abrirTab(Tab.PRODUCTOS) },
+                        onVerCatalogo = {
+                            productoVista = productos.firstOrNull { it.estadoPublicacion == "publicado" }?.id
+                            screen = Screen.Preview(productoVista)
+                        },
+                        onVerFerias = { screen = Screen.Ferias },
+                        contenidoAdicional = {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(20.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text(tienda.nombre, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Dark)
+                                    Text(if (tienda.estadoPublicacion == "publicado") "Tienda publicada" else "Tienda en borrador", fontSize = 14.sp, color = Muted)
+                                    Spacer(Modifier.height(10.dp))
+                                    if (tienda.estadoPublicacion == "publicado") {
+                                        OutlineButton("Retirar tienda", alRetirarTienda)
+                                    } else {
+                                        PrimaryButton(
+                                            "Publicar mi tienda",
+                                            alPublicarTienda,
+                                            enabled = !enviando && tienda.nombre.isNotBlank() && tienda.sectorId.isNotBlank() && tienda.tipoEmprendimientoId.isNotBlank()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    )
+                    Screen.Products -> if (editandoProducto) {
+                        ProductosEmprendedoraPanel(
+                            tiendaId = sesion.tiendaId,
+                            tiendaPublicada = tienda.estadoPublicacion == "publicado",
+                            repository = productosRepository,
+                            enviando = enviando || enviandoProducto,
+                            alEnviando = { enviandoProducto = it },
+                            alError = { errorProducto = it },
+                            alAviso = { avisoProducto = it },
+                            abrirNuevoAlIniciar = productoInicialId == null,
+                            soloEditor = true,
+                            productoInicialId = productoInicialId,
+                            alFinalizarEdicion = {
+                                editandoProducto = false
+                                productoInicialId = null
+                                tab = Tab.PRODUCTOS
+                            }
+                        )
+                    } else {
+                        ProductsScreen(
+                            productos = productos.map(::productoLegado),
+                            onEdit = {
+                                productoInicialId = it.id
+                                editandoProducto = true
+                                tab = Tab.AGREGAR
+                            },
+                            onDelete = {},
+                            onCreate = {
+                                productoInicialId = null
+                                editandoProducto = true
+                                tab = Tab.AGREGAR
+                            },
+                            onPreview = {
+                                productoVista = it.id
+                                screen = Screen.Preview(it.id)
+                            },
+                            settings = ShopSettings(),
+                            onSettings = {},
+                            mostrarEliminar = false,
+                            onAccionPublicacion = { legado ->
+                                val remoto = productos.firstOrNull { it.id == legado.id }
+                                if (remoto != null) scope.launch {
+                                    enviandoProducto = true
+                                    errorProducto = null
+                                    avisoProducto = null
+                                    try {
+                                        if (remoto.estadoPublicacion == "publicado") {
+                                            productosRepository.retirar(sesion.tiendaId, remoto)
+                                            avisoProducto = "Producto retirado del catálogo público."
+                                        } else {
+                                            productosRepository.publicar(sesion.tiendaId, remoto)
+                                            avisoProducto = "Producto publicado en el catálogo comprador."
+                                        }
+                                    } catch (e: Exception) {
+                                        errorProducto = mensajeProducto(e)
+                                    } finally {
+                                        enviandoProducto = false
+                                    }
+                                }
+                            },
+                            onAjustarStock = { legado ->
+                                productoAjustando = productos.firstOrNull { it.id == legado.id }
+                            }
+                        )
+                    }
+                    Screen.Settings -> if (editandoTienda) {
+                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+                            Spacer(Modifier.height(8.dp))
+                            PantallaEdicionTienda(
+                                cuenta = sesion,
+                                tienda = tienda,
+                                sectores = sectores,
+                                tipos = tipos,
+                                enviando = enviando,
+                                alGuardar = { alEditarTienda(it); editandoTienda = false },
+                                alCancelar = { editandoTienda = false }
+                            )
+                            Spacer(Modifier.height(16.dp))
+                        }
+                    } else {
+                        SettingsScreen(
+                            settings = ShopSettings(huella = huellaHabilitada),
+                            onChange = { alCambiarHuella(it.huella) },
+                            onGuardar = {},
+                            mostrarPreferenciasProducto = false,
+                            nombreTienda = tienda.nombre,
+                            estadoTienda = if (tienda.estadoPublicacion == "publicado") "Visible para compradores" else "Aún no aparece en el catálogo comprador",
+                            onEditarTienda = { editandoTienda = true },
+                            errorAcceso = errorHuella,
+                            onCerrarSesion = alSalir
+                        )
+                    }
+                    is Screen.Preview -> PreviewCatalogScreen(
+                        producto = productoDeVista,
+                        onShare = {
+                            clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
+                            linkCompartido = true
+                            scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
+                        },
+                        onContact = { scope.launch { snackbar.showSnackbar("Consulta el contacto disponible en la ficha de la tienda") } }
+                    )
+                    Screen.Ferias -> Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
+                    ) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("FERIAS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
+                        Text("Invitaciones a ferias", fontSize = 30.sp, color = Dark)
+                        AvisoEmprendedora("La aplicación todavía no consulta las invitaciones de feria guardadas en Firebase.", false)
+                        GhostButton("Volver al inicio", { screen = Screen.Home; tab = Tab.INICIO })
+                    }
+                    else -> AvisoEmprendedora("Esta sección todavía no está conectada a la cuenta de Firebase.", false)
+                }
+            }
+        }
+    }
+
+    productoAjustando?.let { producto ->
+        DialogoAjusteStock(
+            producto = producto,
+            enviando = enviandoProducto,
+            onDismiss = { if (!enviandoProducto) productoAjustando = null },
+            onConfirm = { varianteId, cantidad, motivo, nota, operacionId ->
+                scope.launch {
+                    enviandoProducto = true
+                    errorProducto = null
+                    avisoProducto = null
+                    try {
+                        productosRepository.ajustarStock(sesion.tiendaId, producto, varianteId, cantidad, motivo, nota, operacionId)
+                        productoAjustando = null
+                        avisoProducto = "Ajuste de stock guardado con su historial."
+                    } catch (e: Exception) {
+                        errorProducto = mensajeProducto(e)
+                    } finally {
+                        enviandoProducto = false
+                    }
+                }
+            }
+        )
+    }
+
+    if (showHelp) {
+        AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text("¿Necesitas ayuda?") },
+            text = { Text("Desde Inicio puedes abrir tu tienda y catálogo. En Más encontrarás la ficha y el acceso con huella.") },
+            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Entendido", color = Wine) } }
+        )
     }
 }
