@@ -20,6 +20,7 @@ import {
   leerIntegrantesAsociacion,
   quitarEmprendedora,
 } from '~/repositories/admin'
+import { crearIdentidadEmprendedora } from '~/repositories/firebase/cuentas-admin'
 import type { ColeccionCatalogoEditable } from '~/repositories/admin'
 import type { Asociacion, CampoTipoProducto, DatosAdmin, ElementoCatalogo, IntegrantesAsociacion } from '~/types/admin'
 
@@ -106,7 +107,7 @@ function activos(lista: ElementoCatalogo[]) {
 }
 
 const secciones = ref<Seccion[]>([
-  { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Invitaciones, datos visibles, desactivación y reactivación de cuentas.', accion: '+ Invitar emprendedora', items: [] },
+  { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Altas con credenciales o invitación, edición y estado de las cuentas.', accion: '+ Agregar emprendedora', items: [] },
   { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Ficha, estado e integrantes de cada asociación.', accion: '+ Crear asociación', items: [] },
   { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Crear actividades, gestionar participantes y registrar asistencia.', accion: '+ Crear feria', items: [] },
   { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Sectores, tipos de emprendimiento, tipos de producto y categorías.', accion: '+ Nuevo valor', items: [] },
@@ -133,8 +134,19 @@ const enviando = ref(false)
 const errorSesion = ref('')
 const errorDatos = ref('')
 const errorOperacion = ref('')
-const operacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
+const operacionPendiente = ref<{
+  id: string
+  solicitud: string
+  tipo: 'cuenta' | 'invitacion'
+  uidDestino?: string
+  tiendaId?: string
+} | null>(null)
 const invitacionCreada = ref('')
+const modoAltaEmprendedora = ref<'cuenta' | 'invitacion'>('cuenta')
+const contrasenaInicial = ref('')
+const confirmarContrasenaInicial = ref('')
+const credencialesEmprendedora = ref<{ correo: string; contrasena: string } | null>(null)
+const cuentaAltaPendiente = computed(() => Boolean(operacionPendiente.value?.uidDestino))
 const invitacionPendiente = ref<Item | null>(null)
 const cuentaEmprendedoraEnEdicion = ref<Item | null>(null)
 const nombreCuentaBorrador = ref('')
@@ -313,6 +325,10 @@ async function ingresar() {
 }
 
 async function salir() {
+  if (cuentaAltaPendiente.value) {
+    errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de cerrar sesión.'
+    return
+  }
   if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
     || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
     || operacionIntegrantePendiente.value?.reintentoObligatorio || edicionCuentaReintentoObligatorio.value) {
@@ -323,6 +339,9 @@ async function salir() {
   catch (error) { errorSesion.value = mensajeError(error); return }
   autorizado.value = false
   limpiarListados()
+  credencialesEmprendedora.value = null
+  contrasenaInicial.value = ''
+  confirmarContrasenaInicial.value = ''
   correo.value = ''; clave.value = ''; activa.value = 'inicio'
 }
 
@@ -420,6 +439,10 @@ function iniciales(t: string) {
 }
 
 async function ir(id: string) {
+  if (cuentaAltaPendiente.value) {
+    errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de cambiar de sección.'
+    return
+  }
   if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
     || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
     || operacionIntegrantePendiente.value?.reintentoObligatorio || edicionCuentaReintentoObligatorio.value) {
@@ -445,7 +468,7 @@ async function ir(id: string) {
 async function abrirFormulario() {
   if (seccion.value?.id === 'catalogos' && !escrituraCatalogosDisponible.value) return
   if (seccion.value?.id === 'asociaciones' && !escrituraAsociacionesDisponible.value) return
-  if (seccion.value?.id === 'emprendedoras' && config.firebaseModo === 'real-api') {
+  if (seccion.value?.id === 'emprendedoras' && ['real-api', 'local'].includes(config.firebaseModo)) {
     await cargarDatosCatalogos()
     if (errorDatos.value) return
   }
@@ -456,6 +479,9 @@ async function abrirFormulario() {
   }
   errorOperacion.value = ''
   invitacionCreada.value = ''
+  modoAltaEmprendedora.value = 'cuenta'
+  contrasenaInicial.value = ''
+  confirmarContrasenaInicial.value = ''
   operacionPendiente.value = null
   catalogoEnEdicion.value = null
   catalogoCampos.value = []
@@ -697,15 +723,29 @@ function prepararNuevoCatalogo() {
 }
 
 function cerrarFormulario() {
+  if (cuentaAltaPendiente.value) {
+    errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de cerrar el formulario.'
+    return
+  }
   if (catalogoReintentoObligatorio.value || asociacionReintentoObligatorio.value) {
     errorOperacion.value = 'Completa el reintento pendiente antes de cerrar el formulario.'
     return
   }
   formularioAbierto.value = false
+  contrasenaInicial.value = ''
+  confirmarContrasenaInicial.value = ''
+}
+
+function protegerSalidaAlta(event: MouseEvent) {
+  if (!cuentaAltaPendiente.value) return
+  event.preventDefault()
+  errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de salir del panel.'
 }
 
 function guardarVistaPrevia() {
   formularioAbierto.value = false
+  contrasenaInicial.value = ''
+  confirmarContrasenaInicial.value = ''
   aviso.value = 'Vista previa: no se guardaron ni enviaron datos.'
   clearTimeout(temporizador)
   temporizador = setTimeout(() => (aviso.value = ''), 3500)
@@ -854,7 +894,7 @@ async function guardarFormulario() {
     await guardarCatalogo()
     return
   }
-  if (seccion.value?.id !== 'emprendedoras' || config.firebaseModo !== 'real-api') {
+  if (seccion.value?.id !== 'emprendedoras' || !['local', 'real-api'].includes(config.firebaseModo)) {
     guardarVistaPrevia()
     return
   }
@@ -871,29 +911,86 @@ async function guardarFormulario() {
     historialVentasActivo: false,
     formaContacto: 'formulario',
   }
-  const firma = JSON.stringify(contenido)
-  if (!operacionPendiente.value || operacionPendiente.value.solicitud !== firma) {
-    operacionPendiente.value = { id: crypto.randomUUID(), solicitud: firma }
+  const tipoAlta = modoAltaEmprendedora.value
+  const firma = JSON.stringify([tipoAlta, contenido])
+  if (cuentaAltaPendiente.value && (operacionPendiente.value?.tipo !== 'cuenta' || operacionPendiente.value.solicitud !== firma)) {
+    errorOperacion.value = 'Authentication ya creó la cuenta. Conserva los datos y la contraseña para terminar la asignación de la tienda.'
+    return
+  }
+  if (!operacionPendiente.value || operacionPendiente.value.tipo !== tipoAlta || operacionPendiente.value.solicitud !== firma) {
+    operacionPendiente.value = { id: crypto.randomUUID(), solicitud: firma, tipo: tipoAlta }
+  }
+  if (tipoAlta === 'cuenta') {
+    if (contrasenaInicial.value.length < 10 || contrasenaInicial.value.length > 128) {
+      errorOperacion.value = 'La contraseña inicial debe tener entre 10 y 128 caracteres.'
+      return
+    }
+    if (contrasenaInicial.value !== confirmarContrasenaInicial.value) {
+      errorOperacion.value = 'Las contraseñas no coinciden.'
+      return
+    }
+  }
+  if (!contenido.correo || contenido.nombreMostrar.length > 100 || contenido.nombreTienda.length > 120
+    || !contenido.descripcion || contenido.descripcion.length > 2000) {
+    errorOperacion.value = 'Completa los datos requeridos. La descripción debe tener entre 1 y 2000 caracteres.'
+    return
   }
   enviando.value = true
   try {
-    const resultado = await $amancay.llamar('invitarEmprendedora', {
-      ...contenido,
-      operacionId: operacionPendiente.value.id,
-    })
-    invitacionCreada.value = String(resultado.invitacionId ?? '')
-    formularioAbierto.value = false
-    aviso.value = invitacionCreada.value
-      ? 'Invitación registrada. Comparte el enlace con la destinataria; ella creará su contraseña y verificará su correo.'
-      : 'Invitación registrada en Firebase.'
+    if (tipoAlta === 'cuenta') {
+      let uidDestino = operacionPendiente.value.uidDestino
+      let tiendaId = operacionPendiente.value.tiendaId
+      if (!uidDestino) {
+        uidDestino = await crearIdentidadEmprendedora($amancay.firebase, contenido.correo, contrasenaInicial.value)
+        tiendaId = `tienda_${crypto.randomUUID().replaceAll('-', '')}`
+        operacionPendiente.value = { ...operacionPendiente.value, uidDestino, tiendaId }
+      }
+      await $amancay.llamar('altaEmprendedora', {
+        operacionId: operacionPendiente.value.id,
+        uidDestino,
+        tiendaId,
+        nombreMostrar: contenido.nombreMostrar,
+        nombreTienda: contenido.nombreTienda,
+        descripcion: contenido.descripcion,
+        sectorId: contenido.sectorId,
+        tipoEmprendimientoId: contenido.tipoEmprendimientoId,
+        mostrarPrecios: contenido.mostrarPrecios,
+        historialVentasActivo: contenido.historialVentasActivo,
+        formaContacto: contenido.formaContacto,
+      })
+      credencialesEmprendedora.value = { correo: contenido.correo, contrasena: contrasenaInicial.value }
+      contrasenaInicial.value = ''
+      confirmarContrasenaInicial.value = ''
+      operacionPendiente.value = null
+      formularioAbierto.value = false
+      aviso.value = 'Cuenta creada y asociada a su tienda.'
+    } else {
+      const resultado = await $amancay.llamar('invitarEmprendedora', {
+        ...contenido,
+        operacionId: operacionPendiente.value.id,
+      })
+      invitacionCreada.value = String(resultado.invitacionId ?? '')
+      operacionPendiente.value = null
+      formularioAbierto.value = false
+      aviso.value = invitacionCreada.value
+        ? 'Invitación registrada. Comparte el enlace con la destinataria; ella creará su contraseña y verificará su correo.'
+        : 'Invitación registrada en Firebase.'
+    }
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 12000)
     await cargarSeccion()
   } catch (error) {
-    errorOperacion.value = mensajeError(error)
+    const codigo = (error as { code?: string })?.code
+    errorOperacion.value = tipoAlta === 'cuenta' && codigo === 'auth/email-already-in-use'
+      ? 'Ese correo ya tiene una cuenta. Usa la opción de invitación para que su titular pueda asociarla.'
+      : mensajeError(error)
   } finally {
     enviando.value = false
   }
+}
+
+function cerrarCredencialesEmprendedora() {
+  credencialesEmprendedora.value = null
 }
 
 function enlaceInvitacion(id: string) {
@@ -1074,7 +1171,7 @@ async function guardarEdicionCuentaEmprendedora() {
 
 <template>
   <section v-if="!autorizado" class="pantalla-acceso">
-    <NuxtLink class="volver-comprador" to="/comprador">
+    <NuxtLink class="volver-comprador" to="/comprador" @click="protegerSalidaAlta">
       <span aria-hidden="true">←</span> Volver al modo comprador
     </NuxtLink>
     <div class="acceso-admin">
@@ -1108,7 +1205,7 @@ async function guardarEdicionCuentaEmprendedora() {
         <button type="button" :class="{ on: activa === 'inicio' }" @click="ir('inicio')">
           <span class="mi" aria-hidden="true">🏠</span> Inicio
         </button>
-        <NuxtLink class="menu-enlace" to="/comprador">
+        <NuxtLink class="menu-enlace" to="/comprador" @click="protegerSalidaAlta">
           <span class="mi" aria-hidden="true">🛍️</span> Modo comprador
         </NuxtLink>
         <p class="menu-titulo">Gestión</p>
@@ -1203,24 +1300,38 @@ async function guardarEdicionCuentaEmprendedora() {
               <h2 id="titulo-formulario">{{ seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Editar valor de catálogo' : 'Nuevo valor de catálogo' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Editar asociación' : 'Crear asociación' : seccion.accion }}</h2>
               <p v-if="seccion.id === 'catalogos'">Los cambios se guardan en Firestore mediante la API autenticada. Los nombres deben ser únicos dentro de cada catálogo.</p>
               <p v-else-if="seccion.id === 'asociaciones'">La ficha se guarda mediante la API autenticada. El contacto y el logo se consideran información pública.</p>
-              <p v-else>{{ seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'La invitación se guardará en Firebase. Luego podrás compartir un enlace; la destinataria creará su contraseña y verificará su correo.' : 'Vista previa: estos datos todavía no se guardan ni se envían.' }}</p>
+              <p v-else-if="seccion.id === 'emprendedoras' && ['local', 'real-api'].includes(config.firebaseModo)">Puedes crear ahora el acceso con una contraseña inicial o registrar una invitación para que la emprendedora cree su propia contraseña.</p>
+              <p v-else>Vista previa: estos datos todavía no se guardan ni se envían.</p>
             </div>
             <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || asociacionReintentoObligatorio" @click="cerrarFormulario">Cancelar</button>
           </div>
           <form class="campos-formulario" @submit.prevent="guardarFormulario">
             <template v-if="seccion.id === 'emprendedoras'">
-              <label>Nombre de la emprendedora<input v-model="borrador.nombre" required autocomplete="name" /></label>
-              <label>Correo electrónico<input v-model="borrador.correo" type="email" required autocomplete="email" /></label>
-              <label>Nombre de la tienda<input v-model="borrador.nombreTienda" required /></label>
-              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" /></label>
+              <label v-if="['local', 'real-api'].includes(config.firebaseModo)">Tipo de alta
+                <select v-model="modoAltaEmprendedora" :disabled="enviando || cuentaAltaPendiente">
+                  <option value="cuenta">Crear cuenta con contraseña inicial</option>
+                  <option value="invitacion">Enviar invitación para crear contraseña</option>
+                </select>
+              </label>
+              <p v-if="!['local', 'real-api'].includes(config.firebaseModo)" class="campo-completo">Este entorno es de solo lectura; puedes completar una vista previa, pero no creará cuentas ni invitaciones.</p>
+              <p v-else-if="modoAltaEmprendedora === 'cuenta'" class="campo-completo">La contraseña se envía directamente a Firebase Authentication; no se guarda en Firestore ni se manda a la API. Entrégala a la emprendedora por un medio privado.</p>
+              <p v-else class="campo-completo">Comparte manualmente el enlace. La invitación vence y la destinataria define su propia contraseña.</p>
+              <label>Nombre de la emprendedora<input v-model="borrador.nombre" maxlength="100" required autocomplete="name" :disabled="enviando || cuentaAltaPendiente" /></label>
+              <label>Correo electrónico<input v-model="borrador.correo" type="email" maxlength="254" required autocomplete="email" :disabled="enviando || cuentaAltaPendiente" /></label>
+              <template v-if="modoAltaEmprendedora === 'cuenta' && ['local', 'real-api'].includes(config.firebaseModo)">
+                <label>Contraseña inicial<input v-model="contrasenaInicial" type="password" minlength="10" maxlength="128" autocomplete="new-password" required :disabled="enviando || cuentaAltaPendiente" /></label>
+                <label>Confirmar contraseña<input v-model="confirmarContrasenaInicial" type="password" minlength="10" maxlength="128" autocomplete="new-password" required :disabled="enviando || cuentaAltaPendiente" /></label>
+              </template>
+              <label>Nombre de la tienda<input v-model="borrador.nombreTienda" maxlength="120" required :disabled="enviando || cuentaAltaPendiente" /></label>
+              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" maxlength="2000" required :disabled="enviando || cuentaAltaPendiente" /></label>
               <label>Sector
-                <select v-model="borrador.sectorId" required>
+                <select v-model="borrador.sectorId" required :disabled="enviando || cuentaAltaPendiente">
                   <option value="">Seleccionar sector</option>
                   <option v-for="opcion in datos.catalogos.sectores" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
               </label>
               <label>Tipo de emprendimiento
-                <select v-model="borrador.tipoEmprendimientoId" required>
+                <select v-model="borrador.tipoEmprendimientoId" required :disabled="enviando || cuentaAltaPendiente">
                   <option value="">Seleccionar tipo</option>
                   <option v-for="opcion in activos(datos.catalogos.tiposEmprendimiento)" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
@@ -1291,11 +1402,12 @@ async function guardarEdicionCuentaEmprendedora() {
               <label>Valor<input v-model="borrador.valor" required /></label>
             </template>
             <div class="acciones-formulario">
-              <button class="boton boton-primario" type="submit" :disabled="enviando || asociacionReintentoObligatorio || (seccion.id === 'asociaciones' && !activos(datos.catalogos.sectores).length)">{{ enviando ? 'Guardando…' : seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Guardar cambios en Firestore' : 'Crear valor en Firestore' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Guardar cambios' : 'Crear asociación' : seccion.id === 'emprendedoras' && config.firebaseModo === 'real-api' ? 'Crear invitación real' : 'Guardar (vista previa)' }}</button>
+              <button class="boton boton-primario" type="submit" :disabled="enviando || asociacionReintentoObligatorio || (seccion.id === 'asociaciones' && !activos(datos.catalogos.sectores).length)">{{ enviando ? 'Guardando…' : seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Guardar cambios en Firestore' : 'Crear valor en Firestore' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Guardar cambios' : 'Crear asociación' : seccion.id === 'emprendedoras' && ['local', 'real-api'].includes(config.firebaseModo) ? modoAltaEmprendedora === 'cuenta' ? 'Crear cuenta y tienda' : 'Crear invitación' : 'Guardar (vista previa)' }}</button>
               <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || asociacionReintentoObligatorio" @click="cerrarFormulario">Cerrar</button>
             </div>
             <p v-if="catalogoReintentoObligatorio" class="campo-completo" role="status">No se recibió confirmación. Reintenta sin cambiar los datos para evitar duplicar operaciones.</p>
             <p v-if="asociacionReintentoObligatorio" class="campo-completo" role="status">No se confirmó el resultado. Reintenta sin cambiar los datos para conservar la misma operación.</p>
+            <p v-if="cuentaAltaPendiente" class="campo-completo" role="status">La cuenta ya existe en Authentication. Mantén estos datos y reintenta para terminar de crear su tienda y permisos.</p>
             <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
           </form>
         </section>
@@ -1305,6 +1417,13 @@ async function guardarEdicionCuentaEmprendedora() {
           <a :href="enlaceInvitacion(invitacionCreada)">{{ enlaceInvitacion(invitacionCreada) }}</a>
           <button class="editar" type="button" @click="copiarEnlaceInvitacion(invitacionCreada)">Copiar enlace</button>
           <small>La web no manda invitaciones por correo automáticamente; puedes compartir el enlace por WhatsApp o en persona.</small>
+        </section>
+        <section v-if="credencialesEmprendedora" class="aviso-carga" aria-live="polite">
+          <strong>Cuenta creada</strong>
+          <p>Entrega estas credenciales directamente a la emprendedora. La contraseña no se guarda en la plataforma y desaparecerá de esta pantalla cuando cierres este aviso.</p>
+          <p><strong>Correo:</strong> <code>{{ credencialesEmprendedora.correo }}</code></p>
+          <p><strong>Contraseña inicial:</strong> <code>{{ credencialesEmprendedora.contrasena }}</code></p>
+          <button class="editar" type="button" @click="cerrarCredencialesEmprendedora">Ocultar credenciales</button>
         </section>
 
         <section v-if="cuentaEmprendedoraEnEdicion" class="formulario" aria-labelledby="titulo-edicion-cuenta">

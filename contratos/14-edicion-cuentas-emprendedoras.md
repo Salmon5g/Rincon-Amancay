@@ -4,7 +4,9 @@
 
 Este contrato cubre la edición de una cuenta emprendedora desde **Administración → Emprendedoras**. El administrador puede actualizar el nombre visible guardado en `usuarios/{uid}.nombreMostrar`. El listado administrativo obtiene correo de Authentication y nombre de tienda para identificar a la persona.
 
-El correo de acceso y la contraseña no se cambian desde este formulario. El correo identifica la cuenta de Authentication y modificarlo requiere un flujo de cambio y verificación; la contraseña se gestiona mediante recuperación de Firebase Auth. La ficha de la tienda se modifica por su flujo propio (RF-TIE-01). El alta sigue usando invitaciones y la activación de la cuenta ocurre cuando la emprendedora acepta.
+El correo de acceso y la contraseña no se cambian desde el formulario de edición. El correo identifica la cuenta de Authentication y modificarlo requiere un flujo de cambio y verificación; la contraseña se gestiona mediante recuperación de Firebase Auth. La ficha de la tienda se modifica por su flujo propio (RF-TIE-01).
+
+Para el alta, el panel ofrece dos caminos: **Crear cuenta con contraseña inicial** crea la identidad de Firebase Auth desde una instancia secundaria en memoria y luego asigna la tienda mediante `altaEmprendedora`; el administrador debe entregar la contraseña directamente a la emprendedora. **Enviar invitación** crea un enlace para que ella registre o use su cuenta y defina su propia contraseña. En ambos caminos, la asignación del rol y la tienda se valida en la API autenticada.
 
 ## Operaciones
 
@@ -58,4 +60,4 @@ La operación es transaccional en Firestore, guarda comprobante en `operacionesA
 
 ## Pendientes relacionados
 
-La entrega solicita entregar credenciales al crear cuentas (RF-ADM-01). El flujo actual crea una invitación cuyo código debe compartirse manualmente y permite que la emprendedora cree su propia contraseña; el envío automático de invitaciones todavía no existe. Cambiar correo con verificación, gestionar credenciales iniciales y enviar invitaciones requiere un flujo seguro adicional.
+La opción de alta directa satisface la entrega de credenciales iniciales: la contraseña se define al crear Authentication y se muestra temporalmente al administrador para entregarla por un canal privado. No se fuerza un cambio de contraseña al primer ingreso ni se manda correo automáticamente. La invitación sigue disponible como alternativa. Cambiar correo con verificación y forzar el cambio de contraseña inicial requieren flujos adicionales.

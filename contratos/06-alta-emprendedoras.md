@@ -24,7 +24,11 @@ Implementada en los emuladores; no desplegada. Authentication identifica a la pe
 
 Todos los campos son obligatorios; no hay valores por defecto silenciosos. Los IDs admiten letras, números, guion y guion bajo, hasta 128 caracteres. nombreMostrar admite 100 caracteres, nombreTienda 120 y descripcion 2000; textos no vacíos. formaContacto: whatsapp, formulario o ambos. Las preferencias se guardan, pero no implementan todavía formularios, WhatsApp ni ventas.
 
-El cliente no envía roles, estado, propietarioUid, creadaPor, fechas, correo ni contraseña. uidDestino identifica a la cuenta que recibirá la tienda; la identidad administradora siempre procede del token verificado. No permite darse de alta a sí misma.
+El endpoint no recibe contraseñas ni crea identidades de Authentication: exige que `uidDestino` ya exista. Desde Web Admin, la opción **Crear cuenta con contraseña inicial** crea primero la identidad mediante una aplicación secundaria de Firebase Authentication con persistencia en memoria, para mantener abierta la sesión administradora. Después llama esta operación con el UID recién creado. El modo local conecta esa app secundaria al emulador de Authentication. La otra opción, **Enviar invitación**, conserva el flujo de aceptación existente.
+
+El administrador entrega personalmente la contraseña inicial que definió en el formulario. Se muestra temporalmente en la pantalla de confirmación; no se guarda en Firestore ni se envía a la API. La aplicación no fuerza todavía el cambio de contraseña en el primer ingreso. Si ya existe una cuenta con ese correo, usar la invitación para que su titular inicie sesión y acepte.
+
+El cliente no envía roles, estado, propietarioUid, creadaPor, fechas o correo en la operación `altaEmprendedora`. uidDestino identifica a la cuenta que recibirá la tienda; la identidad administradora siempre procede del token verificado. No permite darse de alta a sí misma.
 
 La cuenta destino debe existir en Auth, tener correo y estar habilitada. Se admite una cuenta sin accesos o con el único rol comprador activo y sin tienda. Se rechazan cuentas desactivadas o ya asignadas. No se concede el rol administrador por esta API.
 
@@ -66,7 +70,7 @@ Los datos del emulador no persisten tras reiniciarlo. El JSON local puede quedar
 
 ## Alcance y pendientes
 
-Invitaciones, recuperación/verificación de correo y registro de compradores están implementados localmente según 10-ciclo-cuentas.md. Este endpoint conserva el alta administrativa directa para identidades existentes; no exige aceptación/verificación del destinatario. Para las pantallas del equipo usar el flujo de invitación. El primer administrador de producción, el envío real de invitaciones y el despliegue siguen pendientes. La API no recibe contraseñas.
+Invitaciones, recuperación/verificación de correo y registro de compradores están implementados localmente según 10-ciclo-cuentas.md. El alta directa desde el panel no exige aceptación/verificación del destinatario. No se envían invitaciones automáticamente por correo. Si Authentication crea la identidad y la API no alcanza a provisionar Firestore, el formulario conserva UID y operación mientras permanezca abierto para reintentar; una recarga puede perder esa recuperación temporal y requerir revisión administrativa. El primer administrador de producción y el despliegue siguen pendientes. La API no recibe contraseñas.
 
 Auth y Firestore no comparten transacción. Se comprueba Auth antes de escribir; una deshabilitación o eliminación externa simultánea de la identidad requiere reconciliación futura. La desactivación administrativa de una emprendedora asignada está implementada según 09-desactivacion-cuentas.md. Reasignación de tiendas, eliminación de cuentas y retención de comprobantes siguen pendientes. No se considera este flujo listo para producción.
 
