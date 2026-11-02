@@ -265,6 +265,7 @@ onBeforeUnmount(() => {
           <small>Explora sin iniciar sesión</small>
         </div>
       </div>
+      <AccesoComprador/>
     </aside>
     <main class="contenido">
       <header class="encabezado">

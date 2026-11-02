@@ -1,6 +1,6 @@
-# Primer incremento de permisos — solo emulador
+# Pruebas locales de reglas Firestore
 
-Reglas en firebase/firestore.rules. No desplegadas al proyecto real: rincon-amancay continúa con denegación total. No usar estas reglas como una implementación completa del semestre.
+Este documento describe las pruebas históricas ejecutadas con los emuladores; no es el indicador del estado remoto actual. El 1 de noviembre de 2026 se comprobó que el release Firestore de `rincon-amancay` coincide con `firebase/firestore.rules`. El resumen vigente, incluidos los permisos del almacenamiento de imágenes Supabase, está en [Entrega 4 — Seguridad](Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/5-seguridad-firestore-storage.md).
 
 ## Acceso implementado
 
@@ -21,19 +21,13 @@ Los límites de longitud son provisionales de esta implementación. Las edicione
 - .../variantes: where activa == true.
 - Catálogos: where activo == true.
 
-Firestore no filtra resultados prohibidos: una consulta sin los filtros necesarios se rechaza. El siguiente trabajo de integración deberá añadir paginación e índices según las consultas finales; el emulador no garantiza todos los requisitos de índices de producción.
+Firestore no filtra resultados prohibidos: una consulta sin los filtros necesarios se rechaza. El emulador no garantiza todos los requisitos de índices de producción. El índice compuesto declarado en el repositorio está en `firebase/firestore.indexes.json`; cualquier consulta nueva debe comprobar si necesita un índice adicional.
 
-## Indicadores derivados y operaciones obligatorias
+## Indicadores derivados y operaciones de servidor
 
-Se añaden habilitada y mostrarPrecios a la ficha pública, y activa a variantes públicas. Son indicadores públicos no sensibles, escritos exclusivamente por operaciones confiables; no son una segunda autoridad editable. Roles y propiedad siguen en accesos y la ficha privada.
+Las reglas exigen `estadoPublicacion`, `habilitada`, `mostrarPrecios` y `activa` para permitir lecturas públicas. Si una tienda oculta precios, la regla bloquea los documentos de producto y variante derivados de esa tienda; no existe una redacción por campo dentro de Firestore.
 
-El futuro backend debe actualizar coordinadamente las fuentes privadas y sus indicadores públicos:
-
-- Desactivar una emprendedora: accesos.estado y tiendasPublicas.habilitada=false en una misma transacción o lote atómico. La lectura de productos/variantes comprueba también el padre público, bloqueando enlaces directos inmediatamente.
-- Archivar tienda/producto o desactivar variante: actualizar también el estado público correspondiente de forma atómica.
-- Ocultar precios: cambiar configuración privada y mostrarPrecios público a false atómicamente. En este incremento esto bloquea TODOS los productos y variantes de esa tienda, incluso si algún documento ya no tiene precio. Falta implementar la regeneración sin importes y una política versionada para recuperar la lectura segura.
-
-Cambiar SOLO un documento privado desde consola/Admin SDK no retira por sí mismo su copia pública. Las reglas no pueden imponer controles al SDK Admin: las pruebas simulan las escrituras coordinadas con autoridad de servidor, no prueban un servicio de publicación existente. No desplegar ni utilizar con datos reales hasta implementar y validar ese servicio.
+Las operaciones actuales de publicación, retiro, desactivación y stock pasan por la API autenticada, que mantiene coordinados los documentos privados y sus proyecciones públicas. Cambiar manualmente un documento privado desde consola o Admin SDK no retira por sí mismo su copia pública. Las pruebas de reglas simulan escrituras de servidor con permisos desactivados; no sustituyen una revisión de las validaciones de la API.
 
 Las proyecciones públicas se cargan mediante una lista explícita de campos. Las reglas no ocultan campos dentro de documentos legibles; el backend no debe introducir datos privados en ellos. Retirar acceso no elimina copias ya descargadas.
 

@@ -1,10 +1,11 @@
 import { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, applyActionCode, verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 import type { Auth } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, limit, query, startAfter, where, runTransaction, serverTimestamp } from 'firebase/firestore';
-import type { Firestore, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
+import type { Firestore } from 'firebase/firestore';
 import { getBlob, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { FirebaseApp } from 'firebase/app';
+import { crearRepositorioFirestoreCliente, versionDocumento } from '../repositories/firebase/cliente-firestore.ts';
+import { ErrorApi } from './error-api.ts';
 
 // Servicios que debe entregar cualquier inicializador (local o compartido).
 export interface ServiciosCliente {
@@ -16,20 +17,17 @@ export interface ServiciosCliente {
 
 export const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
 export type Operacion = typeof operaciones[number];
-export class ErrorApi extends Error {
-  code: string; status: number; resultadoIncierto: boolean;
-  constructor(code: string, mensaje: string, status = 0, resultadoIncierto = false) {
-    super(mensaje); this.code=code; this.status=status; this.resultadoIncierto=resultadoIncierto;
-  }
-}
-export function versionDocumento(fecha: Timestamp): string {return `${fecha.seconds}:${fecha.nanoseconds}`;}
+export { ErrorApi };
 function id(value: string) {if (!/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new Error('ID inválido.');return value;}
+export { versionDocumento };
 
 // Lógica común a los clientes web. `apiBase` debe terminar en /api/v1/.
 export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
   const {auth,db,storage}=firebase;
+  const repositorioFirestore = crearRepositorioFirestoreCliente({ auth, db });
   return {
     firebase,
+    ...repositorioFirestore,
     iniciarSesion: (correo: string, clave: string) => signInWithEmailAndPassword(auth,correo,clave),
     // Crear identidad y enviar verificación son pasos separados: si el envío falla,
     // se reenvía el correo sin intentar registrar otra vez la misma identidad.
@@ -55,31 +53,6 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
       await confirmPasswordReset(auth,codigo,clave);await signOut(auth);
     },
     cerrarSesion: () => signOut(auth),
-    async consultarAcceso() {
-      await auth.authStateReady();
-      if(!auth.currentUser) return null;
-      const snapshot=await getDoc(doc(db,'accesos',auth.currentUser.uid));
-      return snapshot.exists() ? snapshot.data() : null;
-    },
-    async listarTiendas(ultimo?: QueryDocumentSnapshot) {
-      const q=query(collection(db,'tiendasPublicas'),where('estadoPublicacion','==','publicado'),where('habilitada','==',true),...(ultimo?[startAfter(ultimo)]:[]),limit(20));
-      return getDocs(q);
-    },
-    async listarProductos(tiendaId: string, ultimo?: QueryDocumentSnapshot) {
-      const q=query(collection(db,'tiendasPublicas',id(tiendaId),'productos'),where('estadoPublicacion','==','publicado'),...(ultimo?[startAfter(ultimo)]:[]),limit(20));
-      return getDocs(q);
-    },
-    listarVariantes: (tiendaId: string, productoId: string) => getDocs(query(collection(db,'tiendasPublicas',id(tiendaId),'productos',id(productoId),'variantes'),where('activa','==',true),limit(100))),
-    leerProductoPrivado: (tiendaId: string, productoId: string) => getDoc(doc(db,'tiendasPrivadas',id(tiendaId),'productos',id(productoId))),
-    async seleccionarImagenes(tiendaId: string, productoId: string, rutas: string[], versionEsperada: string) {
-      if(rutas.length>5 || new Set(rutas).size!==rutas.length) throw new Error('Seleccionar hasta cinco imágenes distintas.');
-      const producto=doc(db,'tiendasPrivadas',id(tiendaId),'productos',id(productoId));
-      await runTransaction(db,async tx=>{
-        const snapshot=await tx.get(producto);
-        if(!snapshot.exists() || versionDocumento(snapshot.data().actualizadoEn)!==versionEsperada) throw new ErrorApi('conflicto','El producto cambió; volver a leer.',409);
-        tx.update(producto,{imagenes:rutas,actualizadoEn:serverTimestamp()});
-      });
-    },
     async subirImagen(tiendaId: string, productoId: string, archivo: Blob): Promise<string> {
       const extension: Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
       if(!extension[archivo.type] || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar PNG, JPEG o WebP de hasta 5 MiB.');
