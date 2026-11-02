@@ -3,6 +3,11 @@ package com.example.amancay
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Bundle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
+import com.example.amancay.BuildConfig
+import com.example.amancay.ui.theme.Peach
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -87,39 +92,95 @@ fun AmancayApp() {
     }
     var modo by remember { mutableStateOf<String?>(null) }
     when (modo) {
-        "comprador" -> ModoCompradorScreen(catalogoComprador) { modo = null }
-        "emprendedora" -> ModoEmprendedoraConectada(firebaseServices) { modo = null }
+        "comprador" -> ModoCompradorScreen(
+            repositorio = catalogoComprador,
+            auth = firebaseServices.auth,
+            webClientId = BuildConfig.WEB_CLIENT_ID
+        ) { modo = null }
+        "emprendedora" -> ModoEmprendedoraConectada(firebaseServices, BuildConfig.WEB_CLIENT_ID) { modo = null }
         else -> Column(
-            modifier = Modifier.fillMaxSize().background(Cream).padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Cream)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Rincón Amancay", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Wine)
-            Spacer(Modifier.height(8.dp))
-            Text("¿Cómo quieres usar la aplicación?", fontSize = 18.sp, color = Dark)
-            Spacer(Modifier.height(24.dp))
-            Button(
-                onClick = { modo = "comprador" },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Wine),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+            Spacer(Modifier.height(36.dp))
+            Image(
+                painter = painterResource(Fig.LOGO),
+                contentDescription = "Rincón Amancay",
+                modifier = Modifier.size(92.dp)
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Rincón Amancay",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = Wine,
+                fontFamily = FontFamily.Serif,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "¿Cómo quieres usar la aplicación?",
+                fontSize = 15.sp,
+                color = Muted,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(26.dp))
+            TarjetaModo(
+                titulo = "Modo comprador",
+                descripcion = "Encuentra productos de los emprendimientos Amancay.",
+                emoji = "🛍️"
+            ) { modo = "comprador" }
+            Spacer(Modifier.height(14.dp))
+            TarjetaModo(
+                titulo = "Modo emprendedora",
+                descripcion = "Administra tu catálogo, tus precios y tus ventas.",
+                emoji = "✿"
+            ) { modo = "emprendedora" }
+        }
+    }
+}
+
+@Composable
+private fun TarjetaModo(
+    titulo: String,
+    descripcion: String,
+    emoji: String,
+    alEntrar: () -> Unit
+) {
+    Card(
+        onClick = alEntrar,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Line),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(56.dp).background(Peach, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                    Text("Modo comprador", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Busca productos por categoría", fontSize = 13.sp)
-                }
+                Text(emoji, fontSize = 26.sp)
             }
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = { modo = "emprendedora" },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(titulo, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Dark)
+                Spacer(Modifier.height(4.dp))
+                Text(descripcion, fontSize = 13.sp, color = Muted, maxLines = 2)
+            }
+            Spacer(Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Wine.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                    Text("Modo emprendedora", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wine)
-                    Text("Administra tu catálogo y tus ventas", fontSize = 13.sp, color = Muted)
-                }
+                Text("›", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Wine)
             }
         }
     }
@@ -682,7 +743,7 @@ internal fun EmprendedoraAppConectada(
 
     Scaffold(
         containerColor = Cream,
-        topBar = { AmancayTopBar(onHelp = { showHelp = true }) },
+        topBar = { AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir) },
         bottomBar = {
             Column {
                 HorizontalDivider(color = Line, thickness = 1.dp)

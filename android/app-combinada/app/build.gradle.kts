@@ -9,6 +9,8 @@ val amancayApiBaseUrl = amancayLocalProperties.getProperty(
     "amancay.api.baseUrl",
     if (amancayFirebaseEmulators) "http://10.0.2.2:8787/api/v1/" else "http://10.0.2.2:8080/api/v1/"
 ).replace("\\", "\\\\").replace("\"", "\\\"")
+val amancayWebClientId = amancayLocalProperties.getProperty("amancay.google.webClientId", "")
+    .replace("\\", "\\\\").replace("\"", "\\\"")
 
 plugins {
     alias(libs.plugins.android.application)
@@ -32,6 +34,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "FIREBASE_EMULATORS", amancayFirebaseEmulators.toString())
         buildConfigField("String", "API_BASE_URL", "\"$amancayApiBaseUrl\"")
+        buildConfigField("String", "WEB_CLIENT_ID", "\"$amancayWebClientId\"")
     }
 
     buildTypes {
@@ -74,6 +77,9 @@ dependencies {
     implementation(libs.androidx.graphics.path)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.coil.compose)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.androidx.googleid)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.example.amancay.R
 import com.example.amancay.EmprendedoraAppConectada
 import com.example.amancay.data.ApiEmprendedoraClient
+import com.example.amancay.data.AutenticacionGoogleComprador
 import com.example.amancay.data.ContactoEmprendedora
 import com.example.amancay.data.CuentaEmprendedora
 import com.example.amancay.data.CuentaEmprendedoraRepository
@@ -80,7 +81,7 @@ import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.launch
 
 @Composable
-fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, alVolver: () -> Unit) {
+fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: String, alVolver: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? FragmentActivity
     val preferenciasAcceso = remember(context) {
@@ -99,6 +100,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, alVolver: () -> 
     var cuenta by remember { mutableStateOf<CuentaEmprendedora?>(null) }
     var cargandoCuenta by remember { mutableStateOf(true) }
     var enviando by remember { mutableStateOf(false) }
+    var enviandoGoogle by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var aviso by remember { mutableStateOf<String?>(null) }
     var correo by remember { mutableStateOf("") }
@@ -216,6 +218,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, alVolver: () -> 
             contrasena = contrasena,
             error = error,
             enviando = enviando,
+            googleCargando = enviandoGoogle,
             alCambiarCorreo = { correo = it },
             alCambiarContrasena = { contrasena = it },
             alVolver = alVolver,
@@ -234,6 +237,37 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, alVolver: () -> 
                         error = e.message ?: "No se pudo iniciar sesión."
                     } finally {
                         enviando = false
+                    }
+                }
+            },
+            alGoogle = {
+                enviandoGoogle = true
+                error = null
+                scope.launch {
+                    try {
+                        val resultado = AutenticacionGoogleComprador.iniciarSesionConGoogle(
+                            context, firebase.auth, AutenticacionGoogleComprador.idClienteWeb(context, webClientId)
+                        )
+                        when (resultado) {
+                            is com.example.amancay.data.ResultadoAccesoGoogle.Exito -> {
+                                val nueva = repository.validarSesion()
+                                if (nueva == null) {
+                                    error = "Tu cuenta de Google no tiene un emprendimiento registrado en Amancay. Usa las credenciales que te entregó la administración."
+                                } else {
+                                    cuenta = nueva
+                                    huellaHabilitada = preferenciasAcceso.getBoolean(claveHuella(nueva.uid), false)
+                                    huellaValidada = true
+                                    repository.observarTienda(nueva.tiendaId)
+                                }
+                            }
+                            is com.example.amancay.data.ResultadoAccesoGoogle.Fallido ->
+                                error = resultado.mensaje
+                            else -> { /* el comprador cerró el panel de Google */ }
+                        }
+                    } catch (e: Exception) {
+                        error = e.message ?: "No se pudo iniciar sesión con Google."
+                    } finally {
+                        enviandoGoogle = false
                     }
                 }
             }
@@ -342,10 +376,12 @@ private fun PantallaIngresoEmprendedora(
     contrasena: String,
     error: String?,
     enviando: Boolean,
+    googleCargando: Boolean,
     alCambiarCorreo: (String) -> Unit,
     alCambiarContrasena: (String) -> Unit,
     alVolver: () -> Unit,
-    alIngresar: () -> Unit
+    alIngresar: () -> Unit,
+    alGoogle: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center) {
         Image(painterResource(Fig.LOGO), contentDescription = null, modifier = Modifier.size(72.dp).align(Alignment.CenterHorizontally))
@@ -384,6 +420,12 @@ private fun PantallaIngresoEmprendedora(
         ) {
             if (enviando) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp)) else Text("Ingresar", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
+        Spacer(Modifier.height(10.dp))
+        OutlineButton(
+            "Iniciar sesión con Google",
+            alGoogle,
+            enabled = !googleCargando && !enviando
+        )
         TextButton(onClick = alVolver, modifier = Modifier.fillMaxWidth()) { Text("Volver al modo comprador", color = Wine) }
     }
 }

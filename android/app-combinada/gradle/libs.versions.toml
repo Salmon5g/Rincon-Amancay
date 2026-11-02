@@ -1,5 +1,5 @@
 [versions]
-agp = "9.0.1"
+agp = "9.0.0-beta05"
 coreKtx = "1.15.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -9,6 +9,8 @@ activityCompose = "1.9.3"
 kotlin = "2.4.21"
 composeBom = "2024.09.00"
 coil = "2.6.0"
+credentials = "1.2.2"
+googleid = "1.1.0"
 zxing = "3.5.3"
 biometric = "1.1.0"
 fragmentKtx = "1.8.5"
@@ -44,6 +46,9 @@ androidx-graphics-core = { group = "androidx.graphics", name = "graphics-core", 
 androidx-graphics-path = { group = "androidx.graphics", name = "graphics-path", version.ref = "graphicsPath" }
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+androidx-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

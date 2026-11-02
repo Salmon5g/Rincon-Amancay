@@ -116,9 +116,10 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 }
 
 @Composable
-fun OutlineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, fontSize: TextUnit = 16.sp) {
+fun OutlineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, fontSize: TextUnit = 16.sp, enabled: Boolean = true) {
     OutlinedButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp),

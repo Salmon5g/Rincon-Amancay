@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,7 +55,8 @@ fun BarraSuperiorAmancay(
     titulo: String = "Amancay",
     subtitulo: String = "Rincón",
     alAyuda: (() -> Unit)? = null,
-    alSalir: (() -> Unit)? = null
+    alSalir: (() -> Unit)? = null,
+    contenidoSesion: (@Composable RowScope.() -> Unit)? = null
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -89,6 +91,10 @@ fun BarraSuperiorAmancay(
             }
         },
         actions = {
+            if (contenidoSesion != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) { contenidoSesion() }
+                Spacer(Modifier.width(6.dp))
+            }
             if (alSalir != null) {
                 androidx.compose.material3.TextButton(onClick = alSalir) {
                     Text("Salir", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
