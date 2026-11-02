@@ -153,4 +153,6 @@ firebase.json            Configuración Firebase y Hosting
 
 No subas `.env`, `.env.compartido.local`, `google-services.json`, contraseñas, claves de cuentas de servicio ni credenciales de Supabase. La configuración web de Firebase identifica el cliente; nunca sustituye Authentication, las reglas ni IAM del backend.
 
-Las pruebas automatizadas y semillas pueden reponer datos ficticios. No las ejecutes contra Firebase real. Las instrucciones para el modelo y las operaciones están en [contratos](contratos/README.md), [integración de equipos](docs/integracion-equipos.md) y [reglas Firebase](firebase/README.md).
+Las pruebas automatizadas y semillas pueden reponer datos ficticios. No las ejecutes contra el proyecto Firebase compartido `rincon-amancay`. La carga cloud ficticia solo se permite en el proyecto separado de desarrollo descrito en [Entrega 4 — Capa de datos](docs/Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/6-capa-datos-y-datos-prueba.md). Las instrucciones para el modelo y las operaciones están en [contratos](contratos/README.md), [integración de equipos](docs/integracion-equipos.md) y [reglas Firebase](firebase/README.md).
+
+Los entregables técnicos de la Entrega 4 sobre seguridad y capa de datos están en [docs/Entrega 4 — Acceso, administración y tienda](docs/Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/README.md).

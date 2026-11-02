@@ -1,7 +1,7 @@
 import { obtenerFirebaseLocal } from '~/lib/firebase-local';
 import { obtenerFirebaseCliente } from '~/lib/firebase';
 import { crearClienteLocal } from '~/lib/cliente-local';
-import { crearLecturasAdmin } from '~/lib/admin-lecturas';
+import { crearLecturasAdmin } from '~/repositories/firebase/lecturas-admin';
 import { crearClienteCompartido } from '~/lib/cliente-compartido';
 import { crearCatalogoPublicoFirebase } from '~/repositories/firebase/catalogo-publico';
 

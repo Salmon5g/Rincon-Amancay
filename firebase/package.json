@@ -5,6 +5,7 @@
   "scripts": {
     "emulators": "firebase emulators:start --only firestore,auth,storage --project demo-rincon-amancay --config ../firebase.json",
     "seed": "node scripts/seed.mjs",
+    "seed:development": "node --env-file=secrets/development.env scripts/seed-development.mjs",
     "seed:cloud": "node scripts/seed-cloud.mjs",
     "check": "firebase emulators:exec --only firestore,auth,storage --project demo-rincon-amancay --config ../firebase.json \"node scripts/check.mjs && node tests/permisos.mjs && node tests/storage.mjs\"",
     "test:rules": "node tests/permisos.mjs",
