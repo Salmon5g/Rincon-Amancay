@@ -1,3 +1,4 @@
+import { crearAccesoComprador } from '~/lib/acceso-comprador';
 import { obtenerFirebaseLocal } from '~/lib/firebase-local';
 import { obtenerFirebaseCliente } from '~/lib/firebase';
 import { crearClienteLocal } from '~/lib/cliente-local';
@@ -22,10 +23,12 @@ export default defineNuxtPlugin(() => {
   const lecturas = crearLecturasAdmin(firebase);
   // En real-lectura no se construye el cliente de API ni se exponen escrituras.
   if (modo === 'real-api' && !config.apiUrl) throw new Error('NUXT_PUBLIC_API_URL es obligatoria en modo real-api.');
-  const amancay = modo === 'local'
-    ? { ...crearClienteLocal(firebase), ...lecturas }
+  const clienteApi = modo === 'local'
+    ? crearClienteLocal(firebase)
     : modo === 'real-api'
-      ? { ...crearClienteCompartido(firebase, { apiUrl: config.apiUrl, permitirHttpLocal: import.meta.dev }), ...lecturas }
-      : lecturas;
-  return { provide: { amancay, catalogoPublico, firebaseModo: modo } };
+      ? crearClienteCompartido(firebase, { apiUrl: config.apiUrl, permitirHttpLocal: import.meta.dev })
+      : undefined;
+  const amancay = clienteApi ? { ...clienteApi, ...lecturas } : lecturas;
+  const accesoComprador = crearAccesoComprador(firebase, clienteApi?.llamar);
+  return { provide: { amancay, catalogoPublico, accesoComprador, firebaseModo: modo } };
 });
