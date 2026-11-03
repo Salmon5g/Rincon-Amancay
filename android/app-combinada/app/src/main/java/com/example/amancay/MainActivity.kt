@@ -624,6 +624,10 @@ internal fun EmprendedoraAppConectada(
 ) {
     val productos by productosRepository.productos.collectAsState()
     val tiposProducto by productosRepository.tipos.collectAsState()
+    // Fuente local de ventas/invitaciones de feria (flujo del prototipo).
+    val local = remember(sesion.uid) { crearRepositorioDemostracion() }
+    val ventas by local.ventas.collectAsState()
+    val invitaciones by local.invitaciones.collectAsState()
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -786,15 +790,16 @@ internal fun EmprendedoraAppConectada(
             avisoProducto?.let { AvisoEmprendedora(it, false) }
             errorProducto?.let { AvisoEmprendedora(it, true) }
             Box(Modifier.weight(1f)) {
-                when (screen) {
+                ScreenTransition(key = screen.toString()) {
+                    val pantalla = screen
+                    when (pantalla) {
                     Screen.Home -> HomeScreen(
                         borrador = null,
                         publicados = productos.count { it.estadoPublicacion == "publicado" },
                         borradores = productos.count { it.estadoPublicacion == "borrador" },
-                        ventasCount = 0,
+                        ventasCount = ventas.size,
                         linkCompartido = linkCompartido,
-                        invitacionesPendientes = 0,
-                        invitacionesDisponibles = false,
+                        invitacionesPendientes = invitaciones.count { it.estado == "pendiente" },
                         onAgregar = { abrirTab(Tab.AGREGAR) },
                         onContinuarBorrador = { abrirTab(Tab.PRODUCTOS) },
                         onMisProductos = { abrirTab(Tab.PRODUCTOS) },
@@ -951,16 +956,25 @@ internal fun EmprendedoraAppConectada(
                         },
                         onContact = { scope.launch { snackbar.showSnackbar("Consulta el contacto disponible en la ficha de la tienda") } }
                     )
-                    Screen.Ferias -> Column(
-                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
-                    ) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("FERIAS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-                        Text("Invitaciones a ferias", fontSize = 30.sp, color = Dark)
-                        AvisoEmprendedora("La aplicación todavía no consulta las invitaciones de feria guardadas en Firebase.", false)
-                        GhostButton("Volver al inicio", { screen = Screen.Home; tab = Tab.INICIO })
-                    }
+                    Screen.Ferias -> FeriasScreen(
+                        invitaciones = invitaciones,
+                        onVerDetalle = { screen = Screen.FeriaDetalle(it.id) },
+                        onVolver = { screen = Screen.Home; tab = Tab.INICIO }
+                    )
+                    is Screen.FeriaDetalle -> FeriaDetalleScreen(
+                        invitacion = pantalla.invitacionId?.let { id -> invitaciones.firstOrNull { it.id == id } },
+                        onAceptar = {
+                            local.responderFeria(it.id, true)
+                            scope.launch { snackbar.showSnackbar("Inscripción confirmada") }
+                        },
+                        onRechazar = {
+                            local.responderFeria(it.id, false)
+                            scope.launch { snackbar.showSnackbar("Invitación rechazada") }
+                        },
+                        onVolver = { screen = Screen.Ferias }
+                    )
                     else -> AvisoEmprendedora("Esta sección todavía no está conectada a la cuenta de Firebase.", false)
+                    }
                 }
             }
         }
