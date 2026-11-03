@@ -308,9 +308,9 @@ onBeforeUnmount(() => {
       <section v-if="producto" class="detalle">
         <div class="galeria">
           <template v-if="imagenes.length">
-            <ImagenPublica v-for="ruta in imagenes" :key="ruta" :ruta="ruta" :alt="producto.datos.nombre" />
+            <ImagenPublica v-for="ruta in imagenes" :key="ruta" :ruta="ruta" :alt="producto.datos.nombre" ajuste="contain" />
           </template>
-          <ImagenPublica v-else :alt="producto.datos.nombre" />
+          <ImagenPublica v-else :alt="producto.datos.nombre" ajuste="contain" />
         </div>
         <div class="ficha">
           <span class="etiqueta">

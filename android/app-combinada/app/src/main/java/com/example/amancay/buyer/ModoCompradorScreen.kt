@@ -659,7 +659,13 @@ private fun DialogoDetalleProducto(producto: ProductoCatalogoComprador, alCerrar
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (producto.imagenUrl != null) {
-                    ProductImage(fallback = Fig.VASE_REVIEW, size = 184.dp, uri = Uri.parse(producto.imagenUrl), hasPhoto = true)
+                    ProductImage(
+                        fallback = Fig.VASE_REVIEW,
+                        size = 184.dp,
+                        uri = Uri.parse(producto.imagenUrl),
+                        hasPhoto = true,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                    )
                 }
                 Text(producto.tiendaNombre, color = AmancayBordo)
                 Text(producto.categoriaNombre.ifBlank { producto.tipoProductoNombre }, color = AmancayTintaSuave)

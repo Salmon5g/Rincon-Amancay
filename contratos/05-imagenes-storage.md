@@ -29,7 +29,7 @@ La API verifica sesión, rol activo, tienda asignada y propiedad en Firestore. U
 
 La subida de logo actualiza `tiendasPrivadas/{tiendaId}.logo`. Si la tienda ya está publicada, procesa el logo y actualiza sus dos rutas públicas dentro de Firestore; la derivada anterior se elimina después de la transacción. Si aún es borrador, el procesamiento público se hace al publicar la tienda.
 
-La carga de imagen de producto agrega la ruta privada a `tiendasPrivadas/{tiendaId}/productos/{productoId}.imagenes`. Al publicar, la API vuelve a leer y decodificar el original, elimina metadatos y crea WebP de hasta 1600 × 1600 y 320 × 320. Los objetos se guardan con nombres derivados del hash del contenido y no se sobrescriben.
+La carga de imagen de producto agrega la ruta privada a `tiendasPrivadas/{tiendaId}/productos/{productoId}.imagenes`. Al publicar, la API vuelve a leer y decodificar el original, elimina metadatos y crea WebP de hasta 1600 × 1600 y 320 × 320. La imagen principal intenta calidad 90 y baja a 86/82 solo si debe respetar el límite de 5 MiB; la miniatura se genera directamente desde el original. Los objetos se guardan con nombres derivados del hash del contenido y no se sobrescriben.
 
 Las políticas RLS permiten a la cuenta técnica operar solo en las rutas reales indicadas y solo dentro de los dos buckets Amancay. La autorización de la emprendedora ocurre en la API mediante Firebase/Firestore. No se utiliza `service_role`.
 

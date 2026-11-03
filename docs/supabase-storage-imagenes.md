@@ -8,7 +8,7 @@ Firebase Auth sigue identificando a emprendedoras y Firebase/Firestore conserva 
 2. La API verifica ese token y consulta `accesos/{uid}`, `emprendedoras/{uid}`, `tiendasPrivadas/{tiendaId}` y, para imágenes de producto, el borrador en Firestore. Rechaza si el rol, la tienda asignada o la propiedad no coinciden.
 3. La API inicia sesión en Supabase Auth con una cuenta técnica normal, configurada solo en el archivo local del backend. Comprueba que el UID de Supabase sea `4a91b0f5-72ec-432a-ae3c-007a7eed1b8f`.
 4. Supabase RLS deja operar en estos buckets únicamente a ese UID. El permiso de la emprendedora se decide en la API con Firebase/Firestore; la cuenta técnica no se comparte con los clientes.
-5. El original queda privado. Al publicar una tienda o producto, la API valida y decodifica el archivo, elimina sus metadatos, crea WebP de 1600 y 320 píxeles y guarda rutas con hash en el bucket público.
+5. El original queda privado. Al publicar una tienda o producto, la API valida y decodifica el archivo, elimina sus metadatos, crea WebP de hasta 1600 y 320 píxeles y guarda rutas con hash en el bucket público. La imagen principal intenta calidad 90 y baja a 86/82 solo si necesita respetar el límite de 5 MiB; la miniatura se procesa desde el original, no desde otra WebP.
 6. Al cambiar el logo publicado o retirar una tienda/producto, Firestore registra las rutas públicas que deben borrarse. Si Storage falla, repetir la misma operación intenta completar la limpieza.
 
 ## Rutas

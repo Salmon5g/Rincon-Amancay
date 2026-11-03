@@ -25,9 +25,18 @@ export async function prepararImagen(bytes:Buffer,extension:string):Promise<{pri
     const image=sharp(bytes,{failOn:'warning',limitInputPixels:20_000_000});
     const metadata=await image.metadata();
     if(metadata.format!==(extension==='jpg'?'jpeg':extension) || (metadata.pages??1)!==1 || !metadata.width || !metadata.height || metadata.width>10000 || metadata.height>10000)return null;
-    const principal=await image.rotate().resize({width:1600,height:1600,fit:'inside',withoutEnlargement:true}).webp({quality:82}).timeout({seconds:5}).toBuffer();
-    const miniatura=await sharp(principal).resize({width:320,height:320,fit:'inside',withoutEnlargement:true}).webp({quality:78}).timeout({seconds:5}).toBuffer();
-    if(principal.length>maxBytes || miniatura.length>maxBytes)return null;
+    let principal:Buffer|null=null;
+    for(const quality of [90,86,82]) {
+      const candidata=await image.clone().rotate().resize({width:1600,height:1600,fit:'inside',withoutEnlargement:true}).webp({quality,effort:5}).timeout({seconds:5}).toBuffer();
+      if(candidata.length<=maxBytes) {principal=candidata;break;}
+    }
+    if(!principal)return null;
+    let miniatura:Buffer|null=null;
+    for(const quality of [86,82,78]) {
+      const candidata=await image.clone().rotate().resize({width:320,height:320,fit:'inside',withoutEnlargement:true}).webp({quality,effort:5}).timeout({seconds:5}).toBuffer();
+      if(candidata.length<=maxBytes) {miniatura=candidata;break;}
+    }
+    if(!miniatura)return null;
     return {principal,miniatura};
   } catch {return null;}
 }
@@ -58,7 +67,7 @@ export function crearVerificadorImagenes(bucket:typeof bucketLocal) {
 export function crearProcesadorImagenes(bucket:typeof bucketLocal) {
   return async(ruta:string,tienda:string,producto:string):Promise<ImagenPreparada|false> => {
     const image=await decodificar(bucket,ruta,tienda,producto);if(!image)return false;
-    const digest=createHash('sha256').update('amancay-webp-v1').update(image.principal).update(image.miniatura).digest('hex');
+    const digest=createHash('sha256').update('amancay-webp-v2').update(image.principal).update(image.miniatura).digest('hex');
     const base=`catalogo/${tienda}/productos/${producto}/${digest}`;
     const result={imagen:`${base}_1600.webp`,miniatura:`${base}_320.webp`};
     for(const [path,bytes] of [[result.imagen,image.principal],[result.miniatura,image.miniatura]] as const) {

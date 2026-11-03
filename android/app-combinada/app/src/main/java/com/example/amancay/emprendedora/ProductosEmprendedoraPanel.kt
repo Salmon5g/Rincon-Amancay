@@ -1,5 +1,6 @@
 package com.example.amancay.emprendedora
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -40,6 +41,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.example.amancay.data.ApiEmprendedoraException
 import com.example.amancay.data.CategoriaEmprendedora
 import com.example.amancay.data.DraftState
@@ -74,10 +78,30 @@ import com.example.amancay.ui.ProductImage
 import com.example.amancay.ui.StepScaffold
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.mutableIntStateOf
+import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.launch
 
 private data class ImagenSeleccionadaProducto(val uri: Uri?, val bitmap: Bitmap?, val archivoId: String)
+
+private fun crearUriFotoTemporalProducto(context: Context): Uri {
+    val directorio = File(context.cacheDir, "product-photos")
+    check(directorio.exists() || directorio.mkdirs()) { "No se pudo preparar el almacenamiento temporal de la cámara." }
+    val archivo = File.createTempFile("amancay-product-", ".jpg", directorio)
+    return try {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", archivo)
+    } catch (error: Exception) {
+        archivo.delete()
+        throw error
+    }
+}
+
+private fun eliminarFotoTemporalProducto(context: Context, uri: Uri?) {
+    if (uri?.authority != "${context.packageName}.fileprovider") return
+    val nombre = uri.lastPathSegment ?: return
+    if (!nombre.matches(Regex("amancay-product-[A-Za-z0-9_-]+\\.jpg"))) return
+    File(File(context.cacheDir, "product-photos"), nombre).delete()
+}
 
 @Composable
 internal fun ProductosEmprendedoraPanel(
@@ -163,6 +187,7 @@ internal fun ProductosEmprendedoraPanel(
                         if (imagen != null) {
                             val preparada = prepararImagenProducto(context.contentResolver, imagen.uri, imagen.bitmap)
                             repository.subirImagen(tiendaId, productoId, imagen.archivoId, preparada)
+                            eliminarFotoTemporalProducto(context, imagen.uri)
                         }
                         nuevo = false; editando = null
                         alAviso(if (imagen == null) "Borrador guardado en Firebase." else "Borrador e imagen guardados. La foto quedó protegida hasta publicar el producto.")
@@ -392,7 +417,8 @@ private fun VistaPreviaProductoEmprendedora(
                     when {
                         imagen != null -> ProductImage(
                             fallback = Fig.CAMERA, size = 250.dp, bitmap = imagen,
-                            hasPhoto = true, modifier = Modifier.fillMaxWidth(), corner = 20.dp
+                            hasPhoto = true, modifier = Modifier.fillMaxWidth(), corner = 20.dp,
+                            contentScale = ContentScale.Fit
                         )
                         cargandoImagen -> androidx.compose.material3.CircularProgressIndicator(color = Wine)
                         producto.imagenes.isNotEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -464,6 +490,7 @@ private fun EditorProductoEmprendedora(
     onCancel: () -> Unit,
     onSave: (ProductoSolicitud, ImagenSeleccionadaProducto?) -> Unit
 ) {
+    val context = LocalContext.current
     val tiposNuevos = tipos.filter { it.activo }
     val tiposDisponibles = if (original == null) tiposNuevos else tipos.filter { it.activo || it.id == original.tipoProductoId }
     val initialTipo = original?.tipoProductoId ?: tiposNuevos.firstOrNull()?.id.orEmpty()
@@ -479,25 +506,38 @@ private fun EditorProductoEmprendedora(
     var stockInicial by remember(original?.id) { mutableStateOf(original?.stock?.toString().orEmpty()) }
     var paso by remember(original?.id) { mutableIntStateOf(1) }
     val fotoLocal = remember(original?.id) { DraftState() }
+    var capturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
     var imagenPrivada by remember(original?.id, original?.imagenes) { mutableStateOf<Bitmap?>(null) }
     var cargandoVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf(false) }
     var errorVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf<String?>(null) }
     var archivoId by remember(original?.id) { mutableStateOf(UUID.randomUUID().toString()) }
     val selectorGaleria = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
+            eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
             fotoLocal.photoUri = uri
             fotoLocal.photoBitmap = null
             fotoLocal.fotoLista = true
             archivoId = UUID.randomUUID().toString()
         }
     }
-    val selectorCamara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) {
-            fotoLocal.photoBitmap = bitmap
-            fotoLocal.photoUri = null
+    val selectorCamara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { guardada ->
+        val uri = capturaPendiente?.let(Uri::parse)
+        capturaPendiente = null
+        if (guardada && uri != null) {
+            eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
+            fotoLocal.photoBitmap = null
+            fotoLocal.photoUri = uri
             fotoLocal.fotoLista = true
             archivoId = UUID.randomUUID().toString()
+        } else {
+            eliminarFotoTemporalProducto(context, uri)
         }
+    }
+    fun cancelarEditor() {
+        eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
+        capturaPendiente?.let { eliminarFotoTemporalProducto(context, Uri.parse(it)) }
+        capturaPendiente = null
+        onCancel()
     }
     var atributos by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.atributosEspecificos.orEmpty()) }
     var variantes by remember(original?.id, original?.versionEsperada) {
@@ -583,9 +623,13 @@ private fun EditorProductoEmprendedora(
         }
     }
     if (paso == 1) {
-        PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ selectorCamara.launch(null) },
+        PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={
+            runCatching { crearUriFotoTemporalProducto(context) }
+                .onSuccess { uri -> capturaPendiente = uri.toString(); selectorCamara.launch(uri) }
+                .onFailure { error = it.message ?: "No se pudo preparar la cámara." }
+        },
             onPickPhoto={ selectorGaleria.launch("image/*") }, onNext={ paso=2 },
-            onBack=onCancel, onSaveExit=onCancel, showSaveExit=false,
+            onBack=::cancelarEditor, onSaveExit=::cancelarEditor, showSaveExit=false,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
             mensajeImagenExistente=when {
@@ -596,7 +640,7 @@ private fun EditorProductoEmprendedora(
             })
     } else if (paso == 2) {
         StepScaffold("Paso 2 de 5", "Cuéntanos lo básico", "Usaremos estos datos para mostrar tu producto.",
-            onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=onCancel,
+            onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=::cancelarEditor,
             nextEnabled=nombre.isNotBlank() && tipo != null, pasoActual=2, showSaveExit=false) {
             AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto", "")
             Spacer(Modifier.height(16.dp))
@@ -618,7 +662,7 @@ private fun EditorProductoEmprendedora(
     } else if (paso == 3) {
         StepScaffold("Paso 3 de 5", if (tipo == null) "Detalles del producto" else "Detalles de " + tipo.nombre,
             "Solo te pedimos lo que ayuda a decidir un encargo.",
-            onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=onCancel,
+            onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=::cancelarEditor,
             nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false) {
             if (campos.isEmpty()) Text("Este tipo no requiere detalles adicionales. Puedes continuar.", fontSize=15.sp, color=Muted)
             campos.forEach { f ->
@@ -632,7 +676,7 @@ private fun EditorProductoEmprendedora(
         }
     } else if (paso == 4) {
         StepScaffold("Paso 4 de 5", "Precio, variantes y stock", "Cada variante puede tener su propio precio, foto y cantidad.",
-            onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=onCancel,
+            onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=::cancelarEditor,
             nextEnabled=if (conVariantes) variantes.isNotEmpty() else precioBase.isNotBlank(),
             pasoActual=4, showSaveExit=false) {
             Text("Modalidad de venta", color=Dark, fontWeight=FontWeight.Bold)
@@ -680,7 +724,7 @@ private fun EditorProductoEmprendedora(
         }
     } else {
         StepScaffold("Paso 5 de 5", "Revisa y publica", "Tú decides cuándo se muestra y cómo se descuenta.",
-            onNext={ guardarBorrador() }, onBack={ paso=4 }, onSaveExit=onCancel,
+            onNext={ guardarBorrador() }, onBack={ paso=4 }, onSaveExit=::cancelarEditor,
             nextLabel=if (original == null) "Guardar borrador" else "Guardar cambios", nextEnabled=!enviando,
             pasoActual=5, showSaveExit=false) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {

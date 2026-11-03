@@ -99,9 +99,17 @@ export class ClienteStorageSupabase {
       headers['Content-Type']='application/json';
       body=JSON.stringify({prefixes:[path!]});
     }
+    const inicio=Date.now();
     try {
-      return await fetch(endpoint,{method,headers,body,signal:AbortSignal.timeout(20_000)});
-    } catch { throw new ErrorOperacion('pendiente','No se pudo comunicar con Supabase Storage; conservar la operación y reintentar.'); }
+      return await fetch(endpoint,{method,headers,body,signal:AbortSignal.timeout(60_000)});
+    } catch (error) {
+      const codigo=typeof error==='object' && error!==null && 'code' in error ? String((error as {code?:unknown}).code) : undefined;
+      console.warn('[Supabase Storage] Falló una solicitud de red.',{
+        method,bucket,error:error instanceof Error?error.name:'UnknownError',codigo,
+        duracionMs:Date.now()-inicio,
+      });
+      throw new ErrorOperacion('pendiente','No se pudo comunicar con Supabase Storage; conservar la operación y reintentar.');
+    }
   }
 
   async subirInmutable(bucket:string,path:string,bytes:Buffer,contentType:string):Promise<void> {
@@ -143,7 +151,7 @@ export function crearServicioImagenesSupabase(db:Firestore,storage:ClienteStorag
     if(original.contentType!==mime)return false;
     const prepared=await prepararImagen(original.bytes,extension);
     if(!prepared)return false;
-    const digest=createHash('sha256').update('amancay-webp-v1').update(prepared.principal).update(prepared.miniatura).digest('hex');
+    const digest=createHash('sha256').update('amancay-webp-v2').update(prepared.principal).update(prepared.miniatura).digest('hex');
     const result={imagen:`${base}/${digest}_1600.webp`,miniatura:`${base}/${digest}_320.webp`};
     await storage.subirInmutable(buckets.catalogo,result.imagen,prepared.principal,'image/webp');
     await storage.subirInmutable(buckets.catalogo,result.miniatura,prepared.miniatura,'image/webp');

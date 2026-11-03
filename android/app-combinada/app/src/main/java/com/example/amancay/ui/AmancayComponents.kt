@@ -10,6 +10,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,14 +22,18 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +43,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.amancay.R
 import com.example.amancay.ui.theme.*
@@ -265,25 +274,40 @@ fun ProductImage(
     bitmap: Bitmap? = null,
     hasPhoto: Boolean = false,
     modifier: Modifier = Modifier,
-    corner: Dp = 20.dp
+    corner: Dp = 20.dp,
+    contentScale: ContentScale = ContentScale.Fit
 ) {
+    val puedeAmpliar = hasPhoto && (bitmap != null || uri != null)
+    var mostrarAmpliada by remember(uri, bitmap, hasPhoto) { mutableStateOf(false) }
+    var escala by remember(uri, bitmap) { mutableFloatStateOf(1f) }
+    var desplazamiento by remember(uri, bitmap) { mutableStateOf(Offset.Zero) }
+    fun abrirAmpliada() {
+        escala = 1f
+        desplazamiento = Offset.Zero
+        mostrarAmpliada = true
+    }
+    val transformacion = rememberTransformableState { cambioEscala, cambioPosicion, _ ->
+        escala = (escala * cambioEscala).coerceIn(1f, 5f)
+        desplazamiento = if (escala > 1f) desplazamiento + cambioPosicion else Offset.Zero
+    }
     Box(
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(corner))
-            .background(CardPink),
+            .background(CardPink)
+            .clickable(enabled = puedeAmpliar, onClick = ::abrirAmpliada),
         contentAlignment = Alignment.Center
     ) {
         Crossfade(targetState = hasPhoto, label = "foto") { foto ->
         if (foto && bitmap != null) {
             Image(
-                bitmap = bitmap.asImageBitmap(), contentDescription = null,
-                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                bitmap = bitmap.asImageBitmap(), contentDescription = if (puedeAmpliar) "Ampliar foto del producto" else null,
+                modifier = Modifier.fillMaxSize(), contentScale = contentScale
             )
         } else if (foto && uri != null) {
             AsyncImage(
-                model = uri, contentDescription = null,
-                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                model = uri, contentDescription = if (puedeAmpliar) "Ampliar foto del producto" else null,
+                modifier = Modifier.fillMaxSize(), contentScale = contentScale
             )
         } else if (foto) {
             Image(
@@ -296,6 +320,63 @@ fun ProductImage(
                 modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
             )
         }
+        }
+    }
+
+    if (mostrarAmpliada && puedeAmpliar) {
+        Dialog(
+            onDismissRequest = { mostrarAmpliada = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Color(0xF20D0A0C)),
+                contentAlignment = Alignment.Center
+            ) {
+                val gestoZoom = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+                    .graphicsLayer {
+                        scaleX = escala
+                        scaleY = escala
+                        translationX = desplazamiento.x
+                        translationY = desplazamiento.y
+                    }
+                    .pointerInput(uri, bitmap) {
+                        detectTapGestures(onDoubleTap = {
+                            escala = if (escala > 1f) 1f else 2f
+                            desplazamiento = Offset.Zero
+                        })
+                    }
+                    .transformable(transformacion)
+
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Foto ampliada del producto",
+                        modifier = gestoZoom,
+                        contentScale = ContentScale.Fit
+                    )
+                } else if (uri != null) {
+                    AsyncImage(
+                        model = uri,
+                        contentDescription = "Foto ampliada del producto",
+                        modifier = gestoZoom,
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                TextButton(
+                    onClick = { mostrarAmpliada = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                ) { Text("Cerrar  ×", fontWeight = FontWeight.Bold) }
+
+                Text(
+                    "Pellizca o usa doble toque para ampliar",
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)
+                )
+            }
         }
     }
 }

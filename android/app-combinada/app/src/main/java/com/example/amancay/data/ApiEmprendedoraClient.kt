@@ -70,7 +70,7 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
         if (!tiendaId.matches(Regex("[A-Za-z0-9_-]{1,128}")) ||
             !productoId.matches(Regex("[A-Za-z0-9_-]{1,128}")) ||
             !archivoId.matches(Regex("[0-9a-fA-F-]{36}")) ||
-            contentType != "image/jpeg" || bytes.isEmpty() || bytes.size > 5 * 1024 * 1024
+            contentType !in setOf("image/jpeg", "image/png", "image/webp") || bytes.isEmpty() || bytes.size > 5 * 1024 * 1024
         ) {
             throw ApiEmprendedoraException("datos-invalidos", "La imagen no cumple el formato o tamaño permitido.")
         }
