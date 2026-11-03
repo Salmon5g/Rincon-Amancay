@@ -44,6 +44,7 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
       if(auth.currentUser) {await auth.currentUser.reload();await auth.currentUser.getIdToken(true);}
     },
     async solicitarRecuperacion(correo: string) {
+      auth.languageCode = 'es';
       try {await sendPasswordResetEmail(auth,correo);}
       catch(error) {if((error as {code?:string}).code!=='auth/user-not-found') throw error;}
       return {mensaje:'Si el correo corresponde a una cuenta, recibirás instrucciones.'};

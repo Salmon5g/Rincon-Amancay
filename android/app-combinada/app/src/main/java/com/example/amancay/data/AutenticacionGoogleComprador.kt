@@ -11,6 +11,7 @@ import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.tasks.await
@@ -57,6 +58,8 @@ private fun mensajeErrorAcceso(error: Exception): String = when (error) {
         ""
     is NoCredentialException ->
         "No hay una cuenta de Google activa en este dispositivo. Agrega una en Ajustes del emulador (o del teléfono) e inténtalo otra vez."
+    is FirebaseAuthUserCollisionException ->
+        "Esta cuenta ya está registrada con correo y contraseña. Ingresa esas credenciales arriba y vuelve a pulsar Google para vincular ambos accesos."
     is GetCredentialException ->
         "Google no pudo entregar tus credenciales. Si acabas de registrar la huella en la consola de Firebase, espera unos minutos e inténtalo otra vez."
     else ->
@@ -97,37 +100,15 @@ object AutenticacionGoogleComprador {
         auth: FirebaseAuth,
         webClientIdDeBuild: String
     ): ResultadoAccesoGoogle {
-        if (webClientIdDeBuild.isBlank()) {
-            return ResultadoAccesoGoogle.Fallido(
-                "Falta configurar el acceso con Google: registra la huella del equipo en la consola de Firebase para com.example.amancay y coloca el ID de cliente web en local.properties (amancay.google.webClientId)."
-            )
-        }
-        val credentialManager = CredentialManager.create(context)
         return try {
-            val opcionGoogle = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(webClientIdDeBuild)
-                .build()
-            val pedido = GetCredentialRequest.Builder()
-                .addCredentialOption(opcionGoogle)
-                .build()
-            val respuesta = credentialManager.getCredential(context, pedido)
-            val credencial = respuesta.credential
-            if (credencial is CustomCredential &&
-                credencial.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-            ) {
-                val tokenGoogle = GoogleIdTokenCredential.createFrom(credencial.data)
-                val credencialFirebase = GoogleAuthProvider.getCredential(tokenGoogle.idToken, null)
-                val usuario = auth.signInWithCredential(credencialFirebase).await().user
-                if (usuario == null) {
-                    ResultadoAccesoGoogle.Fallido(
-                        "Google entregó una sesión vacía. Verifica que Authentication esté habilitado en el proyecto Firebase."
-                    )
-                } else {
-                    ResultadoAccesoGoogle.Exito
-                }
+            val credencialFirebase = obtenerCredencialFirebase(context, webClientIdDeBuild)
+            val usuario = auth.signInWithCredential(credencialFirebase).await().user
+            if (usuario == null) {
+                ResultadoAccesoGoogle.Fallido(
+                    "Google entregó una sesión vacía. Verifica que Authentication esté habilitado en el proyecto Firebase."
+                )
             } else {
-                ResultadoAccesoGoogle.Fallido("Credential Manager devolvió un tipo de credencial inesperado.")
+                ResultadoAccesoGoogle.Exito
             }
         } catch (error: GetCredentialException) {
             val mensaje = mensajeErrorAcceso(error)
@@ -138,6 +119,68 @@ object AutenticacionGoogleComprador {
             if (mensaje.isBlank()) ResultadoAccesoGoogle.Cancelado
             else ResultadoAccesoGoogle.Fallido(mensaje)
         }
+    }
+
+    /** Vincula Google a una cuenta existente creada por administración con correo y contraseña. */
+    suspend fun vincularGoogleConCuentaActual(
+        context: Context,
+        auth: FirebaseAuth,
+        webClientIdDeBuild: String,
+        correoEsperado: String
+    ): ResultadoAccesoGoogle {
+        val usuario = auth.currentUser
+            ?: return ResultadoAccesoGoogle.Fallido("Primero inicia sesión con las credenciales entregadas por administración.")
+        val correoCuenta = usuario.email.orEmpty().trim()
+        if (correoCuenta.isBlank() || !correoCuenta.equals(correoEsperado.trim(), ignoreCase = true)) {
+            return ResultadoAccesoGoogle.Fallido("La cuenta iniciada no coincide con el correo de las credenciales.")
+        }
+        if (usuario.providerData.any { it.providerId == GoogleAuthProvider.PROVIDER_ID }) {
+            return ResultadoAccesoGoogle.Exito
+        }
+
+        return try {
+            val credencialGoogle = obtenerCredencialGoogle(context, webClientIdDeBuild)
+            if (!credencialGoogle.id.equals(correoCuenta, ignoreCase = true)) {
+                ResultadoAccesoGoogle.Fallido("Elige en Google la misma dirección de correo que te entregó administración.")
+            } else {
+                usuario.linkWithCredential(GoogleAuthProvider.getCredential(credencialGoogle.idToken, null)).await()
+                ResultadoAccesoGoogle.Exito
+            }
+        } catch (error: GetCredentialException) {
+            val mensaje = mensajeErrorAcceso(error)
+            if (mensaje.isBlank()) ResultadoAccesoGoogle.Cancelado
+            else ResultadoAccesoGoogle.Fallido(mensaje)
+        } catch (_: FirebaseAuthUserCollisionException) {
+            ResultadoAccesoGoogle.Fallido("Esta cuenta de Google ya está vinculada a otro perfil de Rincón Amancay.")
+        } catch (error: Exception) {
+            val mensaje = mensajeErrorAcceso(error)
+            if (mensaje.isBlank()) ResultadoAccesoGoogle.Cancelado
+            else ResultadoAccesoGoogle.Fallido(mensaje)
+        }
+    }
+
+    private suspend fun obtenerCredencialFirebase(context: Context, webClientIdDeBuild: String) =
+        GoogleAuthProvider.getCredential(obtenerCredencialGoogle(context, webClientIdDeBuild).idToken, null)
+
+    private suspend fun obtenerCredencialGoogle(context: Context, webClientIdDeBuild: String): GoogleIdTokenCredential {
+        val webClientId = idClienteWeb(context, webClientIdDeBuild)
+        if (webClientId.isBlank()) {
+            throw IllegalStateException(
+                "Falta configurar Google para esta app. Registra su huella SHA-1 en Firebase y descarga el google-services.json actualizado."
+            )
+        }
+        val opcionGoogle = GetGoogleIdOption.Builder()
+            .setFilterByAuthorizedAccounts(false)
+            .setServerClientId(webClientId)
+            .build()
+        val pedido = GetCredentialRequest.Builder()
+            .addCredentialOption(opcionGoogle)
+            .build()
+        val credencial = CredentialManager.create(context).getCredential(context, pedido).credential
+        if (credencial is CustomCredential && credencial.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+            return GoogleIdTokenCredential.createFrom(credencial.data)
+        }
+        throw IllegalStateException("Google devolvió un tipo de credencial inesperado.")
     }
 
     /** Cierra la sesión de Firebase y limpia las credenciales de Google. */

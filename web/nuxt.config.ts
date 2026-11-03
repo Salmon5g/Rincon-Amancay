@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
   devtools: { enabled: true },
-  nitro: { prerender: { routes: ['/invitacion-emprendedora'] } },
+  nitro: { prerender: { routes: ['/invitacion-emprendedora', '/auth/accion'] } },
   runtimeConfig: {
     public: {
       firebaseModo: 'local',

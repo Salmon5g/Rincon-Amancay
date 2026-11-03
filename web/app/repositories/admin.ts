@@ -210,6 +210,8 @@ export function editarCuentaEmprendedora(cliente: ClienteAdminConApi, solicitud:
   operacionId: string
   versionEsperada: string
   nombreMostrar: string
+  correoEsperado: string
+  correo: string
 }) {
   return cliente.llamar('editarCuentaEmprendedora', solicitud)
 }

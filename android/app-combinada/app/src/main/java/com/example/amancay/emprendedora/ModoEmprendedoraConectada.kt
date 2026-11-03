@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.example.amancay.R
 import com.example.amancay.EmprendedoraAppConectada
 import com.example.amancay.data.ApiEmprendedoraClient
+import com.example.amancay.data.AutenticacionCorreo
 import com.example.amancay.data.AutenticacionGoogleComprador
 import com.example.amancay.data.ContactoEmprendedora
 import com.example.amancay.data.CuentaEmprendedora
@@ -68,6 +69,9 @@ import com.example.amancay.data.ProductosEmprendedoraRepository
 import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.ui.Fig
 import com.example.amancay.ui.OutlineButton
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.example.amancay.ui.PrimaryButton
 import com.example.amancay.ui.SelectableChip
 import com.example.amancay.ui.theme.CardPink
@@ -101,6 +105,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
     var cargandoCuenta by remember { mutableStateOf(true) }
     var enviando by remember { mutableStateOf(false) }
     var enviandoGoogle by remember { mutableStateOf(false) }
+    var enviandoRecuperacion by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var aviso by remember { mutableStateOf<String?>(null) }
     var correo by remember { mutableStateOf("") }
@@ -217,10 +222,34 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
             correo = correo,
             contrasena = contrasena,
             error = error,
+            aviso = aviso,
             enviando = enviando,
             googleCargando = enviandoGoogle,
+            recuperacionCargando = enviandoRecuperacion,
             alCambiarCorreo = { correo = it },
             alCambiarContrasena = { contrasena = it },
+            alRecuperarContrasena = {
+                scope.launch {
+                    enviandoRecuperacion = true
+                    error = null
+                    aviso = null
+                    try {
+                        AutenticacionCorreo.enviarEnlaceRestablecimiento(firebase.auth, correo)
+                        aviso = "Si existe una cuenta con ese correo, enviaremos un enlace para restablecer la contraseña. Revisa también el correo no deseado."
+                    } catch (e: Exception) {
+                        error = when (e) {
+                            is IllegalArgumentException, is FirebaseAuthInvalidCredentialsException ->
+                                "Ingresa un correo electrónico válido para enviar el enlace."
+                            is FirebaseAuthInvalidUserException ->
+                                "Si existe una cuenta con ese correo, enviaremos un enlace para restablecer la contraseña. Revisa también el correo no deseado."
+                            is FirebaseNetworkException -> "No hay conexión. Revisa internet e inténtalo nuevamente."
+                            else -> "No se pudo enviar el enlace. Revisa el correo e inténtalo nuevamente."
+                        }
+                    } finally {
+                        enviandoRecuperacion = false
+                    }
+                }
+            },
             alVolver = alVolver,
             alIngresar = {
                 scope.launch {
@@ -245,9 +274,29 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
                 error = null
                 scope.launch {
                     try {
-                        val resultado = AutenticacionGoogleComprador.iniciarSesionConGoogle(
-                            context, firebase.auth, AutenticacionGoogleComprador.idClienteWeb(context, webClientId)
-                        )
+                        val idClienteWeb = AutenticacionGoogleComprador.idClienteWeb(context, webClientId)
+                        val resultado = if (correo.isNotBlank() && contrasena.isNotBlank()) {
+                            val cuentaConCredenciales = repository.iniciarSesion(correo, contrasena)
+                            val vinculacion = AutenticacionGoogleComprador.vincularGoogleConCuentaActual(
+                                context, firebase.auth, idClienteWeb, correo
+                            )
+                            if (vinculacion is com.example.amancay.data.ResultadoAccesoGoogle.Exito) {
+                                vinculacion
+                            } else {
+                                cuenta = cuentaConCredenciales
+                                huellaHabilitada = preferenciasAcceso.getBoolean(claveHuella(cuentaConCredenciales.uid), false)
+                                huellaValidada = true
+                                repository.observarTienda(cuentaConCredenciales.tiendaId)
+                                aviso = when (vinculacion) {
+                                    is com.example.amancay.data.ResultadoAccesoGoogle.Fallido ->
+                                        "Ingresaste con tu correo y contraseña, pero Google no quedó vinculado: ${vinculacion.mensaje}"
+                                    else -> "Ingresaste con tu correo y contraseña. No se vinculó Google; puedes seguir usando este acceso."
+                                }
+                                vinculacion
+                            }
+                        } else {
+                            AutenticacionGoogleComprador.iniciarSesionConGoogle(context, firebase.auth, idClienteWeb)
+                        }
                         when (resultado) {
                             is com.example.amancay.data.ResultadoAccesoGoogle.Exito -> {
                                 val nueva = repository.validarSesion()
@@ -261,7 +310,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
                                 }
                             }
                             is com.example.amancay.data.ResultadoAccesoGoogle.Fallido ->
-                                error = resultado.mensaje
+                                if (cuenta == null) error = resultado.mensaje
                             else -> { /* el comprador cerró el panel de Google */ }
                         }
                     } catch (e: Exception) {
@@ -375,10 +424,13 @@ private fun PantallaIngresoEmprendedora(
     correo: String,
     contrasena: String,
     error: String?,
+    aviso: String?,
     enviando: Boolean,
     googleCargando: Boolean,
+    recuperacionCargando: Boolean,
     alCambiarCorreo: (String) -> Unit,
     alCambiarContrasena: (String) -> Unit,
+    alRecuperarContrasena: () -> Unit,
     alVolver: () -> Unit,
     alIngresar: () -> Unit,
     alGoogle: () -> Unit
@@ -408,11 +460,22 @@ private fun PantallaIngresoEmprendedora(
                 unfocusedTextColor = Dark
             )
         )
+        aviso?.let { AvisoEmprendedora(it, false) }
         error?.let { AvisoEmprendedora(it, true) }
+        TextButton(
+            onClick = alRecuperarContrasena,
+            enabled = !enviando && !googleCargando && !recuperacionCargando,
+            modifier = Modifier.align(Alignment.End)
+        ) {
+            Text(
+                if (recuperacionCargando) "Enviando enlace…" else "¿Olvidaste tu contraseña?",
+                color = Wine
+            )
+        }
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = alIngresar,
-            enabled = !enviando && correo.isNotBlank() && contrasena.isNotBlank(),
+            enabled = !enviando && !googleCargando && !recuperacionCargando && correo.isNotBlank() && contrasena.isNotBlank(),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Wine),
             shape = RoundedCornerShape(16.dp),
@@ -424,7 +487,13 @@ private fun PantallaIngresoEmprendedora(
         OutlineButton(
             "Iniciar sesión con Google",
             alGoogle,
-            enabled = !googleCargando && !enviando
+            enabled = !googleCargando && !enviando && !recuperacionCargando
+        )
+        Text(
+            "Si administración creó tu cuenta, ingresa primero esas credenciales para vincular Google.",
+            color = Muted,
+            fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
         TextButton(onClick = alVolver, modifier = Modifier.fillMaxWidth()) { Text("Volver al modo comprador", color = Wine) }
     }

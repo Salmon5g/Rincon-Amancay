@@ -9,6 +9,14 @@ La app Android unificada usa Firebase Authentication y Firestore. Las escrituras
 - La cuenta de prueba debe existir en Authentication y contar con documentos coherentes `accesos/{uid}`, `emprendedoras/{uid}` y `tiendasPrivadas/{tiendaId}`. `accesos` debe tener `estado: "activo"`, `roles` con `emprendedora` y `tiendaId`; el perfil debe apuntar al mismo `tiendaId`, y la ficha privada debe tener `propietarioUid` igual al UID.
 - Firestore debe tener las reglas desplegadas desde `firebase/firestore.rules`. No conceder escrituras al cliente para reemplazar la API.
 
+## Google y recuperación de contraseña
+
+Firebase Authentication debe tener habilitados **Google** y **Correo electrónico/contraseña**. Cada integrante registra su propia huella SHA-1 `debug` en la app Android `com.example.amancay` de Firebase y descarga un `google-services.json` actualizado en `android/app-combinada/app/`; las huellas debug varían por computador y el archivo no se sube a Git. Se obtiene la huella con `.\gradlew.bat :app:signingReport` desde `android/app-combinada`. Después se sincroniza Gradle y se vuelve a ejecutar la app. Credential Manager usa el cliente OAuth web incluido en el archivo descargado.
+
+La cuenta de emprendedora conserva su UID, rol y tienda: para vincular Google por primera vez, ingresa el correo y la contraseña entregados por administración y pulsa **Iniciar sesión con Google**. La dirección elegida en Google debe coincidir con ese correo. Si se pulsa Google sin escribir credenciales, la app intenta un ingreso normal y valida el mismo rol y tienda.
+
+El comprador puede ingresar directamente con Google o correo/contraseña. Si ya tenía una cuenta compradora de correo/contraseña, escribe esas credenciales y pulsa Google para vincular ambos proveedores a la misma cuenta. El enlace **¿Olvidaste tu contraseña?** usa el envío de restablecimiento de Firebase; el texto del correo se administra en **Authentication → Plantillas → Restablecimiento de contraseña**. La app muestra una confirmación genérica para no revelar si un correo está registrado.
+
 ## Opción recomendada para comprobar con datos reales
 
 Esta opción conecta el emulador Android con Authentication/Firestore reales y con una API ejecutada en el computador. Cambia datos del proyecto real. Usa una cuenta y tienda controladas.

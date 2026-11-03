@@ -2,12 +2,12 @@
 
 La aplicación unificada del equipo está en `android/app-combinada/`. Está desarrollada con Kotlin y Jetpack Compose; permite elegir modo comprador o modo emprendedora.
 
-- **Comprador:** lectura pública de tiendas y productos publicados desde Firestore.
-- **Emprendedora:** inicio con Firebase Authentication por correo/contraseña; comprueba que el acceso esté activo, incluya el rol `emprendedora` y coincida con su tienda asignada. Lee su tienda y catálogo privado desde Firestore. La ficha, creación/edición de productos, publicaciones y ajustes de stock pasan por la API autenticada.
+- **Comprador:** navegación pública de tiendas y productos publicados; puede crear una cuenta o ingresar con correo/contraseña o Google.
+- **Emprendedora:** ingresa con las credenciales entregadas por administración; también puede vincular Google a esa misma cuenta. La app comprueba que el acceso esté activo, incluya el rol `emprendedora` y coincida con su tienda asignada. Desde el ingreso se puede solicitar por correo el restablecimiento de contraseña. La huella sigue siendo opcional y se configura desde el flujo existente de ajustes.
 
 La API local puede usar emuladores o conectarse al proyecto Firebase real mediante Application Default Credentials. En ambos casos, Android Studio debe ejecutar la app en un emulador para usar `10.0.2.2` como dirección del computador. Sigue la guía [Conexión local de la app emprendedora](../docs/android-emprendedora-firebase.md). No uses el modo real con seeds ni pruebas automatizadas.
 
-La carga de logos/fotos desde Android todavía no está habilitada. Guardar productos como borradores sí funciona; publicar un producto exige una imagen que el backend pueda validar en Firebase Storage. Supabase se mantiene como futuro proveedor posible, pendiente de acordar permisos y validación con el profesor; una ruta de Supabase no es aceptada todavía por el validador de publicación.
+La app envía las fotos de productos a la API local autenticada; esta conserva originales privados y publica derivados del catálogo en Supabase Storage. La API debe estar encendida para cargar o publicar con imágenes. La carga del logo de tienda desde Android aún no está integrada.
 
 El proyecto Android comprador anterior se conserva en `android/` como proyecto Gradle independiente. No abras ni edites ese proyecto para probar la aplicación unificada.
 
@@ -17,6 +17,23 @@ El proyecto Android comprador anterior se conserva en `android/` como proyecto G
 2. Espera que Gradle sincronice el proyecto.
 3. Coloca el archivo local `google-services.json` en `android/app-combinada/app/`; debe registrar el ID `com.example.amancay`. El archivo está excluido de Git.
 4. Selecciona la configuración `app` y ejecútala en un emulador Android.
+
+## Configurar Google y recuperación de contraseña
+
+1. En Firebase Console, confirma que **Authentication → Método de acceso → Google** esté habilitado y que **Correo electrónico/contraseña** también esté habilitado.
+2. Cada integrante obtiene la huella SHA-1 de su certificado de desarrollo desde `android/app-combinada`:
+
+   ```powershell
+   .\gradlew.bat :app:signingReport
+   ```
+
+   Registra la SHA-1 de la variante `debug` en **Configuración del proyecto → Tus apps → Android (`com.example.amancay`)**. Cada computador puede tener una SHA-1 distinta.
+3. Descarga el `google-services.json` actualizado para esa app y colócalo en `android/app-combinada/app/`. No lo subas a Git. Gradle obtiene de ese archivo el cliente OAuth web que necesita Credential Manager.
+4. Sincroniza Gradle y vuelve a ejecutar la app. Si Google se acaba de habilitar o se agregó una SHA-1, los cambios pueden tardar unos minutos en propagarse.
+5. Para una cuenta de emprendedora creada por administración, la primera vinculación se hace escribiendo su correo y contraseña en el ingreso y pulsando **Iniciar sesión con Google**. Debe elegirse en Google la misma dirección. Después podrá entrar con Google; la validación del rol y de la tienda continúa igual.
+6. Para una cuenta compradora ya creada con correo y contraseña, se vincula Google de la misma forma desde **Iniciar sesión para comprar**. Una cuenta Google nueva puede iniciar sesión directamente. El botón de recuperación envía el enlace de Firebase al correo ingresado; el contenido del correo se administra en **Authentication → Plantillas → Restablecimiento de contraseña**.
+
+No compartas contraseñas, archivos de configuración ni tokens por chat o en el repositorio. La configuración Android `google-services.json` y `local.properties` están excluidos de Git.
 
 Desde PowerShell:
 

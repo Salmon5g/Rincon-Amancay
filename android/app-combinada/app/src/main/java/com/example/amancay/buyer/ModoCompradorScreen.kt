@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.amancay.data.AutenticacionGoogleComprador
+import com.example.amancay.data.AutenticacionCorreo
 import com.example.amancay.data.CatalogoCompradorRepository
 import com.example.amancay.data.ProductoCatalogoComprador
 import com.example.amancay.data.ResultadoAccesoGoogle
@@ -105,8 +106,8 @@ fun ModoCompradorScreen(
     }
 
     // Si la sesión aparece (login con Google), la pantalla de acceso se cierra sola.
-    DisposableEffect(sesion) {
-        if (sesion != null) mostrarAcceso = false
+    DisposableEffect(sesion, ingresando) {
+        if (sesion != null && !ingresando) mostrarAcceso = false
         onDispose { }
     }
 
@@ -258,7 +259,7 @@ fun ModoCompradorScreen(
         DialogoDetalleProducto(producto) { productoSeleccionado = null }
     }
 
-    if (mostrarAcceso && sesion == null) {
+    if (mostrarAcceso && (sesion == null || ingresando)) {
         PantallaAccesoComprador(
             auth = auth,
             googleCargando = ingresando,
@@ -267,17 +268,41 @@ fun ModoCompradorScreen(
                 sesion = auth.currentUser?.let(::sesionDesdeUsuario)
             },
             onCerrar = { mostrarAcceso = false },
-            onGoogle = {
+            onGoogle = { correoIngresado, claveIngresada ->
                 ingresando = true
                 mensajeAcceso = null
                 alcance.launch {
-                    val resultado = AutenticacionGoogleComprador.iniciarSesionConGoogle(
-                        context, auth, AutenticacionGoogleComprador.idClienteWeb(context, webClientId)
-                    )
-                    if (resultado is ResultadoAccesoGoogle.Fallido) {
-                        mensajeAcceso = resultado.mensaje
+                    try {
+                        val idClienteWeb = AutenticacionGoogleComprador.idClienteWeb(context, webClientId)
+                        val resultado = if (correoIngresado.isNotBlank() && claveIngresada.isNotBlank()) {
+                            auth.signInWithEmailAndPassword(correoIngresado.trim(), claveIngresada).await()
+                            val vinculacion = AutenticacionGoogleComprador.vincularGoogleConCuentaActual(
+                                context, auth, idClienteWeb, correoIngresado
+                            )
+                            if (vinculacion !is ResultadoAccesoGoogle.Exito) {
+                                AutenticacionGoogleComprador.cerrarSesion(context, auth)
+                                sesion = null
+                            }
+                            vinculacion
+                        } else {
+                            AutenticacionGoogleComprador.iniciarSesionConGoogle(context, auth, idClienteWeb)
+                        }
+                        when (resultado) {
+                            is ResultadoAccesoGoogle.Fallido -> mensajeAcceso = resultado.mensaje
+                            ResultadoAccesoGoogle.Cancelado -> {
+                                if (correoIngresado.isNotBlank() && claveIngresada.isNotBlank()) {
+                                    mensajeAcceso = "No se vinculó Google. Puedes ingresar con tu correo y contraseña."
+                                }
+                            }
+                            ResultadoAccesoGoogle.Exito -> Unit
+                        }
+                    } catch (e: Exception) {
+                        auth.signOut()
+                        sesion = null
+                        mensajeAcceso = mensajeAccesoCorreo(e)
+                    } finally {
+                        ingresando = false
                     }
-                    ingresando = false
                 }
             }
         )
@@ -345,7 +370,7 @@ private fun PantallaAccesoComprador(
     mensaje: String?,
     alRefrescarPerfil: () -> Unit,
     onCerrar: () -> Unit,
-    onGoogle: () -> Unit
+    onGoogle: (String, String) -> Unit
 ) {
     val alcance = rememberCoroutineScope()
     var correo by remember { mutableStateOf("") }
@@ -353,6 +378,7 @@ private fun PantallaAccesoComprador(
     var nombre by remember { mutableStateOf("") }
     var creandoCuenta by remember { mutableStateOf(false) }
     var enviandoCorreo by remember { mutableStateOf(false) }
+    var recuperandoContrasena by remember { mutableStateOf(false) }
     var errorCorreo by remember { mutableStateOf<String?>(null) }
 
     Box(
@@ -475,6 +501,7 @@ private fun PantallaAccesoComprador(
                     }
                 },
                 enabled = !enviandoCorreo && !googleCargando && correo.isNotBlank() && contrasena.isNotBlank() &&
+                    !recuperandoContrasena &&
                     (!creandoCuenta || nombre.isNotBlank()),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                 shape = RoundedCornerShape(16.dp),
@@ -493,10 +520,40 @@ private fun PantallaAccesoComprador(
                 }
             }
             if (!creandoCuenta) {
+                TextButton(
+                    onClick = {
+                        if (recuperandoContrasena || enviandoCorreo || googleCargando) return@TextButton
+                        recuperandoContrasena = true
+                        errorCorreo = null
+                        alcance.launch {
+                            try {
+                                AutenticacionCorreo.enviarEnlaceRestablecimiento(auth, correo)
+                                errorCorreo = "Si existe una cuenta con ese correo, enviaremos un enlace para restablecer la contraseña. Revisa también el correo no deseado."
+                            } catch (e: Exception) {
+                                errorCorreo = when (e) {
+                                    is IllegalArgumentException -> "Ingresa un correo electrónico válido para enviar el enlace."
+                                    is FirebaseAuthInvalidCredentialsException -> "Revisa el formato del correo electrónico."
+                                    is FirebaseAuthInvalidUserException -> "Si existe una cuenta con ese correo, enviaremos un enlace para restablecer la contraseña. Revisa también el correo no deseado."
+                                    is FirebaseNetworkException -> "No hay conexión. Revisa internet e inténtalo nuevamente."
+                                    else -> "No se pudo enviar el enlace. Revisa el correo e inténtalo nuevamente."
+                                }
+                            } finally {
+                                recuperandoContrasena = false
+                            }
+                        }
+                    },
+                    enabled = !recuperandoContrasena && !enviandoCorreo && !googleCargando,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(
+                        if (recuperandoContrasena) "Enviando enlace…" else "¿Olvidaste tu contraseña?",
+                        color = AmancayBordo
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
-                    onClick = onGoogle,
-                    enabled = !googleCargando && !enviandoCorreo,
+                    onClick = { onGoogle(correo, contrasena) },
+                    enabled = !googleCargando && !enviandoCorreo && !recuperandoContrasena,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, AmancayBordo),
@@ -508,6 +565,13 @@ private fun PantallaAccesoComprador(
                         Text("Iniciar sesión con Google", fontWeight = FontWeight.SemiBold)
                     }
                 }
+                Text(
+                    "Si administración creó tu cuenta, ingresa primero esas credenciales para vincular Google.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AmancayTintaSuave,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    textAlign = TextAlign.Center
+                )
             }
             Spacer(Modifier.height(6.dp))
             TextButton(
@@ -515,7 +579,7 @@ private fun PantallaAccesoComprador(
                     creandoCuenta = !creandoCuenta
                     errorCorreo = null
                 },
-                enabled = !enviandoCorreo && !googleCargando
+                enabled = !enviandoCorreo && !googleCargando && !recuperandoContrasena
             ) {
                 Text(
                     if (creandoCuenta) "¿Ya tienes cuenta? Iniciar sesión" else "¿No tienes cuenta? Crear una",
@@ -523,7 +587,7 @@ private fun PantallaAccesoComprador(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            TextButton(onClick = onCerrar, enabled = !enviandoCorreo && !googleCargando) {
+            TextButton(onClick = onCerrar, enabled = !enviandoCorreo && !googleCargando && !recuperandoContrasena) {
                 Text("Explorar sin iniciar sesión", color = AmancayTintaSuave)
             }
         }

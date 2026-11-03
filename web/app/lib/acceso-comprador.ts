@@ -1,5 +1,9 @@
 import {
     GoogleAuthProvider,
+    applyActionCode,
+    checkActionCode,
+    verifyPasswordResetCode,
+    confirmPasswordReset,
     createUserWithEmailAndPassword,
     onAuthStateChanged,
     sendEmailVerification,
@@ -25,6 +29,10 @@ const sdkPorDefecto = {
     onAuthStateChanged,
     sendEmailVerification,
     sendPasswordResetEmail,
+    applyActionCode,
+    checkActionCode,
+    verifyPasswordResetCode,
+    confirmPasswordReset,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut,
@@ -185,11 +193,36 @@ export function crearAccesoComprador(
 
         async solicitarRecuperacion(correo: string): Promise<{ mensaje: string }> {
             try {
+                auth.languageCode = 'es';
                 await sdk.sendPasswordResetEmail(auth, correo.trim());
             } catch (error) {
                 if ((error as { code?: string }).code !== 'auth/user-not-found') throw error;
             }
             return { mensaje: 'Si el correo corresponde a una cuenta, recibirás instrucciones para crear una contraseña nueva.' };
+        },
+
+        comprobarCodigoRecuperacion: (codigo: string) => sdk.verifyPasswordResetCode(auth, codigo),
+
+        async confirmarVerificacionCorreo(codigo: string): Promise<string> {
+            const info = await sdk.checkActionCode(auth, codigo);
+            await sdk.applyActionCode(auth, codigo);
+            if (auth.currentUser) {
+                await auth.currentUser.reload();
+                await auth.currentUser.getIdToken(true);
+            }
+            return info.data.email ?? '';
+        },
+
+        async recuperarDireccionCorreo(codigo: string): Promise<string> {
+            const info = await sdk.checkActionCode(auth, codigo);
+            await sdk.applyActionCode(auth, codigo);
+            await sdk.signOut(auth);
+            return info.data.email ?? '';
+        },
+
+        async confirmarRecuperacion(codigo: string, clave: string): Promise<void> {
+            await sdk.confirmPasswordReset(auth, codigo, clave);
+            await sdk.signOut(auth);
         },
 
         cerrarSesion: () => sdk.signOut(auth),
