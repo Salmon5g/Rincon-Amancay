@@ -150,8 +150,10 @@ const cuentaAltaPendiente = computed(() => Boolean(operacionPendiente.value?.uid
 const invitacionPendiente = ref<Item | null>(null)
 const cuentaEmprendedoraEnEdicion = ref<Item | null>(null)
 const nombreCuentaBorrador = ref('')
+const correoCuentaBorrador = ref('')
 const edicionCuentaOperacion = ref<{ id: string; solicitud: string } | null>(null)
 const edicionCuentaReintentoObligatorio = ref(false)
+const correoCambioConfirmado = ref<{ correo: string; enlaceVerificacion: string } | null>(null)
 const catalogoEnEdicion = ref<{ coleccion: ColeccionCatalogoEditable; elemento: ElementoCatalogo } | null>(null)
 const catalogoCampos = ref<CampoTipoProducto[]>([])
 const catalogoOpcionesVarianteTexto = ref('')
@@ -219,7 +221,8 @@ function mensajeErrorAsociacion(error: unknown) {
 
 function mensajeErrorEdicionCuenta(error: unknown) {
   const codigo = (error as { code?: string })?.code
-  if (codigo === 'datos-invalidos') return 'El nombre visible es obligatorio y admite hasta 100 caracteres.'
+  if (codigo === 'datos-invalidos') return 'Revisa el nombre visible y escribe un correo válido.'
+  if (codigo === 'correo-ocupado') return 'Ese correo ya está asociado a otra cuenta de Firebase Authentication. Prueba con otra dirección.'
   if (codigo === 'conflicto') return 'La cuenta o el perfil cambió; actualiza el listado y revisa los datos antes de volver a guardar.'
   if (codigo === 'no-encontrado') return 'La identidad de Authentication ya no existe; revisa la cuenta antes de editarla.'
   if (codigo === 'id-reutilizado') return 'La solicitud se intentó con otros datos. Inicia una operación nueva antes de continuar.'
@@ -233,7 +236,9 @@ function limpiarListados() {
   cargandoDatos.value = false
   invitacionPendiente.value = null
   cuentaEmprendedoraEnEdicion.value = null
+  correoCambioConfirmado.value = null
   nombreCuentaBorrador.value = ''
+  correoCuentaBorrador.value = ''
   edicionCuentaOperacion.value = null
   edicionCuentaReintentoObligatorio.value = false
 }
@@ -1012,6 +1017,19 @@ async function copiarEnlaceInvitacion(id: string) {
   }
 }
 
+async function copiarEnlaceVerificacionCuenta() {
+  const enlace = correoCambioConfirmado.value?.enlaceVerificacion
+  if (!enlace) return
+  try {
+    await navigator.clipboard.writeText(enlace)
+    aviso.value = 'Enlace de verificación copiado. Compártelo en privado con la emprendedora.'
+    clearTimeout(temporizador)
+    temporizador = setTimeout(() => (aviso.value = ''), 5000)
+  } catch {
+    aviso.value = 'Copia el enlace de verificación y compártelo en privado con la emprendedora.'
+  }
+}
+
 function prepararCancelacionInvitacion(item: Item) {
   if (!item.invitacionId || config.firebaseModo !== 'real-api') return
   invitacionPendiente.value = item
@@ -1101,8 +1119,10 @@ function prepararEdicionCuentaEmprendedora(item: Item) {
   }
   cuentaEmprendedoraEnEdicion.value = item
   nombreCuentaBorrador.value = item.nombreMostrar ?? ''
+  correoCuentaBorrador.value = item.correo ?? ''
   edicionCuentaOperacion.value = null
   edicionCuentaReintentoObligatorio.value = false
+  correoCambioConfirmado.value = null
   errorOperacion.value = ''
 }
 
@@ -1113,6 +1133,7 @@ function cerrarEdicionCuentaEmprendedora() {
   }
   cuentaEmprendedoraEnEdicion.value = null
   nombreCuentaBorrador.value = ''
+  correoCuentaBorrador.value = ''
   edicionCuentaOperacion.value = null
   errorOperacion.value = ''
 }
@@ -1121,11 +1142,13 @@ async function guardarEdicionCuentaEmprendedora() {
   const cuenta = cuentaEmprendedoraEnEdicion.value
   if (!cuenta?.uidDestino || !cuenta.versionPerfilEsperada || config.firebaseModo !== 'real-api') return
   const nombreMostrar = nombreCuentaBorrador.value.trim()
-  if (!nombreMostrar || nombreMostrar.length > 100) {
-    errorOperacion.value = 'El nombre visible es obligatorio y admite hasta 100 caracteres.'
+  const correo = correoCuentaBorrador.value.trim().toLowerCase()
+  if (!nombreMostrar || nombreMostrar.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo) || correo.length > 254) {
+    errorOperacion.value = 'Revisa el nombre visible y escribe un correo válido.'
     return
   }
-  const solicitud = JSON.stringify([cuenta.uidDestino, cuenta.versionPerfilEsperada, nombreMostrar])
+  const correoEsperado = (cuenta.correo ?? '').trim().toLowerCase()
+  const solicitud = JSON.stringify([cuenta.uidDestino, cuenta.versionPerfilEsperada, nombreMostrar, correoEsperado, correo])
   if (edicionCuentaReintentoObligatorio.value && edicionCuentaOperacion.value?.solicitud !== solicitud) {
     errorOperacion.value = 'La operación pudo guardarse. Reintenta exactamente el mismo nombre para confirmar el resultado.'
     return
@@ -1136,17 +1159,27 @@ async function guardarEdicionCuentaEmprendedora() {
   enviando.value = true
   errorOperacion.value = ''
   try {
-    await editarCuentaEmprendedora($amancay, {
+    const resultado = await editarCuentaEmprendedora($amancay, {
       uidDestino: cuenta.uidDestino,
       operacionId: edicionCuentaOperacion.value.id,
       versionEsperada: cuenta.versionPerfilEsperada,
       nombreMostrar,
+      correoEsperado,
+      correo,
     })
     cuentaEmprendedoraEnEdicion.value = null
     nombreCuentaBorrador.value = ''
+    correoCuentaBorrador.value = ''
     edicionCuentaOperacion.value = null
     edicionCuentaReintentoObligatorio.value = false
-    aviso.value = 'Nombre de la cuenta actualizado.'
+    const correoActualizado = resultado.correoActualizado === true
+    const enlaceVerificacion = typeof resultado.enlaceVerificacion === 'string' ? resultado.enlaceVerificacion : ''
+    correoCambioConfirmado.value = correoActualizado && enlaceVerificacion ? { correo, enlaceVerificacion } : null
+    aviso.value = correoActualizado
+      ? enlaceVerificacion
+        ? 'Correo actualizado en Firebase Authentication. Falta que la emprendedora verifique la nueva dirección.'
+        : 'Correo actualizado en Firebase Authentication. La emprendedora deberá iniciar sesión nuevamente.'
+      : 'Datos de la cuenta actualizados.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 5000)
     await cargarSeccion()
@@ -1155,7 +1188,7 @@ async function guardarEdicionCuentaEmprendedora() {
     errorOperacion.value = codigo === 'conflicto'
       ? 'El perfil cambió desde que lo abriste. Se actualizará el listado para que revises el dato vigente.'
       : mensajeErrorEdicionCuenta(error)
-    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto) edicionCuentaReintentoObligatorio.value = true
+    if ((error as { resultadoIncierto?: boolean })?.resultadoIncierto || codigo === 'pendiente') edicionCuentaReintentoObligatorio.value = true
     else if (codigo === 'conflicto') {
       cuentaEmprendedoraEnEdicion.value = null
       edicionCuentaOperacion.value = null
@@ -1418,6 +1451,13 @@ async function guardarEdicionCuentaEmprendedora() {
           <button class="editar" type="button" @click="copiarEnlaceInvitacion(invitacionCreada)">Copiar enlace</button>
           <small>La web no manda invitaciones por correo automáticamente; puedes compartir el enlace por WhatsApp o en persona.</small>
         </section>
+        <section v-if="correoCambioConfirmado" class="aviso-carga" aria-live="polite">
+          <strong>Verificación del nuevo correo</strong>
+          <p>La dirección {{ correoCambioConfirmado.correo }} ya quedó en Firebase Authentication, pero la emprendedora debe verificarla. Las sesiones anteriores se cerraron y tendrá que iniciar sesión nuevamente.</p>
+          <p>Comparte este enlace solo en privado con la emprendedora:</p>
+          <a :href="correoCambioConfirmado.enlaceVerificacion" target="_blank" rel="noopener noreferrer">Abrir enlace de verificación</a>
+          <button class="editar" type="button" @click="copiarEnlaceVerificacionCuenta">Copiar enlace</button>
+        </section>
         <section v-if="credencialesEmprendedora" class="aviso-carga" aria-live="polite">
           <strong>Cuenta creada</strong>
           <p>Entrega estas credenciales directamente a la emprendedora. La contraseña no se guarda en la plataforma y desaparecerá de esta pantalla cuando cierres este aviso.</p>
@@ -1436,14 +1476,14 @@ async function guardarEdicionCuentaEmprendedora() {
           </div>
           <form class="campos-formulario" @submit.prevent="guardarEdicionCuentaEmprendedora">
             <label>Nombre visible<input v-model="nombreCuentaBorrador" maxlength="100" autocomplete="name" required :disabled="enviando || edicionCuentaReintentoObligatorio" /></label>
-            <label>Correo de acceso (solo lectura)<input :value="cuentaEmprendedoraEnEdicion.correo || 'Correo no disponible'" disabled /></label>
+            <label>Correo de acceso<input v-model="correoCuentaBorrador" type="email" maxlength="254" autocomplete="email" required :disabled="enviando || edicionCuentaReintentoObligatorio" /></label>
             <label class="campo-completo">Tienda asignada (solo lectura)<input :value="cuentaEmprendedoraEnEdicion.nombreTienda || cuentaEmprendedoraEnEdicion.tiendaId || 'Sin tienda'" disabled /></label>
-            <p class="campo-completo">Aquí se modifica el nombre visible asociado a la cuenta. El correo y la contraseña pertenecen al acceso de Firebase Authentication y no se cambian desde este formulario; la ficha de la tienda se edita por su propio flujo.</p>
+            <p class="campo-completo">El correo se cambia en Firebase Authentication. Si lo modificas, se invalidan las sesiones anteriores y la emprendedora deberá iniciar sesión con la dirección nueva y verificarla mediante un enlace que podrás compartir en privado. La contraseña y la ficha de la tienda se gestionan por separado.</p>
             <div class="acciones-formulario">
-              <button class="boton boton-primario" type="submit" :disabled="enviando || !nombreCuentaBorrador.trim()">{{ enviando ? 'Guardando…' : edicionCuentaReintentoObligatorio ? 'Reintentar guardado' : 'Guardar nombre' }}</button>
+              <button class="boton boton-primario" type="submit" :disabled="enviando || !nombreCuentaBorrador.trim() || !correoCuentaBorrador.trim()">{{ enviando ? 'Guardando…' : edicionCuentaReintentoObligatorio ? 'Reintentar guardado' : 'Guardar cambios' }}</button>
               <button class="editar" type="button" :disabled="enviando || edicionCuentaReintentoObligatorio" @click="cerrarEdicionCuentaEmprendedora">Cancelar</button>
             </div>
-            <p v-if="edicionCuentaReintentoObligatorio" class="campo-completo" role="status">No se confirmó la respuesta. Reintenta con el mismo nombre para comprobar si quedó guardado.</p>
+            <p v-if="edicionCuentaReintentoObligatorio" class="campo-completo" role="status">No se confirmó el resultado en Authentication. Reintenta sin cambiar el nombre ni el correo para completar la operación.</p>
             <p v-if="errorOperacion" class="campo-completo" role="alert">{{ errorOperacion }}</p>
           </form>
         </section>

@@ -19,6 +19,8 @@ export default defineNuxtPlugin(() => {
     projectId: config.firebaseProjectId, storageBucket: config.firebaseStorageBucket,
     messagingSenderId: config.firebaseMessagingSenderId, appId: config.firebaseAppId,
   });
+  // Mantiene en español los correos de verificación y recuperación enviados desde la web.
+  firebase.auth.languageCode = 'es';
   const catalogoPublico = crearCatalogoPublicoFirebase(firebase, config.supabaseUrl);
   const lecturas = crearLecturasAdmin(firebase);
   // En real-lectura no se construye el cliente de API ni se exponen escrituras.

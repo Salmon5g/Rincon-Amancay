@@ -109,47 +109,126 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
       };
     }
     if(accion==='editarCuentaEmprendedora') {
-      const d=campos(input,['uidDestino','operacionId','versionEsperada','nombreMostrar']);
+      const d=campos(input,['uidDestino','operacionId','versionEsperada','nombreMostrar','correoEsperado','correo']);
       exigir(id(d.uidDestino) && id(d.operacionId),'datos-invalidos','Identificador de cuenta u operación inválido.');
       exigir(typeof d.versionEsperada==='string' && /^[0-9]{1,12}:[0-9]{1,9}$/.test(d.versionEsperada),'datos-invalidos','Versión del perfil requerida.');
       exigir(typeof d.nombreMostrar==='string' && d.nombreMostrar.trim().length>0 && d.nombreMostrar.trim().length<=100,'datos-invalidos','El nombre visible es obligatorio y admite hasta 100 caracteres.');
+      exigir(typeof d.correoEsperado==='string' && d.correoEsperado.length<=254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.correoEsperado),'datos-invalidos','El correo actual de la cuenta es inválido.');
+      exigir(typeof d.correo==='string' && d.correo.trim().length<=254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.correo.trim()),'datos-invalidos','Escribe un correo válido.');
       const destino=d.uidDestino, nombreMostrar=(d.nombreMostrar as string).trim();
+      const correoEsperado=(d.correoEsperado as string).trim().toLowerCase(), correo=(d.correo as string).trim().toLowerCase();
       exigir(uid!==destino,'sin-permiso','No se permite modificar desde aquí la propia cuenta administradora.');
       exigir(admin((await actor.get()).data()),'sin-permiso','Se requiere administrador activo.');
       const target=db.doc(`accesos/${destino}`), profile=db.doc(`emprendedoras/${destino}`), user=db.doc(`usuarios/${destino}`);
       const operacionRef=db.doc(`operacionesAdministracion/${uid}_${d.operacionId}`), auditoriaRef=db.doc(`auditoriaAdministracion/${uid}_${d.operacionId}`);
-      const solicitud={uidDestino:destino,operacionId:d.operacionId,versionEsperada:d.versionEsperada,nombreMostrar};
-      const firma=huella(solicitud), anterior=await operacionRef.get();
-      if(anterior.exists) {
-        exigir(anterior.data()!.firma===firma,'id-reutilizado','operacionId corresponde a otra solicitud.');
-        return anterior.data()!.resultado as Record<string,unknown>;
-      }
-      try { await auth.getUser(destino); }
-      catch(error) {
-        if((error as {code?:string}).code==='auth/user-not-found') throw new ErrorOperacion('no-encontrado','La identidad de Authentication ya no existe.');
-        throw new ErrorOperacion('pendiente','No se pudo comprobar la identidad en Authentication.');
-      }
-      return db.runTransaction(async tx=>{
-        const [who,previous,access,entrepreneur,userDoc]=await tx.getAll(actor,operacionRef,target,profile,user);
-        exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
-        if(previous.exists) {
-          exigir(previous.data()!.firma===firma,'id-reutilizado','operacionId corresponde a otra solicitud.');
-          return previous.data()!.resultado as Record<string,unknown>;
+      const solicitud={uidDestino:destino,operacionId:d.operacionId,versionEsperada:d.versionEsperada,nombreMostrar,correoEsperado,correo};
+      const firma=huella(solicitud);
+      return porCuenta(db,destino,uid,async()=>{
+        const fase:DocumentData=await db.runTransaction(async tx=>{
+          const [who,previous,access,entrepreneur,userDoc]=await tx.getAll(actor,operacionRef,target,profile,user);
+          exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
+          if(previous.exists) {
+            exigir(previous.data()!.firma===firma,'id-reutilizado','operacionId corresponde a otra solicitud.');
+            return previous.data()!;
+          }
+          const acceso=access.data(),perfil=entrepreneur.data(),usuario=userDoc.data();
+          exigir(access.exists && (acceso?.estado==='activo' || acceso?.estado==='desactivado') && Array.isArray(acceso.roles)
+            && acceso.roles.includes('emprendedora') && !acceso.roles.includes('administrador') && id(acceso.tiendaId)
+            && !acceso.operacionCuentaPendiente,'conflicto','La cuenta no es una emprendedora administrable o tiene una operación pendiente.');
+          exigir(entrepreneur.exists && perfil?.tiendaId===acceso!.tiendaId && userDoc.exists && usuario!==undefined,'conflicto','El perfil, el acceso y la cuenta de usuario no están completos o no coinciden.');
+          exigir(version(usuario)===d.versionEsperada,'conflicto','El perfil cambió; actualiza la cuenta antes de guardar.');
+          const store=await tx.get(db.doc(`tiendasPrivadas/${acceso!.tiendaId}`));
+          exigir(store.data()?.propietarioUid===destino,'conflicto','La tienda no pertenece a esta cuenta.');
+          const now=FieldValue.serverTimestamp();
+          const pendiente={firma,solicitud,uidDestino:destino,tiendaId:acceso!.tiendaId,estado:'pendienteAuth',creadaPor:uid,creadoEn:now,antes:{nombreMostrar:typeof usuario!.nombreMostrar==='string'?usuario!.nombreMostrar:'',correo:correoEsperado}};
+          tx.create(operacionRef,pendiente);
+          return pendiente;
+        });
+
+        exigir(fase.firma===firma,'id-reutilizado','operacionId corresponde a otra solicitud.');
+        if(fase.estado==='rechazada' && fase.codigo==='correo-ocupado') throw new ErrorOperacion('correo-ocupado','Ese correo ya está asociado a otra cuenta de Firebase Authentication.');
+        if(fase.estado==='completada') {
+          const identidadActual=await auth.getUser(destino);
+          const resultado=fase.resultado as Record<string,unknown>;
+          if(resultado.requiereVerificacion===true && identidadActual.email && !identidadActual.emailVerified) {
+            try { return {...resultado,enlaceVerificacion:await auth.generateEmailVerificationLink(identidadActual.email)}; }
+            catch { throw new ErrorOperacion('pendiente','El cambio ya se guardó. No se pudo generar el enlace de verificación; vuelve a intentar la misma operación.'); }
+          }
+          return resultado;
         }
-        const acceso=access.data(),perfil=entrepreneur.data(),usuario=userDoc.data();
-        exigir(access.exists && (acceso?.estado==='activo' || acceso?.estado==='desactivado') && Array.isArray(acceso.roles)
-          && acceso.roles.includes('emprendedora') && !acceso.roles.includes('administrador') && id(acceso.tiendaId)
-          && !acceso.operacionCuentaPendiente,'conflicto','La cuenta no es una emprendedora administrable o tiene una operación pendiente.');
-        exigir(entrepreneur.exists && perfil?.tiendaId===acceso!.tiendaId && userDoc.exists && usuario!==undefined,'conflicto','El perfil, el acceso y la cuenta de usuario no están completos o no coinciden.');
-        exigir(version(usuario)===d.versionEsperada,'conflicto','El nombre visible cambió; actualiza la cuenta antes de guardar.');
-        const store=await tx.get(db.doc(`tiendasPrivadas/${acceso!.tiendaId}`));
-        exigir(store.data()?.propietarioUid===destino,'conflicto','La tienda no pertenece a esta cuenta.');
-        const now=FieldValue.serverTimestamp();
-        const resultado={uid:destino,tiendaId:acceso!.tiendaId,nombreMostrar,estado:'actualizada'};
-        tx.update(user,{nombreMostrar,actualizadoEn:now});
-        tx.create(operacionRef,{firma,resultado,creadaPor:uid,creadoEn:now});
-        tx.create(auditoriaRef,{actorUid:uid,accion,documentoId:destino,antes:typeof usuario!.nombreMostrar==='string'?{nombreMostrar:usuario!.nombreMostrar}:{},despues:{nombreMostrar},creadoEn:now});
-        return resultado;
+        exigir(fase.estado==='pendienteAuth','conflicto','La operación no está en un estado recuperable.');
+
+        let identidadDestino;
+        try { identidadDestino=await auth.getUser(destino); }
+        catch(error) {
+          if((error as {code?:string}).code==='auth/user-not-found') throw new ErrorOperacion('no-encontrado','La identidad de Authentication ya no existe.');
+          throw new ErrorOperacion('pendiente','No se pudo comprobar la identidad en Authentication; reintenta la misma solicitud.');
+        }
+        const correoActual=(identidadDestino.email??'').toLowerCase();
+        exigir(correoActual===correoEsperado || correoActual===correo,'conflicto','El correo cambió desde que abriste el formulario. Actualiza el listado antes de continuar.');
+        const cambioCorreo=correo!==correoEsperado;
+        if(cambioCorreo && correoActual===correoEsperado) {
+          try {
+            await auth.updateUser(destino,{email:correo,emailVerified:false});
+          } catch(error) {
+            const code=(error as {code?:string}).code;
+            if(code==='auth/email-already-exists' || code==='auth/email-already-in-use') {
+              await db.runTransaction(async tx=>{
+                const [who,receipt]=await tx.getAll(actor,operacionRef);
+                exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
+                exigir(receipt.data()?.firma===firma && receipt.data()?.estado==='pendienteAuth','conflicto','La operación cambió; actualizar el listado.');
+                tx.update(operacionRef,{estado:'rechazada',codigo:'correo-ocupado',actualizadoEn:FieldValue.serverTimestamp()});
+              });
+              throw new ErrorOperacion('correo-ocupado','Ese correo ya está asociado a otra cuenta de Firebase Authentication.');
+            }
+            if(code==='auth/invalid-email') throw new ErrorOperacion('datos-invalidos','Firebase rechazó el formato del correo.');
+            throw new ErrorOperacion('pendiente','Authentication no confirmó el cambio. Reintenta exactamente la misma solicitud.');
+          }
+        }
+        try {
+          identidadDestino=await auth.getUser(destino);
+          exigir((identidadDestino.email??'').toLowerCase()===correo,'pendiente','Authentication todavía no confirma el correo solicitado; reintenta la misma operación.');
+          if(cambioCorreo) await auth.revokeRefreshTokens(destino);
+        } catch(error) {
+          if(error instanceof ErrorOperacion) throw error;
+          throw new ErrorOperacion('pendiente','El correo pudo cambiar en Authentication, pero falta confirmar y cerrar las sesiones anteriores. Reintenta exactamente la misma solicitud.');
+        }
+        let enlaceVerificacion:string|undefined;
+        if(cambioCorreo && !identidadDestino.emailVerified && identidadDestino.email) {
+          try { enlaceVerificacion=await auth.generateEmailVerificationLink(identidadDestino.email); }
+          catch { throw new ErrorOperacion('pendiente','El correo ya cambió en Authentication, pero no se pudo generar el enlace de verificación. Reintenta la misma operación.'); }
+        }
+
+        let resultado:Record<string,unknown>;
+        try {
+          resultado=await db.runTransaction(async tx=>{
+            const [who,receipt,access,entrepreneur,userDoc]=await tx.getAll(actor,operacionRef,target,profile,user);
+            exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
+            exigir(receipt.data()?.firma===firma && receipt.data()?.estado==='pendienteAuth','conflicto','La operación cambió mientras se actualizaba Authentication.');
+            const acceso=access.data(),perfil=entrepreneur.data(),usuario=userDoc.data();
+            exigir(access.exists && (acceso?.estado==='activo' || acceso?.estado==='desactivado') && Array.isArray(acceso.roles)
+              && acceso.roles.includes('emprendedora') && !acceso.roles.includes('administrador') && acceso.tiendaId===fase.tiendaId
+              && !acceso.operacionCuentaPendiente,'conflicto','La cuenta cambió mientras se actualizaba Authentication.');
+            exigir(entrepreneur.exists && perfil?.tiendaId===acceso!.tiendaId && userDoc.exists && usuario!==undefined
+              && version(usuario)===d.versionEsperada,'conflicto','El perfil cambió mientras se actualizaba Authentication.');
+            const store=await tx.get(db.doc(`tiendasPrivadas/${acceso!.tiendaId}`));
+            exigir(store.data()?.propietarioUid===destino,'conflicto','La tienda ya no pertenece a esta cuenta.');
+            const now=FieldValue.serverTimestamp();
+            const requiereVerificacion=cambioCorreo && !identidadDestino.emailVerified;
+            const guardado={uid:destino,tiendaId:acceso!.tiendaId,nombreMostrar,correo,correoActualizado:cambioCorreo,requiereVerificacion,estado:'actualizada'};
+            tx.update(user,{nombreMostrar,actualizadoEn:now});
+            if(cambioCorreo) tx.update(target,{sesionesRevocadasHasta:Math.floor(Date.now()/1000),actualizadoEn:now});
+            tx.update(operacionRef,{estado:'completada',resultado:guardado,actualizadoEn:now});
+            tx.create(auditoriaRef,{actorUid:uid,accion,documentoId:destino,antes:fase.antes,despues:{nombreMostrar,correo},creadoEn:now});
+            return guardado;
+          });
+        } catch(error) {
+          if(error instanceof ErrorOperacion && ['conflicto','datos-invalidos'].includes(error.code)) {
+            throw new ErrorOperacion('pendiente','Authentication ya pudo cambiar el correo, pero falta registrar el resultado. Reintenta exactamente la misma solicitud para completar la auditoría.');
+          }
+          throw error;
+        }
+        return {...resultado,...(enlaceVerificacion?{enlaceVerificacion}:{})};
       });
     }
     if(accion==='invitarEmprendedora') {

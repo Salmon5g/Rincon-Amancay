@@ -25,6 +25,7 @@ const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto
 const status: Record<string, number> = {
   'no-autenticado': 401, 'sin-permiso': 403, 'datos-invalidos': 400,
   'no-encontrado': 404, conflicto: 409, 'id-reutilizado': 409,
+  'correo-ocupado': 409,
   'imagen-requerida': 422, 'imagen-no-autorizada': 422,
   'no-publicable': 422, 'tienda-no-publicada': 409, pendiente: 503, 'limite-local': 422,
 };
