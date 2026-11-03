@@ -17,3 +17,22 @@ val AmancayTinta = Color(0xFF332822)
 val AmancayTintaSuave = Color(0xFF786B63)
 val AmancayVerdeFondo = Color(0xFFE4F0E6)
 val AmancayVerdeTexto = Color(0xFF42664A)
+
+// ---------------------------------------------------------------------------
+// Rediseño del modo comprador: pasteles de chips, formas del hero y
+// superficies de la grilla. Ningún color reemplaza a los de arriba, solo
+// complementa la paleta existente.
+// ---------------------------------------------------------------------------
+
+/** Fondos pastel de los chips de categoría (imagen de referencia). */
+val AmancayChipRosa = Color(0xFFF8E7EC)
+val AmancayChipDurazno = Color(0xFFF9EBDA)
+val AmancayChipVerde = Color(0xFFE6F1E7)
+val AmancayChipLila = Color(0xFFEFEAF8)
+val AmancayChipAmarillo = Color(0xFFFBF2D8)
+
+/** Formas orgánicas y montañas del hero de Inicio. */
+val AmancayHeroDurazno = Color(0xFFF4D9C4)
+val AmancayHeroRosa = Color(0xFFF6E1E4)
+val AmancayHeroVerde = Color(0xFFC7DAC6)
+val AmancayHeroVerdeClaro = Color(0xFFDFEBDC)
