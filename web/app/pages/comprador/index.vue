@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import '~/assets/amancay-tokens.css';
 import type { FichaComprador, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico';
 useHead({
     title: 'Comprar local — Rincón Amancay',
@@ -14,15 +15,23 @@ const tienda = ref<FichaComprador | null>(null);
 const producto = ref<FichaComprador | null>(null);
 const filas = ref<FichaComprador[]>([]);
 const variantes = ref<FichaComprador[]>([]);
+const destacados = ref<{ tienda: FichaComprador; producto: FichaComprador }[]>([]);
 const seleccion = ref('');
 const busqueda = ref('');
 const error = ref('');
 const cargando = ref(false);
 const siguiente = ref(false);
 const pagina = ref(1);
+const aviso = ref('');
+const sectores = ref<Record<string, string>>({});
+const tiposEmprendimiento = ref<Record<string, string>>({});
+const categorias = ref<Record<string, string>>({});
+const categoriaSeleccionada = ref('');
+const filtroVisible = ref(true);
 let cursores: (string | null)[] = [null];
 let cursorSiguiente: string | null = null;
 let revision = 0;
+let avisoTimer: ReturnType<typeof setTimeout> | undefined;
 
 function fichaTienda(elemento: TiendaPublica): FichaComprador {
     return {
@@ -34,6 +43,7 @@ function fichaTienda(elemento: TiendaPublica): FichaComprador {
             sectorId: elemento.sectorId,
             mostrarPrecios: elemento.mostrarPrecios,
             contacto: elemento.contacto,
+            logo: elemento.logo,
         },
     };
 }
@@ -44,8 +54,11 @@ function fichaProducto(elemento: ProductoPublico): FichaComprador {
         datos: {
             nombre: elemento.nombre,
             descripcion: elemento.descripcion,
+            categoriaId: elemento.categoriaId,
             imagenes: elemento.imagenes,
             tieneVariantes: elemento.tieneVariantes,
+            unidadVenta: elemento.unidadVenta,
+            modalidad: elemento.modalidad,
             estadoDisponibilidad: elemento.estadoDisponibilidad,
             precioBase: elemento.precioBase,
             atributosEspecificos: elemento.atributosEspecificos,
@@ -68,26 +81,116 @@ function fichaVariante(elemento: VariantePublica): FichaComprador {
 }
 
 // Datos derivados para la vista
-const visibles = computed(() => filas.value.filter(f => `${f.datos.nombre} ${f.datos.descripcion ?? ''}`.toLowerCase().includes(busqueda.value.trim().toLowerCase())));
+const visibles = computed(() => filas.value.filter((f) => {
+    const coincideTexto = `${f.datos.nombre} ${f.datos.descripcion ?? ''}`.toLowerCase().includes(busqueda.value.trim().toLowerCase());
+    // En Explorar los chips afectan destacados; en tienda filtran productos por categoría.
+    const coincideCategoria = !tienda.value || !categoriaSeleccionada.value || f.datos.categoriaId === categoriaSeleccionada.value;
+    return coincideTexto && coincideCategoria;
+}));
+const destacadosVisibles = computed(() => destacados.value.filter((d) =>
+    !categoriaSeleccionada.value || d.producto.datos.categoriaId === categoriaSeleccionada.value));
 const variante = computed(() => variantes.value.find(v => v.id === seleccion.value));
-const subtitulo = computed(() => tienda.value?.datos.descripcion ?? 'Conoce nuestras emprendedoras y encuentra productos con identidad local.');
 const mensajeVacio = computed(() => busqueda.value
     ? 'No hay coincidencias en esta página.'
     : tienda.value
         ? 'Esta tienda todavía no tiene productos publicados.'
         : 'Todavía no hay tiendas publicadas.');
 const imagenes = computed<string[]>(() => (producto.value?.datos.imagenes ?? []).filter((r: unknown) => typeof r === 'string'));
+const etiquetaSector = computed(() => {
+    const id = tienda.value?.datos.sectorId;
+    return id ? sectores.value[id] ?? '' : '';
+});
+const etiquetaTipo = computed(() => {
+    const id = tienda.value?.datos.tipoEmprendimientoId;
+    return id ? tiposEmprendimiento.value[id] ?? '' : '';
+});
+const conteoProductos = computed(() => `${filas.value.length}${siguiente.value ? '+' : ''}`);
 const enlaceContacto = computed(() => {
     const contacto = tienda.value?.datos.contacto;
     if (!contacto) return null;
     if (contacto.tipo === 'whatsapp') {
         const telefono = contacto.valor.replace(/\D/g, '');
-        return telefono ? { href: `https://wa.me/${telefono}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}`, texto: 'Consultar por WhatsApp' } : null;
+        return telefono ? { href: `https://wa.me/${telefono}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}`, texto: 'Contactar por WhatsApp' } : null;
     }
     if (contacto.tipo === 'correo') return { href: `mailto:${contacto.valor}`, texto: 'Contactar por correo' };
     if (contacto.tipo === 'web' && contacto.valor.startsWith('https://')) return { href: contacto.valor, texto: 'Visitar sitio de la tienda' };
     return null;
 });
+
+// Vista rápida de producto (modal tipo ficha)
+const productoRapido = ref<FichaComprador | null>(null);
+const tiendaRapida = ref<FichaComprador | null>(null);
+const variantesRapidas = ref<FichaComprador[]>([]);
+const seleccionRapida = ref('');
+const mensajeEncargar = ref('');
+const variantesCargando = ref(false);
+let revisionRapida = 0;
+let overflowRapido = '';
+
+const varianteRapida = computed(() => variantesRapidas.value.find(v => v.id === seleccionRapida.value));
+const categoriaRapida = computed(() => {
+    const id = productoRapido.value?.datos.categoriaId;
+    return id ? categorias.value[id] ?? id : '';
+});
+const etiquetaModalidad = computed(() => {
+    const valor = productoRapido.value?.datos.modalidad;
+    if (valor === 'regular') return 'Regular';
+    if (valor === 'por_encargo' || valor === 'a_pedido') return 'Por encargo';
+    return valor ? valor.charAt(0).toUpperCase() + valor.slice(1) : '';
+});
+
+async function abrirRapido(producto: FichaComprador, tiendaFicha: FichaComprador) {
+    const actual = ++revisionRapida;
+    productoRapido.value = producto;
+    tiendaRapida.value = tiendaFicha;
+    variantesRapidas.value = [];
+    seleccionRapida.value = '';
+    mensajeEncargar.value = '';
+    variantesCargando.value = producto.datos.tieneVariantes === true;
+    if (import.meta.client) {
+        overflowRapido = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+    }
+    if (producto.datos.tieneVariantes) {
+        try {
+            const r = await $catalogoPublico.listarVariantes(tiendaFicha.id, producto.id);
+            if (actual !== revisionRapida) return;
+            variantesRapidas.value = r.map(fichaVariante);
+            seleccionRapida.value = variantesRapidas.value[0]?.id ?? '';
+        } catch {
+            if (actual === revisionRapida) variantesRapidas.value = [];
+        } finally {
+            if (actual === revisionRapida) variantesCargando.value = false;
+        }
+    }
+}
+
+function cerrarRapido() {
+    revisionRapida++;
+    productoRapido.value = null;
+    tiendaRapida.value = null;
+    variantesRapidas.value = [];
+    mensajeEncargar.value = '';
+    variantesCargando.value = false;
+    if (import.meta.client) document.body.style.overflow = overflowRapido;
+}
+
+function encargarRapido() {
+    mensajeEncargar.value = 'Para encargar este producto debes crearte una cuenta en Rincón Amancay. Usa “Iniciar sesión” para registrarte o ingresar.';
+}
+
+function encargarDetalle() {
+    mostrarAviso('Para encargar este producto debes crearte una cuenta. Usa “Iniciar sesión”.');
+}
+
+function nombreRapidoVariante(v: FichaComprador) {
+    const partes = Object.entries(v.datos.opciones ?? {}).map(([k, val]) => `${val}`);
+    return partes.length ? partes.join(' · ') : v.id;
+}
+
+function alTeclearRapido(evento: KeyboardEvent) {
+    if (evento.key === 'Escape' && productoRapido.value) cerrarRapido();
+}
 
 // Formato de precios, disponibilidad y errores
 
@@ -107,11 +210,18 @@ function disponibilidad(valor: unknown) {
     const estados: Record<string, string> = {
         disponible: 'Disponible',
         agotado: 'Agotado',
-        a_pedido: 'A pedido',
+        a_pedido: 'Por encargo',
         vendido: 'Vendido',
     };
 
     return estados[String(valor)] ?? 'Consultar disponibilidad';
+}
+
+function claseDisponibilidad(valor: unknown) {
+    const estado = String(valor);
+    if (estado === 'disponible') return 'ok';
+    if (estado === 'agotado' || estado === 'vendido') return 'off';
+    return 'pend';
 }
 
 function fallo(errorConsulta: unknown) {
@@ -121,10 +231,50 @@ function fallo(errorConsulta: unknown) {
         ? 'No se pudo leer el catálogo público. Revisa los permisos de lectura.'
         : codigo === 'sin-conexion'
             ? 'No pudimos conectar con el servicio. Revisa la conexión y vuelve a intentar.'
-        : 'No pudimos cargar el catálogo. Revisa la conexión y vuelve a intentar.';
+            : 'No pudimos cargar el catálogo. Revisa la conexión y vuelve a intentar.';
 }
 
-// Consulta pública y paginación
+function mostrarAviso(texto: string) {
+    aviso.value = texto;
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(() => {
+        aviso.value = '';
+    }, 2600);
+}
+
+// Consulta pública, catálogos y paginación
+
+async function cargarCatalogos() {
+    try {
+        const catalogos = await $catalogoPublico.listarCatalogosPublicos();
+        sectores.value = Object.fromEntries(catalogos.sectores.map(e => [e.id, e.nombre]));
+        tiposEmprendimiento.value = Object.fromEntries(catalogos.tiposEmprendimiento.map(e => [e.id, e.nombre]));
+        categorias.value = Object.fromEntries((catalogos.categorias ?? []).map(e => [e.id, e.nombre]));
+    } catch {
+        sectores.value = {};
+        tiposEmprendimiento.value = {};
+        categorias.value = {};
+    }
+}
+
+async function cargarDestacados(tiendas: FichaComprador[], revisionDestacados: number) {
+    const candidatas = tiendas.filter(t => t.datos.mostrarPrecios === true).slice(0, 4);
+    if (!candidatas.length) {
+        if (revisionDestacados === revision) destacados.value = [];
+        return;
+    }
+    const resultados = await Promise.all(candidatas.map(async (t) => {
+        try {
+            const r = await $catalogoPublico.listarProductos(t.id, null);
+            const primero = r.elementos[0];
+            return primero ? { tienda: t, producto: fichaProducto(primero) } : null;
+        } catch {
+            return null;
+        }
+    }));
+    if (revisionDestacados !== revision || tienda.value) return;
+    destacados.value = resultados.filter((d): d is { tienda: FichaComprador; producto: FichaComprador } => d !== null);
+}
 
 async function cargar(destino = pagina.value) {
     const actual = ++revision;
@@ -148,6 +298,8 @@ async function cargar(destino = pagina.value) {
         siguiente.value = r.cursorSiguiente !== null;
         pagina.value = destino;
         busqueda.value = '';
+        if (!tienda.value && destino === 1)
+            void cargarDestacados(filas.value, actual);
     }
     catch (e) {
         if (actual === revision)
@@ -161,6 +313,18 @@ async function cargar(destino = pagina.value) {
 
 // Navegación entre tiendas y productos
 
+function letraInicial(nombre: string) {
+    return (nombre.trim()[0] ?? 'A').toUpperCase();
+}
+
+async function irSeccion(id: string) {
+    if (tienda.value) {
+        await navegar(null);
+        await nextTick();
+    }
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+}
+
 async function navegar(ficha: FichaComprador | null) {
     revision++;
     tienda.value = ficha;
@@ -171,6 +335,7 @@ async function navegar(ficha: FichaComprador | null) {
     filas.value = [];
     siguiente.value = false;
     busqueda.value = '';
+    categoriaSeleccionada.value = '';
 
     await cargar(1);
 }
@@ -203,6 +368,11 @@ async function abrir(f: FichaComprador) {
     }
 }
 
+async function abrirDestacado(d: { tienda: FichaComprador; producto: FichaComprador }) {
+    await navegar(d.tienda);
+    await abrir(d.producto);
+}
+
 function volver() {
     revision++;
     producto.value = null;
@@ -223,232 +393,592 @@ function reintentar() {
     }
 }
 
+async function compartirTienda() {
+    if (!tienda.value) return;
+    const url = window.location.href;
+    const datos = {
+        title: tienda.value.datos.nombre,
+        text: `${tienda.value.datos.nombre} en Rincón Amancay`,
+        url,
+    };
+    try {
+        if (navigator.share) {
+            await navigator.share(datos);
+            return;
+        }
+        await navigator.clipboard.writeText(url);
+        mostrarAviso('Enlace copiado');
+    } catch (causa) {
+        if ((causa as { name?: string }).name === 'AbortError') return;
+        try {
+            await navigator.clipboard.writeText(url);
+            mostrarAviso('Enlace copiado');
+        } catch {
+            mostrarAviso('No se pudo compartir el enlace.');
+        }
+    }
+}
+
 // Ciclo de vida
 onMounted(() => {
-    void cargar(1);
+    void cargarCatalogos();
+    void cargar(1).then(() => {
+        const id = window.location.hash.slice(1);
+        if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    });
+    window.addEventListener('keydown', alTeclearRapido);
 });
 onBeforeUnmount(() => {
     revision++;
+    clearTimeout(avisoTimer);
+    window.removeEventListener('keydown', alTeclearRapido);
+    if (productoRapido.value && import.meta.client) document.body.style.overflow = overflowRapido;
 });
 </script>
 
 <template>
-  <div class="admin">
-    <aside class="lateral">
-      <div class="marca">
-        <img class="marca-icono" src="/logo-amancay.png" alt="Rincón Amancay" />
+  <div class="comprador" :class="tienda ? 'modo-tienda' : 'modo-explorar'">
+    <!-- Explorar: barra lateral -->
+    <CompradorLateral v-if="!tienda" activo="explorar" />
+
+    <!-- Barra superior: tienda y producto -->
+    <header v-else class="barra-superior">
+      <button class="marca marca-boton" type="button" @click="navegar(null)">
+        <img class="marca-icono" src="/logo-amancay.png" alt="" />
         <span class="marca-texto">
           <small>Rincón</small>
           <strong>Amancay</strong>
         </span>
-        <span class="modo">Comprador</span>
-      </div>
-      <nav class="menu" aria-label="Catálogo">
-        <button :class="{ on: !tienda }" @click="navegar(null)">
-          <span class="mi" aria-hidden="true">🏠</span>
-          Explorar tiendas
-        </button>
-        <button v-if="tienda" class="on" @click="volver">
-          <span class="mi" aria-hidden="true">🛍️</span>
-          {{ tienda.datos.nombre }}
-        </button>
-        <NuxtLink class="menu-enlace" to="/admin">
-          <span class="mi" aria-hidden="true">🛡️</span>
-          Administración
-        </NuxtLink>
+      </button>
+      <nav class="barra-nav" aria-label="Principal">
+        <button type="button" @click="navegar(null)">Explorar</button>
+        <button type="button" @click="irSeccion('catalogo')">Tiendas</button>
+        <NuxtLink class="barra-enlace" to="/comprador/ferias">Ferias</NuxtLink>
+        <span class="barra-actual">{{ tienda.datos.nombre }}</span>
       </nav>
-      <div class="pie">
-        <img class="pie-avatar" src="/logo-amancay.png" alt="" />
-        <div>
-          <b>Compra local</b>
-          <br />
-          <small>Explora sin iniciar sesión</small>
-        </div>
+      <label v-if="!producto" class="buscador buscador-barra">
+        <span aria-hidden="true">⌕</span>
+        <input v-model="busqueda" type="search" placeholder="Buscar productos en esta tienda" aria-label="Buscar productos en la tienda" />
+        <button
+          class="buscador-filtro"
+          type="button"
+          :aria-expanded="filtroVisible"
+          aria-label="Filtrar por categoría"
+          @click="filtroVisible = !filtroVisible"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" stroke-linecap="round" />
+          </svg>
+        </button>
+      </label>
+      <div class="barra-sesion">
+        <AccesoComprador />
       </div>
-      <AccesoComprador/>
-    </aside>
+    </header>
+
     <main class="contenido">
-      <header class="encabezado">
-        <p class="sobretitulo">Hecho con cariño, cerca de ti</p>
-        <h1>{{ producto ? producto.datos.nombre : tienda ? tienda.datos.nombre : 'Descubre Rincón Amancay' }}</h1>
-        <p class="sub">{{ subtitulo }}</p>
-      </header>
-      <nav v-if="tienda" class="migas" aria-label="Ruta">
-        <button @click="navegar(null)">Tiendas</button>
-        <span>/</span>
-        <button v-if="producto" @click="volver">{{ tienda.datos.nombre }}</button>
-        <span v-else>{{ tienda.datos.nombre }}</span>
-        <template v-if="producto">
-          <span>/</span>
-          <span>{{ producto.datos.nombre }}</span>
-        </template>
-      </nav>
-      <section v-if="!tienda" class="destacada">
-        <div class="destacada-texto">
-          <p class="fecha">EMPRENDIMIENTOS LOCALES</p>
-          <h2>Pequeñas tiendas, grandes historias</h2>
-          <p>Explora sus productos, colores y variedades.</p>
-          <a class="boton boton-ambar" href="#catalogo">Conocer las tiendas ↓</a>
-        </div>
-        <div class="destacada-arte">
-          <img src="/logo-amancay.png" alt="" />
-        </div>
-      </section>
-      <div v-if="error" class="aviso-error" role="alert">
-        {{ error }}
-        <button class="editar" :disabled="cargando" @click="reintentar">Reintentar</button>
-      </div>
-      <p v-if="cargando" class="aviso-carga" role="status">
-        Cargando
-        {{ producto ? 'variantes' : tienda ?
-                'productos' :
-                'tiendas' }}
-        …
-      </p>
-      <section v-if="producto" class="detalle">
-        <div class="galeria">
-          <template v-if="imagenes.length">
-            <ImagenPublica v-for="ruta in imagenes" :key="ruta" :ruta="ruta" :alt="producto.datos.nombre" ajuste="contain" />
-          </template>
-          <ImagenPublica v-else :alt="producto.datos.nombre" ajuste="contain" />
-        </div>
-        <div class="ficha">
-          <span class="etiqueta">
-            {{ disponibilidad(variante?.datos.estadoDisponibilidad ??
-                    producto.datos.estadoDisponibilidad) }}
-          </span>
-          <h2 class="titulo-bloque">{{ producto.datos.nombre }}</h2>
-          <p>{{ producto.datos.descripcion }}</p>
-          <template v-if="producto.datos.tieneVariantes">
-            <label for="variante">Elige una variante</label>
-            <select id="variante" v-model="seleccion" :disabled="cargando || !variantes.length">
-              <option v-for="v in variantes" :key="v.id" :value="v.id">
-                {{ Object.entries(v.datos.opciones
-                                ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || v.id }}
-              </option>
-            </select>
-            <p v-if="!cargando && !error && !variantes.length">No hay variantes disponibles.</p>
-            <small v-if="variantes.length === 100">Se muestran hasta 100 variantes activas.</small>
-          </template>
-          <p class="precio">
-            {{ tienda?.datos.mostrarPrecios === true ? precio(producto.datos.tieneVariantes ?
-                        variante?.datos.precio : producto.datos.precioBase) : 'Consultar precio en la tienda' }}
-          </p>
-          <dl>
-            <template v-for="(valor, campo) in producto.datos.atributosEspecificos" :key="campo">
-              <dt>{{ campo }}</dt>
-              <dd>{{ valor }}</dd>
-            </template>
-          </dl>
-          <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">{{ enlaceContacto.texto }}</a>
-          <button class="boton boton-primario" @click="volver">Volver a los productos</button>
-        </div>
-      </section>
-      <section v-else id="catalogo" :aria-busy="cargando">
-        <h2 class="titulo-bloque">{{ tienda ? 'Productos de la tienda' : 'Nuestras tiendas' }}</h2>
-        <div class="herramientas">
-          <label class="buscar">
-            <span aria-hidden="true">⌕</span>
-            <input v-model="busqueda" type="search" placeholder="Buscar en esta página" aria-label="Buscar en la página actual" />
-          </label>
-          <span class="etiqueta">
-            Página
-            {{ pagina }}
-            ·
-            {{ visibles.length }}
-            resultados
-          </span>
-        </div>
-        <div v-if="!cargando && !error && !visibles.length" class="vacio">
-          <span aria-hidden="true">🌼</span>
-          <p>{{ mensajeVacio }}</p>
-          <button v-if="busqueda" class="editar" @click="busqueda = ''">Limpiar búsqueda</button>
-        </div>
-        <div class="rejilla">
-          <button v-for="f in visibles" :key="f.id" class="tarjeta" :disabled="cargando" @click="tienda ? abrir(f) : navegar(f)">
-            <ImagenPublica v-if="tienda" :ruta="f.datos.imagenes?.[0]" :alt="f.datos.nombre" />
-            <span v-else class="icono" aria-hidden="true">🛍️</span>
-            <h3>{{ f.datos.nombre }}</h3>
-            <p>{{ f.datos.descripcion }}</p>
-            <span v-if="tienda" class="etiqueta">{{ disponibilidad(f.datos.estadoDisponibilidad) }}</span>
-            <b v-if="tienda?.datos.mostrarPrecios === true && !f.datos.tieneVariantes">{{ precio(f.datos.precioBase) }}</b>
-            <small v-if="tienda && f.datos.tieneVariantes">Ver variantes y precios</small>
-            <span class="ver">
-              {{ tienda ? 'Ver producto' : 'Visitar tienda' }}
-              →
-            </span>
+      <!-- Vista explorar -->
+      <template v-if="!tienda">
+        <header class="encabezado-fila">
+          <div>
+            <h1>Descubre productos hechos cerca</h1>
+            <p class="sub">Conoce a nuestras emprendedoras y encuentra algo especial.</p>
+          </div>
+          <div class="encabezado-sesion">
+            <AccesoComprador />
+          </div>
+        </header>
+
+        <section class="hero">
+          <div class="hero-texto">
+            <p class="sobretitulo">EMPRENDIMIENTOS LOCALES</p>
+            <h2>Hecho cerca, elegido con cariño</h2>
+            <p>Productos con historia, manos locales y un impacto real.</p>
+            <a class="boton boton-mostaza" href="#destacados">Explorar productos →</a>
+          </div>
+          <p class="hero-frase">Lo local<br />también florece</p>
+          <div class="hero-arte" aria-hidden="true">
+            <img src="/logo-amancay.png" alt="" />
+          </div>
+          <ul class="hero-lista" aria-hidden="true">
+            <li>Personas</li>
+            <li>Productos</li>
+            <li>Territorios</li>
+            <li>Comunidad</li>
+          </ul>
+        </section>
+
+        <label class="buscador buscador-ancho">
+          <span aria-hidden="true">⌕</span>
+          <input v-model="busqueda" type="search" placeholder="Busca una tienda por nombre o descripción" aria-label="Buscar tiendas" />
+          <button
+            class="buscador-filtro"
+            type="button"
+            :aria-expanded="filtroVisible"
+            aria-label="Filtrar por categoría"
+            @click="filtroVisible = !filtroVisible"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M4 6h16M7 12h10M10 18h4" stroke-linecap="round" />
+            </svg>
           </button>
+        </label>
+
+        <div v-if="filtroVisible && Object.keys(categorias).length" class="filtros" role="group" aria-label="Filtrar por categoría">
+          <span class="filtros-etiqueta">Filtrar por categoría:</span>
+          <button
+            class="chip-filtro"
+            :class="{ on: !categoriaSeleccionada }"
+            type="button"
+            @click="categoriaSeleccionada = ''"
+          >Todos</button>
+          <button
+            v-for="(nombre, id) in categorias"
+            :key="id"
+            class="chip-filtro"
+            :class="{ on: categoriaSeleccionada === id }"
+            type="button"
+            @click="categoriaSeleccionada = categoriaSeleccionada === id ? '' : id"
+          >{{ nombre }}</button>
         </div>
-        <nav class="paginacion" aria-label="Paginación">
-          <button class="editar" :disabled="cargando || pagina === 1" @click="cargar(pagina - 1)">← Anterior</button>
-          <span aria-live="polite">
-            Página
-            {{ pagina }}
-          </span>
-          <button class="editar" :disabled="cargando || !siguiente" @click="avanzar">Siguiente →</button>
+
+        <div v-if="error" class="aviso-error" role="alert">
+          {{ error }}
+          <button class="editar" :disabled="cargando" @click="reintentar">Reintentar</button>
+        </div>
+        <p v-if="cargando && !filas.length" class="aviso-carga" role="status">
+          Cargando tiendas …
+        </p>
+
+        <section v-if="destacadosVisibles.length" id="destacados" aria-labelledby="tit-destacados">
+          <div class="fila-titulo">
+            <h2 id="tit-destacados" class="titulo-bloque">Productos destacados</h2>
+            <a class="enlace" href="#catalogo">Ver todos →</a>
+          </div>
+          <div class="rejilla-productos">
+            <button
+              v-for="d in destacadosVisibles"
+              :key="`${d.tienda.id}-${d.producto.id}`"
+              class="tarjeta-producto"
+              type="button"
+              @click="abrirDestacado(d)"
+            >
+              <span class="foto" @click.stop="abrirRapido(d.producto, d.tienda)">
+                <ImagenPublica :ruta="d.producto.datos.imagenes?.[0]" :alt="d.producto.datos.nombre" ajuste="contain" :zoom="false" />
+                <span class="badge" :class="claseDisponibilidad(d.producto.datos.estadoDisponibilidad)">
+                  {{ disponibilidad(d.producto.datos.estadoDisponibilidad) }}
+                </span>
+              </span>
+              <h3>{{ d.producto.datos.nombre }}</h3>
+              <span class="tarjeta-tienda">
+                <span class="tarjeta-tienda-logo">
+                  <ImagenPublica v-if="d.tienda.datos.logo" :ruta="d.tienda.datos.logo" :alt="d.tienda.datos.nombre" ajuste="contain" />
+                  <span v-else class="logo-inicial" aria-hidden="true">{{ letraInicial(d.tienda.datos.nombre) }}</span>
+                </span>
+                {{ d.tienda.datos.nombre }}
+              </span>
+              <b class="precio">{{ precio(d.producto.datos.precioBase) }}</b>
+            </button>
+          </div>
+        </section>
+
+        <section aria-labelledby="tit-emprendimientos">
+          <div class="fila-titulo">
+            <h2 id="tit-emprendimientos" class="titulo-bloque">Emprendimientos destacados</h2>
+            <a class="enlace" href="#catalogo">Ver todas las tiendas →</a>
+          </div>
+          <div class="rejilla-tiendas">
+            <article v-for="f in filas.slice(0, 4)" :key="f.id" class="tarjeta-tienda">
+              <span class="tarjeta-tienda-logo grande">
+                <ImagenPublica v-if="f.datos.logo" :ruta="f.datos.logo" :alt="f.datos.nombre" ajuste="contain" />
+                <span v-else class="logo-inicial grande" aria-hidden="true">{{ letraInicial(f.datos.nombre) }}</span>
+              </span>
+              <div class="tarjeta-tienda-cuerpo">
+                <h3>{{ f.datos.nombre }}</h3>
+                <p>{{ f.datos.descripcion }}</p>
+                <span v-if="f.datos.sectorId && sectores[f.datos.sectorId]" class="chip">
+                  <span aria-hidden="true">📍</span>
+                  {{ sectores[f.datos.sectorId] }}
+                </span>
+              </div>
+              <button class="boton boton-secundario" type="button" @click="navegar(f)">Visitar tienda →</button>
+            </article>
+          </div>
+        </section>
+
+        <section id="catalogo" :aria-busy="cargando">
+          <div class="fila-titulo">
+            <h2 class="titulo-bloque">Nuestras tiendas</h2>
+            <span class="cuenta">Página {{ pagina }} · {{ visibles.length }} resultados</span>
+          </div>
+          <div v-if="!cargando && !error && !visibles.length" class="vacio">
+            <span aria-hidden="true">🌼</span>
+            <p>{{ mensajeVacio }}</p>
+            <button v-if="busqueda || categoriaSeleccionada" class="editar" @click="busqueda = ''; categoriaSeleccionada = ''">Limpiar filtros</button>
+          </div>
+          <div class="rejilla-tiendas">
+            <article v-for="f in visibles" :key="f.id" class="tarjeta-tienda">
+              <span class="tarjeta-tienda-logo grande">
+                <ImagenPublica v-if="f.datos.logo" :ruta="f.datos.logo" :alt="f.datos.nombre" ajuste="contain" />
+                <span v-else class="logo-inicial grande" aria-hidden="true">{{ letraInicial(f.datos.nombre) }}</span>
+              </span>
+              <div class="tarjeta-tienda-cuerpo">
+                <h3>{{ f.datos.nombre }}</h3>
+                <p>{{ f.datos.descripcion }}</p>
+                <span v-if="f.datos.sectorId && sectores[f.datos.sectorId]" class="chip">
+                  <span aria-hidden="true">📍</span>
+                  {{ sectores[f.datos.sectorId] }}
+                </span>
+              </div>
+              <button class="boton boton-secundario" type="button" :disabled="cargando" @click="navegar(f)">Visitar tienda →</button>
+            </article>
+          </div>
+          <nav class="paginacion" aria-label="Paginación">
+            <button class="editar" :disabled="cargando || pagina === 1" @click="cargar(pagina - 1)">← Anterior</button>
+            <span aria-live="polite">Página {{ pagina }}</span>
+            <button class="editar" :disabled="cargando || !siguiente" @click="avanzar">Siguiente →</button>
+          </nav>
+        </section>
+      </template>
+
+      <!-- Vista tienda y producto -->
+      <template v-else>
+        <nav class="migas" aria-label="Ruta">
+          <button type="button" @click="navegar(null)">Explorar</button>
+          <span>/</span>
+          <span>Tiendas</span>
+          <span>/</span>
+          <button v-if="producto" type="button" @click="volver">{{ tienda.datos.nombre }}</button>
+          <span v-else class="actual">{{ tienda.datos.nombre }}</span>
+          <template v-if="producto">
+            <span>/</span>
+            <span class="actual">{{ producto.datos.nombre }}</span>
+          </template>
         </nav>
-      </section>
+
+        <section v-if="!producto" class="tienda-hero">
+          <div class="tienda-hero-info">
+            <span class="tienda-logo">
+              <ImagenPublica v-if="tienda.datos.logo" :ruta="tienda.datos.logo" :alt="tienda.datos.nombre" ajuste="contain" />
+              <span v-else class="logo-inicial hero" aria-hidden="true">{{ letraInicial(tienda.datos.nombre) }}</span>
+            </span>
+            <div class="tienda-hero-texto">
+              <h1>{{ tienda.datos.nombre }}</h1>
+              <div class="chips">
+                <span v-if="etiquetaTipo" class="chip">
+                  <span aria-hidden="true">🧺</span>
+                  {{ etiquetaTipo }}
+                </span>
+                <span v-if="etiquetaSector" class="chip">
+                  <span aria-hidden="true">📍</span>
+                  {{ etiquetaSector }}
+                </span>
+              </div>
+              <p class="sub clamp">{{ tienda.datos.descripcion }}</p>
+              <div class="chips">
+                <span class="chip">
+                  <span aria-hidden="true">📦</span>
+                  {{ conteoProductos }} productos publicados
+                </span>
+              </div>
+              <div class="acciones-hero">
+                <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">
+                  {{ enlaceContacto.texto }} →
+                </a>
+                <button class="boton boton-secundario" type="button" @click="compartirTienda">
+                  <span aria-hidden="true">↗</span>
+                  Compartir tienda
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="tienda-hero-arte" aria-hidden="true">
+            <img src="/logo-amancay.png" alt="" />
+            <p class="arte-tag">Hecho a mano en Chile</p>
+          </div>
+        </section>
+
+        <div v-if="error" class="aviso-error" role="alert">
+          {{ error }}
+          <button class="editar" :disabled="cargando" @click="reintentar">Reintentar</button>
+        </div>
+        <p v-if="cargando && !producto && !filas.length" class="aviso-carga" role="status">
+          Cargando productos …
+        </p>
+        <p v-if="cargando && producto" class="aviso-carga" role="status">
+          Cargando variantes …
+        </p>
+
+        <section v-if="producto" class="detalle">
+          <div class="galeria">
+            <div class="galeria-marco">
+              <template v-if="imagenes.length">
+                <ImagenPublica v-for="ruta in imagenes" :key="ruta" :ruta="ruta" :alt="producto.datos.nombre" ajuste="contain" />
+              </template>
+              <ImagenPublica v-else :alt="producto.datos.nombre" ajuste="contain" />
+            </div>
+            <span class="badge grande" :class="claseDisponibilidad(variante?.datos.estadoDisponibilidad ?? producto.datos.estadoDisponibilidad)">
+              {{ disponibilidad(variante?.datos.estadoDisponibilidad ?? producto.datos.estadoDisponibilidad) }}
+            </span>
+          </div>
+          <div class="ficha">
+            <p class="ficha-miga" v-if="tienda">
+              <button type="button" @click="volver">{{ tienda.datos.nombre }}</button>
+              <span aria-hidden="true">·</span>
+              <span>Producto</span>
+            </p>
+            <h2 class="titulo-ficha">{{ producto.datos.nombre }}</h2>
+            <p class="ficha-desc">{{ producto.datos.descripcion }}</p>
+            <div class="ficha-datos">
+              <div v-if="producto.datos.unidadVenta" class="ficha-dato">
+                <span class="ficha-dato-etiqueta">Venta</span>
+                <span>{{ producto.datos.unidadVenta }}</span>
+              </div>
+              <div v-if="etiquetaModalidad" class="ficha-dato">
+                <span class="ficha-dato-etiqueta">Modalidad</span>
+                <span>{{ etiquetaModalidad }}</span>
+              </div>
+              <div v-if="producto.datos.categoriaId && categorias[producto.datos.categoriaId]" class="ficha-dato">
+                <span class="ficha-dato-etiqueta">Categoría</span>
+                <span>{{ categorias[producto.datos.categoriaId] }}</span>
+              </div>
+            </div>
+            <template v-if="producto.datos.tieneVariantes">
+              <label class="ficha-label" for="variante">Elige una variante</label>
+              <select id="variante" class="ficha-select" v-model="seleccion" :disabled="cargando || !variantes.length">
+                <option v-for="v in variantes" :key="v.id" :value="v.id">
+                  {{ Object.entries(v.datos.opciones
+                                  ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || v.id }}
+                </option>
+              </select>
+              <p v-if="!cargando && !error && !variantes.length" class="ficha-nota">No hay variantes disponibles.</p>
+              <small v-if="variantes.length === 100" class="ficha-nota">Se muestran hasta 100 variantes activas.</small>
+            </template>
+            <div class="ficha-precio-caja">
+              <span class="ficha-precio-etiqueta">Precio</span>
+              <p class="precio-ficha">
+                {{ tienda?.datos.mostrarPrecios === true ? precio(producto.datos.tieneVariantes ?
+                            variante?.datos.precio : producto.datos.precioBase) : 'Consultar precio en la tienda' }}
+              </p>
+            </div>
+            <dl v-if="Object.keys(producto.datos.atributosEspecificos ?? {}).length" class="ficha-atributos">
+              <template v-for="(valor, campo) in producto.datos.atributosEspecificos" :key="campo">
+                <dt>{{ campo }}</dt>
+                <dd>{{ valor }}</dd>
+              </template>
+            </dl>
+            <div class="ficha-acciones">
+              <button class="boton boton-mostaza" type="button" @click="encargarDetalle">
+                Encargar producto
+              </button>
+              <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">{{ enlaceContacto.texto }}</a>
+              <button class="boton boton-secundario" type="button" @click="volver">Volver a los productos</button>
+            </div>
+          </div>
+        </section>
+
+        <div v-else class="tienda-cuerpo">
+          <section id="catalogo" :aria-busy="cargando">
+            <div class="fila-titulo">
+              <h2 class="titulo-bloque">Productos de {{ tienda.datos.nombre }}</h2>
+              <span class="cuenta">Página {{ pagina }} · {{ visibles.length }} resultados</span>
+            </div>
+            <div v-if="filtroVisible && Object.keys(categorias).length" class="filtros" role="group" aria-label="Filtrar por categoría">
+              <span class="filtros-etiqueta">Filtrar por categoría:</span>
+              <button
+                class="chip-filtro"
+                :class="{ on: !categoriaSeleccionada }"
+                type="button"
+                @click="categoriaSeleccionada = ''"
+              >Todos</button>
+              <button
+                v-for="(nombre, id) in categorias"
+                :key="id"
+                class="chip-filtro"
+                :class="{ on: categoriaSeleccionada === id }"
+                type="button"
+                @click="categoriaSeleccionada = categoriaSeleccionada === id ? '' : id"
+              >{{ nombre }}</button>
+            </div>
+            <div v-if="!cargando && !error && !visibles.length" class="vacio">
+              <span aria-hidden="true">🌼</span>
+              <p>{{ mensajeVacio }}</p>
+              <button v-if="busqueda || categoriaSeleccionada" class="editar" @click="busqueda = ''; categoriaSeleccionada = ''">Limpiar filtros</button>
+            </div>
+            <div class="rejilla-productos">
+              <button
+                v-for="f in visibles"
+                :key="f.id"
+                class="tarjeta-producto tarjeta-producto-tienda"
+                type="button"
+                :disabled="cargando"
+                @click="abrir(f)"
+              >
+                <span class="foto" @click.stop="abrirRapido(f, tienda)">
+                  <ImagenPublica :ruta="f.datos.imagenes?.[0]" :alt="f.datos.nombre" ajuste="contain" :zoom="false" />
+                </span>
+                <h3>{{ f.datos.nombre }}</h3>
+                <span class="tarjeta-meta">
+                  <b v-if="tienda.datos.mostrarPrecios === true && !f.datos.tieneVariantes" class="precio">
+                    {{ precio(f.datos.precioBase) }}
+                  </b>
+                  <small v-if="f.datos.tieneVariantes" class="precio nota">Ver variantes y precios</small>
+                  <span class="badge" :class="claseDisponibilidad(f.datos.estadoDisponibilidad)">
+                    {{ disponibilidad(f.datos.estadoDisponibilidad) }}
+                  </span>
+                </span>
+              </button>
+            </div>
+            <nav class="paginacion" aria-label="Paginación">
+              <button class="editar" :disabled="cargando || pagina === 1" @click="cargar(pagina - 1)">← Anterior</button>
+              <span aria-live="polite">Página {{ pagina }}</span>
+              <button class="editar" :disabled="cargando || !siguiente" @click="avanzar">Siguiente →</button>
+            </nav>
+          </section>
+
+          <aside class="sobre-tienda" aria-label="Sobre la tienda">
+            <h2 class="titulo-sobre">
+              <span aria-hidden="true">🍂</span>
+              Sobre la tienda
+            </h2>
+            <div v-if="etiquetaTipo" class="dato-tienda">
+              <span class="dato-icono" aria-hidden="true">🏪</span>
+              <div>
+                <b>Tipo de emprendimiento</b>
+                <p>{{ etiquetaTipo }}</p>
+              </div>
+            </div>
+            <div v-if="etiquetaSector" class="dato-tienda">
+              <span class="dato-icono" aria-hidden="true">📍</span>
+              <div>
+                <b>Sector</b>
+                <p>{{ etiquetaSector }}</p>
+              </div>
+            </div>
+            <div v-if="tienda.datos.contacto" class="dato-tienda">
+              <span class="dato-icono" aria-hidden="true">☎</span>
+              <div>
+                <b>Contacto</b>
+                <a
+                  v-if="enlaceContacto"
+                  :href="enlaceContacto.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >{{ tienda.datos.contacto.valor }}</a>
+                <p v-else>{{ tienda.datos.contacto.valor }}</p>
+              </div>
+            </div>
+            <div class="sobre-nosotras">
+              <h3><span aria-hidden="true">👥</span> Sobre nosotras</h3>
+              <p>{{ tienda.datos.descripcion }}</p>
+            </div>
+          </aside>
+        </div>
+      </template>
     </main>
+
+    <!-- Vista rápida de producto -->
+    <Teleport to="body">
+      <div
+        v-if="productoRapido && tiendaRapida"
+        class="rapido-fondo"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="productoRapido.datos.nombre"
+        @click.self="cerrarRapido"
+      >
+        <div class="rapido">
+          <button class="rapido-cerrar" type="button" aria-label="Cerrar" @click="cerrarRapido">✕</button>
+          <div class="rapido-scroll">
+            <h2 class="rapido-titulo">{{ productoRapido.datos.nombre }}</h2>
+            <div class="rapido-foto">
+              <ImagenPublica
+                :ruta="productoRapido.datos.imagenes?.[0]"
+                :alt="productoRapido.datos.nombre"
+                ajuste="contain"
+                :zoom="false"
+              />
+            </div>
+            <p class="rapido-tienda">{{ tiendaRapida.datos.nombre }}</p>
+            <p v-if="categoriaRapida" class="rapido-linea">{{ categoriaRapida }}</p>
+            <p class="rapido-linea">{{ productoRapido.datos.descripcion }}</p>
+            <p v-if="productoRapido.datos.unidadVenta" class="rapido-linea">Venta: {{ productoRapido.datos.unidadVenta }}</p>
+            <p v-if="etiquetaModalidad" class="rapido-linea">Modalidad: {{ etiquetaModalidad }}</p>
+            <span class="badge" :class="claseDisponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad)">
+              {{ disponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad) }}
+            </span>
+            <p v-if="variantesCargando" class="rapido-linea">Cargando variantes…</p>
+            <ul v-else-if="variantesRapidas.length" class="rapido-variantes">
+              <li v-for="v in variantesRapidas" :key="v.id">
+                <span>{{ nombreRapidoVariante(v) }}</span>
+                <b v-if="tiendaRapida.datos.mostrarPrecios !== false">{{ precio(v.datos.precio) }}</b>
+              </li>
+            </ul>
+            <p
+              v-else-if="productoRapido.datos.tieneVariantes === false && tiendaRapida.datos.mostrarPrecios !== false"
+              class="rapido-precio-unico"
+            >{{ precio(productoRapido.datos.precioBase) }}</p>
+            <p v-if="mensajeEncargar" class="rapido-aviso" role="status">{{ mensajeEncargar }}</p>
+            <div class="rapido-acciones">
+              <button class="boton boton-mostaza" type="button" @click="encargarRapido">Encargar producto</button>
+              <button class="boton boton-secundario" type="button" @click="cerrarRapido">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <div class="aviso" :class="{ visible: aviso }" role="status">{{ aviso }}</div>
   </div>
 </template>
 
 <style scoped>
-.acceso-admin {
-    max-width: 420px;
-    margin: 3rem auto;
-    padding: 1.5rem;
-    font-family: system-ui;
-    color: #3a1228;
-}
-
-.acceso-admin form {
-    display: grid;
-    gap: .8rem;
-}
-
-.acceso-admin input {
-    font: inherit;
-    padding: .8rem;
-    border: 1px solid #89727d;
-    border-radius: 8px;
-}
-
-.estado-conexion {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    align-items: center;
-    margin-bottom: 1rem;
-}
-
 button:disabled {
     opacity: .55;
     cursor: not-allowed;
 }
 
-.admin {
-    --vino: #75264f;
-    --vino-oscuro: #5a1c3c;
-    --crema: #fff8ef;
-    --crema-2: #fdf1d4;
-    --durazno: #f5b183;
-    --ambar: #f6c15b;
-    --coral: #e96869;
-    --rosado: #f7e9e8;
-    --tinta: #3a1228;
-    --suave: #89727d;
-    --borde: #ead9cc;
-    --sombra: 0 6px 20px rgba(117, 38, 79, 0.08);
+a.boton {
+    text-decoration: none;
+}
 
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
-    width: 100%;
+button,
+a,
+input,
+select {
+    font-family: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+    outline: 2px solid var(--amancay-bordo);
+    outline-offset: 2px;
+}
+
+.comprador {
     min-height: 100vh;
     min-height: 100dvh;
-    background: radial-gradient(900px 400px at 100% 0, var(--crema-2), transparent 70%), var(--crema);
-    color: var(--tinta);
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--amancay-fondo);
+    color: var(--amancay-tinta);
+    font-family: var(--amancay-fuente-cuerpo);
+}
+
+.comprador.modo-explorar {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+    .comprador.modo-explorar {
+        grid-template-columns: 1fr;
+    }
+}
+
+.comprador.modo-tienda {
+    display: grid;
+    grid-template-rows: auto 1fr;
 }
 
 :global(html),
@@ -457,64 +987,23 @@ button:disabled {
     min-height: 100%;
 }
 
-.admin::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background: url('/logo-amancay.png') no-repeat right -4% bottom -6% / min(62vw, 620px);
-    opacity: 0.09;
-}
-
-.lateral,
-.contenido {
-    position: relative;
-    z-index: 1;
-}
-
-button {
-    font-family: inherit;
-}
-
-button:focus-visible,
-input:focus-visible {
-    outline: 2px solid var(--vino);
-    outline-offset: 2px;
-}
-
-/* Lateral */
-.lateral {
-    position: relative;
-    align-self: start;
-    height: auto;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem 2rem;
-    padding: 1rem clamp(1.25rem, 3vw, 3.5rem);
-    box-sizing: border-box;
-    background: rgba(255, 255, 255, 0.82);
-    backdrop-filter: blur(6px);
-    border-bottom: 1.5px solid var(--borde);
-}
-
+/* Marca compartida */
 .marca {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    margin-bottom: 0;
+    text-align: left;
 }
 
 .marca-icono {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
     padding: 6px;
     box-sizing: border-box;
     border-radius: 50%;
     object-fit: contain;
-    background: var(--crema-2);
-    border: 1.5px solid var(--borde);
+    background: var(--amancay-naranja-fondo);
+    border: 1.5px solid var(--amancay-borde);
 }
 
 .marca-texto {
@@ -525,316 +1014,405 @@ input:focus-visible {
 
 .marca-texto small {
     font-size: 0.7rem;
-    color: var(--suave);
+    color: var(--amancay-tinta-suave);
 }
 
 .marca-texto strong {
     font-family: 'DM Serif Display', Georgia, serif;
     font-weight: 400;
-    font-size: 1.15rem;
-    color: var(--vino);
+    font-size: 1.2rem;
+    color: var(--amancay-bordo);
 }
 
-.modo {
-    margin-left: auto;
-    font-size: 0.66rem;
-    font-weight: 700;
-    color: var(--vino);
-    background: var(--rosado);
-    border-radius: 999px;
-    padding: 0.2rem 0.6rem;
-}
-
-.menu {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.menu-titulo {
-    margin: 1rem 0.9rem 0.3rem;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--suave);
-}
-
-.menu button {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.65rem 0.9rem;
-    border: 0;
-    border-radius: 14px;
+.marca-boton {
     background: none;
-    font-size: 0.92rem;
-    font-weight: 600;
-    color: var(--suave);
-    text-align: left;
+    border: 0;
+    padding: 0;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
 }
 
-.menu-enlace {
-    position: relative;
+/* Barra superior de tienda */
+.barra-superior {
+    position: sticky;
+    top: 0;
+    z-index: 20;
     display: flex;
     align-items: center;
-    gap: 0.65rem;
-    padding: 0.65rem 0.9rem;
-    border-radius: 14px;
-    color: var(--suave);
+    flex-wrap: wrap;
+    gap: 0.8rem 1.2rem;
+    padding: 0.8rem clamp(1rem, 3vw, 2.5rem);
+    background: rgba(255, 251, 242, 0.94);
+    backdrop-filter: blur(6px);
+    border-bottom: 1.5px solid var(--amancay-borde);
+}
+
+.barra-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    min-width: 0;
+}
+
+.barra-nav button {
+    border: 0;
+    background: none;
+    padding: 0.4rem 0.2rem;
     font-size: 0.92rem;
     font-weight: 600;
+    color: var(--amancay-tinta-suave);
+    cursor: pointer;
+}
+
+.barra-nav button:hover {
+    color: var(--amancay-bordo);
+}
+
+.barra-enlace {
+    border: 0;
+    background: none;
+    padding: 0.4rem 0.2rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
     text-decoration: none;
-    transition: background 0.15s, color 0.15s;
+    cursor: pointer;
+    font-family: inherit;
 }
 
-.menu-enlace:hover {
-    background: var(--crema);
-    color: var(--vino);
+.barra-enlace:hover {
+    color: var(--amancay-bordo);
 }
 
-.menu-enlace:focus-visible {
-    outline: 2px solid var(--vino);
-    outline-offset: 2px;
+.barra-actual {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 1rem;
+    color: var(--amancay-bordo);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 30vw;
 }
 
-.mi {
-    width: 30px;
-    height: 30px;
-    display: grid;
-    place-items: center;
-    border-radius: 10px;
-    background: var(--crema);
-    font-size: 0.95rem;
+.barra-sesion {
+    margin-left: auto;
 }
 
-.menu button:hover {
-    background: var(--crema);
-    color: var(--vino);
-}
-
-.menu button.on {
-    background: var(--rosado);
-    color: var(--vino);
-}
-
-.menu button.on .mi {
-    background: var(--durazno);
-}
-
-.menu button.on::before {
-    display: none;
-}
-
-.pie {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
+.barra-sesion :deep(.acceso) {
     margin-top: 0;
-    padding: 0.7rem;
-    background: var(--crema);
-    border-radius: 16px;
 }
 
-.pie span:last-child {
-    display: flex;
-    flex-direction: column;
-    font-size: 0.85rem;
-    line-height: 1.2;
+.barra-sesion :deep(.acceso-abrir) {
+    width: auto;
+    white-space: nowrap;
+    padding: 0.6rem 1.3rem;
 }
 
-.pie small {
-    color: var(--suave);
-    font-size: 0.72rem;
-}
-
-.pie-avatar,
-.avatar {
-    flex: none;
-    display: grid;
-    place-items: center;
-    font-weight: 700;
-    color: var(--vino);
-    background: var(--durazno);
-}
-
-.pie-avatar {
-    width: 42px;
-    height: 42px;
-    padding: 5px;
-    box-sizing: border-box;
-    border-radius: 50%;
-    object-fit: contain;
-    background: #fff;
-    border: 1.5px solid var(--borde);
+.barra-sesion :deep(.acceso-sesion) {
+    min-width: 200px;
+    max-width: 260px;
 }
 
 /* Contenido */
 .contenido {
     width: 100%;
     min-width: 0;
-    padding: 2.2rem clamp(1.25rem, 3vw, 3.5rem) 4rem;
+    padding: 1.8rem clamp(1rem, 3vw, 2.5rem) 3.5rem;
     box-sizing: border-box;
 }
 
-.encabezado {
-    margin-bottom: 1.4rem;
-}
-
-.fila-encabezado {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-
-.fila-encabezado .sub {
-    margin-bottom: 0;
-}
-
-.formulario {
-    margin: 0 0 1.4rem;
-    padding: 1.4rem;
-    background: rgba(255, 255, 255, 0.94);
-    border: 1.5px solid var(--borde);
-    border-radius: 22px;
-    box-shadow: var(--sombra);
-}
-
-.formulario-encabezado {
+.encabezado-fila {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 1rem;
-}
-
-.formulario-encabezado h2 {
-    margin: 0;
-    color: var(--vino);
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 1.35rem;
-    font-weight: 400;
-}
-
-.formulario-encabezado p {
-    margin: 0.35rem 0 0;
-    color: var(--suave);
-    font-size: 0.86rem;
-}
-
-.campos-formulario {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-}
-
-.campos-formulario label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    color: var(--tinta);
-    font-size: 0.84rem;
-    font-weight: 600;
-}
-
-.campos-formulario input,
-.campos-formulario select,
-.campos-formulario textarea {
-    width: 100%;
-    min-height: 44px;
-    padding: 0.65rem 0.8rem;
-    box-sizing: border-box;
-    color: var(--tinta);
-    background: #fff;
-    border: 1.5px solid var(--borde);
-    border-radius: 12px;
-    font: inherit;
-}
-
-.campos-formulario textarea {
-    resize: vertical;
-}
-
-.campo-completo {
-    grid-column: 1 / -1;
-}
-
-.acciones-formulario {
-    display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
-    grid-column: 1 / -1;
-    padding-top: 0.25rem;
+    margin-bottom: 1.4rem;
 }
 
-.aviso-error,
-.aviso-carga {
-    margin: 0 0 1rem;
-    padding: 0.7rem 1rem;
-    border-radius: 14px;
-    font-size: 0.88rem;
-    font-weight: 600;
+.encabezado-sesion :deep(.acceso) {
+    margin-top: 0.4rem;
 }
 
-.aviso-error {
-    background: var(--rosado, #f7e9e8);
-    color: #b23b3c;
+.encabezado-sesion :deep(.acceso-abrir) {
+    width: auto;
+    white-space: nowrap;
+    padding: 0.7rem 1.5rem;
 }
 
-.aviso-carga {
-    background: var(--crema-2, #fdf1d4);
-    color: #8a5a00;
-}
-
-.sobretitulo {
-    margin: 0 0 0.35rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--vino);
+.encabezado-sesion :deep(.acceso-sesion) {
+    min-width: 220px;
+    max-width: 280px;
 }
 
 h1 {
     margin: 0;
     font-family: 'DM Serif Display', Georgia, serif;
     font-weight: 400;
-    font-size: 2.2rem;
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
     line-height: 1.12;
-    color: var(--vino);
+    color: var(--amancay-bordo);
 }
 
 .sub {
     margin: 0.45rem 0 0;
-    color: var(--suave);
-    font-size: 0.96rem;
-    max-width: 54ch;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.98rem;
+    max-width: 56ch;
+}
+
+.sub.clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.sobretitulo {
+    margin: 0 0 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--amancay-mostaza);
 }
 
 .titulo-bloque {
-    margin: 1.8rem 0 0.9rem;
+    margin: 0;
     font-family: 'DM Serif Display', Georgia, serif;
     font-weight: 400;
-    font-size: 1.4rem;
-    color: var(--vino);
+    font-size: 1.5rem;
+    color: var(--amancay-bordo);
 }
 
+.fila-titulo {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin: 2rem 0 1rem;
+}
+
+.fila-titulo .titulo-bloque {
+    margin: 0;
+}
+
+.cuenta {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
+}
+
+.enlace {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--amancay-bordo);
+    text-decoration: none;
+}
+
+.enlace:hover {
+    text-decoration: underline;
+}
+
+/* Hero de explorar */
+.hero {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: clamp(1.5rem, 3vw, 2.4rem);
+    border-radius: 26px;
+    background: linear-gradient(135deg, var(--amancay-bordo) 0%, var(--amancay-bordo-oscuro) 100%);
+    color: var(--amancay-superficie);
+    box-shadow: 0 14px 30px rgba(107, 30, 61, 0.25);
+    margin-bottom: 1.4rem;
+}
+
+.hero::before {
+    content: '';
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    right: -70px;
+    top: -110px;
+    border-radius: 50%;
+    background: rgba(246, 193, 119, 0.14);
+    pointer-events: none;
+}
+
+.hero-texto {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.hero-texto h2 {
+    margin: 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+    line-height: 1.15;
+}
+
+.hero-texto p:not(.sobretitulo) {
+    margin: 0 0 0.7rem;
+    opacity: 0.88;
+}
+
+.hero-frase {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-style: italic;
+    font-size: 1.05rem;
+    line-height: 1.35;
+    color: var(--amancay-naranja-fondo);
+    text-align: center;
+    flex: none;
+}
+
+.hero-arte {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: 132px;
+    height: 132px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--amancay-superficie);
+    box-shadow: 0 0 0 12px rgba(246, 193, 119, 0.22);
+}
+
+.hero-arte img {
+    width: 104px;
+    height: 104px;
+    object-fit: contain;
+}
+
+.hero-lista {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    padding: 0 0 0 0.4rem;
+    list-style: none;
+    font-size: 0.85rem;
+    line-height: 1.9;
+    color: rgba(255, 251, 242, 0.82);
+    flex: none;
+}
+
+/* Buscadores */
+.buscador {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0 1.1rem;
+    background: var(--amancay-superficie);
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 999px;
+    color: var(--amancay-tinta-suave);
+}
+
+.buscador:focus-within {
+    border-color: var(--amancay-bordo);
+}
+
+.buscador input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.8rem 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    font-size: 0.93rem;
+    color: var(--amancay-tinta);
+}
+
+.buscador-ancho {
+    margin-bottom: 0.6rem;
+}
+
+.buscador-barra {
+    flex: 1;
+    min-width: 200px;
+    max-width: 460px;
+}
+
+.buscador-filtro {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-right: -0.4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--amancay-naranja-fondo);
+    color: var(--amancay-bordo);
+    cursor: pointer;
+}
+
+.buscador-filtro:hover,
+.buscador-filtro[aria-expanded='true'] {
+    background: var(--amancay-bordo);
+    color: #fff;
+}
+
+/* Filtros de categoría (catálogo activo de la app) */
+.filtros {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.2rem 0 1.1rem;
+}
+
+.filtros-etiqueta {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
+    margin-right: 0.15rem;
+}
+
+.chip-filtro {
+    padding: 0.42rem 0.95rem;
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.chip-filtro:hover {
+    border-color: var(--amancay-bordo);
+    color: var(--amancay-bordo);
+}
+
+.chip-filtro.on {
+    background: var(--amancay-bordo);
+    border-color: var(--amancay-bordo);
+    color: #fff;
+}
+
+/* Migas */
 .migas {
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-    font-size: 0.85rem;
-    color: var(--suave);
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 1.1rem;
+    font-size: 0.86rem;
+    color: var(--amancay-tinta-suave);
 }
 
 .migas button {
@@ -843,13 +1421,119 @@ h1 {
     border: 0;
     font-size: inherit;
     font-weight: 600;
-    color: var(--vino);
+    color: var(--amancay-bordo);
     cursor: pointer;
 }
 
-.migas span:last-child {
-    color: var(--tinta);
+.migas .actual {
+    color: var(--amancay-tinta);
     font-weight: 600;
+}
+
+/* Hero de tienda */
+.tienda-hero {
+    display: flex;
+    gap: 1.5rem;
+    padding: clamp(1.2rem, 2.5vw, 1.8rem);
+    background: var(--amancay-superficie);
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 26px;
+    box-shadow: 0 8px 24px rgba(107, 30, 61, 0.07);
+    margin-bottom: 1.6rem;
+}
+
+.tienda-hero-info {
+    display: flex;
+    gap: 1.4rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.tienda-logo {
+    flex: none;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--amancay-naranja-fondo);
+    border: 4px solid #fff;
+    box-shadow: 0 6px 18px rgba(107, 30, 61, 0.12);
+}
+
+.tienda-logo :deep(.imagen-publica) {
+    aspect-ratio: 1;
+    height: 100%;
+    border-radius: 0;
+    background: transparent;
+}
+
+.tienda-hero-texto {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.55rem;
+}
+
+.tienda-hero-texto h1 {
+    font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+}
+
+.tienda-hero-texto .sub {
+    margin: 0;
+}
+
+.acciones-hero {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    margin-top: 0.4rem;
+}
+
+.tienda-hero-arte {
+    position: relative;
+    flex: none;
+    width: min(32%, 300px);
+    border-radius: 20px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background:
+        radial-gradient(120px 80px at 80% 20%, rgba(246, 193, 119, 0.45), transparent 70%),
+        linear-gradient(160deg, var(--amancay-superficie-variante), var(--amancay-naranja-fondo));
+}
+
+.tienda-hero-arte img {
+    width: 58%;
+    max-width: 150px;
+    opacity: 0.9;
+}
+
+.arte-tag {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    margin: 0;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(255, 251, 242, 0.9);
+    border: 1px dashed var(--amancay-bordo);
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-style: italic;
+    font-size: 0.78rem;
+    color: var(--amancay-bordo);
+}
+
+/* Cuerpo de tienda: productos + lateral */
+.tienda-cuerpo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.tienda-cuerpo .fila-titulo {
+    margin-top: 0.4rem;
 }
 
 /* Botones */
@@ -857,12 +1541,13 @@ h1 {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 48px;
-    padding: 0.7rem 1.5rem;
-    font-size: 0.95rem;
+    gap: 0.4rem;
+    min-height: 46px;
+    padding: 0.65rem 1.4rem;
+    font-size: 0.93rem;
     font-weight: 700;
     border-radius: 999px;
-    border: 1.5px solid var(--vino);
+    border: 1.5px solid transparent;
     cursor: pointer;
     transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
 }
@@ -873,385 +1558,764 @@ h1 {
 
 .boton-primario {
     color: #fff;
-    background: var(--vino);
-    box-shadow: 0 6px 16px rgba(117, 38, 79, 0.25);
+    background: var(--amancay-bordo);
+    border-color: var(--amancay-bordo);
+    box-shadow: 0 6px 16px rgba(107, 30, 61, 0.25);
 }
 
 .boton-primario:hover {
-    background: var(--vino-oscuro);
+    background: var(--amancay-bordo-oscuro);
 }
 
-.boton-ambar {
-    color: var(--tinta);
-    background: var(--ambar);
-    border-color: var(--ambar);
+.boton-mostaza {
+    color: var(--amancay-tinta);
+    background: var(--amancay-mostaza);
+    border-color: var(--amancay-mostaza);
+    box-shadow: 0 6px 16px rgba(242, 183, 59, 0.3);
 }
 
-.boton-ambar:hover {
-    background: #f9cd75;
+.boton-mostaza:hover {
+    background: #f6c65f;
 }
 
-/* Hero */
-.destacada {
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1.8rem;
-    border-radius: 26px;
-    background: linear-gradient(135deg, var(--vino) 0%, var(--vino-oscuro) 100%);
-    color: var(--crema);
-    box-shadow: 0 14px 30px rgba(117, 38, 79, 0.28);
-}
-
-.destacada::before,
-.destacada::after {
-    content: '';
-    position: absolute;
-    border-radius: 50%;
-    pointer-events: none;
-}
-
-.destacada::before {
-    width: 260px;
-    height: 260px;
-    right: -60px;
-    top: -90px;
-    background: rgba(245, 177, 131, 0.16);
-}
-
-.destacada::after {
-    width: 120px;
-    height: 120px;
-    right: 150px;
-    bottom: -60px;
-    background: rgba(246, 193, 91, 0.14);
-}
-
-.destacada-texto {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-}
-
-.fecha {
-    margin: 0;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--durazno);
-}
-
-.destacada h2 {
-    margin: 0;
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-weight: 400;
-    font-size: 1.9rem;
-    line-height: 1.12;
-}
-
-.destacada-texto p:not(.fecha) {
-    margin: 0 0 0.9rem;
-    opacity: 0.85;
-}
-
-.destacada-arte {
-    position: relative;
-    z-index: 1;
-    flex: none;
-    width: 130px;
-    height: 130px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--crema);
-    box-shadow: 0 0 0 10px rgba(245, 177, 131, 0.25);
-}
-
-.destacada-arte img {
-    width: 100px;
-    height: 100px;
-    object-fit: contain;
-}
-
-/* Resumen */
-.resumen {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.8rem;
-    margin-top: 1rem;
-}
-
-.dato {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.1rem;
-    padding: 0.9rem 1rem;
+.boton-secundario {
+    color: var(--amancay-bordo);
     background: #fff;
-    border: 1.5px solid var(--borde);
-    border-radius: 18px;
-    text-align: left;
-    cursor: pointer;
-    transition: border-color 0.15s;
+    border-color: var(--amancay-borde);
 }
 
-.dato:hover {
-    border-color: var(--vino);
+.boton-secundario:hover {
+    background: var(--amancay-bordo-suave);
+    border-color: var(--amancay-bordo);
 }
 
-.dato-num {
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 1.9rem;
-    line-height: 1;
-    color: var(--vino);
-}
-
-.dato-txt {
-    font-size: 0.8rem;
-    color: var(--suave);
-    font-weight: 600;
-}
-
-/* Tarjetas */
-.rejilla {
+/* Tarjetas de producto */
+.rejilla-productos {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 1.1rem;
 }
 
-.tarjeta {
-    position: relative;
+.tarjeta-producto {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.35rem;
-    padding: 1.2rem;
+    align-items: stretch;
+    gap: 0.45rem;
+    padding: 0.8rem 0.8rem 1rem;
     background: #fff;
-    border: 1.5px solid var(--borde);
-    border-radius: 22px;
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 20px;
     text-align: left;
     color: inherit;
     cursor: pointer;
     transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 
-.tarjeta:hover {
-    border-color: var(--vino);
+.tarjeta-producto:hover {
+    border-color: var(--amancay-bordo);
     transform: translateY(-3px);
-    box-shadow: var(--sombra);
+    box-shadow: 0 10px 24px rgba(107, 30, 61, 0.1);
 }
 
-.icono {
-    width: 46px;
-    height: 46px;
+.tarjeta-producto .foto {
+    position: relative;
+    display: block;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.tarjeta-producto h3 {
+    margin: 0.35rem 0 0;
+    font-size: 1rem;
+    line-height: 1.3;
+    color: var(--amancay-tinta);
+}
+
+.tarjeta-tienda {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
+}
+
+.tarjeta-tienda-logo {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--amancay-naranja-fondo);
+    border: 1px solid var(--amancay-borde);
+}
+
+.tarjeta-tienda-logo :deep(.imagen-publica) {
+    aspect-ratio: 1;
+    height: 100%;
+    border-radius: 0;
+    background: transparent;
+    font-size: 0.7rem;
+}
+
+.tarjeta-tienda-logo :deep(.imagen-publica span) {
+    font-size: 0.7rem;
+    gap: 0;
+}
+
+.tarjeta-tienda-logo :deep(.imagen-publica small) {
+    display: none;
+}
+
+/* Placeholder de logo sin imagen */
+.logo-inicial {
     display: grid;
     place-items: center;
-    border-radius: 15px;
-    background: var(--durazno);
-    font-size: 1.35rem;
-}
-
-.tarjeta h3 {
-    margin: 0.3rem 0 0;
-    font-size: 1.02rem;
-    color: var(--vino);
-}
-
-.tarjeta p {
-    margin: 0;
-    padding-right: 1.5rem;
-    font-size: 0.88rem;
-    line-height: 1.5;
-    color: var(--suave);
-}
-
-.flecha {
-    position: absolute;
-    right: 1.1rem;
-    bottom: 1rem;
-    font-weight: 700;
-    color: var(--vino);
-    opacity: 0;
-    transform: translateX(-4px);
-    transition: opacity 0.15s, transform 0.15s;
-}
-
-.tarjeta:hover .flecha {
-    opacity: 1;
-    transform: none;
-}
-
-/* Herramientas y lista */
-.herramientas {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.8rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
-}
-
-.buscar {
-    flex: 1;
-    min-width: 220px;
-    max-width: 420px;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0 1rem;
-    background: #fff;
-    border: 1.5px solid var(--borde);
-    border-radius: 999px;
-}
-
-.buscar:focus-within {
-    border-color: var(--vino);
-}
-
-.buscar input {
-    flex: 1;
-    min-width: 0;
-    padding: 0.7rem 0;
-    border: 0;
-    outline: 0;
-    background: none;
-    font: inherit;
-    font-size: 0.92rem;
-    color: var(--tinta);
-}
-
-.chips {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.chip {
-    padding: 0.5rem 1rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--borde);
-    background: #fff;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--tinta);
-    cursor: pointer;
-}
-
-.chip.on {
-    background: var(--vino);
-    border-color: var(--vino);
-    color: #fff;
-}
-
-.lista {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-}
-
-.fila {
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    padding: 0.8rem 1rem 0.8rem 0.8rem;
-    background: #fff;
-    border: 1.5px solid var(--borde);
-    border-radius: 20px;
-    transition: box-shadow 0.15s, border-color 0.15s;
-}
-
-.fila:hover {
-    border-color: var(--durazno);
-    box-shadow: var(--sombra);
-}
-
-.avatar {
-    width: 48px;
-    height: 48px;
-    border-radius: 15px;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 30% 25%, rgba(246, 193, 119, 0.55), transparent 55%),
+        var(--amancay-naranja-fondo);
+    font-family: 'DM Serif Display', Georgia, serif;
     font-size: 0.95rem;
+    color: var(--amancay-bordo);
+    user-select: none;
 }
 
-.fila-texto {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
+.logo-inicial.grande {
+    font-size: 1.75rem;
 }
 
-.fila-texto b {
-    color: var(--vino);
+.logo-inicial.hero {
+    width: 100%;
+    height: 100%;
+    font-size: 3rem;
 }
 
-.fila-texto small {
-    color: var(--suave);
+.precio {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 1.1rem;
+    color: var(--amancay-bordo);
 }
 
-.etiqueta {
+.precio.nota {
+    font-family: var(--amancay-fuente-cuerpo);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
+}
+
+/* Badges de disponibilidad */
+.badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.74rem;
-    font-weight: 700;
-    color: var(--vino);
-    background: var(--rosado);
+    gap: 0.35rem;
     border-radius: 999px;
-    padding: 0.3rem 0.8rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.28rem 0.7rem;
+    background: var(--amancay-verde-fondo);
+    color: var(--amancay-verde-texto);
     white-space: nowrap;
 }
 
-.etiqueta::before {
+.badge::before {
     content: '';
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--suave);
+    background: currentColor;
 }
 
-.etiqueta.ok {
-    background: #e8f1e4;
-    color: #2f5d2b;
-}
-
-.etiqueta.ok::before {
-    background: #4c9a45;
-}
-
-.etiqueta.pend {
-    background: var(--crema-2);
+.badge.pend {
+    background: var(--amancay-mostaza-suave);
     color: #8a5a00;
 }
 
-.etiqueta.pend::before {
-    background: var(--ambar);
+.badge.off {
+    background: var(--amancay-bordo-suave);
+    color: var(--amancay-bordo-oscuro);
 }
 
-.etiqueta.off::before {
-    background: #b9a5ad;
+.foto .badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    box-shadow: 0 4px 10px rgba(46, 27, 32, 0.12);
 }
 
-.editar {
-    padding: 0.5rem 1.1rem;
+.tarjeta-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.15rem;
+}
+
+.tarjeta-producto-tienda .foto .badge {
+    display: none;
+}
+
+.badge.grande {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.85rem;
+    align-self: flex-start;
+}
+
+/* Tarjetas de tienda */
+.rejilla-tiendas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 1.1rem;
+}
+
+article.tarjeta-tienda {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.1rem 1.2rem;
+    background: #fff;
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 20px;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+article.tarjeta-tienda:hover {
+    border-color: var(--amancay-bordo);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(107, 30, 61, 0.08);
+}
+
+.tarjeta-tienda-logo.grande {
+    width: 76px;
+    height: 76px;
+}
+
+.tarjeta-tienda-logo.grande :deep(.imagen-publica span) {
+    font-size: 1.4rem;
+}
+
+.tarjeta-tienda-cuerpo {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+}
+
+.tarjeta-tienda-cuerpo h3 {
+    margin: 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: 1.15rem;
+    color: var(--amancay-bordo);
+}
+
+.tarjeta-tienda-cuerpo p {
+    margin: 0;
     font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--vino);
-    background: transparent;
-    border: 1.5px solid var(--vino);
+    line-height: 1.5;
+    color: var(--amancay-tinta-suave);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.tarjeta-tienda .boton {
+    flex: none;
+    min-height: 40px;
+    padding: 0.5rem 1.1rem;
+    font-size: 0.84rem;
+}
+
+/* Chips */
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.85rem;
     border-radius: 999px;
+    border: 1.5px solid var(--amancay-borde);
+    background: var(--amancay-fondo);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--amancay-tinta);
+    white-space: nowrap;
+}
+
+/* Sobre la tienda */
+.sobre-tienda {
+    position: sticky;
+    top: 90px;
+    padding: 1.3rem;
+    background: var(--amancay-superficie);
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 22px;
+    box-shadow: 0 8px 24px rgba(107, 30, 61, 0.06);
+}
+
+.titulo-sobre {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1.5px solid var(--amancay-borde);
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: 1.3rem;
+    color: var(--amancay-bordo);
+}
+
+.dato-tienda {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--amancay-borde);
+}
+
+.dato-icono {
+    flex: none;
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--amancay-naranja-fondo);
+    font-size: 1rem;
+}
+
+.dato-tienda b {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--amancay-tinta);
+}
+
+.dato-tienda p,
+.dato-tienda a {
+    margin: 0.15rem 0 0;
+    font-size: 0.88rem;
+    color: var(--amancay-tinta-suave);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+.dato-tienda a {
+    color: var(--amancay-bordo);
+    font-weight: 600;
+}
+
+.dato-tienda a:hover {
+    text-decoration: underline;
+}
+
+.sobre-nosotras {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 16px;
+    background: linear-gradient(160deg, var(--amancay-superficie-variante), var(--amancay-mostaza-suave));
+}
+
+.sobre-nosotras h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    color: var(--amancay-bordo);
+}
+
+.sobre-nosotras p {
+    margin: 0;
+    font-size: 0.87rem;
+    line-height: 1.6;
+    color: var(--amancay-tinta);
+}
+
+/* Detalle de producto */
+.detalle {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 1.75rem;
+    align-items: start;
+}
+
+.galeria {
+    display: grid;
+    gap: 0.9rem;
+    align-content: start;
+    justify-items: start;
+}
+
+.galeria-marco {
+    width: 100%;
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    box-sizing: border-box;
+    background: var(--amancay-superficie);
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 26px;
+    box-shadow: 0 12px 28px rgba(107, 30, 61, 0.08);
+}
+
+.galeria-marco :deep(.imagen-publica) {
+    border-radius: 18px;
+    background: linear-gradient(160deg, var(--amancay-superficie-variante), var(--amancay-naranja-fondo));
+}
+
+.ficha {
+    position: sticky;
+    top: 90px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: clamp(1.4rem, 2.5vw, 2rem);
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 26px;
+    background:
+        radial-gradient(220px 120px at 100% 0%, rgba(246, 193, 119, 0.22), transparent 70%),
+        #fff;
+    box-shadow: 0 14px 32px rgba(107, 30, 61, 0.1);
+}
+
+.ficha-miga {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--amancay-tinta-suave);
+}
+
+.ficha-miga button {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 700;
+    color: var(--amancay-bordo);
     cursor: pointer;
 }
 
-.editar:hover {
-    background: var(--rosado);
+.ficha-miga button:hover {
+    text-decoration: underline;
+}
+
+.titulo-ficha {
+    margin: 0.15rem 0 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(1.6rem, 2.5vw, 2rem);
+    line-height: 1.15;
+    color: var(--amancay-bordo);
+}
+
+.ficha-desc {
+    margin: 0;
+    line-height: 1.65;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.97rem;
+}
+
+.ficha-datos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    width: 100%;
+    margin-top: 0.15rem;
+}
+
+.ficha-dato {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 14px;
+    background: var(--amancay-fondo);
+    border: 1px solid var(--amancay-borde);
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--amancay-tinta);
+}
+
+.ficha-dato-etiqueta {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amancay-tinta-suave);
+}
+
+.ficha-label {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--amancay-tinta);
+    margin-top: 0.2rem;
+}
+
+.ficha-select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.85rem 1rem;
+    border: 1.5px solid var(--amancay-borde);
+    border-radius: 14px;
+    font: inherit;
+    font-size: 0.95rem;
+    background: #fff;
+    color: var(--amancay-tinta);
+    cursor: pointer;
+}
+
+.ficha-select:hover,
+.ficha-select:focus {
+    border-color: var(--amancay-bordo);
+}
+
+.ficha-nota {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--amancay-tinta-suave);
+}
+
+.ficha-precio-caja {
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.9rem 1.1rem;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--amancay-bordo-suave), var(--amancay-mostaza-suave));
+    border: 1px solid var(--amancay-borde);
+}
+
+.ficha-precio-etiqueta {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--amancay-tinta-suave);
+    margin-bottom: 0.15rem;
+}
+
+.precio-ficha {
+    margin: 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(1.7rem, 3vw, 2.2rem);
+    line-height: 1.1;
+    color: var(--amancay-bordo);
+}
+
+.ficha-atributos {
+    margin: 0.35rem 0 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.35rem 0.9rem;
+    padding-top: 0.75rem;
+    border-top: 1.5px dashed var(--amancay-borde);
+}
+
+.ficha-atributos dt {
+    font-weight: 700;
+    color: var(--amancay-bordo);
+    font-size: 0.86rem;
+}
+
+.ficha-atributos dd {
+    margin: 0;
+    color: var(--amancay-tinta);
+    font-size: 0.9rem;
+}
+
+.ficha-acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    width: 100%;
+    margin-top: 0.55rem;
+}
+
+.ficha-acciones .boton {
+    flex: 1 1 auto;
+    min-width: min(100%, 160px);
+}
+
+/* Vista rápida modal */
+.rapido-fondo {
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background: rgba(46, 27, 32, 0.55);
+    backdrop-filter: blur(3px);
+}
+
+.rapido {
+    position: relative;
+    width: min(440px, 100%);
+    max-height: min(90vh, 820px);
+    overflow: auto;
+    background: var(--amancay-superficie);
+    border-radius: 28px;
+    border: 1.5px solid var(--amancay-borde);
+    box-shadow: 0 24px 60px rgba(46, 27, 32, 0.35);
+}
+
+.rapido-cerrar {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    z-index: 1;
+    width: 2.3rem;
+    height: 2.3rem;
+    border: none;
+    border-radius: 50%;
+    background: var(--amancay-bordo);
+    color: #fff;
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.rapido-cerrar:hover {
+    background: var(--amancay-bordo-oscuro);
+}
+
+.rapido-scroll {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 1.5rem 1.4rem 1.4rem;
+}
+
+.rapido-titulo {
+    margin: 0 2rem 0.35rem 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: 1.65rem;
+    line-height: 1.15;
+    color: var(--amancay-tinta);
+}
+
+.rapido-foto {
+    width: 100%;
+    margin-bottom: 0.35rem;
+}
+
+.rapido-foto :deep(.imagen-publica) {
+    border-radius: 18px;
+    background: linear-gradient(160deg, var(--amancay-superficie-variante), var(--amancay-naranja-fondo));
+    max-width: calc(260px * 4 / 3);
+}
+
+.rapido-tienda {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--amancay-bordo);
+}
+
+.rapido-linea {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: var(--amancay-tinta);
+}
+
+.rapido-variantes {
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0;
+    width: 100%;
+    display: grid;
+    gap: 0.4rem;
+}
+
+.rapido-variantes li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 12px;
+    background: var(--amancay-fondo);
+    border: 1px solid var(--amancay-borde);
+    font-size: 0.9rem;
+    color: var(--amancay-tinta);
+}
+
+.rapido-variantes b {
+    color: var(--amancay-bordo);
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: 1rem;
+    white-space: nowrap;
+}
+
+.rapido-precio-unico {
+    margin: 0.35rem 0 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 1.35rem;
+    color: var(--amancay-bordo);
+}
+
+.rapido-aviso {
+    margin: 0.55rem 0 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: 12px;
+    background: var(--amancay-mostaza-suave);
+    border: 1px solid var(--amancay-mostaza);
+    font-size: 0.88rem;
+    line-height: 1.45;
+    color: #6a4a00;
+    font-weight: 600;
+}
+
+.rapido-acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    width: 100%;
+    margin-top: 0.85rem;
+}
+
+.rapido-acciones .boton {
+    flex: 1 1 auto;
+}
+
+/* Estados */
+.aviso-error,
+.aviso-carga {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1.1rem;
+    border-radius: 14px;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.aviso-error {
+    background: var(--amancay-bordo-suave);
+    color: var(--amancay-bordo-oscuro);
+}
+
+.aviso-carga {
+    background: var(--amancay-mostaza-suave);
+    color: #8a5a00;
 }
 
 .vacio {
@@ -1260,10 +2324,10 @@ h1 {
     align-items: center;
     gap: 0.6rem;
     padding: 2.5rem 1rem;
-    background: #fff;
-    border: 1.5px dashed var(--borde);
+    background: var(--amancay-superficie);
+    border: 1.5px dashed var(--amancay-borde);
     border-radius: 22px;
-    color: var(--suave);
+    color: var(--amancay-tinta-suave);
 }
 
 .vacio span {
@@ -1274,20 +2338,45 @@ h1 {
     margin: 0;
 }
 
+.editar {
+    padding: 0.5rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--amancay-bordo);
+    background: transparent;
+    border: 1.5px solid var(--amancay-bordo);
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.editar:hover {
+    background: var(--amancay-bordo-suave);
+}
+
+.paginacion {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
 .aviso {
     position: fixed;
     left: 50%;
     bottom: 1.5rem;
     transform: translate(-50%, 8px);
     padding: 0.8rem 1.2rem;
-    background: var(--vino);
+    background: var(--amancay-bordo);
     color: #fff;
-    border-radius: 14px;
+    border-radius: 999px;
     font-size: 0.9rem;
-    box-shadow: 0 10px 24px rgba(58, 18, 40, 0.3);
+    font-weight: 600;
+    box-shadow: 0 10px 24px rgba(46, 27, 32, 0.3);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s, transform 0.2s;
+    z-index: 50;
 }
 
 .aviso.visible {
@@ -1301,56 +2390,43 @@ h1 {
     }
 }
 
-@media (max-width: 860px) {
-    .campos-formulario {
+@media (max-width: 1100px) {
+    .tienda-cuerpo {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .admin {
-        grid-template-columns: minmax(0, 1fr);
+    .sobre-tienda {
+        position: static;
     }
 
-    .admin::before {
-        background-size: 90vw;
-        background-position: center bottom -8%;
+    .hero-lista {
+        display: none;
+    }
+}
+
+@media (max-width: 900px) {
+    .comprador.modo-explorar {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .lateral {
         position: static;
         height: auto;
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+        padding: 0.9rem 1rem;
         border-right: 0;
-        border-bottom: 1.5px solid var(--borde);
-        padding: 0.9rem 1rem 0.6rem;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.7rem;
-    }
-
-    .marca {
-        margin-bottom: 0;
+        border-bottom: 1.5px solid var(--amancay-borde);
     }
 
     .menu {
         flex-direction: row;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        padding-bottom: 0.3rem;
+        flex-wrap: wrap;
     }
 
-    .menu-titulo,
-    .pie {
-        display: none;
-    }
-
-    .menu button {
-        white-space: nowrap;
-    }
-
-    .menu-enlace {
-        white-space: nowrap;
-    }
-
-    .menu button.on::before {
+    .lateral-frase {
         display: none;
     }
 
@@ -1358,124 +2434,59 @@ h1 {
         padding: 1.25rem 1rem 3rem;
     }
 
-    h1 {
-        font-size: 1.7rem;
-    }
-
-    .destacada-arte {
+    .hero-frase,
+    .hero-arte {
         display: none;
     }
 
-    .resumen {
-        grid-template-columns: repeat(2, 1fr);
+    .tienda-hero {
+        flex-direction: column;
     }
 
-    .fila {
-        flex-wrap: wrap;
+    .tienda-hero-info {
+        flex-direction: column;
     }
-}
-</style>
 
-<style scoped>
-button:disabled {
-    opacity: .55;
-    cursor: not-allowed;
-}
+    .tienda-hero-arte {
+        width: 100%;
+        min-height: 150px;
+    }
 
-a.boton {
-    text-decoration: none;
-}
-
-.destacada {
-    margin-bottom: 1.5rem;
-}
-
-.ver {
-    margin-top: auto;
-    padding-top: .8rem;
-    color: var(--vino);
-    font-weight: 700;
-}
-
-.tarjeta .imagen-publica {
-    margin-bottom: .5rem;
-}
-
-.tarjeta p {
-    padding-right: 0;
-}
-
-.paginacion {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 1rem;
-    margin-top: 1.5rem;
-}
-
-.detalle {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 1.5rem;
-}
-
-.ficha {
-    padding: 1.5rem;
-    border: 1.5px solid var(--borde);
-    border-radius: 22px;
-    background: white;
-}
-
-.ficha .titulo-bloque {
-    margin-top: 1rem;
-}
-
-.ficha p {
-    line-height: 1.6;
-}
-
-.ficha label {
-    display: block;
-    margin-bottom: .5rem;
-    font-weight: 600;
-}
-
-.ficha select {
-    width: 100%;
-    padding: .8rem;
-    border: 1.5px solid var(--borde);
-    border-radius: 12px;
-    font: inherit;
-    background: white;
-}
-
-.precio {
-    font-size: 1.6rem;
-    font-weight: 700;
-    color: var(--vino);
-}
-
-.galeria {
-    display: grid;
-    gap: 1rem;
-}
-
-dt {
-    font-weight: 700;
-    color: var(--vino);
-}
-
-dd {
-    margin: .3rem 0 1rem;
-}
-
-@media(max-width: 860px) {
     .detalle {
         grid-template-columns: 1fr;
     }
 
-    .paginacion {
-        gap: .5rem;
+    .ficha {
+        position: static;
+    }
+
+    .barra-sesion {
+        margin-left: 0;
+    }
+
+    .buscador-barra {
+        order: 3;
+        max-width: none;
+        flex-basis: 100%;
+    }
+
+    .rejilla-tiendas {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 560px) {
+    .tienda-logo {
+        width: 110px;
+        height: 110px;
+    }
+
+    .tarjeta-tienda {
+        flex-wrap: wrap;
+    }
+
+    .rejilla-productos {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     }
 }
 </style>

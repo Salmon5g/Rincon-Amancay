@@ -51,10 +51,14 @@ export interface FichaComprador {
     descripcion: string;
     tipoEmprendimientoId?: string;
     sectorId?: string;
+    categoriaId?: string;
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;
+    logo?: string;
     imagenes?: string[];
     tieneVariantes?: boolean;
+    unidadVenta?: string;
+    modalidad?: string;
     estadoDisponibilidad?: string;
     precioBase?: number | null;
     precio?: number | null;

@@ -2,7 +2,7 @@ import { collection, documentId, getDocs, limit, orderBy, query, startAfter, whe
 import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
-import type { CatalogoPublicoRepository, PaginaRepositorio } from '~/repositories/catalogo-publico'
+import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
 import type { ContactoPublico, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
@@ -173,6 +173,25 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
         )
         const resultado = await getDocs(consulta)
         return resultado.docs.map(mapearVariante)
+      })
+    },
+
+    async listarCatalogosPublicos() {
+      return ejecutarConErrorNormalizado(async () => {
+        const leerNombres = async (coleccion: string): Promise<ElementoEtiqueta[]> => {
+          const consulta = query(collection(db, coleccion), where('activo', '==', true), orderBy(documentId()), limit(200))
+          const resultado = await getDocs(consulta)
+          return resultado.docs
+            .map((documento) => ({ id: documento.id, nombre: texto(documento.data().nombre, documento.id) }))
+            .filter((elemento) => elemento.nombre.trim() !== '')
+        }
+        const [sectores, tiposEmprendimiento, categorias] = await Promise.all([
+          leerNombres('sectores'),
+          leerNombres('tiposEmprendimiento'),
+          leerNombres('categorias'),
+        ])
+        const catalogos: CatalogosPublicos = { sectores, tiposEmprendimiento, categorias }
+        return catalogos
       })
     },
 

@@ -141,7 +141,7 @@ onBeforeUnmount(() => desconectar?.())
     <p v-if="!listo" class="acceso-nota" aria-live="polite">&nbsp;</p>
 
     <button v-else-if="!sesion" class="acceso-abrir" type="button" @click="abrir('ingreso')">
-      Ingresar o crear cuenta
+      Iniciar sesión
     </button>
 
     <div v-else class="acceso-sesion">
@@ -251,59 +251,59 @@ onBeforeUnmount(() => desconectar?.())
 
 <style scoped>
 .acceso { margin-top: 0.7rem; font-family: inherit; }
-.acceso-nota { margin: 0; font-size: 0.78rem; color: var(--suave, #89727d); overflow-wrap: anywhere; }
-.acceso-nombre { margin: 0; font-weight: 700; font-size: 0.9rem; color: var(--tinta, #3a1228); overflow-wrap: anywhere; }
-.acceso-sesion { padding: 0.7rem; background: var(--crema, #fff8ef); border-radius: 16px; }
+.acceso-nota { margin: 0; font-size: 0.78rem; color: var(--amancay-tinta-suave, #7c6a6e); overflow-wrap: anywhere; }
+.acceso-nombre { margin: 0; font-weight: 700; font-size: 0.9rem; color: var(--amancay-tinta, #2e1b20); overflow-wrap: anywhere; }
+.acceso-sesion { padding: 0.7rem; background: var(--amancay-superficie, #fffbf2); border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 16px; }
 .acceso-acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
 
 .acceso button { font-family: inherit; cursor: pointer; }
 .acceso button:disabled { opacity: 0.6; cursor: not-allowed; }
-.acceso button:focus-visible, .acceso input:focus-visible { outline: 3px solid var(--ambar, #f6c15b); outline-offset: 2px; }
+.acceso button:focus-visible, .acceso input:focus-visible { outline: 3px solid var(--amancay-mostaza, #f2b73b); outline-offset: 2px; }
 
 .acceso-abrir, .acceso-primario {
-  width: 100%; border: none; border-radius: 14px; padding: 0.8rem 1rem;
-  background: var(--vino, #75264f); color: #fff; font-size: 0.92rem; font-weight: 600;
+  width: 100%; border: none; border-radius: 999px; padding: 0.8rem 1rem;
+  background: var(--amancay-bordo, #6b1e3d); color: #fff; font-size: 0.92rem; font-weight: 600;
 }
-.acceso-abrir:hover, .acceso-primario:hover:not(:disabled) { background: var(--vino-oscuro, #5a1c3c); }
+.acceso-abrir:hover, .acceso-primario:hover:not(:disabled) { background: var(--amancay-bordo-oscuro, #4e142c); }
 .acceso-secundario {
-  border: 1px solid var(--borde, #ead9cc); border-radius: 12px; padding: 0.45rem 0.8rem;
-  background: #fff; color: var(--vino, #75264f); font-size: 0.8rem; font-weight: 600;
+  border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 999px; padding: 0.45rem 0.8rem;
+  background: #fff; color: var(--amancay-bordo, #6b1e3d); font-size: 0.8rem; font-weight: 600;
 }
 
 .acceso-dialogo {
   border: none; padding: 0; border-radius: 20px; width: min(420px, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem); overflow: auto; color: var(--tinta, #3a1228);
-  background: var(--crema, #fff8ef); box-shadow: 0 20px 60px rgba(58, 18, 40, 0.25);
+  max-height: calc(100vh - 2rem); overflow: auto; color: var(--amancay-tinta, #2e1b20);
+  background: var(--amancay-superficie, #fffbf2); box-shadow: 0 20px 60px rgba(46, 27, 32, 0.25);
 }
-.acceso-dialogo::backdrop { background: rgba(58, 18, 40, 0.45); }
+.acceso-dialogo::backdrop { background: rgba(46, 27, 32, 0.45); }
 .acceso-caja { position: relative; padding: 1.5rem 1.4rem 1.3rem; }
 .acceso-cerrar {
   position: absolute; top: 0.7rem; right: 0.7rem; width: 2.2rem; height: 2.2rem;
-  border: none; border-radius: 50%; background: var(--rosado, #f7e9e8); color: var(--vino, #75264f);
+  border: none; border-radius: 50%; background: var(--amancay-bordo-suave, #f3dee3); color: var(--amancay-bordo, #6b1e3d);
 }
-h2 { margin: 0 2rem 0.3rem 0; font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; font-size: 1.5rem; color: var(--vino, #75264f); }
-.acceso-bajada { margin: 0 0 1rem; font-size: 0.88rem; line-height: 1.4; color: var(--suave, #89727d); }
+h2 { margin: 0 2rem 0.3rem 0; font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; font-size: 1.5rem; color: var(--amancay-bordo, #6b1e3d); }
+.acceso-bajada { margin: 0 0 1rem; font-size: 0.88rem; line-height: 1.4; color: var(--amancay-tinta-suave, #7c6a6e); }
 
 label { display: block; margin: 0.8rem 0 0.25rem; font-size: 0.82rem; font-weight: 600; }
 input {
   width: 100%; box-sizing: border-box; padding: 0.7rem 0.85rem; font: inherit; font-size: 0.95rem;
-  border: 1px solid var(--borde, #ead9cc); border-radius: 12px; background: #fff; color: inherit;
+  border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 12px; background: #fff; color: inherit;
 }
 .acceso-primario { margin-top: 1.1rem; }
 
 .acceso-google {
   display: flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%;
-  padding: 0.75rem 1rem; border: 1px solid var(--borde, #ead9cc); border-radius: 14px;
-  background: #fff; color: var(--tinta, #3a1228); font-size: 0.92rem; font-weight: 600;
+  padding: 0.75rem 1rem; border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 999px;
+  background: #fff; color: var(--amancay-tinta, #2e1b20); font-size: 0.92rem; font-weight: 600;
 }
-.acceso-google:hover:not(:disabled) { background: var(--rosado, #f7e9e8); }
-.acceso-separador { display: flex; align-items: center; gap: 0.7rem; margin: 1rem 0 0.2rem; font-size: 0.78rem; color: var(--suave, #89727d); }
-.acceso-separador::before, .acceso-separador::after { content: ''; flex: 1; height: 1px; background: var(--borde, #ead9cc); }
+.acceso-google:hover:not(:disabled) { background: var(--amancay-bordo-suave, #f3dee3); }
+.acceso-separador { display: flex; align-items: center; gap: 0.7rem; margin: 1rem 0 0.2rem; font-size: 0.78rem; color: var(--amancay-tinta-suave, #7c6a6e); }
+.acceso-separador::before, .acceso-separador::after { content: ''; flex: 1; height: 1px; background: var(--amancay-borde, #e7d5be); }
 
 .acceso-error { margin: 0.8rem 0 0; padding: 0.6rem 0.8rem; font-size: 0.84rem; border-radius: 10px; background: #fde8e8; color: #8a1c1c; }
-.acceso-aviso { margin: 0.8rem 0 0; padding: 0.6rem 0.8rem; font-size: 0.84rem; border-radius: 10px; background: #e8f3e1; color: #2f6b2e; }
+.acceso-aviso { margin: 0.8rem 0 0; padding: 0.6rem 0.8rem; font-size: 0.84rem; border-radius: 10px; background: var(--amancay-verde-fondo, #ddebd3); color: var(--amancay-verde-texto, #2f6b2e); }
 .acceso-enlaces { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; margin: 1rem 0 0; }
-.acceso-enlaces button { border: none; background: none; padding: 0.3rem 0; color: var(--vino, #75264f); font-size: 0.85rem; font-weight: 600; text-decoration: underline; }
+.acceso-enlaces button { border: none; background: none; padding: 0.3rem 0; color: var(--amancay-bordo, #6b1e3d); font-size: 0.85rem; font-weight: 600; text-decoration: underline; }
 
 @media (prefers-reduced-motion: no-preference) {
   .acceso-abrir, .acceso-primario, .acceso-google { transition: background 0.15s; }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue'
-const props = withDefaults(defineProps<{ ruta?: string; alt: string; ajuste?: 'cover' | 'contain' }>(), { ajuste: 'contain' })
+const props = withDefaults(defineProps<{ ruta?: string; alt: string; ajuste?: 'cover' | 'contain'; zoom?: boolean }>(), { ajuste: 'contain', zoom: true })
 const { $catalogoPublico } = useNuxtApp()
 const url = ref('')
 const estado = ref('Sin imagen')
@@ -14,7 +14,7 @@ function liberarUrlTemporal() {
   urlTemporal = ''
 }
 function abrirAmpliada(evento?: MouseEvent) {
-  if (!url.value) return
+  if (!props.zoom || !url.value) return
   evento?.stopPropagation()
   escala.value = 1
   mostrarAmpliada.value = true
@@ -66,8 +66,8 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="imagen-publica"
-    :class="{ 'ajuste-contain': props.ajuste === 'contain', 'ajuste-cover': props.ajuste === 'cover', 'imagen-ampliable': url }"
-    :title="url ? 'Toca para ampliar la imagen' : undefined"
+    :class="{ 'ajuste-contain': props.ajuste === 'contain', 'ajuste-cover': props.ajuste === 'cover', 'imagen-ampliable': url && props.zoom }"
+    :title="url && props.zoom ? 'Toca para ampliar la imagen' : undefined"
     @click="abrirAmpliada"
   >
     <img v-if="url" :src="url" :alt="alt" @error="imagenFallida" />

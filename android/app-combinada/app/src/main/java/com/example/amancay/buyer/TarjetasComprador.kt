@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -101,7 +102,7 @@ fun TarjetaProductoComprador(
                     producto = producto,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(132.dp)
+                        .aspectRatio(4f / 3f)
                 )
                 BadgeProducto(
                     estado = producto.estadoDisponibilidad,
@@ -158,14 +159,14 @@ private fun FotoProductoCatalogo(
             AsyncImage(
                 model = url,
                 contentDescription = producto.nombre,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
             Image(
                 painter = painterResource(Fig.VASE_THUMB),
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -247,10 +248,10 @@ fun DialogoDetalleProducto(
                     AsyncImage(
                         model = producto.imagenUrl,
                         contentDescription = producto.nombre,
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp)
+                            .aspectRatio(4f / 3f)
                             .clip(RoundedCornerShape(16.dp))
                             .background(AmancayNaranjaFondo)
                     )
