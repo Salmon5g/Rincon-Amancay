@@ -109,13 +109,13 @@ img { width: 100%; height: 100%; object-fit: contain; }
 span { display: grid; text-align: center; gap: .6rem; font-size: 2rem; color: #89727d; }
 small { font-size: .8rem; }
 .visor-imagen { position: fixed; z-index: 10000; inset: 0; display: grid; grid-template-rows: 1fr auto auto; justify-items: center; align-items: center; gap: 1rem; padding: 4rem 1.25rem 1.25rem; background: rgb(25 13 20 / 94%); color: white; touch-action: manipulation; }
-.visor-contenido { width: min(100%, 1100px); height: min(75vh, 900px); display: grid; place-items: center; overflow: auto; }
-.visor-contenido img { display: block; width: 100%; height: 100%; object-fit: contain; transition: transform .16s ease; }
+.visor-contenido { width: min(100%, 1100px); height: min(75vh, 900px); min-width: 0; min-height: 0; display: grid; place-items: center; overflow: auto; }
+.visor-contenido img { display: block; width: auto; height: auto; max-width: 100%; max-height: 75vh; object-fit: contain; transition: transform .16s ease; }
 .visor-cerrar { position: absolute; top: max(1rem, env(safe-area-inset-top)); right: 1rem; width: 3rem; height: 3rem; border: 1px solid rgb(255 255 255 / 45%); border-radius: 50%; color: white; background: #75264f; font: inherit; font-size: 2rem; line-height: 1; cursor: pointer; }
 .visor-controles { display: flex; align-items: center; justify-content: center; gap: .75rem; padding: .5rem .75rem; border: 1px solid rgb(255 255 255 / 30%); border-radius: 999px; background: #fff8ef; color: #3a1228; }
 .visor-controles button { min-width: 2.5rem; min-height: 2.5rem; border: 1px solid #ead5c6; border-radius: 999px; color: #75264f; background: white; font: inherit; font-size: 1.25rem; cursor: pointer; }
 .visor-controles button:last-child { padding-inline: .9rem; font-size: .95rem; }
 .visor-controles button:disabled { opacity: .45; cursor: default; }
 .visor-ayuda { margin: 0; color: #fff8ef; font-size: .9rem; text-align: center; }
-@media (max-width: 600px) { .visor-imagen { padding-inline: .75rem; } .visor-contenido { height: 70vh; } }
+@media (max-width: 600px) { .visor-imagen { padding-inline: .75rem; } .visor-contenido { height: 70vh; } .visor-contenido img { max-height: 70vh; } }
 </style>
