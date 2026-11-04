@@ -32,6 +32,7 @@ import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -458,7 +459,10 @@ fun CameraScreen(
     var capturando by remember { mutableStateOf(false) }
     var proveedor by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     val imageCapture = remember {
-        ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .build()
     }
 
     LaunchedEffect(Unit) {
@@ -500,8 +504,8 @@ fun CameraScreen(
                 AndroidView(
                     factory = { c ->
                         PreviewView(c).also { pv ->
-                            pv.scaleType = PreviewView.ScaleType.FILL_CENTER
-                            val preview = Preview.Builder().build()
+                            pv.scaleType = PreviewView.ScaleType.FIT_CENTER
+                            val preview = Preview.Builder().setTargetAspectRatio(AspectRatio.RATIO_4_3).build()
                             preview.setSurfaceProvider(ContextCompat.getMainExecutor(c), pv.surfaceProvider)
                             try {
                                 val futuro = ProcessCameraProvider.getInstance(c)
