@@ -47,6 +47,7 @@ async function irSeccion(id: string) {
         <span class="mi" aria-hidden="true">🛡️</span>
         Administración
       </NuxtLink>
+      <NuxtLink class="menu-enlace" to="/emprendedora"><span class="mi" aria-hidden="true">&#x1F9D1;</span> Iniciar sesi&#xF3;n emprendedora</NuxtLink>
     </nav>
     <div class="lateral-frase">
       <svg class="lateral-montanas" viewBox="0 0 240 70" aria-hidden="true" preserveAspectRatio="none">

@@ -1241,6 +1241,7 @@ async function guardarEdicionCuentaEmprendedora() {
         <NuxtLink class="menu-enlace" to="/comprador" @click="protegerSalidaAlta">
           <span class="mi" aria-hidden="true">🛍️</span> Modo comprador
         </NuxtLink>
+        <NuxtLink class="menu-enlace" to="/emprendedora" @click="protegerSalidaAlta"><span class="mi" aria-hidden="true">👩‍🎨</span> Iniciar sesión emprendedora</NuxtLink>
         <p class="menu-titulo">Gestión</p>
         <button
           v-for="s in secciones"
