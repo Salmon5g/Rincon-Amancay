@@ -1,4 +1,4 @@
-import { collection, doc, getDocFromServer, getDocsFromServer } from 'firebase/firestore'
+import { collection, doc, getDocFromServer, getDocsFromServer, query, where } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 
 export type ProductoEmprendedoraWeb = {
@@ -10,13 +10,14 @@ export type ProductoEmprendedoraWeb = {
   stock: number | null
   manejaStock: boolean
   modalidad: string
+  imagenPublica?: string
 }
 
 export type CuentaEmprendedoraWeb = {
   uid: string
   correo: string
   nombreMostrar: string
-  tienda: { id: string; nombre: string; descripcion: string; estadoPublicacion: string }
+  tienda: { id: string; nombre: string; descripcion: string; estadoPublicacion: string; tieneLogo: boolean; contactoVisible: boolean }
   productos: ProductoEmprendedoraWeb[]
 }
 
@@ -56,7 +57,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   const tienda = tiendaDoc.data()
   if (tienda.propietarioUid !== uid) throw new Error('La tienda asignada no pertenece a esta cuenta.')
 
-  const productos = productosDocs.docs
+  const baseProductos = productosDocs.docs
     .map((productoDoc): ProductoEmprendedoraWeb | null => {
       const datos = productoDoc.data()
       const original = texto(datos.estadoPublicacion, 'borrador')
@@ -74,6 +75,27 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       }
     })
     .filter((producto): producto is ProductoEmprendedoraWeb => producto !== null)
+
+  const imagenesPublicas = new Map<string, string>()
+  if (tienda.estadoPublicacion === 'publicado') {
+    try {
+      const publicos = await getDocsFromServer(query(
+        collection(db, 'tiendasPublicas', tiendaId, 'productos'),
+        where('estadoPublicacion', '==', 'publicado'),
+      ))
+      for (const productoDoc of publicos.docs) {
+        const datos = productoDoc.data()
+        const rutas = Array.isArray(datos.miniaturas) ? datos.miniaturas : datos.imagenes
+        if (Array.isArray(rutas)) {
+          const primera = rutas.find((ruta): ruta is string => typeof ruta === 'string' && ruta.trim() !== '')
+          if (primera) imagenesPublicas.set(productoDoc.id, primera)
+        }
+      }
+    } catch {}
+  }
+
+  const productos = baseProductos
+    .map((producto) => ({ ...producto, ...(imagenesPublicas.has(producto.id) ? { imagenPublica: imagenesPublicas.get(producto.id) } : {}) }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 
   const datosUsuario = usuarioDoc.exists() ? usuarioDoc.data() : {}
@@ -86,6 +108,8 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       nombre: texto(tienda.nombre),
       descripcion: texto(tienda.descripcion),
       estadoPublicacion: texto(tienda.estadoPublicacion, 'borrador'),
+      tieneLogo: typeof tienda.logo === 'string' && tienda.logo.trim() !== '',
+      contactoVisible: tienda.mostrarContacto === true && typeof (tienda.contacto as Record<string, unknown> | undefined)?.valor === 'string' && (tienda.contacto as Record<string, unknown>).valor!.toString().trim() !== '',
     },
     productos,
   }

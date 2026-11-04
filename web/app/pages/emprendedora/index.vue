@@ -4,7 +4,7 @@ import { sendPasswordResetEmail } from 'firebase/auth'
 import { cargarCuentaEmprendedora, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
 
 type Seccion = 'inicio' | 'productos' | 'agregar' | 'mas'
-type Filtro = 'todos' | 'publicado' | 'borrador'
+type Filtro = 'todos' | 'publicado' | 'borrador' | 'archivado'
 
 useHead({
   title: 'Mi espacio emprendedora — Rincón Amancay',
@@ -26,6 +26,8 @@ const enviando = ref(false)
 const enviandoRecuperacion = ref(false)
 const correo = ref('')
 const contrasena = ref('')
+const mostrarContrasena = ref(false)
+const enviandoCambioContrasena = ref(false)
 const error = ref('')
 const aviso = ref('')
 const seccion = ref<Seccion>('inicio')
@@ -34,6 +36,16 @@ const fecha = ref('')
 
 const publicados = computed(() => cuenta.value?.productos.filter((producto) => producto.estado === 'publicado').length ?? 0)
 const borradores = computed(() => cuenta.value?.productos.filter((producto) => producto.estado === 'borrador').length ?? 0)
+const retirados = computed(() => cuenta.value?.productos.filter((producto) => producto.estado === 'archivado').length ?? 0)
+const progresoTienda = computed(() => {
+  const tienda = cuenta.value?.tienda
+  return [
+    { titulo: 'Nombre listo', detalle: 'Ponle un nombre a tu emprendimiento.', completo: Boolean(tienda?.nombre.trim()) },
+    { titulo: 'Descripción agregada', detalle: 'Cuenta qué haces y qué te inspira.', completo: Boolean(tienda?.descripcion.trim()) },
+    { titulo: 'Contacto visible', detalle: 'Activa un medio para que te encuentren.', completo: tienda?.contactoVisible === true },
+    { titulo: 'Logo cargado', detalle: 'Agrega una imagen para destacar tu tienda.', completo: tienda?.tieneLogo === true },
+  ]
+})
 const productosFiltrados = computed(() => {
   const productos = cuenta.value?.productos ?? []
   return filtro.value === 'todos' ? productos : productos.filter((producto) => producto.estado === filtro.value)
@@ -112,6 +124,23 @@ async function recuperarContrasena() {
     error.value = codigo.includes('invalid-email') ? 'Ingresa un correo electrónico válido.' : 'No se pudo enviar el enlace. Revisa el correo e inténtalo nuevamente.'
   } finally {
     enviandoRecuperacion.value = false
+  }
+}
+
+async function cambiarContrasena() {
+  if (!cuenta.value) return
+  error.value = ''
+  aviso.value = ''
+  enviandoCambioContrasena.value = true
+  try {
+    const servicio = cliente()
+    servicio.firebase.auth.languageCode = 'es'
+    await sendPasswordResetEmail(servicio.firebase.auth, cuenta.value.correo)
+    aviso.value = 'Si existe una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña.'
+  } catch {
+    error.value = 'No se pudo enviar el enlace. Revisa el correo e inténtalo nuevamente.'
+  } finally {
+    enviandoCambioContrasena.value = false
   }
 }
 
@@ -210,7 +239,10 @@ onMounted(async () => {
             <label for="correo-emprendedora">Correo electrónico</label>
             <input id="correo-emprendedora" v-model="correo" type="email" autocomplete="username" placeholder="tu@correo.cl" required :disabled="enviando || enviandoRecuperacion" />
             <label for="clave-emprendedora">Contraseña</label>
-            <input id="clave-emprendedora" v-model="contrasena" type="password" autocomplete="current-password" placeholder="Tu contraseña" required :disabled="enviando || enviandoRecuperacion" />
+            <div class="campo-clave">
+              <input id="clave-emprendedora" v-model="contrasena" :type="mostrarContrasena ? 'text' : 'password'" autocomplete="current-password" placeholder="Tu contraseña" required :disabled="enviando || enviandoRecuperacion" />
+              <button class="mostrar-clave" type="button" :aria-label="mostrarContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'" :aria-pressed="mostrarContrasena" :disabled="enviando || enviandoRecuperacion" @click="mostrarContrasena = !mostrarContrasena">{{ mostrarContrasena ? '◉' : '◎' }}</button>
+            </div>
             <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
             <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
             <button class="boton-recuperacion" type="button" :disabled="enviando || enviandoRecuperacion" @click="recuperarContrasena">{{ enviandoRecuperacion ? 'Enviando enlace…' : '¿Olvidaste tu contraseña?' }}</button>
@@ -266,10 +298,14 @@ onMounted(async () => {
             <button type="button" :class="{ activo: filtro === 'todos' }" @click="filtro = 'todos'">Todos · {{ cuenta.productos.length }}</button>
             <button type="button" :class="{ activo: filtro === 'publicado' }" @click="filtro = 'publicado'">Publicados · {{ publicados }}</button>
             <button type="button" :class="{ activo: filtro === 'borrador' }" @click="filtro = 'borrador'">Borradores · {{ borradores }}</button>
+            <button type="button" :class="{ activo: filtro === 'archivado' }" @click="filtro = 'archivado'">Retirados · {{ retirados }}</button>
           </div>
           <div v-if="productosFiltrados.length" class="lista-productos">
             <article v-for="producto in productosFiltrados" :key="producto.id" class="tarjeta-producto">
-              <div class="imagen-producto" aria-hidden="true">{{ producto.nombre.trim().charAt(0).toUpperCase() || '✿' }}</div>
+              <div class="imagen-producto">
+                <ImagenPublica v-if="producto.imagenPublica" :ruta="producto.imagenPublica" :alt="producto.nombre" ajuste="contain" :zoom="false" />
+                <span v-else aria-hidden="true">{{ producto.nombre.trim().charAt(0).toUpperCase() || '✿' }}</span>
+              </div>
               <div class="datos-producto"><strong>{{ producto.nombre || 'Producto sin nombre' }}</strong><p>{{ producto.descripcion || 'Sin descripción' }}</p>
                 <div class="metadatos-producto"><span>{{ precioBonito(producto.precioBase) }}</span><span>·</span><span>{{ stockBonito(producto) }}</span></div>
               </div>
@@ -283,7 +319,7 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="seccion === 'agregar'">
-          <section class="tarjeta-agregar"><div class="icono-agregar" aria-hidden="true">✿</div><span class="sobre-titulo">NUEVA CREACIÓN</span>
+          <section class="tarjeta-agregar"><div class="icono-agregar"><img src="/logo-amancay.png" alt="" /></div><span class="sobre-titulo">NUEVA CREACIÓN</span>
             <h2>Tu próximo producto empieza con una idea.</h2>
             <p>En la app emprendedora puedes agregar fotos, completar los detalles y preparar variantes antes de publicar.</p>
             <div class="pasos-agregar">
@@ -297,10 +333,35 @@ onMounted(async () => {
         </template>
 
         <template v-else>
-          <section class="tarjeta-tienda tarjeta-cuenta"><span class="sobre-titulo">MI CUENTA</span><h2>{{ cuenta.nombreMostrar || cuenta.correo }}</h2><p>{{ cuenta.correo }}</p>
-            <div class="separador-tienda"></div><span class="sobre-titulo">MI TIENDA</span><h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2><p>{{ cuenta.tienda.descripcion || 'Aún no hay una descripción para mostrar.' }}</p>
-            <div class="estado-cuenta"><span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Visible para compradores' : 'Aún no aparece en el catálogo comprador' }}</span></div>
-            <button class="boton-secundario" type="button" @click="cerrarSesion">Cerrar sesión</button>
+          <section class="tarjeta-tienda tarjeta-cuenta">
+            <div class="cuenta-cabecera">
+              <div><span class="sobre-titulo">MI CUENTA</span><h2>{{ cuenta.nombreMostrar || cuenta.correo }}</h2><p>{{ cuenta.correo }}</p></div>
+              <button class="boton-secundario boton-restablecer" type="button" :disabled="enviandoCambioContrasena" @click="cambiarContrasena">
+                <span aria-hidden="true">⌑</span>{{ enviandoCambioContrasena ? 'Enviando enlace…' : 'Cambiar contraseña' }}
+              </button>
+            </div>
+            <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
+            <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
+            <div class="separador-tienda"></div>
+            <div class="cuenta-panel">
+              <div class="cuenta-ficha">
+                <span class="sobre-titulo">MI TIENDA</span>
+                <h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2>
+                <p>{{ cuenta.tienda.descripcion || 'Aún no hay una descripción para mostrar.' }}</p>
+                <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Visible para compradores' : 'Aún no aparece en el catálogo comprador' }}</span>
+              </div>
+              <section class="cuenta-completitud" aria-label="Completa tu tienda">
+                <span class="sobre-titulo">COMPLETA TU TIENDA</span>
+                <p>Sigue estos pasos para que quienes visiten tu tienda conozcan tu trabajo.</p>
+                <ul class="lista-completitud">
+                  <li v-for="paso in progresoTienda" :key="paso.titulo" :class="{ completado: paso.completo }">
+                    <span class="check-completitud" aria-hidden="true">{{ paso.completo ? '✓' : '' }}</span>
+                    <span><strong>{{ paso.titulo }}</strong><small v-if="!paso.completo">{{ paso.detalle }}</small></span>
+                  </li>
+                </ul>
+              </section>
+            </div>
+            <div class="cuenta-acciones"><button class="boton-secundario" type="button" @click="cerrarSesion">Cerrar sesión</button></div>
           </section>
         </template>
       </section>
@@ -322,7 +383,7 @@ onMounted(async () => {
 .icono-menu{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:var(--crema);color:var(--vino);font-size:18px;line-height:1}.seleccionada .icono-menu{background:#fff}.contador-menu{display:grid;place-items:center;width:21px;height:21px;margin-left:auto;border-radius:50%;background:var(--vino);color:#fff;font-size:10px}
 .perfil-lateral{display:flex;align-items:center;gap:9px;margin-top:auto;padding:12px 8px;border-top:1px solid var(--borde)}.avatar{display:grid;place-items:center;flex:0 0 36px;height:36px;border-radius:50%;background:var(--rosa);color:var(--vino);font-weight:700}.datos-perfil{display:grid;gap:3px;min-width:0;flex:1}.datos-perfil strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.datos-perfil small{color:var(--suave);font-size:9px}.salir-lateral{border:0;background:transparent;color:var(--suave);font-size:18px;cursor:pointer}
 .ayuda-lateral{margin-top:auto;padding:15px;border-radius:17px;background:var(--crema);color:var(--suave);text-align:center}.ayuda-lateral span{color:var(--vino);font-size:22px}.ayuda-lateral p{margin:5px 0 0;font-size:10px;line-height:1.6}
-.principal{min-width:0;min-height:100vh}.barra-superior{height:68px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 clamp(20px,5vw,64px);background:rgba(255,255,255,.78);border-bottom:1px solid var(--borde);color:var(--suave);font-size:9px;font-weight:700;letter-spacing:.08em}.punto-marca{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--vino)}.separador{padding:0 8px;color:#c0aeb8}.volver-catalogo{color:var(--vino);font-size:10px;text-decoration:none;letter-spacing:0}.volver-catalogo:hover{text-decoration:underline}
+.principal{min-width:0;min-height:100vh}.barra-superior{height:68px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 clamp(20px,5vw,64px);background:rgba(255,255,255,.78);border-bottom:1px solid var(--borde);color:var(--suave);font-size:9px;font-weight:700;letter-spacing:.08em}.punto-marca{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--vino)}.separador{padding:0 8px;color:#c0aeb8}.volver-catalogo{display:inline-flex;align-items:center;gap:8px;padding:10px 15px;border:1.5px solid var(--vino);border-radius:12px;background:var(--rosa);box-shadow:0 2px 8px rgba(74,14,46,.1);color:var(--vino);font-size:13px;font-weight:700;text-decoration:none;letter-spacing:0;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}.volver-catalogo span{font-size:16px;line-height:1}.volver-catalogo:hover{background:var(--vino);color:#fff;box-shadow:0 4px 12px rgba(74,14,46,.18)}
 .vista-ingreso{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,420px);align-items:center;gap:clamp(28px,6vw,80px);width:min(1080px,calc(100% - 56px));min-height:calc(100vh - 68px);margin:auto;padding:40px 0}
 .presentacion-ingreso{position:relative;max-width:500px}.sobre-titulo{display:inline-block;color:var(--vino);font-size:9px;line-height:1.5;letter-spacing:.13em;font-weight:700}.presentacion-ingreso h1{margin:13px 0;color:var(--texto);font:400 clamp(48px,6vw,72px)/.98 'DM Serif Display',Georgia,serif;letter-spacing:-.03em}.presentacion-ingreso h1 em{color:var(--vino);font-style:normal}.presentacion-ingreso>p{max-width:420px;margin:0;color:var(--suave);font-size:14px;line-height:1.8}
 .detalle-ingreso{display:flex;align-items:center;gap:10px;margin-top:26px;color:var(--vino);font-size:11px;font-weight:600}.detalle-icono{display:grid;place-items:center;width:32px;height:32px;border-radius:11px;background:var(--rosa);font-size:17px}.flor-decorativa{position:absolute;right:12px;bottom:-65px;color:#f1dcd9;font-size:145px;opacity:.55;pointer-events:none}
@@ -342,7 +403,220 @@ onMounted(async () => {
 .tarjeta-agregar{display:grid;justify-items:center;padding:32px;text-align:center}.icono-agregar{display:grid;place-items:center;width:55px;height:55px;margin-bottom:15px;border-radius:17px;background:var(--rosa);color:var(--vino);font-size:27px}.tarjeta-agregar h2{max-width:570px;margin:8px 0;color:var(--texto);font:400 32px/1.15 'DM Serif Display',Georgia,serif}.tarjeta-agregar>p{max-width:550px;margin:0;color:var(--suave);font-size:11px;line-height:1.7}.pasos-agregar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;width:100%;margin:23px 0;text-align:left}.pasos-agregar>div{display:grid;gap:6px;padding:14px;border:1px solid var(--borde);border-radius:14px;background:#fffdfa}.pasos-agregar span{color:var(--vino);font-size:9px;font-weight:700}.pasos-agregar strong{color:var(--texto);font-size:9px}.pasos-agregar small{color:var(--suave);font-size:8px;line-height:1.5}.nota-web{display:flex;align-items:center;gap:9px;width:100%;max-width:630px;margin-bottom:17px;padding:11px 13px;border-radius:12px;background:var(--crema);text-align:left}.nota-web>span{display:grid;place-items:center;flex:0 0 20px;height:20px;border:1px solid #cdb9c5;border-radius:50%;color:var(--vino);font-size:10px;font-weight:700}.nota-web p{margin:0;color:var(--suave);font-size:9px;line-height:1.6}
 .tarjeta-cuenta{max-width:720px}.tarjeta-cuenta>h2{margin:6px 0;color:var(--texto);font:400 25px 'DM Serif Display',Georgia,serif}.estado-cuenta{margin:16px 0}.boton-secundario{border:1px solid var(--borde);background:white;color:var(--vino)}.navegacion-movil{display:none}button:focus-visible,a:focus-visible{outline:2px solid var(--vino);outline-offset:3px}
 @media(max-width:940px){.envoltura{grid-template-columns:215px minmax(0,1fr)}.barra-lateral{padding-right:13px;padding-left:13px}.vista-ingreso{grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:24px;width:min(100% - 40px,800px)}.presentacion-ingreso h1{font-size:55px}.contenido-panel{width:calc(100% - 40px)}}
-@media(max-width:740px){.envoltura{display:block}.barra-lateral{position:sticky;height:auto;padding:11px 14px 7px;border-right:0;border-bottom:1px solid var(--borde);box-shadow:0 5px 18px rgba(62,31,49,.04)}.marca img{width:38px;height:38px}.marca strong{font-size:19px}.etiqueta-lateral,.perfil-lateral,.ayuda-lateral{display:none}.menu-lateral{display:flex;gap:6px;margin-top:8px;overflow-x:auto}.opcion-menu{width:auto;min-height:37px;flex:0 0 auto;gap:7px;padding:5px 9px;font-size:10px;white-space:nowrap}.icono-menu{width:24px;height:24px;font-size:15px}.principal{min-height:calc(100vh - 94px)}.barra-superior{height:48px;padding:0 15px;font-size:8px}.volver-catalogo{font-size:9px}.vista-ingreso{grid-template-columns:1fr;gap:14px;width:min(100% - 30px,500px);min-height:auto;padding:24px 0 45px}.presentacion-ingreso{padding:6px 2px 0}.presentacion-ingreso h1{margin:8px 0;font-size:44px}.presentacion-ingreso>p{max-width:420px;font-size:11px;line-height:1.65}.detalle-ingreso{margin-top:11px;font-size:9px}.detalle-icono{width:27px;height:27px}.flor-decorativa{right:8px;bottom:-30px;font-size:85px}.tarjeta-ingreso{padding:21px;border-radius:20px}.logo-ingreso{display:none}.tarjeta-ingreso h2{font-size:26px}.formulario-ingreso{margin-top:15px}.contenido-panel{width:calc(100% - 30px);padding:23px 0 98px}.cabecera-panel{align-items:flex-start;flex-direction:column;gap:6px;margin-bottom:16px}.cabecera-panel h1{font-size:34px}.fecha-hoy{order:-1}.tarjeta-accion{align-items:flex-start;flex-direction:column;min-height:195px;gap:15px;padding:21px}.tarjeta-accion h2{font-size:27px}.boton-blanco{min-height:41px}.flor-tarjeta{right:-12px;top:5px;font-size:145px}.tarjeta-tienda{padding:17px}.cabecera-tienda{align-items:flex-start;flex-direction:column;gap:9px}.cabecera-tienda h2,.encabezado-seccion h2{font-size:21px}.progreso-cabecera{align-items:flex-start;flex-direction:column;gap:4px}.encabezado-seccion{align-items:flex-start}.tarjeta-producto{align-items:flex-start;flex-wrap:wrap;gap:10px}.imagen-producto{flex-basis:56px;height:56px;font-size:24px}.datos-producto{flex-basis:calc(100% - 70px);align-self:center}.estado-producto{margin-left:66px;margin-top:-2px}.tarjeta-agregar{padding:23px 16px}.tarjeta-agregar h2{font-size:27px}.pasos-agregar{grid-template-columns:1fr;margin:17px 0}.pasos-agregar>div{grid-template-columns:28px 1fr;align-items:center}.pasos-agregar small{grid-column:2;margin-top:-4px}.navegacion-movil{position:fixed;z-index:5;right:0;bottom:0;left:0;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 6px calc(7px + env(safe-area-inset-bottom));border-top:1px solid var(--borde);background:rgba(255,255,255,.97);box-shadow:0 -5px 25px rgba(62,31,49,.06)}.navegacion-movil button{display:grid;justify-items:center;gap:3px;padding:2px;border:0;background:transparent;color:var(--suave);font:inherit;cursor:pointer}.navegacion-movil button>span{display:grid;place-items:center;width:30px;height:24px;border-radius:8px;font-size:18px}.navegacion-movil button.seleccionada{color:var(--vino);font-weight:700}.navegacion-movil button.seleccionada>span{background:var(--rosa)}.navegacion-movil small{font-size:8px}}
-@media(max-width:400px){.barra-superior{padding:0 10px;letter-spacing:.03em}.volver-catalogo{font-size:8px}.vista-ingreso,.contenido-panel{width:calc(100% - 22px)}.presentacion-ingreso h1{font-size:40px}.tarjeta-ingreso{padding:18px}}
+@media(max-width:740px){.envoltura{display:block}.barra-lateral{position:sticky;height:auto;padding:11px 14px 7px;border-right:0;border-bottom:1px solid var(--borde);box-shadow:0 5px 18px rgba(62,31,49,.04)}.marca img{width:38px;height:38px}.marca strong{font-size:19px}.etiqueta-lateral,.perfil-lateral,.ayuda-lateral{display:none}.menu-lateral{display:flex;gap:6px;margin-top:8px;overflow-x:auto}.opcion-menu{width:auto;min-height:37px;flex:0 0 auto;gap:7px;padding:5px 9px;font-size:10px;white-space:nowrap}.icono-menu{width:24px;height:24px;font-size:15px}.principal{min-height:calc(100vh - 94px)}.barra-superior{height:48px;padding:0 15px;font-size:8px}.volver-catalogo{padding:7px 10px;font-size:11px;gap:6px}.vista-ingreso{grid-template-columns:1fr;gap:14px;width:min(100% - 30px,500px);min-height:auto;padding:24px 0 45px}.presentacion-ingreso{padding:6px 2px 0}.presentacion-ingreso h1{margin:8px 0;font-size:44px}.presentacion-ingreso>p{max-width:420px;font-size:11px;line-height:1.65}.detalle-ingreso{margin-top:11px;font-size:9px}.detalle-icono{width:27px;height:27px}.flor-decorativa{right:8px;bottom:-30px;font-size:85px}.tarjeta-ingreso{padding:21px;border-radius:20px}.logo-ingreso{display:none}.tarjeta-ingreso h2{font-size:26px}.formulario-ingreso{margin-top:15px}.contenido-panel{width:calc(100% - 30px);padding:23px 0 98px}.cabecera-panel{align-items:flex-start;flex-direction:column;gap:6px;margin-bottom:16px}.cabecera-panel h1{font-size:34px}.fecha-hoy{order:-1}.tarjeta-accion{align-items:flex-start;flex-direction:column;min-height:195px;gap:15px;padding:21px}.tarjeta-accion h2{font-size:27px}.boton-blanco{min-height:41px}.flor-tarjeta{right:-12px;top:5px;font-size:145px}.tarjeta-tienda{padding:17px}.cabecera-tienda{align-items:flex-start;flex-direction:column;gap:9px}.cabecera-tienda h2,.encabezado-seccion h2{font-size:21px}.progreso-cabecera{align-items:flex-start;flex-direction:column;gap:4px}.encabezado-seccion{align-items:flex-start}.tarjeta-producto{align-items:flex-start;flex-wrap:wrap;gap:10px}.imagen-producto{flex-basis:56px;height:56px;font-size:24px}.datos-producto{flex-basis:calc(100% - 70px);align-self:center}.estado-producto{margin-left:66px;margin-top:-2px}.tarjeta-agregar{padding:23px 16px}.tarjeta-agregar h2{font-size:27px}.pasos-agregar{grid-template-columns:1fr;margin:17px 0}.pasos-agregar>div{grid-template-columns:28px 1fr;align-items:center}.pasos-agregar small{grid-column:2;margin-top:-4px}.navegacion-movil{position:fixed;z-index:5;right:0;bottom:0;left:0;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 6px calc(7px + env(safe-area-inset-bottom));border-top:1px solid var(--borde);background:rgba(255,255,255,.97);box-shadow:0 -5px 25px rgba(62,31,49,.06)}.navegacion-movil button{display:grid;justify-items:center;gap:3px;padding:2px;border:0;background:transparent;color:var(--suave);font:inherit;cursor:pointer}.navegacion-movil button>span{display:grid;place-items:center;width:30px;height:24px;border-radius:8px;font-size:18px}.navegacion-movil button.seleccionada{color:var(--vino);font-weight:700}.navegacion-movil button.seleccionada>span{background:var(--rosa)}.navegacion-movil small{font-size:8px}}
+@media(max-width:400px){.barra-superior{padding:0 10px;gap:6px;letter-spacing:.03em}.volver-catalogo{padding:7px 8px;font-size:10px;gap:5px}.vista-ingreso,.contenido-panel{width:calc(100% - 22px)}.presentacion-ingreso h1{font-size:40px}.tarjeta-ingreso{padding:18px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+.envoltura{background:#fffaf5}
+.barra-lateral{padding:28px 20px 20px}
+.marca img{width:52px;height:52px}
+.marca strong{font-size:25px}
+.etiqueta-lateral{margin:42px 10px 15px;font-size:11px}
+.opcion-menu{min-height:54px;padding:9px 12px;border-radius:16px;font-size:14px}
+.icono-menu{width:38px;height:38px;border-radius:13px;font-size:21px}
+.contador-menu{width:27px;height:27px;font-size:12px}
+.datos-perfil strong{font-size:13px}
+.datos-perfil small{font-size:11px}
+.avatar{flex-basis:42px;height:42px;font-size:16px}
+.barra-superior{height:78px;font-size:10px}
+.vista-ingreso{width:min(1280px,calc(100% - 72px));grid-template-columns:minmax(0,1.15fr) minmax(420px,.95fr);gap:clamp(44px,6vw,110px);min-height:calc(100vh - 78px);padding:52px 0}
+.presentacion-ingreso{max-width:650px}
+.presentacion-ingreso h1{font-size:clamp(64px,7.3vw,100px);line-height:.94}
+.presentacion-ingreso>p{max-width:560px;font-size:18px;line-height:1.75}
+.sobre-titulo{font-size:11px}
+.detalle-ingreso{margin-top:32px;font-size:14px}
+.detalle-icono{width:42px;height:42px;border-radius:14px;font-size:21px}
+.flor-decorativa{right:3%;bottom:-62px;width:clamp(210px,27vw,390px);height:clamp(210px,27vw,390px);font-size:0;color:transparent;background:url('/logo-amancay.png') center/contain no-repeat;opacity:.16;transform:rotate(-8deg)}
+.tarjeta-ingreso{padding:clamp(32px,3.5vw,52px);border-radius:30px;box-shadow:0 24px 72px rgba(62,31,49,.08)}
+.logo-ingreso{width:64px;height:64px;margin-bottom:23px}
+.tarjeta-ingreso h2{margin:10px 0;font-size:clamp(32px,3.3vw,43px)}
+.tarjeta-ingreso>p{font-size:14px}
+.formulario-ingreso{gap:12px;margin-top:25px}
+.formulario-ingreso label{font-size:13px}
+.formulario-ingreso input{height:56px;padding:0 16px;border-radius:15px;font-size:14px}
+.campo-clave{position:relative}
+.campo-clave input{padding-right:54px}
+.mostrar-clave{position:absolute;top:50%;right:13px;display:grid;place-items:center;width:34px;height:34px;transform:translateY(-50%);border:0;border-radius:10px;background:transparent;color:var(--suave);font-size:20px;cursor:pointer}
+.mostrar-clave:hover{background:var(--rosa);color:var(--vino)}
+.boton-recuperacion{font-size:13px}
+.boton-principal,.boton-vino,.boton-secundario{min-height:52px;padding:0 22px;border-radius:15px;font-size:14px}
+.boton-principal{margin-top:7px}
+.enlace-invitacion{margin-top:19px;font-size:12px}
+.contenido-panel{width:min(1240px,calc(100% - 72px));padding:48px 0 68px}
+.cabecera-panel{margin-bottom:28px}
+.cabecera-panel h1{font-size:clamp(42px,4.4vw,62px)}
+.cabecera-panel p{font-size:15px}
+.fecha-hoy{font-size:12px}
+.tarjeta-accion{min-height:220px;margin-bottom:18px;padding:34px 40px;border-radius:28px}
+.tarjeta-accion h2{font-size:clamp(32px,3.4vw,46px)}
+.tarjeta-accion p{font-size:15px}
+.boton-blanco{min-height:56px;padding:0 22px;border-radius:16px;font-size:14px}
+.flor-tarjeta{top:-55px;right:14%;width:270px;height:270px;font-size:0;color:transparent;background:url('/logo-amancay.png') center/contain no-repeat;opacity:.1}
+.tarjeta-resumen{min-height:108px;margin-bottom:18px;padding:18px 24px;border-radius:22px}
+.icono-resumen{flex-basis:68px;height:68px;border-radius:19px;font-size:31px}
+.texto-resumen{gap:7px}
+.texto-resumen strong{font-size:17px}
+.texto-resumen small{font-size:13px}
+.flecha-resumen{font-size:38px}
+.tarjeta-tienda,.tarjeta-agregar,.vacio-productos{border-radius:24px}
+.tarjeta-tienda{padding:28px}
+.cabecera-tienda h2,.encabezado-seccion h2{font-size:32px}
+.estado-tienda{padding:9px 14px;font-size:12px}
+.tarjeta-tienda>p{font-size:14px}
+.separador-tienda{margin:23px 0 19px}
+.progreso-cabecera strong{font-size:15px}
+.progreso-cabecera>span{font-size:12px}
+.pasos-progreso{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}
+.paso-progreso{align-items:flex-start;min-height:95px;padding:16px;border:1px solid var(--borde);border-radius:18px;background:#fffaf5}
+.check-progreso{flex-basis:34px;height:34px;font-size:13px}
+.paso-progreso>span:last-child{gap:6px}
+.paso-progreso strong{font-size:12px}
+.paso-progreso small{font-size:11px;line-height:1.45}
+.encabezado-seccion{margin-bottom:20px}
+.encabezado-seccion h2{font-size:30px}
+.boton-vino.compacto{min-height:46px;padding:0 18px}
+.filtros-productos{gap:10px;margin-bottom:19px}
+.filtros-productos button{min-height:44px;padding:0 17px;font-size:12px}
+.lista-productos{gap:13px}
+.tarjeta-producto{min-height:124px;gap:17px;padding:15px 18px;border-radius:20px}
+.imagen-producto{flex-basis:92px;height:92px;border-radius:17px}
+.datos-producto{gap:7px}
+.datos-producto>strong{font-size:16px}
+.datos-producto p{font-size:12px}
+.metadatos-producto{gap:8px;font-size:12px}
+.estado-producto{padding:9px 13px;font-size:11px}
+:deep(.imagen-publica){width:100%;height:100%;overflow:hidden;border-radius:inherit;background:linear-gradient(140deg,#f8e8e6,#fff4df)}
+:deep(.imagen-publica img){width:100%;height:100%;object-fit:contain}
+:deep(.imagen-publica>span){gap:3px;font-size:24px}
+.tarjeta-agregar{padding:44px}
+.icono-agregar{width:84px;height:84px;margin-bottom:20px;border-radius:24px}
+.icono-agregar img{width:58px;height:58px;object-fit:contain}
+.tarjeta-agregar h2{font-size:clamp(34px,3.7vw,48px)}
+.tarjeta-agregar>p{font-size:15px}
+.pasos-agregar{gap:15px;margin:30px 0}
+.pasos-agregar>div{min-height:180px;gap:12px;padding:22px;border-radius:20px}
+.pasos-agregar span:first-child{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--rosa);font-size:13px}
+.pasos-agregar strong{font-size:14px}
+.pasos-agregar small{font-size:12px}
+.nota-web{max-width:820px;margin-bottom:22px;padding:16px 19px;border-radius:16px}
+.nota-web>span{flex-basis:28px;height:28px;font-size:14px}
+.nota-web p{font-size:13px}
+.tarjeta-cuenta{max-width:none}
+.cuenta-cabecera{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.cuenta-cabecera h2{margin:8px 0 5px;color:var(--texto);font:400 clamp(30px,3vw,42px)/1.1 'DM Serif Display',Georgia,serif}
+.cuenta-cabecera p{margin:0;color:var(--suave);font-size:15px}
+.boton-restablecer{display:inline-flex;align-items:center;gap:10px;background:#fff}
+.boton-restablecer>span{font-size:19px}
+.cuenta-panel{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:34px;align-items:stretch}
+.cuenta-ficha{padding:8px 0}
+.cuenta-ficha h2{margin:10px 0 7px;color:var(--texto);font:400 clamp(30px,3vw,42px)/1.1 'DM Serif Display',Georgia,serif}
+.cuenta-ficha p{margin:0 0 18px;color:var(--suave);font-size:15px;line-height:1.7}
+.cuenta-completitud{padding:8px 0 8px 30px;border-left:1px solid var(--borde)}
+.cuenta-completitud>p{margin:10px 0 18px;color:var(--suave);font-size:14px;line-height:1.6}
+.lista-completitud{display:grid;gap:13px;margin:0;padding:0;list-style:none}
+.lista-completitud li{display:flex;align-items:flex-start;gap:12px;color:var(--suave)}
+.lista-completitud li>span:last-child{display:grid;gap:4px}
+.lista-completitud strong{color:var(--texto);font-size:14px}
+.lista-completitud small{font-size:12px;line-height:1.5}
+.check-completitud{display:grid;place-items:center;flex:0 0 30px;height:30px;border:1px solid var(--borde);border-radius:50%;background:#fff;color:var(--suave);font-size:15px;font-weight:700}
+.lista-completitud li.completado .check-completitud{border-color:#83c69a;background:#83c69a;color:#fff}
+.lista-completitud li.completado strong{color:#3a7550}
+.cuenta-acciones{margin-top:25px;padding-top:20px;border-top:1px solid var(--borde)}
+.cuenta-acciones .boton-secundario{background:#fff}
+button:focus-visible,a:focus-visible{outline:3px solid rgba(117,38,79,.52);outline-offset:3px}
+@media(max-width:940px){
+  .barra-lateral{padding-right:13px;padding-left:13px}
+  .vista-ingreso{width:min(100% - 40px,880px);grid-template-columns:minmax(0,1fr) minmax(340px,.9fr);gap:30px}
+  .presentacion-ingreso h1{font-size:clamp(52px,6vw,74px)}
+  .contenido-panel{width:calc(100% - 48px)}
+}
+@media(max-width:740px){
+  .envoltura{display:block}
+  .barra-lateral{position:sticky;height:auto;padding:11px 14px 7px}
+  .marca img{width:38px;height:38px}
+  .marca strong{font-size:19px}
+  .etiqueta-lateral,.perfil-lateral,.ayuda-lateral{display:none}
+  .menu-lateral{display:flex;gap:6px;margin-top:8px;overflow-x:auto}
+  .opcion-menu{width:auto;min-height:38px;flex:0 0 auto;gap:7px;padding:5px 9px;font-size:11px;white-space:nowrap}
+  .icono-menu{width:25px;height:25px;font-size:15px}
+  .principal{min-height:calc(100vh - 94px)}
+  .barra-superior{height:56px;gap:7px;padding:0 12px;font-size:7px}
+  .volver-catalogo{padding:7px 9px;font-size:10px;gap:5px}
+  .vista-ingreso{grid-template-columns:1fr;gap:14px;width:min(100% - 28px,520px);min-height:auto;padding:20px 0 42px}
+  .presentacion-ingreso{padding:6px 2px 0}
+  .presentacion-ingreso h1{margin:8px 0;font-size:clamp(43px,11vw,60px)}
+  .presentacion-ingreso>p{max-width:440px;font-size:13px}
+  .detalle-ingreso{margin-top:13px;font-size:11px}
+  .detalle-icono{width:32px;height:32px}
+  .flor-decorativa{right:1%;bottom:-22px;width:130px;height:130px}
+  .tarjeta-ingreso{padding:23px;border-radius:22px}
+  .logo-ingreso{width:48px;height:48px;margin-bottom:14px}
+  .tarjeta-ingreso h2{font-size:29px}
+  .tarjeta-ingreso>p{font-size:12px}
+  .formulario-ingreso{gap:9px;margin-top:17px}
+  .formulario-ingreso label{font-size:11px}
+  .formulario-ingreso input{height:48px;font-size:12px}
+  .boton-recuperacion{font-size:11px}
+  .boton-principal,.boton-vino,.boton-secundario{min-height:46px;font-size:12px}
+  .enlace-invitacion{font-size:10px}
+  .contenido-panel{width:calc(100% - 30px);padding:25px 0 100px}
+  .cabecera-panel{align-items:flex-start;flex-direction:column;gap:7px;margin-bottom:18px}
+  .cabecera-panel h1{font-size:clamp(36px,9vw,47px)}
+  .cabecera-panel p{font-size:12px}
+  .fecha-hoy{order:-1;font-size:10px}
+  .tarjeta-accion{align-items:flex-start;flex-direction:column;min-height:190px;gap:15px;padding:23px}
+  .tarjeta-accion h2{font-size:clamp(29px,7vw,37px)}
+  .tarjeta-accion p{font-size:12px}
+  .boton-blanco{min-height:46px;font-size:12px}
+  .flor-tarjeta{top:0;right:-24px;width:140px;height:140px}
+  .tarjeta-resumen{min-height:88px;padding:14px}
+  .icono-resumen{flex-basis:52px;height:52px;font-size:24px}
+  .texto-resumen strong{font-size:13px}
+  .texto-resumen small{font-size:10px}
+  .tarjeta-tienda{padding:19px}
+  .cabecera-tienda{align-items:flex-start;flex-direction:column;gap:10px}
+  .cabecera-tienda h2,.encabezado-seccion h2{font-size:24px}
+  .tarjeta-tienda>p{font-size:12px}
+  .progreso-cabecera{align-items:flex-start;flex-direction:column;gap:5px}
+  .pasos-progreso{grid-template-columns:1fr;gap:9px}
+  .paso-progreso{min-height:0;padding:12px}
+  .check-progreso{flex-basis:30px;height:30px}
+  .paso-progreso strong,.paso-progreso small{font-size:11px}
+  .encabezado-seccion{align-items:flex-start;flex-wrap:wrap}
+  .encabezado-seccion h2{font-size:23px}
+  .filtros-productos{gap:7px}
+  .filtros-productos button{min-height:38px;padding:0 12px;font-size:10px}
+  .tarjeta-producto{align-items:flex-start;flex-wrap:wrap;gap:11px;padding:12px}
+  .imagen-producto{flex-basis:68px;height:68px}
+  .datos-producto{flex-basis:calc(100% - 83px);align-self:center}
+  .datos-producto>strong{font-size:13px}
+  .datos-producto p,.metadatos-producto{font-size:10px}
+  .estado-producto{margin-left:79px;margin-top:-2px;font-size:10px}
+  .tarjeta-agregar{padding:27px 18px}
+  .icono-agregar{width:64px;height:64px}
+  .icono-agregar img{width:46px;height:46px}
+  .tarjeta-agregar h2{font-size:30px}
+  .tarjeta-agregar>p{font-size:12px}
+  .pasos-agregar{grid-template-columns:1fr;gap:10px;margin:20px 0}
+  .pasos-agregar>div{grid-template-columns:40px 1fr;align-items:center;min-height:0;padding:15px}
+  .pasos-agregar span:first-child{grid-row:span 2}
+  .pasos-agregar small{grid-column:2;margin-top:-6px}
+  .nota-web{padding:12px}
+  .nota-web p{font-size:11px}
+  .cuenta-cabecera{align-items:flex-start;flex-direction:column}
+  .cuenta-cabecera h2,.cuenta-ficha h2{font-size:30px}
+  .cuenta-cabecera p,.cuenta-ficha p{font-size:12px}
+  .cuenta-panel{grid-template-columns:1fr;gap:19px}
+  .cuenta-completitud{padding:20px 0 0;border-top:1px solid var(--borde);border-left:0}
+  .lista-completitud strong{font-size:12px}
+  .lista-completitud small,.cuenta-completitud>p{font-size:11px}
+  .cuenta-acciones{margin-top:18px;padding-top:15px}
+}
+@media(max-width:400px){
+  .barra-superior{padding:0 8px;gap:5px;font-size:6px}
+  .volver-catalogo{padding:6px 7px;font-size:9px}
+  .contenido-panel,.vista-ingreso{width:calc(100% - 22px)}
+  .tarjeta-ingreso{padding:19px}
+  .filtros-productos button{padding:0 9px;font-size:9px}
+}
 </style>
