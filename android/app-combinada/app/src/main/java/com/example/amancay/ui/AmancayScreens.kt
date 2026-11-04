@@ -1285,6 +1285,8 @@ fun SettingsScreen(
     mostrarPreferenciasProducto: Boolean = true,
     nombreTienda: String? = null,
     estadoTienda: String? = null,
+    descripcionTienda: String? = null,
+    logoTienda: Bitmap? = null,
     onEditarTienda: (() -> Unit)? = null,
     errorAcceso: String? = null,
     onCerrarSesion: (() -> Unit)? = null
@@ -1359,8 +1361,25 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(nombreTienda.orEmpty(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
-                    Text(estadoTienda.orEmpty(), fontSize = 14.sp, color = Muted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (logoTienda != null) {
+                            Image(
+                                logoTienda.asImageBitmap(),
+                                contentDescription = "Logo de la tienda",
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Column {
+                            Text(nombreTienda.orEmpty(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
+                            Text(estadoTienda.orEmpty(), fontSize = 14.sp, color = Muted)
+                        }
+                    }
+                    if (!descripcionTienda.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(descripcionTienda, fontSize = 14.sp, color = Muted, maxLines = 2)
+                    }
                     Spacer(Modifier.height(10.dp))
                     PrimaryButton("Editar ficha de tienda", onEditarTienda)
                 }

@@ -48,6 +48,8 @@ import com.example.amancay.data.OpcionCatalogoEmprendedora
 import com.example.amancay.data.ProductoEmprendedora
 import com.example.amancay.data.ProductosEmprendedoraRepository
 import com.example.amancay.data.TiendaEmprendedora
+import com.example.amancay.data.ImagenProductoPreparada
+import com.example.amancay.emprendedora.leerLogoLocalTienda
 import com.example.amancay.data.Product
 import com.example.amancay.data.ProductType
 import com.example.amancay.data.ShopSettings
@@ -61,6 +63,8 @@ import com.example.amancay.emprendedora.AvisoEmprendedora
 import com.example.amancay.emprendedora.DialogoAjusteStock
 import com.example.amancay.emprendedora.mensajeProducto
 import com.example.amancay.ui.*
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import com.example.amancay.ui.theme.AmancayTheme
 import com.example.amancay.ui.theme.Cream
 import com.example.amancay.ui.theme.CardPink
@@ -618,10 +622,12 @@ internal fun EmprendedoraAppConectada(
     enviando: Boolean,
     alCambiarHuella: (Boolean) -> Unit,
     alEditarTienda: (TiendaEmprendedora) -> Unit,
+    alSubirLogo: suspend (archivoId: String, imagen: ImagenProductoPreparada) -> Unit,
     alPublicarTienda: () -> Unit,
     alRetirarTienda: () -> Unit,
     alSalir: () -> Unit
 ) {
+    val context = LocalContext.current
     val productos by productosRepository.productos.collectAsState()
     val tiposProducto by productosRepository.tipos.collectAsState()
     // Fuente local de ventas/invitaciones de feria (flujo del prototipo).
@@ -816,8 +822,26 @@ internal fun EmprendedoraAppConectada(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(Modifier.padding(16.dp)) {
-                                    Text(tienda.nombre, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Dark)
-                                    Text(if (tienda.estadoPublicacion == "publicado") "Tienda publicada" else "Tienda en borrador", fontSize = 14.sp, color = Muted)
+                                    val logoInicio = remember(sesion.uid, tienda.logo) { leerLogoLocalTienda(context, sesion.uid, tienda.logo != null) }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (logoInicio != null) {
+                                            Image(
+                                                logoInicio.asImageBitmap(),
+                                                contentDescription = "Logo de la tienda",
+                                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Spacer(Modifier.width(12.dp))
+                                        }
+                                        Column {
+                                            Text(tienda.nombre, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Dark)
+                                            Text(if (tienda.estadoPublicacion == "publicado") "Tienda publicada" else "Tienda en borrador", fontSize = 14.sp, color = Muted)
+                                        }
+                                    }
+                                    if (tienda.descripcion.isNotBlank()) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(tienda.descripcion, fontSize = 14.sp, color = Muted, maxLines = 2)
+                                    }
                                     Spacer(Modifier.height(10.dp))
                                     if (tienda.estadoPublicacion == "publicado") {
                                         OutlineButton("Retirar tienda", alRetirarTienda)
@@ -924,6 +948,7 @@ internal fun EmprendedoraAppConectada(
                                 sectores = sectores,
                                 tipos = tipos,
                                 enviando = enviando,
+                                alSubirLogo = alSubirLogo,
                                 alGuardar = { alEditarTienda(it); editandoTienda = false },
                                 alCancelar = { editandoTienda = false }
                             )
@@ -937,6 +962,8 @@ internal fun EmprendedoraAppConectada(
                             mostrarPreferenciasProducto = false,
                             nombreTienda = tienda.nombre,
                             estadoTienda = if (tienda.estadoPublicacion == "publicado") "Visible para compradores" else "Aún no aparece en el catálogo comprador",
+                            descripcionTienda = tienda.descripcion,
+                            logoTienda = remember(sesion.uid, tienda.logo) { leerLogoLocalTienda(context, sesion.uid, tienda.logo != null) },
                             onEditarTienda = { editandoTienda = true },
                             errorAcceso = errorHuella,
                             onCerrarSesion = alSalir

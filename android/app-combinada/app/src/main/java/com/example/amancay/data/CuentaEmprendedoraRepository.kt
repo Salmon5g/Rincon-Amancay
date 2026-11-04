@@ -141,6 +141,18 @@ class CuentaEmprendedoraRepository(
         _tienda.value = fresh.takeIf { it.exists() }?.data?.let(::mapearTienda)
     }
 
+    suspend fun subirLogo(cuenta: CuentaEmprendedora, archivoId: String, imagen: ImagenProductoPreparada): String = withContext(Dispatchers.IO) {
+        val ruta = api.subirLogoTienda(
+            tiendaId = cuenta.tiendaId,
+            archivoId = archivoId,
+            contentType = imagen.contentType,
+            bytes = imagen.bytes
+        )
+        val fresh = Tasks.await(db.collection("tiendasPrivadas").document(cuenta.tiendaId).get())
+        _tienda.value = fresh.takeIf { it.exists() }?.data?.let(::mapearTienda)
+        ruta
+    }
+
     suspend fun publicarTienda(cuenta: CuentaEmprendedora, tienda: TiendaEmprendedora) = withContext(Dispatchers.IO) {
         api.llamar("publicarTienda", mapOf(
             "tiendaId" to cuenta.tiendaId,

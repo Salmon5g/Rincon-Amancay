@@ -83,6 +83,28 @@ import com.example.amancay.ui.theme.Muted
 import com.example.amancay.ui.theme.Wine
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.launch
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.net.Uri
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.FileProvider
+import com.example.amancay.data.ImagenProductoPreparada
+import com.example.amancay.data.decodificarVistaPreviaProducto
+import com.example.amancay.data.prepararImagenProducto
+import java.io.ByteArrayOutputStream
+import java.io.File
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 @Composable
 fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: String, alVolver: () -> Unit) {
@@ -382,6 +404,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
                 aviso = null
                 try {
                     repository.guardarTienda(sesion, propuesta)
+                    limpiarBorradorFicha(context, sesion.uid)
                     aviso = "Ficha guardada. Si estaba publicada, la web ya recibió los cambios públicos."
                 } catch (e: Exception) {
                     error = e.message ?: "No se pudo guardar la ficha."
@@ -389,6 +412,9 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
                     enviando = false
                 }
             }
+        },
+        alSubirLogo = { archivoId, imagen ->
+            repository.subirLogo(sesion, archivoId, imagen)
         },
         alPublicarTienda = {
             scope.launch {
@@ -501,6 +527,130 @@ private fun PantallaIngresoEmprendedora(
 
 private fun claveHuella(uid: String): String = "huella_emprendedora_$uid"
 
+internal data class BorradorFicha(
+    val nombre: String,
+    val descripcion: String,
+    val sectorId: String,
+    val tipoId: String,
+    val contactoTipo: String,
+    val contactoValor: String,
+    val mostrarContacto: Boolean
+)
+
+private const val PREFS_BORRADOR_FICHA = "amancay_borrador_tienda"
+private const val PREFS_LOGO_TIENDA = "amancay_logo_tienda"
+private const val CLAVE_BORRADOR_FICHA = "borrador_ficha_"
+private const val CLAVE_LOGO_TIENDA = "logo_ficha_"
+
+internal fun guardarBorradorFicha(context: Context, uid: String, borrador: BorradorFicha) {
+    if (uid.isBlank()) return
+    val json = JSONObject()
+        .put("nombre", borrador.nombre)
+        .put("descripcion", borrador.descripcion)
+        .put("sectorId", borrador.sectorId)
+        .put("tipoId", borrador.tipoId)
+        .put("contactoTipo", borrador.contactoTipo)
+        .put("contactoValor", borrador.contactoValor)
+        .put("mostrarContacto", borrador.mostrarContacto)
+    context.getSharedPreferences(PREFS_BORRADOR_FICHA, Context.MODE_PRIVATE)
+        .edit().putString("$CLAVE_BORRADOR_FICHA$uid", json.toString()).apply()
+}
+
+internal fun leerBorradorFicha(context: Context, uid: String): BorradorFicha? {
+    if (uid.isBlank()) return null
+    val texto = context.getSharedPreferences(PREFS_BORRADOR_FICHA, Context.MODE_PRIVATE)
+        .getString("$CLAVE_BORRADOR_FICHA$uid", null) ?: return null
+    val json = runCatching { JSONObject(texto) }.getOrNull() ?: return null
+    return BorradorFicha(
+        nombre = json.optString("nombre"),
+        descripcion = json.optString("descripcion"),
+        sectorId = json.optString("sectorId"),
+        tipoId = json.optString("tipoId"),
+        contactoTipo = json.optString("contactoTipo").ifBlank { "whatsapp" },
+        contactoValor = json.optString("contactoValor"),
+        mostrarContacto = json.optBoolean("mostrarContacto", false)
+    ).takeIf { it.nombre.isNotBlank() || it.descripcion.isNotBlank() || it.contactoValor.isNotBlank() }
+}
+
+internal fun limpiarBorradorFicha(context: Context, uid: String) {
+    if (uid.isBlank()) return
+    context.getSharedPreferences(PREFS_BORRADOR_FICHA, Context.MODE_PRIVATE)
+        .edit().remove("$CLAVE_BORRADOR_FICHA$uid").apply()
+}
+
+/** Copia local comprimida del logo para poder mostrarlo en próximas sesiones (el original queda privado en Storage). */
+internal fun guardarLogoLocal(context: Context, uid: String, bitmap: Bitmap) {
+    if (uid.isBlank()) return
+    val escala = minOf(1f, 512f / max(bitmap.width, bitmap.height))
+    val copia = if (escala < 1f) {
+        Bitmap.createScaledBitmap(bitmap, (bitmap.width * escala).roundToInt().coerceAtLeast(1), (bitmap.height * escala).roundToInt().coerceAtLeast(1), true)
+    } else bitmap
+    val salida = ByteArrayOutputStream()
+    if (!copia.compress(Bitmap.CompressFormat.JPEG, 85, salida)) return
+    val base64 = Base64.encodeToString(salida.toByteArray(), Base64.NO_WRAP)
+    context.getSharedPreferences(PREFS_LOGO_TIENDA, Context.MODE_PRIVATE)
+        .edit().putString("$CLAVE_LOGO_TIENDA$uid", base64).apply()
+}
+
+/** Devuelve la copia local solo si la ficha todavía conserva el logo guardado. */
+internal fun leerLogoLocalTienda(context: Context, uid: String, logoGuardado: Boolean): Bitmap? {
+    if (uid.isBlank() || !logoGuardado) return null
+    val base64 = context.getSharedPreferences(PREFS_LOGO_TIENDA, Context.MODE_PRIVATE)
+        .getString("$CLAVE_LOGO_TIENDA$uid", null) ?: return null
+    return runCatching {
+        Base64.decode(base64, Base64.NO_WRAP).let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+    }.getOrNull()
+}
+
+internal fun crearUriFotoTemporalTienda(context: Context): Uri {
+    val directorio = File(context.cacheDir, "tienda-fotos")
+    check(directorio.exists() || directorio.mkdirs()) { "No se pudo preparar el almacenamiento temporal de la cámara." }
+    val archivo = File.createTempFile("amancay-tienda-", ".jpg", directorio)
+    return try {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", archivo)
+    } catch (error: Exception) {
+        archivo.delete()
+        throw error
+    }
+}
+
+internal fun eliminarFotoTemporalTienda(context: Context, uri: Uri?) {
+    if (uri?.authority != "${context.packageName}.fileprovider") return
+    val nombre = uri.lastPathSegment ?: return
+    if (!nombre.matches(Regex("amancay-tienda-[A-Za-z0-9_-]+\\.jpg"))) return
+    File(File(context.cacheDir, "tienda-fotos"), nombre).delete()
+}
+
+internal suspend fun decodificarLogoDesdeUri(contentResolver: android.content.ContentResolver, uri: Uri): Bitmap? =
+    withContext(Dispatchers.IO) {
+        runCatching {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, uri)) { decoder, info, _ ->
+                val escala = minOf(1f, 1600f / max(info.size.width, info.size.height))
+                if (escala < 1f) {
+                    decoder.setTargetSize(
+                        (info.size.width * escala).roundToInt().coerceAtLeast(1),
+                        (info.size.height * escala).roundToInt().coerceAtLeast(1)
+                    )
+                }
+            }
+        }.getOrNull()
+    }
+
+/** Repite las validaciones del backend para avisar antes errores comunes de contacto. */
+internal fun validarContactoTienda(tipo: String, valor: String): String? {
+    val texto = valor.trim()
+    if (texto.isEmpty()) return null
+    return when (tipo) {
+        "whatsapp" -> if (Regex("^\\+?[0-9][0-9\\s()-]{6,22}$").matches(texto)) null
+        else "WhatsApp debe incluir un número válido con código de país."
+        "correo" -> if (Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$").matches(texto)) null
+        else "Correo de contacto inválido."
+        "web" -> if (runCatching { java.net.URL(texto) }.getOrNull()?.protocol == "https" && texto.startsWith("https://")) null
+        else "El sitio de contacto debe ser HTTPS."
+        else -> null
+    }
+}
+
 @Composable
 internal fun PantallaEdicionTienda(
     cuenta: CuentaEmprendedora,
@@ -508,29 +658,177 @@ internal fun PantallaEdicionTienda(
     sectores: List<OpcionCatalogoEmprendedora>,
     tipos: List<OpcionCatalogoEmprendedora>,
     enviando: Boolean,
+    alSubirLogo: suspend (archivoId: String, imagen: ImagenProductoPreparada) -> Unit,
     alGuardar: (TiendaEmprendedora) -> Unit,
     alCancelar: () -> Unit
 ) {
-    var nombre by remember(tienda.versionEsperada) { mutableStateOf(tienda.nombre) }
-    var descripcion by remember(tienda.versionEsperada) { mutableStateOf(tienda.descripcion) }
-    var sectorId by remember(tienda.versionEsperada) { mutableStateOf(tienda.sectorId) }
-    var tipoId by remember(tienda.versionEsperada) { mutableStateOf(tienda.tipoEmprendimientoId) }
-    var contactoTipo by remember(tienda.versionEsperada) { mutableStateOf(tienda.contacto?.tipo ?: "whatsapp") }
-    var contactoValor by remember(tienda.versionEsperada) { mutableStateOf(tienda.contacto?.valor.orEmpty()) }
-    var mostrarContacto by remember(tienda.versionEsperada) { mutableStateOf(tienda.mostrarContacto) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val borradorRestaurado = remember(cuenta.uid, tienda.versionEsperada) { leerBorradorFicha(context, cuenta.uid) }
+    var nombre by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.nombre ?: tienda.nombre) }
+    var descripcion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.descripcion ?: tienda.descripcion) }
+    var sectorId by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.sectorId ?: tienda.sectorId) }
+    var tipoId by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.tipoId ?: tienda.tipoEmprendimientoId) }
+    var contactoTipo by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.contactoTipo ?: tienda.contacto?.tipo ?: "whatsapp") }
+    var contactoValor by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.contactoValor ?: tienda.contacto?.valor.orEmpty()) }
+    var mostrarContacto by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.mostrarContacto ?: tienda.mostrarContacto) }
+
+    // Foto o logo: previsualización nueva, copia local guardada y envío a la API.
+    var logoEnviando by remember { mutableStateOf(false) }
+    var logoLocal by remember(cuenta.uid, tienda.logo) { mutableStateOf(leerLogoLocalTienda(context, cuenta.uid, tienda.logo != null)) }
+    var logoNuevoUri by remember { mutableStateOf<Uri?>(null) }
+    var logoNuevo by remember { mutableStateOf<Bitmap?>(null) }
+    var archivoIdLogo by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var avisoLogo by remember { mutableStateOf<String?>(null) }
+    var errorLogo by remember { mutableStateOf<String?>(null) }
+    var capturaPendienteLogo by remember { mutableStateOf<String?>(null) }
+
+    val selectorGaleriaLogo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            eliminarFotoTemporalTienda(context, logoNuevoUri)
+            logoNuevoUri = uri
+            archivoIdLogo = java.util.UUID.randomUUID().toString()
+            logoNuevo = null
+            avisoLogo = null
+            errorLogo = null
+            scope.launch { logoNuevo = decodificarLogoDesdeUri(context.contentResolver, uri) }
+        }
+    }
+    val selectorCamaraLogo = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { guardada ->
+        val uri = capturaPendienteLogo?.let(Uri::parse)
+        capturaPendienteLogo = null
+        if (guardada && uri != null) {
+            eliminarFotoTemporalTienda(context, logoNuevoUri)
+            logoNuevoUri = uri
+            archivoIdLogo = java.util.UUID.randomUUID().toString()
+            logoNuevo = null
+            avisoLogo = null
+            errorLogo = null
+            scope.launch { logoNuevo = decodificarLogoDesdeUri(context.contentResolver, uri) }
+        } else {
+            eliminarFotoTemporalTienda(context, uri)
+        }
+    }
+    fun subirLogoAhora() {
+        val uri = logoNuevoUri ?: return
+        scope.launch {
+            logoEnviando = true
+            errorLogo = null
+            avisoLogo = null
+            try {
+                val preparada = prepararImagenProducto(context.contentResolver, uri, null)
+                alSubirLogo(archivoIdLogo, preparada)
+                val miniatura = decodificarVistaPreviaProducto(preparada.bytes) ?: logoNuevo
+                miniatura?.let { guardarLogoLocal(context, cuenta.uid, it) }
+                logoLocal = miniatura ?: logoLocal
+                logoNuevo = null
+                logoNuevoUri = null
+                eliminarFotoTemporalTienda(context, uri)
+                avisoLogo = if (tienda.estadoPublicacion == "publicado") "Logo guardado: la web ya recibió la copia pública." else "Logo guardado en tu ficha. La copia pública se genera al publicar la tienda."
+            } catch (e: Exception) {
+                errorLogo = e.message ?: "No se pudo subir el logo. Inténtalo nuevamente."
+            } finally {
+                logoEnviando = false
+            }
+        }
+    }
+
+    // Conservar borrador al cerrar la app: se guarda con cada cambio y se limpia cuando vuelve a coincidir con la ficha guardada.
+    LaunchedEffect(nombre, descripcion, sectorId, tipoId, contactoTipo, contactoValor, mostrarContacto) {
+        val difiere = nombre != tienda.nombre ||
+            descripcion != tienda.descripcion ||
+            sectorId != tienda.sectorId ||
+            tipoId != tienda.tipoEmprendimientoId ||
+            contactoTipo != (tienda.contacto?.tipo ?: "whatsapp") ||
+            contactoValor != tienda.contacto?.valor.orEmpty() ||
+            mostrarContacto != tienda.mostrarContacto
+        if (difiere) {
+            guardarBorradorFicha(context, cuenta.uid, BorradorFicha(nombre, descripcion, sectorId, tipoId, contactoTipo, contactoValor, mostrarContacto))
+        } else {
+            limpiarBorradorFicha(context, cuenta.uid)
+        }
+    }
+
+    val errorContacto = validarContactoTienda(contactoTipo, contactoValor)
 
     Text("MI TIENDA", fontSize = 12.sp, color = Wine, fontWeight = FontWeight.Bold)
     Text("Ficha del emprendimiento", fontSize = 30.sp, color = Dark)
-    Text("Los cambios de nombre, sector y tipo se reflejan en la proyección pública si la tienda ya está publicada.", fontSize = 15.sp, color = Muted)
+    Text("Los cambios de nombre, descripción, sector, tipo y contacto se reflejan en la proyección pública si la tienda ya está publicada.", fontSize = 15.sp, color = Muted)
     Spacer(Modifier.height(16.dp))
+    if (borradorRestaurado != null) {
+        AvisoEmprendedora("Se conservó el borrador de tu ficha al cerrar la app. Continúa donde lo dejaste o guarda los cambios.", false)
+    }
+    Spacer(Modifier.height(8.dp))
+
+    Text("Foto o logo de la tienda", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Dark)
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val logoMostrar = logoNuevo ?: logoLocal
+        if (logoMostrar != null) {
+            Image(
+                logoMostrar.asImageBitmap(),
+                contentDescription = "Logo de la tienda",
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(20.dp)),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(CardPink),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Sin logo", fontSize = 12.sp, color = Muted)
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (tienda.logo != null) "Tu logo está guardado en la ficha y protegido mientras la tienda no se publica."
+                else "Puedes usar la foto o el logo del emprendimiento: se guarda en privado hasta publicar la tienda.",
+                fontSize = 13.sp, color = Muted
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlineButton("Galería", { selectorGaleriaLogo.launch("image/*") })
+                OutlineButton("Cámara", {
+                    runCatching { crearUriFotoTemporalTienda(context) }.fold(
+                        onSuccess = { uri ->
+                            capturaPendienteLogo = uri.toString()
+                            selectorCamaraLogo.launch(uri)
+                        },
+                        onFailure = { errorLogo = "No se pudo abrir la cámara. Inténtalo nuevamente." }
+                    )
+                })
+            }
+            if (logoNuevoUri != null) {
+                Spacer(Modifier.height(8.dp))
+                PrimaryButton(
+                    text = if (logoEnviando) "Subiendo logo…" else "Guardar logo",
+                    onClick = ::subirLogoAhora,
+                    enabled = !logoEnviando && !enviando
+                )
+            }
+            avisoLogo?.let { AvisoEmprendedora(it, false) }
+            errorLogo?.let { AvisoEmprendedora(it, true) }
+            if (tienda.logo != null && logoLocal == null && logoNuevo == null) {
+                AvisoEmprendedora("Tu logo está guardado en la ficha. Vuelve a subirlo para verlo aquí en este dispositivo.", false)
+            }
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+
     AmancayInput("Nombre de la tienda", nombre, { nombre = it }, 120)
     Spacer(Modifier.height(12.dp))
     AmancayInput("Descripción", descripcion, { descripcion = it }, 2000, multiline = true)
     Spacer(Modifier.height(12.dp))
     SelectorCatalogo("Tipo de emprendimiento", tipos, tipoId, { tipoId = it })
     Spacer(Modifier.height(12.dp))
-    SelectorCatalogo("Sector", sectores, sectorId, { sectorId = it })
-    Spacer(Modifier.height(16.dp))
+    SelectorCatalogo("Zona de la tienda (sector)", sectores, sectorId, { sectorId = it })
+    MapaZonaVisual(sectorId.takeIf(String::isNotBlank))
+    Spacer(Modifier.height(12.dp))
     Text("Contacto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Dark)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         listOf("whatsapp" to "WhatsApp", "correo" to "Correo", "web" to "Sitio web").forEach { (id, label) ->
@@ -539,13 +837,14 @@ internal fun PantallaEdicionTienda(
     }
     Spacer(Modifier.height(8.dp))
     AmancayInput("Dato de contacto", contactoValor, { contactoValor = it }, 254)
+    errorContacto?.let {
+        Text(it, color = AccentRed, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = mostrarContacto, onCheckedChange = { mostrarContacto = it })
         Text("Mostrar este contacto en la tienda pública", color = Dark)
     }
     Spacer(Modifier.height(8.dp))
-    AvisoEmprendedora("La carga de foto/logo se habilitará cuando el grupo defina el acceso seguro a Supabase Storage.", false)
-    Spacer(Modifier.height(10.dp))
     OutlineButton("Volver a configuración", alCancelar)
     Spacer(Modifier.height(8.dp))
     PrimaryButton(
@@ -554,7 +853,8 @@ internal fun PantallaEdicionTienda(
             val contacto = contactoValor.trim().takeIf(String::isNotEmpty)?.let { ContactoEmprendedora(contactoTipo, it) }
             alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, contacto = contacto, mostrarContacto = mostrarContacto))
         },
-        enabled = !enviando && nombre.isNotBlank() && sectorId.isNotBlank() && tipoId.isNotBlank() && (!mostrarContacto || contactoValor.isNotBlank()),
+        enabled = !enviando && !logoEnviando && nombre.isNotBlank() && sectorId.isNotBlank() && tipoId.isNotBlank() &&
+            (!mostrarContacto || contactoValor.isNotBlank()) && errorContacto == null,
         fontSize = 16.sp
     )
     Text("Tienda asignada: ${cuenta.tiendaId}", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))

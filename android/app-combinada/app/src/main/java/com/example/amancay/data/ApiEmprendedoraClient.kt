@@ -114,6 +114,58 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
         }
     }
 
+    suspend fun subirLogoTienda(
+        tiendaId: String,
+        archivoId: String,
+        contentType: String,
+        bytes: ByteArray
+    ): String = withContext(Dispatchers.IO) {
+        if (!tiendaId.matches(Regex("[A-Za-z0-9_-]{1,128}")) ||
+            !archivoId.matches(Regex("[0-9a-fA-F-]{36}")) ||
+            contentType !in setOf("image/jpeg", "image/png", "image/webp") || bytes.isEmpty() || bytes.size > 5 * 1024 * 1024
+        ) {
+            throw ApiEmprendedoraException("datos-invalidos", "El logo no cumple el formato o tamaño permitido.")
+        }
+
+        val token = tokenActual()
+        val endpoint = BuildConfig.API_BASE_URL.trimEnd('/') + "/tiendas/$tiendaId/logo"
+        val connection = URL(endpoint).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 60_000
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(bytes.size)
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Content-Type", contentType)
+            connection.setRequestProperty("X-Archivo-Id", archivoId)
+            connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(bytes) }
+            val status = connection.responseCode
+            val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)
+                ?.use { it.readText() }
+                .orEmpty()
+            val response = runCatching { JSONObject(body) }.getOrElse { JSONObject() }
+            if (status !in 200..299) {
+                val error = response.optJSONObject("error")
+                throw ApiEmprendedoraException(
+                    error?.optString("code")?.takeIf(String::isNotBlank) ?: "error-api",
+                    error?.optString("mensaje")?.takeIf(String::isNotBlank) ?: "No se pudo guardar el logo ($status)."
+                )
+            }
+            response.optJSONObject("datos")?.optString("ruta")
+                ?.takeIf(String::isNotBlank)
+                ?: throw ApiEmprendedoraException("respuesta-invalida", "La API no confirmó la ruta del logo.")
+        } catch (error: ApiEmprendedoraException) {
+            throw error
+        } catch (_: Exception) {
+            throw ApiEmprendedoraException("sin-conexion", "No se pudo conectar con la API local para subir el logo. Comprueba que esté encendida y que el teléfono pueda acceder a ella.")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun leerImagenPrivadaProducto(tiendaId: String, productoId: String, indice: Int = 0): ByteArray = withContext(Dispatchers.IO) {
         if (!tiendaId.matches(Regex("[A-Za-z0-9_-]{1,128}")) ||
             !productoId.matches(Regex("[A-Za-z0-9_-]{1,128}")) || indice !in 0..4
