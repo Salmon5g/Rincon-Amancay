@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
@@ -370,7 +371,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
                     }
                 }, colors = ButtonDefaults.buttonColors(containerColor = Wine)) { Text("Retirar") }
             },
-            dismissButton = { TextButton(onClick = { confirmarRetiroTienda = false }, enabled = !enviando) { Text("Cancelar", color = Wine) } }
+            dismissButton = { TextButton(onClick = { confirmarRetiroTienda = false }, enabled = !enviando, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar", color = Wine) } }
         )
     }
 
@@ -492,7 +493,7 @@ private fun PantallaIngresoEmprendedora(
         TextButton(
             onClick = alRecuperarContrasena,
             enabled = !enviando && !googleCargando && !recuperacionCargando,
-            modifier = Modifier.align(Alignment.End)
+            modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)
         ) {
             Text(
                 if (recuperacionCargando) "Enviando enlace…" else "¿Olvidaste tu contraseña?",
@@ -522,7 +523,7 @@ private fun PantallaIngresoEmprendedora(
             fontSize = 12.sp,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
-        TextButton(onClick = alVolver, modifier = Modifier.fillMaxWidth()) { Text("Volver al modo comprador", color = Wine) }
+        TextButton(onClick = alVolver, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Volver al modo comprador", color = Wine) }
     }
 }
 
@@ -879,7 +880,11 @@ internal fun PantallaEdicionTienda(
         Text(it, color = AccentRed, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = mostrarContacto, onCheckedChange = { mostrarContacto = it })
+        Checkbox(
+            checked = mostrarContacto,
+            onCheckedChange = { mostrarContacto = it },
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+        )
         Text("Mostrar este contacto en la tienda pública", color = Dark)
     }
     Spacer(Modifier.height(8.dp))
@@ -930,7 +935,7 @@ private fun SelectorCatalogo(label: String, opciones: List<OpcionCatalogoEmprend
         Box {
             OutlinedButton(
                 onClick = { expandido = true },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(16.dp),
                 enabled = opciones.isNotEmpty(),
                 border = androidx.compose.foundation.BorderStroke(2.dp, Wine),

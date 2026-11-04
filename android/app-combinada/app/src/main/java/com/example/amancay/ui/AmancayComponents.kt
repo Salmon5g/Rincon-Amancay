@@ -89,20 +89,20 @@ fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null) {
         if (onExit != null) {
             TextButton(
                 onClick = onExit,
+                modifier = Modifier.heightIn(min = 48.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text("Salir", fontWeight = FontWeight.Bold, color = Wine)
             }
         }
-        Text(
-            "?",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = Wine,
+        Box(
             modifier = Modifier
-                .clickable { onHelp() }
-                .padding(8.dp)
-        )
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .clickable { onHelp() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text("?", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Wine)
+        }
     }
 }
 
@@ -143,7 +143,7 @@ fun OutlineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 
 @Composable
 fun GhostButton(text: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text(text, color = Wine, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -205,6 +205,7 @@ fun SelectableChip(text: String, selected: Boolean, enabled: Boolean = true, onC
     Surface(
         onClick = onClick,
         enabled = enabled,
+        modifier = Modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(20.dp),
         color = bg,
         border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) Wine else Line)
@@ -236,6 +237,7 @@ fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Bool
         )
         Switch(
             checked = checked, onCheckedChange = onChange,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White, checkedTrackColor = Wine,
                 uncheckedThumbColor = Color.White, uncheckedTrackColor = Line
@@ -367,7 +369,7 @@ fun ProductImage(
 
                 TextButton(
                     onClick = { mostrarAmpliada = false },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).heightIn(min = 48.dp),
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
                 ) { Text("Cerrar  ×", fontWeight = FontWeight.Bold) }
 

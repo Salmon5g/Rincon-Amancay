@@ -339,7 +339,7 @@ private fun PantallaAccesoComprador(
                     }
                 },
                 enabled = !recuperandoContrasena && !enviandoCorreo && !googleCargando,
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)
             ) {
                 Text(
                     if (recuperandoContrasena) "Enviando enlace…" else "¿Olvidaste tu contraseña?",
@@ -375,7 +375,8 @@ private fun PantallaAccesoComprador(
                 creandoCuenta = !creandoCuenta
                 errorCorreo = null
             },
-            enabled = !enviandoCorreo && !googleCargando && !recuperandoContrasena
+            enabled = !enviandoCorreo && !googleCargando && !recuperandoContrasena,
+            modifier = Modifier.heightIn(min = 48.dp)
         ) {
             Text(
                 if (creandoCuenta) "¿Ya tienes cuenta? Iniciar sesión" else "¿No tienes cuenta? Crear una",
@@ -385,7 +386,8 @@ private fun PantallaAccesoComprador(
         }
         TextButton(
             onClick = alExplorar,
-            enabled = !enviandoCorreo && !googleCargando && !recuperandoContrasena
+            enabled = !enviandoCorreo && !googleCargando && !recuperandoContrasena,
+            modifier = Modifier.heightIn(min = 48.dp)
         ) {
             Text("Explorar sin iniciar sesión", color = AmancayTintaSuave)
         }

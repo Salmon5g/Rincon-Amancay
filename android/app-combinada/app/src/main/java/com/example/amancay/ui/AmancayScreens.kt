@@ -714,7 +714,7 @@ fun PriceStep(draft: DraftState, bump: () -> Unit, onNext: () -> Unit, onBack: (
                             color = Wine, modifier = Modifier.weight(1f)
                         )
                         if (draft.variantes.size > 1) {
-                            IconButton(onClick = { draft.variantes.removeAt(i); bump() }, modifier = Modifier.size(28.dp)) {
+                            IconButton(onClick = { draft.variantes.removeAt(i); bump() }, modifier = Modifier.size(48.dp)) {
                                 Icon(Icons.Default.Delete, contentDescription = "Quitar", tint = Muted, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -732,7 +732,7 @@ fun PriceStep(draft: DraftState, bump: () -> Unit, onNext: () -> Unit, onBack: (
         }
         OutlinedButton(
             onClick = { draft.variantes.add(Variant(nombre = "Variante ${draft.variantes.size + 1}")); bump() },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(16.dp),
             border = androidx.compose.foundation.BorderStroke(2.dp, Wine)
         ) {
             Text("+ Añadir variante", color = Wine, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -863,28 +863,40 @@ fun ProductsScreen(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            "Editar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine,
-                            modifier = Modifier.clickable { onEdit(p) }.padding(4.dp)
-                        )
+                        TextButton(
+                            onClick = { onEdit(p) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text("Editar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine)
+                        }
                         onAccionPublicacion?.let { accion ->
-                            Text(
-                                if (p.publicado) "Retirar" else "Publicar",
-                                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine,
-                                modifier = Modifier.clickable { accion(p) }.padding(4.dp)
-                            )
+                            TextButton(
+                                onClick = { accion(p) },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text(if (p.publicado) "Retirar" else "Publicar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine)
+                            }
                         }
                         onAjustarStock?.let { ajustar ->
-                            Text(
-                                "Stock", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine,
-                                modifier = Modifier.clickable { ajustar(p) }.padding(4.dp)
-                            )
+                            TextButton(
+                                onClick = { ajustar(p) },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text("Stock", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine)
+                            }
                         }
                         if (mostrarEliminar) {
-                            Text(
-                                "Eliminar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AccentRed,
-                                modifier = Modifier.clickable { toDelete = p }.padding(4.dp)
-                            )
+                            TextButton(
+                                onClick = { toDelete = p },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.textButtonColors(contentColor = AccentRed)
+                            ) {
+                                Text("Eliminar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                            }
                         }
                     }
                 }

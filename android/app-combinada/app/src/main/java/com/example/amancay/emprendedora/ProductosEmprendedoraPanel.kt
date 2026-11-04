@@ -352,14 +352,34 @@ private fun TarjetaProductoEmprendedora(
             } else if (producto.manejaStock) "Stock: ${producto.stock ?: 0}" else "Sin control de stock"
             Text(inventario, color = Muted, modifier = Modifier.padding(top = 6.dp))
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Editar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.clickable(enabled = !enviando, onClick = onEdit).padding(4.dp))
-                if (producto.manejaStock) Text("Stock", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.clickable(enabled = !enviando, onClick = onAdjustStock).padding(4.dp))
+                TextButton(
+                    onClick = onEdit,
+                    enabled = !enviando,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) { Text("Editar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine) }
+                if (producto.manejaStock) TextButton(
+                    onClick = onAdjustStock,
+                    enabled = !enviando,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) { Text("Stock", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine) }
                 Spacer(Modifier.weight(1f))
                 if (producto.estadoPublicacion == "publicado") {
-                    Text("Retirar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.clickable(enabled = !enviando, onClick = onRetire).padding(4.dp))
+                    TextButton(
+                        onClick = onRetire,
+                        enabled = !enviando,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) { Text("Retirar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine) }
                 } else {
                     val puedePublicar = tiendaPublicada && producto.imagenes.isNotEmpty()
-                    Text("Publicar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (puedePublicar) Wine else Muted, modifier = Modifier.clickable(enabled = !enviando && puedePublicar, onClick = onPublish).padding(4.dp))
+                    TextButton(
+                        onClick = onPublish,
+                        enabled = !enviando && puedePublicar,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) { Text("Publicar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (puedePublicar) Wine else Muted) }
                 }
             }
             if (producto.estadoPublicacion == "publicado") {
@@ -691,7 +711,7 @@ private fun EditorProductoEmprendedora(
             if (!conVariantes) {
                 AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio en pesos chilenos", "", keyboardType=KeyboardType.Number)
                 Row(verticalAlignment=Alignment.CenterVertically) {
-                    Checkbox(checked=manejaStock, onCheckedChange={ if (original == null && modalidad != "pieza_unica") manejaStock=it }, enabled=original == null && modalidad != "pieza_unica")
+                    Checkbox(checked=manejaStock, onCheckedChange={ if (original == null && modalidad != "pieza_unica") manejaStock=it }, enabled=original == null && modalidad != "pieza_unica", modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp))
                     Text("Controlar unidades disponibles", color=Dark)
                 }
                 if (manejaStock && original == null) AmancayField(stockInicial, { stockInicial=it.filter(Char::isDigit).take(9) }, "Stock inicial", "", keyboardType=KeyboardType.Number)
@@ -709,9 +729,9 @@ private fun EditorProductoEmprendedora(
                             if (manejaStock && !v.existente) AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock inicial", "", keyboardType=KeyboardType.Number)
                             else if (v.existente && manejaStock) Text("Stock: " + (original?.variantes?.firstOrNull { it.id == v.id }?.stock ?: 0) + ". Ajusta desde la lista.", color=Muted, fontSize=12.sp)
                             if (v.existente) Row(verticalAlignment=Alignment.CenterVertically) {
-                                Checkbox(checked=v.activa, onCheckedChange={ active -> variantes=variantes.actualizar(index) { it.copy(activa=active) } })
+                                Checkbox(checked=v.activa, onCheckedChange={ active -> variantes=variantes.actualizar(index) { it.copy(activa=active) } }, modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp))
                                 Text("Variante activa", color=Dark)
-                            } else TextButton(onClick={ variantes=variantes.filterIndexed { i,_ -> i != index } }) { Text("Quitar variante nueva", color=Wine) }
+                            } else TextButton(onClick={ variantes=variantes.filterIndexed { i,_ -> i != index } }, modifier=Modifier.heightIn(min=48.dp)) { Text("Quitar variante nueva", color=Wine) }
                         }
                     }
                 }
@@ -820,7 +840,7 @@ internal fun DialogoAjusteStock(
                 if (error == null && value != null) onConfirm(if (producto.tieneVariantes) varianteId else null, value, motivo, nota.trim().takeIf(String::isNotEmpty), operacionId)
             }, colors = ButtonDefaults.buttonColors(containerColor = Wine)) { Text("Guardar ajuste") }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !enviando) { Text("Cancelar", color = Wine) } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !enviando, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar", color = Wine) } },
         containerColor = androidx.compose.ui.graphics.Color.White,
         shape = RoundedCornerShape(22.dp)
     )
@@ -859,7 +879,7 @@ private fun SelectorProducto(label: String, options: List<Pair<String, String>>,
             OutlinedButton(
                 onClick = { expanded = true },
                 enabled = options.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(2.dp, Wine),
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = androidx.compose.ui.graphics.Color.White, contentColor = Wine),
