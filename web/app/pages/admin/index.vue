@@ -1370,8 +1370,6 @@ async function guardarEdicionCuentaEmprendedora() {
                   <option v-for="opcion in activos(datos.catalogos.tiposEmprendimiento)" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
               </label>
-              <label class="opcion"><input type="checkbox" checked disabled /> Mostrar precios en el catálogo</label>
-              <label class="opcion"><input type="checkbox" disabled /> Activar historial de ventas</label>
               <label>Forma de contacto
                 <select disabled><option>Formulario de contacto</option></select>
               </label>

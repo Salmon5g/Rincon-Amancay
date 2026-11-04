@@ -103,8 +103,10 @@ function payloadFeria() {
     direccion: borrador.value.direccion.trim(), fechaInicio: new Date(borrador.value.fechaInicio).toISOString(), fechaFin: new Date(borrador.value.fechaFin).toISOString(),
     imagenUrl: borrador.value.imagenUrl.trim(),
   }
-  if (borrador.value.latitud.trim() || borrador.value.longitud.trim()) {
-    datos.latitud = Number(borrador.value.latitud); datos.longitud = Number(borrador.value.longitud)
+  const latitud = String(borrador.value.latitud ?? '').trim()
+  const longitud = String(borrador.value.longitud ?? '').trim()
+  if (latitud || longitud) {
+    datos.latitud = Number(latitud); datos.longitud = Number(longitud)
   }
   return datos
 }
@@ -202,8 +204,6 @@ onMounted(() => { void cargar() })
         <label class="completo">Dirección o lugar<input v-model="borrador.direccion" maxlength="300" required placeholder="Ej.: Sede de la Asociación, Alerce" :disabled="enviando || !!pendiente" /></label>
         <label>Inicio<input v-model="borrador.fechaInicio" type="datetime-local" required :disabled="enviando || !!pendiente" /></label>
         <label>Término<input v-model="borrador.fechaFin" type="datetime-local" required :disabled="enviando || !!pendiente" /></label>
-        <label>Latitud (opcional)<input v-model="borrador.latitud" type="number" min="-90" max="90" step="any" :disabled="enviando || !!pendiente" /></label>
-        <label>Longitud (opcional)<input v-model="borrador.longitud" type="number" min="-180" max="180" step="any" :disabled="enviando || !!pendiente" /></label>
         <label class="completo">URL de imagen HTTPS (opcional)<input v-model="borrador.imagenUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || !!pendiente" /></label>
         <div class="acciones completo"><button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !borrador.nombre.trim() || !borrador.organizador.trim() || !borrador.direccion.trim()">{{ enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="formulario = false">Cancelar</button></div>
       </form>

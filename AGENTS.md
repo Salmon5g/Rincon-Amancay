@@ -16,6 +16,9 @@ Rincón Amancay: web Nuxt en `web/`, API en `backend/`, configuración Firebase 
 - SDK Android habitual: `C:\Users\asus\AppData\Local\Android\Sdk`.
 
 ## Estado actual
+- 2026-11-04: en Administración → Emprendedoras, el formulario para crear una emprendedora dejó de mostrar las opciones «Mostrar precios en el catálogo» y «Activar historial de ventas». Se retiraron solo esos controles visuales; no se ejecutaron pruebas ni se hizo commit/push.
+- 2026-11-04: en Administración → Ferias y eventos, el formulario dejó de mostrar los campos de latitud y longitud. Se conserva el manejo interno de coordenadas existentes; no se ejecutaron pruebas ni se hizo commit/push.
+- 2026-11-04: se corrigió la conversión de coordenadas en `FeriasAdmin.vue` para aceptar valores numéricos o texto y evitar el error al llamar `.trim()` sobre un número. No se ejecutaron pruebas ni se hizo commit/push.
 <<<<<<< Updated upstream
 - 2026-11-04: se corrigió el visor de imágenes de la web: a tamaño inicial la imagen se ajusta al área visible sin recortes ni deformación; el zoom manual sigue disponible con scroll cuando se amplía. Verificación visual en navegador con imagen vertical; sin pruebas automatizadas ni commit/push.
 =======
