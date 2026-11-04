@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -109,7 +111,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: String, alVolver: () -> Unit) {
+fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: String, escalaTexto: Float, alCambiarEscalaTexto: (Float) -> Unit, alVolver: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? FragmentActivity
     val preferenciasAcceso = remember(context) {
@@ -443,7 +445,9 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
             aviso = null
             error = null
             alVolver()
-        }
+        },
+        escalaTexto = escalaTexto,
+        alCambiarEscalaTexto = alCambiarEscalaTexto
     )
 }
 
@@ -464,10 +468,28 @@ private fun PantallaIngresoEmprendedora(
     alGoogle: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center) {
-        Image(painterResource(Fig.LOGO), contentDescription = null, modifier = Modifier.size(72.dp).align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(12.dp))
-        Text("Rincón Amancay", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.align(Alignment.CenterHorizontally))
-        Text("Ingresa con las credenciales que te entregó la administración.", color = Muted, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
+            TextButton(onClick = alVolver, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("‹  Volver", color = Wine, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.weight(1f))
+            Image(painterResource(Fig.LOGO), contentDescription = "Rincón Amancay", modifier = Modifier.size(52.dp))
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text("Rincón", fontSize = 13.sp, color = Muted)
+                Text("Amancay", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+            }
+        }
+        Text("ESPACIO EMPRENDEDORA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed, letterSpacing = 2.sp)
+        Text("Ingresa a tu espacio", fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+        Text("Administra tu tienda desde aquí.", color = Muted, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(24.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+        Column(Modifier.padding(18.dp)) {
         AmancayInput("Correo electrónico", correo, alCambiarCorreo)
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
@@ -517,13 +539,16 @@ private fun PantallaIngresoEmprendedora(
             alGoogle,
             enabled = !googleCargando && !enviando && !recuperacionCargando
         )
+        }
+        }
         Text(
             "Si administración creó tu cuenta, ingresa primero esas credenciales para vincular Google.",
             color = Muted,
             fontSize = 12.sp,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
-        TextButton(onClick = alVolver, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Volver al modo comprador", color = Wine) }
+        Spacer(Modifier.height(8.dp))
+        Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 11.sp, color = Wine, letterSpacing = 1.5.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 14.dp))
     }
 }
 
@@ -759,7 +784,7 @@ internal fun PantallaEdicionTienda(
     val errorContacto = validarContactoTienda(contactoTipo, contactoValor)
 
     Text("MI TIENDA", fontSize = 12.sp, color = Wine, fontWeight = FontWeight.Bold)
-    Text("Ficha del emprendimiento", fontSize = 30.sp, color = Dark)
+    Text("Mi tienda", fontSize = 32.sp, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
     Text("Los cambios de nombre, descripción, sector, tipo y contacto se reflejan en la proyección pública si la tienda ya está publicada.", fontSize = 15.sp, color = Muted)
     Spacer(Modifier.height(16.dp))
     if (borradorRestaurado != null) {
@@ -767,6 +792,13 @@ internal fun PantallaEdicionTienda(
     }
     Spacer(Modifier.height(8.dp))
 
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(22.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+    Column(Modifier.padding(14.dp)) {
     Text("Foto o logo de la tienda", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Dark)
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -824,6 +856,8 @@ internal fun PantallaEdicionTienda(
                 AvisoEmprendedora("Tu logo está guardado en la ficha. Vuelve a subirlo para verlo aquí en este dispositivo.", false)
             }
         }
+    }
+    }
     }
     Spacer(Modifier.height(16.dp))
 
