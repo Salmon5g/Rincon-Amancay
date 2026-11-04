@@ -32,9 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,19 +92,26 @@ class MainActivity : FragmentActivity() {
 @Composable
 fun AmancayApp() {
     val context = LocalContext.current
+    val prefsTexto = remember(context) { context.getSharedPreferences("amancay_preferencias_visuales", Context.MODE_PRIVATE) }
+    var escalaTexto by remember { mutableFloatStateOf(prefsTexto.getFloat("escala_texto", 1f)) }
     val firebaseServices = remember(context) { FirebaseClientServicesProvider.initialize(context) }
     val catalogoComprador = remember(firebaseServices) { crearCatalogoCompradorFirebase(firebaseServices.firestore) }
     DisposableEffect(catalogoComprador) {
         onDispose { catalogoComprador.cerrar() }
     }
     var modo by remember { mutableStateOf<String?>(null) }
+    val densidad = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(densidad.density, densidad.fontScale * escalaTexto)) {
     when (modo) {
         "comprador" -> ModoCompradorScreen(
             repositorio = catalogoComprador,
             auth = firebaseServices.auth,
             webClientId = BuildConfig.WEB_CLIENT_ID
         ) { modo = null }
-        "emprendedora" -> ModoEmprendedoraConectada(firebaseServices, BuildConfig.WEB_CLIENT_ID) { modo = null }
+        "emprendedora" -> ModoEmprendedoraConectada(firebaseServices, BuildConfig.WEB_CLIENT_ID, escalaTexto, { escala ->
+            escalaTexto = escala
+            prefsTexto.edit().putFloat("escala_texto", escala).apply()
+        }) { modo = null }
         else -> Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -145,6 +155,7 @@ fun AmancayApp() {
                 emoji = "✿"
             ) { modo = "emprendedora" }
         }
+    }
     }
 }
 
@@ -625,7 +636,9 @@ internal fun EmprendedoraAppConectada(
     alSubirLogo: suspend (archivoId: String, imagen: ImagenProductoPreparada) -> Unit,
     alPublicarTienda: () -> Unit,
     alRetirarTienda: () -> Unit,
-    alSalir: () -> Unit
+    alSalir: () -> Unit,
+    escalaTexto: Float,
+    alCambiarEscalaTexto: (Float) -> Unit
 ) {
     val context = LocalContext.current
     val productos by productosRepository.productos.collectAsState()
@@ -753,7 +766,7 @@ internal fun EmprendedoraAppConectada(
 
     Scaffold(
         containerColor = Cream,
-        topBar = { AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir) },
+        topBar = { AmancayTopBar(onHelp = { showHelp = true }, etiquetaEspacio = true) },
         bottomBar = {
             Column {
                 HorizontalDivider(color = Line, thickness = 1.dp)
@@ -814,6 +827,7 @@ internal fun EmprendedoraAppConectada(
                             screen = Screen.Preview(productoVista)
                         },
                         onVerFerias = { screen = Screen.Ferias },
+                        tiendaVisible = tienda.estadoPublicacion == "publicado",
                         contenidoAdicional = {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -966,7 +980,9 @@ internal fun EmprendedoraAppConectada(
                             logoTienda = remember(sesion.uid, tienda.logo) { leerLogoLocalTienda(context, sesion.uid, tienda.logo != null) },
                             onEditarTienda = { editandoTienda = true },
                             errorAcceso = errorHuella,
-                            onCerrarSesion = alSalir
+                            onCerrarSesion = alSalir,
+                            escalaTexto = escalaTexto,
+                            onCambiarEscalaTexto = alCambiarEscalaTexto
                         )
                     }
                     is Screen.Preview -> PreviewCatalogScreen(

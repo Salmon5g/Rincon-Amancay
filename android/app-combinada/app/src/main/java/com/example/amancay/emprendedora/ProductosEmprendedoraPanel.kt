@@ -228,7 +228,7 @@ internal fun ProductosEmprendedoraPanel(
     }
 
     Text("MI CATÁLOGO", fontSize = 12.sp, color = Wine, fontWeight = FontWeight.Bold)
-    Text("Productos", fontSize = 30.sp, color = Dark)
+    Text("Mis productos", fontSize = 30.sp, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
     Text("Tus cambios se guardan en Firebase. Publicar actualiza la tienda que ve el comprador.", fontSize = 15.sp, color = Muted)
     Spacer(Modifier.height(12.dp))
     errorLectura?.let { AvisoEmprendedora(it, true) }
