@@ -15,7 +15,7 @@ export interface ServiciosCliente {
   storage: FirebaseStorage;
 }
 
-export const operaciones = ['publicarTienda','retirarTienda','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
+export const operaciones = ['publicarTienda','retirarTienda','editarTiendaEmprendedora','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
 export type Operacion = typeof operaciones[number];
 export { ErrorApi };
 function id(value: string) {if (!/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new Error('ID inválido.');return value;}
@@ -59,6 +59,27 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
       if(!extension[archivo.type] || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar PNG, JPEG o WebP de hasta 5 MiB.');
       const ruta=`tiendas/${id(tiendaId)}/productos/${id(productoId)}/${crypto.randomUUID()}.${extension[archivo.type]}`;
       await uploadBytes(ref(storage,ruta),archivo,{contentType:archivo.type});return ruta;
+    },
+    async subirLogoTienda(tiendaId: string, archivo: Blob, archivoId: string): Promise<string> {
+      const tienda = id(tiendaId);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
+      if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      await auth.authStateReady();
+      const user=auth.currentUser;
+      if(!user) throw new ErrorApi('no-autenticado','Iniciar sesión antes de continuar.',401);
+      const token=await user.getIdToken();
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
+      try {
+        const response=await fetch(`${apiBase}tiendas/${tienda}/logo`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
+        const body=await response.json();
+        if(!response.ok) throw new ErrorApi(body.error?.code??'error-api',body.error?.mensaje??'No se pudo guardar el logo.',response.status,response.status>=500);
+        const ruta=body.datos?.ruta;
+        if(typeof ruta!=='string') throw new ErrorApi('respuesta-invalida','No se confirmó la ruta del logo.',response.status,true);
+        return ruta;
+      } catch(error) {
+        if(error instanceof ErrorApi) throw error;
+        throw new ErrorApi('conexion-interrumpida','No se confirmó la carga. Reintenta con el mismo archivo.',0,true);
+      } finally {clearTimeout(timeout);}
     },
     leerImagen: (ruta: string) => getBlob(ref(storage,ruta),5*1024*1024),
     async llamar(operacion: Operacion, solicitud: Record<string,unknown>): Promise<Record<string,unknown>> {

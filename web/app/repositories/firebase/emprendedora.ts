@@ -1,4 +1,6 @@
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where } from 'firebase/firestore'
+import type { Timestamp } from 'firebase/firestore'
+import { versionDocumento } from '~/lib/cliente-base'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 
 export type ProductoEmprendedoraWeb = {
@@ -13,11 +15,29 @@ export type ProductoEmprendedoraWeb = {
   imagenPublica?: string
 }
 
+export type ContactoEmprendedoraWeb = {
+  tipo: 'whatsapp' | 'correo' | 'web'
+  valor: string
+}
+
 export type CuentaEmprendedoraWeb = {
   uid: string
   correo: string
   nombreMostrar: string
-  tienda: { id: string; nombre: string; descripcion: string; estadoPublicacion: string; tieneLogo: boolean; contactoVisible: boolean }
+  tienda: {
+    id: string
+    nombre: string
+    descripcion: string
+    tipoEmprendimientoId: string
+    sectorId: string
+    contacto: ContactoEmprendedoraWeb | null
+    mostrarContacto: boolean
+    versionEsperada: string
+    estadoPublicacion: string
+    tieneLogo: boolean
+    logoPublico: string | null
+    contactoVisible: boolean
+  }
   productos: ProductoEmprendedoraWeb[]
 }
 
@@ -27,6 +47,19 @@ function texto(valor: unknown, alternativo = ''): string {
 
 function numero(valor: unknown): number | null {
   return typeof valor === 'number' && Number.isFinite(valor) ? valor : null
+}
+
+function contactoEmprendedora(valor: unknown): ContactoEmprendedoraWeb | null {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null
+  const datos = valor as Record<string, unknown>
+  if (!['whatsapp', 'correo', 'web'].includes(String(datos.tipo)) || typeof datos.valor !== 'string' || !datos.valor.trim()) return null
+  return { tipo: datos.tipo as ContactoEmprendedoraWeb['tipo'], valor: datos.valor }
+}
+
+function versionTienda(valor: unknown): string {
+  if (!valor || typeof valor !== 'object' || !('seconds' in valor) || !('nanoseconds' in valor)) return ''
+  const timestamp = valor as Timestamp
+  return versionDocumento(timestamp)
 }
 
 export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: string): Promise<CuentaEmprendedoraWeb> {
@@ -56,6 +89,17 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   if (!tiendaDoc.exists()) throw new Error('No se encontró la ficha privada de la tienda.')
   const tienda = tiendaDoc.data()
   if (tienda.propietarioUid !== uid) throw new Error('La tienda asignada no pertenece a esta cuenta.')
+  const contacto = contactoEmprendedora(tienda.contacto)
+  let logoPublico: string | null = null
+  if (tienda.estadoPublicacion === 'publicado') {
+    try {
+      const tiendaPublica = await getDocFromServer(doc(db, 'tiendasPublicas', tiendaId))
+      if (tiendaPublica.exists()) {
+        const datosPublicos = tiendaPublica.data()
+        logoPublico = texto(datosPublicos.logoMiniatura) || texto(datosPublicos.logo) || null
+      }
+    } catch {}
+  }
 
   const baseProductos = productosDocs.docs
     .map((productoDoc): ProductoEmprendedoraWeb | null => {
@@ -107,9 +151,15 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       id: tiendaId,
       nombre: texto(tienda.nombre),
       descripcion: texto(tienda.descripcion),
+      tipoEmprendimientoId: texto(tienda.tipoEmprendimientoId),
+      sectorId: texto(tienda.sectorId),
+      contacto,
+      mostrarContacto: tienda.mostrarContacto === true,
+      versionEsperada: versionTienda(tienda.actualizadoEn),
       estadoPublicacion: texto(tienda.estadoPublicacion, 'borrador'),
       tieneLogo: typeof tienda.logo === 'string' && tienda.logo.trim() !== '',
-      contactoVisible: tienda.mostrarContacto === true && typeof (tienda.contacto as Record<string, unknown> | undefined)?.valor === 'string' && (tienda.contacto as Record<string, unknown>).valor!.toString().trim() !== '',
+      logoPublico,
+      contactoVisible: tienda.mostrarContacto === true && contacto !== null,
     },
     productos,
   }
