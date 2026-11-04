@@ -46,6 +46,10 @@ export class ClienteStorageSupabase {
 
   constructor(config:ConfigSupabase) { this.config=config; }
 
+  urlPublica(bucket:string,path:string):string {
+    return `${this.config.url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${partes(path)}`;
+  }
+
   private async obtenerSesion():Promise<SesionSupabase> {
     if(this.sesion && Date.now()<this.sesion.expiraEn-60_000)return this.sesion;
     if(this.renovacion)return this.renovacion;
@@ -284,10 +288,25 @@ export function crearServicioImagenesSupabase(db:Firestore,storage:ClienteStorag
     return confirmado.ruta;
   };
 
+  const subirLogoAsociacion=async(uid:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>=>{
+    exigir(id.test(uid),'no-autenticado','Identidad Firebase no válida.');
+    exigir(uuid.test(archivoId),'datos-invalidos','El identificador del archivo no es válido.');
+    const extension=extensiones[contentType];
+    exigir(extension!==undefined && bytes.length>0 && bytes.length<=maxBytes,'datos-invalidos','Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+    const acceso=(await db.doc(`accesos/${uid}`).get()).data();
+    exigir(acceso?.estado==='activo' && Array.isArray(acceso.roles) && acceso.roles.includes('administrador'),'sin-permiso','Solo un administrador activo puede cargar logos de asociaciones.');
+    exigir(await prepararImagen(bytes,extension),'imagen-no-autorizada','El archivo no es una imagen válida o excede los límites de procesamiento.');
+    const ruta=`asociaciones/${archivoId}/logo/${archivoId}.${extension}`;
+    await storage.subirInmutable(buckets.originales,ruta,bytes,contentType);
+    const derivadas=await prepararYPublicar(ruta,extension,`catalogo/asociaciones/${archivoId}/logo`);
+    exigir(derivadas,'imagen-no-autorizada','No se pudo preparar el logo para el catálogo público.');
+    return storage.urlPublica(buckets.catalogo,derivadas.imagen);
+  };
+
   const limpiar=async(rutas:string[])=>{
     const permitidas=[...new Set(rutas)].filter(ruta=>/^catalogo\/[a-zA-Z0-9_-]{1,128}\/(?:productos\/[a-zA-Z0-9_-]{1,128}|tienda)\/[0-9a-f]{64}_(1600|320)\.webp$/.test(ruta));
     if(permitidas.length!==new Set(rutas).size)throw new ErrorOperacion('datos-invalidos','Ruta pública de imagen inválida para retirada.');
     await storage.borrar(buckets.catalogo,permitidas);
   };
-  return {procesar,procesarTienda,subir,leer,subirTienda,limpiar};
+  return {procesar,procesarTienda,subir,leer,subirTienda,subirLogoAsociacion,limpiar};
 }

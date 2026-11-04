@@ -10,6 +10,7 @@ Firebase Auth sigue identificando a emprendedoras y Firebase/Firestore conserva 
 4. Supabase RLS deja operar en estos buckets únicamente a ese UID. El permiso de la emprendedora se decide en la API con Firebase/Firestore; la cuenta técnica no se comparte con los clientes.
 5. El original queda privado. Al publicar una tienda o producto, la API valida y decodifica el archivo, elimina sus metadatos, crea WebP de hasta 1600 y 320 píxeles y guarda rutas con hash en el bucket público. La imagen principal intenta calidad 90 y baja a 86/82 solo si necesita respetar el límite de 5 MiB; la miniatura se procesa desde el original, no desde otra WebP.
 6. Al cambiar el logo publicado o retirar una tienda/producto, Firestore registra las rutas públicas que deben borrarse. Si Storage falla, repetir la misma operación intenta completar la limpieza.
+7. En la administración web, la API comprueba que quien carga un logo de asociación tenga un acceso Firebase activo con rol `administrador`. Conserva el original privado y devuelve la URL pública de la derivada WebP para guardarla en `asociaciones/{id}.logoUrl`.
 
 ## Rutas
 
@@ -17,6 +18,8 @@ Firebase Auth sigue identificando a emprendedoras y Firebase/Firestore conserva 
 - Logo público y miniatura: `catalogo/{tiendaId}/tienda/{sha256}_{1600|320}.webp`.
 - Imagen original privada de producto: `tiendas/{tiendaId}/productos/{productoId}/{uuid}.{jpg|png|webp}`.
 - Imagen pública grande y miniatura: `catalogo/{tiendaId}/productos/{productoId}/{sha256}_{1600|320}.webp`.
+- Logo original privado de asociación: `asociaciones/{archivoId}/logo/{archivoId}.{jpg|png|webp}`.
+- Logo público grande y miniatura de asociación: `catalogo/asociaciones/{archivoId}/logo/{sha256}_{1600|320}.webp`.
 - Los IDs usan letras, números, guion o guion bajo; el nombre de cada original es UUID. El bucket original acepta JPEG y PNG y WebP. El catálogo solo acepta WebP procesado.
 - Los buckets limitan cada objeto a 5 MiB. La ruta pública puede abrirse sin iniciar sesión y puede permanecer en caché después de retirar el producto.
 
@@ -33,7 +36,7 @@ El archivo `.env.compartido.local` está excluido de Git. No copiar estas creden
 
 ## Aplicar las políticas definitivas
 
-`infra/supabase/storage-imagenes.sql` reemplaza todas las políticas `amancay_*` de `storage.objects`, incluidas las políticas temporales de la prueba, y deja las rutas de logo y producto de esta guía. En el SQL Editor de la instancia del curso, ejecutar el archivo completo una vez. Es idempotente para los buckets y las políticas del proyecto.
+`infra/supabase/storage-imagenes.sql` reemplaza todas las políticas `amancay_*` de `storage.objects`, incluidas las políticas temporales de la prueba, y deja las rutas de logo de tienda, asociación y producto de esta guía. Al cambiar estas rutas, vuelve a ejecutar el archivo completo en el SQL Editor de la instancia del curso. Es idempotente para los buckets y las políticas del proyecto.
 
 Después, comprobar en **Storage → Files**:
 
@@ -56,15 +59,16 @@ La API escucha en `http://localhost:8080`. Las rutas para cargar un logo o image
 ```text
 POST /api/v1/tiendas/{tiendaId}/logo
 POST /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes
+POST /api/v1/asociaciones/logo
 Authorization: Bearer <Firebase ID token>
 Content-Type: image/jpeg | image/png | image/webp
 X-Archivo-Id: <UUID único para el reintento>
 ```
 
-El cuerpo es el archivo binario, no JSON ni base64. La API genera el nombre final y lo sube al bucket privado. Para producto, agrega la ruta a `imagenes` en el borrador; si ya tiene cinco imágenes, la operación se rechaza e intenta retirar el original recién cargado. Para logo, guarda la ruta en la ficha privada y, si ya está publicada, sincroniza las derivadas públicas. Si Firestore falla después de la carga, podría quedar un original privado huérfano; no se hace borrado automático ante un resultado transaccional incierto.
+El cuerpo es el archivo binario, no JSON ni base64. La API genera el nombre final y lo sube al bucket privado. Para producto, agrega la ruta a `imagenes` en el borrador; si ya tiene cinco imágenes, la operación se rechaza e intenta retirar el original recién cargado. Para logo de tienda, guarda la ruta en la ficha privada y, si ya está publicada, sincroniza las derivadas públicas. Para asociación, el endpoint valida el rol administrador y devuelve la URL pública que guarda la operación existente de crear/editar asociación. Si Firestore falla después de cargar un logo, podría quedar un original privado o una derivada pública huérfanos; no se borran automáticamente ante un resultado incierto.
 
 Publicar usa las operaciones existentes `publicarTienda` y `publicarProducto`. La API verifica cada ruta privada, genera las dos copias y guarda sus rutas en la proyección pública de Firestore. `retirarProducto` y `retirarTienda` borran las derivadas públicas después de actualizar Firestore; una respuesta `503` durante esa limpieza indica que hay que reintentar la misma operación con el mismo `operacionId`.
 
 ## Alcance de este avance
 
-La API compartida local integra Supabase Storage. Android carga fotos de productos a la API, que conserva el original en privado y genera derivadas WebP públicas al publicar; la emprendedora puede ver el original privado desde su vista previa. La web y el comprador Android resuelven las rutas públicas `catalogo/...` a URLs del bucket público. El adaptador Firebase para emuladores sigue separado. La carga de logo desde Android todavía está pendiente.
+La API compartida local integra Supabase Storage. Android carga fotos de productos a la API, que conserva el original en privado y genera derivadas WebP públicas al publicar; la emprendedora puede ver el original privado desde su vista previa. En la web, la administración carga logos de asociaciones por la misma API y los presenta desde la URL pública de Supabase. El comprador web y Android resuelven las rutas públicas `catalogo/...` a URLs del bucket público. El adaptador Firebase para emuladores sigue separado; la carga de logo de tienda desde Android todavía está pendiente.

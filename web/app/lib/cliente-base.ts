@@ -81,6 +81,26 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
         throw new ErrorApi('conexion-interrumpida','No se confirmó la carga. Reintenta con el mismo archivo.',0,true);
       } finally {clearTimeout(timeout);}
     },
+    async subirLogoAsociacion(archivo: Blob, archivoId: string): Promise<string> {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
+      if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      await auth.authStateReady();
+      const user=auth.currentUser;
+      if(!user) throw new ErrorApi('no-autenticado','Iniciar sesión antes de continuar.',401);
+      const token=await user.getIdToken();
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
+      try {
+        const response=await fetch(`${apiBase}asociaciones/logo`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
+        const body=await response.json();
+        if(!response.ok) throw new ErrorApi(body.error?.code??'error-api',body.error?.mensaje??'No se pudo guardar el logo de la asociación.',response.status,response.status>=500);
+        const url=body.datos?.ruta;
+        if(typeof url!=='string' || !url.startsWith('https://')) throw new ErrorApi('respuesta-invalida','No se confirmó la URL pública del logo.',response.status,true);
+        return url;
+      } catch(error) {
+        if(error instanceof ErrorApi) throw error;
+        throw new ErrorApi('conexion-interrumpida','No se confirmó la carga. Reintenta con el mismo archivo.',0,true);
+      } finally {clearTimeout(timeout);}
+    },
     leerImagen: (ruta: string) => getBlob(ref(storage,ruta),5*1024*1024),
     async llamar(operacion: Operacion, solicitud: Record<string,unknown>): Promise<Record<string,unknown>> {
       if(!operaciones.includes(operacion)) throw new Error('Operación desconocida.');

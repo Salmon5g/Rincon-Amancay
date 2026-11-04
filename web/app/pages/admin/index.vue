@@ -176,6 +176,11 @@ const escrituraAsociacionesDisponible = computed(() => ['local', 'real-api'].inc
 const asociacionEnEdicion = ref<Asociacion | null>(null)
 const asociacionOperacionPendiente = ref<{ id: string; solicitud: string } | null>(null)
 const asociacionReintentoObligatorio = ref(false)
+const logoAsociacionArchivo = ref<File | null>(null)
+const logoAsociacionArchivoId = ref('')
+const logoAsociacionVistaPrevia = ref('')
+const logoAsociacionPreviewError = ref(false)
+const logosAsociacionFallidos = ref(new Set<string>())
 const asociacionEstadoPendiente = ref<{ item: Item; activo: boolean; operacionId: string; reintentoObligatorio: boolean } | null>(null)
 const asociacionEnGestion = ref<Asociacion | null>(null)
 const detalleIntegrantes = ref<IntegrantesAsociacion | null>(null)
@@ -213,9 +218,17 @@ function mensajeErrorCatalogo(error: unknown) {
 
 function mensajeErrorAsociacion(error: unknown) {
   const codigo = (error as { code?: string })?.code
-  if (codigo === 'datos-invalidos') return 'Revisa el nombre, sector, contacto y dirección HTTPS del logo.'
+  if (codigo === 'datos-invalidos') return 'Revisa el nombre, sector, contacto y formato del logo.'
   if (codigo === 'conflicto') return 'La asociación o la relación cambió desde que se cargó. Actualiza el listado e inténtalo de nuevo.'
   if (codigo === 'id-reutilizado') return 'La solicitud ya se intentó con otros datos. Inicia una operación nueva.'
+  return mensajeError(error)
+}
+
+function mensajeErrorCargaLogo(error: unknown) {
+  const codigo = (error as { code?: string })?.code
+  if (codigo === 'datos-invalidos' || codigo === 'tipo-no-admitido') return 'El logo debe ser JPEG, PNG o WebP y pesar hasta 5 MiB.'
+  if (codigo === 'imagen-no-autorizada') return 'No se pudo procesar la imagen. Prueba con otra foto o logo.'
+  if (codigo === 'pendiente' || codigo === 'conexion-interrumpida' || (error as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'Supabase Storage no confirmó la carga. Reintenta con el mismo archivo.'
   return mensajeError(error)
 }
 
@@ -277,6 +290,46 @@ function itemAsociacion(asociacion: Asociacion): Item {
   }
 }
 
+function liberarVistaPreviaLogoAsociacion() {
+  if (logoAsociacionVistaPrevia.value) URL.revokeObjectURL(logoAsociacionVistaPrevia.value)
+  logoAsociacionVistaPrevia.value = ''
+}
+
+function limpiarSeleccionLogoAsociacion() {
+  liberarVistaPreviaLogoAsociacion()
+  logoAsociacionArchivo.value = null
+  logoAsociacionArchivoId.value = ''
+}
+
+function seleccionarLogoAsociacion(evento: Event) {
+  const input = evento.target as HTMLInputElement
+  const archivo = input.files?.[0]
+  if (!archivo) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(archivo.type) || archivo.size <= 0 || archivo.size > 5 * 1024 * 1024) {
+    errorOperacion.value = 'El logo debe ser JPEG, PNG o WebP y pesar hasta 5 MiB.'
+    input.value = ''
+    return
+  }
+  limpiarSeleccionLogoAsociacion()
+  logoAsociacionArchivo.value = archivo
+  logoAsociacionArchivoId.value = crypto.randomUUID()
+  logoAsociacionVistaPrevia.value = URL.createObjectURL(archivo)
+  logoAsociacionPreviewError.value = false
+  errorOperacion.value = ''
+}
+
+function quitarLogoAsociacion() {
+  limpiarSeleccionLogoAsociacion()
+  borrador.value.logoUrl = ''
+  logoAsociacionPreviewError.value = false
+  const input = document.getElementById('archivo-logo-asociacion') as HTMLInputElement | null
+  if (input) input.value = ''
+}
+
+function marcarLogoAsociacionFallido(id: string) {
+  logosAsociacionFallidos.value = new Set([...logosAsociacionFallidos.value, id])
+}
+
 async function cargarDatosAsociaciones() {
   cargandoCatalogos.value = true
   errorDatos.value = ''
@@ -286,6 +339,7 @@ async function cargarDatosAsociaciones() {
       listarAsociacionesAdmin($amancay),
     ])
     datos.value = { ...datosVacios, catalogos, asociaciones }
+    logosAsociacionFallidos.value = new Set()
     const seccionAsociaciones = secciones.value.find((actual) => actual.id === 'asociaciones')
     if (seccionAsociaciones) seccionAsociaciones.items = asociaciones.map(itemAsociacion)
   } catch (error) {
@@ -408,7 +462,7 @@ async function cargarSeccion() {
 onMounted(() => {
   desconectar = onAuthStateChanged($amancay.firebase.auth, () => { void comprobarSesion() })
 })
-onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.() })
+onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.(); liberarVistaPreviaLogoAsociacion() })
 
 const resumen = computed(() =>
   secciones.value.slice(0, 4).map((s) => ({
@@ -482,6 +536,8 @@ async function abrirFormulario() {
     tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
     tipoCatalogo: 'sectores', valor: '', clave: '', contactoValor: '', logoUrl: '',
   }
+  limpiarSeleccionLogoAsociacion()
+  logoAsociacionPreviewError.value = false
   errorOperacion.value = ''
   invitacionCreada.value = ''
   modoAltaEmprendedora.value = 'cuenta'
@@ -508,12 +564,14 @@ async function prepararNuevaAsociacion() {
 
 function prepararEdicionAsociacion(item: Item) {
   if (!escrituraAsociacionesDisponible.value || !item.asociacion) return
+  limpiarSeleccionLogoAsociacion()
   const asociacion = item.asociacion
   asociacionEnEdicion.value = asociacion
   borrador.value.nombre = asociacion.nombre
   borrador.value.descripcion = asociacion.descripcion
   borrador.value.sectorId = asociacion.sectorId
   borrador.value.logoUrl = asociacion.logoUrl ?? ''
+  logoAsociacionPreviewError.value = false
   contactoTipo.value = asociacion.contacto.tipo
   borrador.value.contactoValor = asociacion.contacto.valor
   asociacionOperacionPendiente.value = null
@@ -524,6 +582,17 @@ function prepararEdicionAsociacion(item: Item) {
 
 async function guardarAsociacion() {
   if (!escrituraAsociacionesDisponible.value) return
+  if (logoAsociacionArchivo.value) {
+    enviando.value = true
+    try {
+      borrador.value.logoUrl = await $amancay.subirLogoAsociacion(logoAsociacionArchivo.value, logoAsociacionArchivoId.value)
+    } catch (error) {
+      errorOperacion.value = mensajeErrorCargaLogo(error)
+      return
+    } finally {
+      enviando.value = false
+    }
+  }
   const contenido = {
     nombre: borrador.value.nombre.trim(),
     descripcion: borrador.value.descripcion.trim(),
@@ -558,6 +627,7 @@ async function guardarAsociacion() {
     asociacionOperacionPendiente.value = null
     asociacionReintentoObligatorio.value = false
     formularioAbierto.value = false
+    limpiarSeleccionLogoAsociacion()
     aviso.value = `Asociación ${estado} en Firebase.`
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 5000)
@@ -737,6 +807,7 @@ function cerrarFormulario() {
     return
   }
   formularioAbierto.value = false
+  limpiarSeleccionLogoAsociacion()
   contrasenaInicial.value = ''
   confirmarContrasenaInicial.value = ''
 }
@@ -1350,14 +1421,20 @@ async function guardarEdicionCuentaEmprendedora() {
               <p v-if="!['local', 'real-api'].includes(config.firebaseModo)" class="campo-completo">Este entorno es de solo lectura; puedes completar una vista previa, pero no creará cuentas ni invitaciones.</p>
               <p v-else-if="modoAltaEmprendedora === 'cuenta'" class="campo-completo">La contraseña se envía directamente a Firebase Authentication; no se guarda en Firestore ni se manda a la API. Entrégala a la emprendedora por un medio privado.</p>
               <p v-else class="campo-completo">Comparte manualmente el enlace. La invitación vence y la destinataria define su propia contraseña.</p>
+              <div class="subencabezado-formulario campo-completo">
+                <h3>Acceso de la emprendedora</h3>
+              </div>
               <label>Nombre de la emprendedora<input v-model="borrador.nombre" maxlength="100" required autocomplete="name" :disabled="enviando || cuentaAltaPendiente" /></label>
               <label>Correo electrónico<input v-model="borrador.correo" type="email" maxlength="254" required autocomplete="email" :disabled="enviando || cuentaAltaPendiente" /></label>
               <template v-if="modoAltaEmprendedora === 'cuenta' && ['local', 'real-api'].includes(config.firebaseModo)">
                 <label>Contraseña inicial<input v-model="contrasenaInicial" type="password" minlength="10" maxlength="128" autocomplete="new-password" required :disabled="enviando || cuentaAltaPendiente" /></label>
                 <label>Confirmar contraseña<input v-model="confirmarContrasenaInicial" type="password" minlength="10" maxlength="128" autocomplete="new-password" required :disabled="enviando || cuentaAltaPendiente" /></label>
               </template>
-              <label>Nombre de la tienda<input v-model="borrador.nombreTienda" maxlength="120" required :disabled="enviando || cuentaAltaPendiente" /></label>
-              <label>Descripción<textarea v-model="borrador.descripcion" rows="3" maxlength="2000" required :disabled="enviando || cuentaAltaPendiente" /></label>
+              <div class="subencabezado-formulario campo-completo con-separador">
+                <h3>Datos de la tienda</h3>
+              </div>
+              <label class="campo-completo">Nombre de la tienda<input v-model="borrador.nombreTienda" maxlength="120" required :disabled="enviando || cuentaAltaPendiente" /></label>
+              <label class="campo-completo">Descripción<textarea v-model="borrador.descripcion" rows="3" maxlength="2000" required :disabled="enviando || cuentaAltaPendiente" /></label>
               <label>Sector
                 <select v-model="borrador.sectorId" required :disabled="enviando || cuentaAltaPendiente">
                   <option value="">Seleccionar sector</option>
@@ -1369,11 +1446,6 @@ async function guardarEdicionCuentaEmprendedora() {
                   <option value="">Seleccionar tipo</option>
                   <option v-for="opcion in activos(datos.catalogos.tiposEmprendimiento)" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
                 </select>
-              </label>
-              <label class="opcion"><input type="checkbox" checked disabled /> Mostrar precios en el catálogo</label>
-              <label class="opcion"><input type="checkbox" disabled /> Activar historial de ventas</label>
-              <label>Forma de contacto
-                <select disabled><option>Formulario de contacto</option></select>
               </label>
             </template>
             <template v-else-if="seccion.id === 'administradores'">
@@ -1420,9 +1492,25 @@ async function guardarEdicionCuentaEmprendedora() {
               <label>{{ contactoTipo === 'whatsapp' ? 'Número con código de país' : contactoTipo === 'correo' ? 'Correo de contacto' : 'Dirección HTTPS' }}
                 <input v-model="borrador.contactoValor" :type="contactoTipo === 'correo' ? 'email' : contactoTipo === 'web' ? 'url' : 'tel'" maxlength="254" required :disabled="enviando || asociacionReintentoObligatorio" />
               </label>
-              <label class="campo-completo">URL HTTPS pública del logo<input v-model="borrador.logoUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || asociacionReintentoObligatorio" /></label>
+              <div class="campo-completo logo-asociacion">
+                <div class="logo-asociacion-vista">
+                  <img v-if="!logoAsociacionPreviewError && (logoAsociacionVistaPrevia || borrador.logoUrl)" :src="logoAsociacionVistaPrevia || borrador.logoUrl" :alt="`Logo de ${borrador.nombre || 'la asociación'}`" @error="logoAsociacionPreviewError = true" />
+                  <span v-else aria-hidden="true">🤝</span>
+                </div>
+                <div class="logo-asociacion-carga">
+                  <label for="archivo-logo-asociacion">Logo de la asociación (opcional)</label>
+                  <input id="archivo-logo-asociacion" type="file" accept="image/png,image/jpeg,image/webp" :disabled="enviando || asociacionReintentoObligatorio || config.firebaseModo !== 'real-api'" @change="seleccionarLogoAsociacion" />
+                  <small v-if="config.firebaseModo === 'real-api'">El archivo se procesa y guarda en Supabase al guardar la asociación, y reemplaza la URL de abajo. JPEG, PNG o WebP, hasta 5 MiB.</small>
+                  <small v-else>La carga desde archivo usa la API compartida real-api. En este entorno puedes usar una URL HTTPS pública.</small>
+                  <div class="acciones-logo">
+                    <button v-if="logoAsociacionArchivo" class="editar" type="button" :disabled="enviando || asociacionReintentoObligatorio" @click="limpiarSeleccionLogoAsociacion">Cancelar cambio de archivo</button>
+                    <button v-if="borrador.logoUrl || logoAsociacionArchivo" class="editar" type="button" :disabled="enviando || asociacionReintentoObligatorio" @click="quitarLogoAsociacion">Quitar logo</button>
+                  </div>
+                </div>
+              </div>
+              <label class="campo-completo">O URL HTTPS pública<input v-model="borrador.logoUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || asociacionReintentoObligatorio" @input="logoAsociacionPreviewError = false" /></label>
               <p v-if="!activos(datos.catalogos.sectores).length" class="campo-completo aviso-carga" role="status">Primero crea un sector activo en Catálogos para asociarlo a esta ficha.</p>
-              <p class="campo-completo">El logo se referencia por URL. La carga directa de imágenes en Firebase Storage se incorporará cuando el bucket esté configurado.</p>
+              <p class="campo-completo">Los logos cargados desde archivo se guardan como WebP público en Supabase Storage; también puedes mantener una imagen alojada en otra URL HTTPS.</p>
             </template>
             <template v-else-if="seccion.id === 'ferias'">
               <label>Nombre de la feria<input v-model="borrador.nombre" required /></label>
@@ -1645,7 +1733,12 @@ async function guardarEdicionCuentaEmprendedora() {
 
         <ul v-if="!cargandoDatos && !cargandoCatalogos && !errorDatos && visibles.length" class="lista">
           <li v-for="item in visibles" :key="`${item.catalogo ?? seccion.id}:${item.catalogoId ?? item.uidDestino ?? item.invitacionId ?? item.titulo}`" class="fila">
-            <span class="avatar" aria-hidden="true">{{ iniciales(item.titulo) }}</span>
+            <img
+              v-if="seccion.id === 'asociaciones' && item.asociacion?.logoUrl && !logosAsociacionFallidos.has(item.asociacion.id)"
+              class="avatar avatar-imagen" :src="item.asociacion.logoUrl" :alt="`Logo de ${item.asociacion.nombre}`"
+              @error="marcarLogoAsociacionFallido(item.asociacion.id)"
+            />
+            <span v-else class="avatar" aria-hidden="true">{{ iniciales(item.titulo) }}</span>
             <div class="fila-texto">
               <b>{{ item.titulo }}</b>
               <small>{{ item.detalle }}</small>
@@ -2107,6 +2200,78 @@ input:focus-visible {
 
 .campo-completo {
   grid-column: 1 / -1;
+}
+
+.logo-asociacion {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  background: #fffaf4;
+}
+
+.logo-asociacion-vista {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  overflow: hidden;
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--vino);
+  font-size: 2rem;
+}
+
+.logo-asociacion-vista img {
+  width: 100%;
+  height: 100%;
+  padding: 5px;
+  box-sizing: border-box;
+  object-fit: contain;
+}
+
+.logo-asociacion-carga {
+  display: grid;
+  align-content: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.logo-asociacion-carga > label {
+  color: var(--tinta);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.logo-asociacion-carga small {
+  color: var(--suave);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.acciones-logo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.subencabezado-formulario {
+  padding-top: 0.2rem;
+}
+
+.subencabezado-formulario h3 {
+  margin: 0;
+  color: var(--vino);
+  font-size: 0.98rem;
+}
+
+.subencabezado-formulario.con-separador {
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--borde);
 }
 
 .editor-tipo-producto {
@@ -2605,6 +2770,14 @@ h1 {
   height: 48px;
   border-radius: 15px;
   font-size: 0.95rem;
+}
+
+.avatar-imagen {
+  box-sizing: border-box;
+  padding: 3px;
+  border: 1px solid var(--borde);
+  background: #fff;
+  object-fit: contain;
 }
 
 .fila-texto {
