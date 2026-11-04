@@ -196,4 +196,87 @@ async function irSeccion(id: string) {
   height: 64px;
   pointer-events: none;
 }
+
+@media (max-width: 900px) {
+  .lateral {
+    position: static;
+    height: auto;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.8rem 1.2rem;
+    padding: 0.7rem 1rem;
+    border-right: 0;
+    border-bottom: 1.5px solid var(--amancay-borde);
+  }
+
+  .menu {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.2rem 0.4rem;
+  }
+
+  .menu button,
+  .menu-enlace {
+    min-width: 0;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.83rem;
+  }
+
+  .mi {
+    flex: none;
+  }
+
+  .lateral-frase {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .lateral {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    padding: 0.55rem 0.8rem 0.65rem;
+  }
+
+  .lateral > .marca {
+    align-self: flex-start;
+  }
+
+  .lateral .menu {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .lateral .menu::-webkit-scrollbar {
+    display: none;
+  }
+
+  .menu button,
+  .menu-enlace {
+    flex: none;
+    white-space: nowrap;
+    justify-content: flex-start;
+    gap: 0.35rem;
+    padding: 0.35rem 0.4rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .mi {
+    width: 27px;
+    height: 27px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+  }
+}
 </style>

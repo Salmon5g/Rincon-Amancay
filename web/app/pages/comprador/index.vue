@@ -1233,7 +1233,7 @@ h1 {
     position: absolute;
     width: 300px;
     height: 300px;
-    right: -70px;
+    right: 0;
     top: -110px;
     border-radius: 50%;
     background: rgba(246, 193, 119, 0.14);
@@ -2402,6 +2402,10 @@ article.tarjeta-tienda:hover {
     .hero-lista {
         display: none;
     }
+
+    .hero {
+        min-width: 0;
+    }
 }
 
 @media (max-width: 900px) {
@@ -2444,7 +2448,7 @@ article.tarjeta-tienda:hover {
     }
 
     .tienda-hero-info {
-        flex-direction: column;
+        align-items: flex-start;
     }
 
     .tienda-hero-arte {
@@ -2476,9 +2480,30 @@ article.tarjeta-tienda:hover {
 }
 
 @media (max-width: 560px) {
+    .hero {
+        padding: 1.25rem;
+    }
+
+    .hero-texto h2 {
+        font-size: clamp(1.45rem, 7vw, 1.8rem);
+    }
+
+    .hero-texto > p:not(.sobretitulo) {
+        max-width: 34ch;
+    }
+
+    .encabezado-fila h1 {
+        font-size: clamp(1.55rem, 7vw, 2rem);
+    }
+
+    .tienda-hero-info {
+        flex-direction: row;
+        gap: 0.9rem;
+    }
+
     .tienda-logo {
-        width: 110px;
-        height: 110px;
+        width: 84px;
+        height: 84px;
     }
 
     .tarjeta-tienda {
@@ -2486,7 +2511,15 @@ article.tarjeta-tienda:hover {
     }
 
     .rejilla-productos {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
+    }
+
+    .detalle {
+        min-width: 0;
+    }
+
+    .tienda-hero-texto h1 {
+        overflow-wrap: anywhere;
     }
 }
 </style>
