@@ -57,6 +57,7 @@ function mapearTienda(documento: QueryDocumentSnapshot<DocumentData>): TiendaPub
     descripcion: texto(datos.descripcion),
     tipoEmprendimientoId: texto(datos.tipoEmprendimientoId),
     sectorId: texto(datos.sectorId),
+    ...(typeof datos.direccion === 'string' && datos.direccion.trim() ? { direccion: datos.direccion.trim() } : {}),
     mostrarPrecios: datos.mostrarPrecios === true,
     ...(typeof datos.logo === 'string' ? { logo: datos.logo } : {}),
     ...(typeof datos.logoMiniatura === 'string' ? { logoMiniatura: datos.logoMiniatura } : {}),

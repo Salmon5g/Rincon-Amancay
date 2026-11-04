@@ -96,10 +96,13 @@ const mensajeVacio = computed(() => busqueda.value
         ? 'Esta tienda todavía no tiene productos publicados.'
         : 'Todavía no hay tiendas publicadas.');
 const imagenes = computed<string[]>(() => (producto.value?.datos.imagenes ?? []).filter((r: unknown) => typeof r === 'string'));
-const etiquetaSector = computed(() => {
-    const id = tienda.value?.datos.sectorId;
-    return id ? sectores.value[id] ?? '' : '';
-});
+const etiquetaSector = computed(() => ubicacionTienda(tienda.value?.datos));
+// La ubicación mostrada es la dirección escrita por la emprendedora; si no tiene,
+// se muestra la zona del catálogo (comportamiento anterior).
+const ubicacionTienda = (datos?: { direccion?: string; sectorId?: string }) => {
+    if (!datos) return '';
+    return (datos.direccion ?? '').trim() || (datos.sectorId ? sectores.value[datos.sectorId] ?? '' : '');
+};
 const etiquetaTipo = computed(() => {
     const id = tienda.value?.datos.tipoEmprendimientoId;
     return id ? tiposEmprendimiento.value[id] ?? '' : '';
@@ -596,9 +599,9 @@ onBeforeUnmount(() => {
               <div class="tarjeta-tienda-cuerpo">
                 <h3>{{ f.datos.nombre }}</h3>
                 <p>{{ f.datos.descripcion }}</p>
-                <span v-if="f.datos.sectorId && sectores[f.datos.sectorId]" class="chip">
+                <span v-if="ubicacionTienda(f.datos)" class="chip">
                   <span aria-hidden="true">📍</span>
-                  {{ sectores[f.datos.sectorId] }}
+                  {{ ubicacionTienda(f.datos) }}
                 </span>
               </div>
               <button class="boton boton-secundario" type="button" @click="navegar(f)">Visitar tienda →</button>
@@ -625,9 +628,9 @@ onBeforeUnmount(() => {
               <div class="tarjeta-tienda-cuerpo">
                 <h3>{{ f.datos.nombre }}</h3>
                 <p>{{ f.datos.descripcion }}</p>
-                <span v-if="f.datos.sectorId && sectores[f.datos.sectorId]" class="chip">
+                <span v-if="ubicacionTienda(f.datos)" class="chip">
                   <span aria-hidden="true">📍</span>
-                  {{ sectores[f.datos.sectorId] }}
+                  {{ ubicacionTienda(f.datos) }}
                 </span>
               </div>
               <button class="boton boton-secundario" type="button" :disabled="cargando" @click="navegar(f)">Visitar tienda →</button>

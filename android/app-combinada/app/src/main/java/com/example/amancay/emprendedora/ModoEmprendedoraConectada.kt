@@ -7,6 +7,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -532,6 +533,7 @@ internal data class BorradorFicha(
     val descripcion: String,
     val sectorId: String,
     val tipoId: String,
+    val direccion: String,
     val contactoTipo: String,
     val contactoValor: String,
     val mostrarContacto: Boolean
@@ -549,6 +551,7 @@ internal fun guardarBorradorFicha(context: Context, uid: String, borrador: Borra
         .put("descripcion", borrador.descripcion)
         .put("sectorId", borrador.sectorId)
         .put("tipoId", borrador.tipoId)
+        .put("direccion", borrador.direccion)
         .put("contactoTipo", borrador.contactoTipo)
         .put("contactoValor", borrador.contactoValor)
         .put("mostrarContacto", borrador.mostrarContacto)
@@ -566,10 +569,11 @@ internal fun leerBorradorFicha(context: Context, uid: String): BorradorFicha? {
         descripcion = json.optString("descripcion"),
         sectorId = json.optString("sectorId"),
         tipoId = json.optString("tipoId"),
+        direccion = json.optString("direccion"),
         contactoTipo = json.optString("contactoTipo").ifBlank { "whatsapp" },
         contactoValor = json.optString("contactoValor"),
         mostrarContacto = json.optBoolean("mostrarContacto", false)
-    ).takeIf { it.nombre.isNotBlank() || it.descripcion.isNotBlank() || it.contactoValor.isNotBlank() }
+    ).takeIf { it.nombre.isNotBlank() || it.descripcion.isNotBlank() || it.direccion.isNotBlank() || it.contactoValor.isNotBlank() }
 }
 
 internal fun limpiarBorradorFicha(context: Context, uid: String) {
@@ -669,6 +673,7 @@ internal fun PantallaEdicionTienda(
     var descripcion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.descripcion ?: tienda.descripcion) }
     var sectorId by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.sectorId ?: tienda.sectorId) }
     var tipoId by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.tipoId ?: tienda.tipoEmprendimientoId) }
+    var direccion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.direccion ?: tienda.direccion) }
     var contactoTipo by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.contactoTipo ?: tienda.contacto?.tipo ?: "whatsapp") }
     var contactoValor by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.contactoValor ?: tienda.contacto?.valor.orEmpty()) }
     var mostrarContacto by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.mostrarContacto ?: tienda.mostrarContacto) }
@@ -734,16 +739,17 @@ internal fun PantallaEdicionTienda(
     }
 
     // Conservar borrador al cerrar la app: se guarda con cada cambio y se limpia cuando vuelve a coincidir con la ficha guardada.
-    LaunchedEffect(nombre, descripcion, sectorId, tipoId, contactoTipo, contactoValor, mostrarContacto) {
+    LaunchedEffect(nombre, descripcion, sectorId, tipoId, direccion, contactoTipo, contactoValor, mostrarContacto) {
         val difiere = nombre != tienda.nombre ||
             descripcion != tienda.descripcion ||
             sectorId != tienda.sectorId ||
             tipoId != tienda.tipoEmprendimientoId ||
+            direccion != tienda.direccion ||
             contactoTipo != (tienda.contacto?.tipo ?: "whatsapp") ||
             contactoValor != tienda.contacto?.valor.orEmpty() ||
             mostrarContacto != tienda.mostrarContacto
         if (difiere) {
-            guardarBorradorFicha(context, cuenta.uid, BorradorFicha(nombre, descripcion, sectorId, tipoId, contactoTipo, contactoValor, mostrarContacto))
+            guardarBorradorFicha(context, cuenta.uid, BorradorFicha(nombre, descripcion, sectorId, tipoId, direccion, contactoTipo, contactoValor, mostrarContacto))
         } else {
             limpiarBorradorFicha(context, cuenta.uid)
         }
@@ -826,8 +832,40 @@ internal fun PantallaEdicionTienda(
     Spacer(Modifier.height(12.dp))
     SelectorCatalogo("Tipo de emprendimiento", tipos, tipoId, { tipoId = it })
     Spacer(Modifier.height(12.dp))
-    SelectorCatalogo("Zona de la tienda (sector)", sectores, sectorId, { sectorId = it })
-    MapaZonaVisual(sectorId.takeIf(String::isNotBlank))
+    AmancayInput("Dirección de la tienda", direccion, { direccion = it }, 200)
+    Spacer(Modifier.height(16.dp))
+    // Propuesta para el equipo (zona + mapa): bloque aislado y destacado para poder
+    // presentarla y quitarla completo si se descarta. Lo que se usa hoy es la dirección.
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(2.dp, Wine, RoundedCornerShape(16.dp))
+            .padding(12.dp)
+    ) {
+        SelectorCatalogo(
+            "Zona de la tienda (sector)",
+            listOf(OpcionCatalogoEmprendedora("", "Ninguno")) + sectores,
+            sectorId,
+            { sectorId = it }
+        )
+        MapaZonaVisual(sectorId.takeIf(String::isNotBlank))
+        if (sectorId.isBlank()) {
+            Text(
+                "Por ahora, para guardar la ficha necesitas elegir una zona de la lista. La opción \"Ninguno\" estará disponible más adelante.",
+                fontSize = 13.sp,
+                color = Muted,
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Idea en evaluación con el equipo: ubicar la tienda por zona con este mapa de referencia. Mientras se decide, la tienda muestra la dirección escrita arriba.",
+            fontSize = 12.sp,
+            color = Muted,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+    }
     Spacer(Modifier.height(12.dp))
     Text("Contacto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Dark)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -851,9 +889,9 @@ internal fun PantallaEdicionTienda(
         text = if (enviando) "Guardando…" else "Guardar ficha",
         onClick = {
             val contacto = contactoValor.trim().takeIf(String::isNotEmpty)?.let { ContactoEmprendedora(contactoTipo, it) }
-            alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, contacto = contacto, mostrarContacto = mostrarContacto))
+            alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, direccion = direccion.trim(), contacto = contacto, mostrarContacto = mostrarContacto))
         },
-        enabled = !enviando && !logoEnviando && nombre.isNotBlank() && sectorId.isNotBlank() && tipoId.isNotBlank() &&
+        enabled = !enviando && !logoEnviando && nombre.isNotBlank() && sectorId.isNotBlank() && tipoId.isNotBlank() && direccion.isNotBlank() &&
             (!mostrarContacto || contactoValor.isNotBlank()) && errorContacto == null,
         fontSize = 16.sp
     )

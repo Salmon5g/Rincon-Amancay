@@ -51,6 +51,7 @@ export interface FichaComprador {
     descripcion: string;
     tipoEmprendimientoId?: string;
     sectorId?: string;
+    direccion?: string;
     categoriaId?: string;
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;

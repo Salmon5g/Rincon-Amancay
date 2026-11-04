@@ -30,7 +30,8 @@ data class TiendaEmprendedora(
     val mostrarContacto: Boolean,
     val estadoPublicacion: String,
     val versionEsperada: String,
-    val logo: String? = null
+    val logo: String? = null,
+    val direccion: String = ""
 )
 
 data class OpcionCatalogoEmprendedora(val id: String, val nombre: String)
@@ -125,7 +126,7 @@ class CuentaEmprendedoraRepository(
                 "tiendaId" to cuenta.tiendaId,
                 "operacionId" to operationId(
                     "editarTienda", cuenta.tiendaId, propuesta.versionEsperada, propuesta.nombre,
-                    propuesta.descripcion, propuesta.tipoEmprendimientoId, propuesta.sectorId,
+                    propuesta.descripcion, propuesta.direccion, propuesta.tipoEmprendimientoId, propuesta.sectorId,
                     propuesta.contacto?.tipo.orEmpty(), propuesta.contacto?.valor.orEmpty(), propuesta.mostrarContacto.toString()
                 ),
                 "versionEsperada" to propuesta.versionEsperada,
@@ -133,6 +134,7 @@ class CuentaEmprendedoraRepository(
                 "descripcion" to propuesta.descripcion,
                 "tipoEmprendimientoId" to propuesta.tipoEmprendimientoId,
                 "sectorId" to propuesta.sectorId,
+                "direccion" to propuesta.direccion,
                 "contacto" to contacto,
                 "mostrarContacto" to propuesta.mostrarContacto
             )
@@ -203,7 +205,8 @@ class CuentaEmprendedoraRepository(
             mostrarContacto = data["mostrarContacto"] == true,
             estadoPublicacion = data["estadoPublicacion"] as? String ?: "borrador",
             versionEsperada = "${actualizadoEn.seconds}:${actualizadoEn.nanoseconds}",
-            logo = data["logo"] as? String
+            logo = data["logo"] as? String,
+            direccion = data["direccion"] as? String ?: ""
         )
     }
 

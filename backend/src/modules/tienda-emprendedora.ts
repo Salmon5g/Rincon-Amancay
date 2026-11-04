@@ -55,15 +55,22 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
   return async (identidad: { uid: string }, input: unknown) => {
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Sesión requerida.');
     const solicitud = objeto(input);
-    campos(solicitud, ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto']);
+    // 'direccion' es un campo opcional de la ficha (lo usa la app combinada): los clientes
+    // que aún no lo envían siguen siendo válidos y no modifican la dirección guardada.
+    const CAMPOS_EDICION = ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto'];
+    exigir(Object.keys(solicitud).every(clave => clave === 'direccion' || CAMPOS_EDICION.includes(clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
+    exigir(CAMPOS_EDICION.every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
     exigir(id(solicitud.tiendaId) && id(solicitud.operacionId) && id(solicitud.tipoEmprendimientoId) && id(solicitud.sectorId), 'datos-invalidos', 'Identificadores inválidos.');
     exigir(typeof solicitud.versionEsperada === 'string' && /^[0-9]{1,12}:[0-9]{1,9}$/.test(solicitud.versionEsperada), 'datos-invalidos', 'Versión inválida.');
     const nombre = texto(solicitud.nombre, 120);
     const descripcion = texto(solicitud.descripcion, 2000, true);
+    const llevaDireccion = Object.hasOwn(solicitud, 'direccion') && solicitud.direccion !== null;
+    const direccion = llevaDireccion ? texto(solicitud.direccion, 200, true) : '';
     const contacto = validarContacto(solicitud.contacto);
     exigir(typeof solicitud.mostrarContacto === 'boolean', 'datos-invalidos', 'Indica si el contacto se muestra públicamente.');
     exigir(!solicitud.mostrarContacto || contacto !== null, 'datos-invalidos', 'Completa un contacto antes de mostrarlo públicamente.');
-    const solicitudNormalizada = { tiendaId: solicitud.tiendaId, operacionId: solicitud.operacionId, versionEsperada: solicitud.versionEsperada, nombre, descripcion, tipoEmprendimientoId: solicitud.tipoEmprendimientoId, sectorId: solicitud.sectorId, contacto, mostrarContacto: solicitud.mostrarContacto };
+    const solicitudNormalizada: Record<string, unknown> = { tiendaId: solicitud.tiendaId, operacionId: solicitud.operacionId, versionEsperada: solicitud.versionEsperada, nombre, descripcion, tipoEmprendimientoId: solicitud.tipoEmprendimientoId, sectorId: solicitud.sectorId, contacto, mostrarContacto: solicitud.mostrarContacto };
+    if (llevaDireccion) solicitudNormalizada.direccion = direccion;
     const firma = createHash('sha256').update(canon({ uid: identidad.uid, solicitud: solicitudNormalizada })).digest('hex');
     const storeRef = db.doc(`tiendasPrivadas/${solicitud.tiendaId}`);
     const receiptRef = storeRef.collection('operacionesEdicion').doc(solicitud.operacionId as string);
@@ -108,6 +115,10 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
       };
       if (contacto) fields.contacto = contacto;
       else fields.contacto = FieldValue.delete();
+      if (llevaDireccion) {
+        if (direccion) fields.direccion = direccion;
+        else fields.direccion = FieldValue.delete();
+      }
       tx.update(storeRef, fields);
 
       if (published) {
@@ -119,6 +130,10 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
           actualizadoEn: now,
           contacto: solicitud.mostrarContacto ? contacto : FieldValue.delete(),
         };
+        if (llevaDireccion) {
+          if (direccion) publicFields.direccion = direccion;
+          else publicFields.direccion = FieldValue.delete();
+        }
         tx.update(publicRef, publicFields);
       }
       const resultado = { tiendaId: solicitud.tiendaId as string, operacionId: solicitud.operacionId as string, estadoPublicacion };
