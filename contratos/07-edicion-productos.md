@@ -63,7 +63,7 @@ Cada variante maneja su propio precio y, si corresponde, stock. Sin manejo de st
 - Las opciones de una variante existente identifican esa variante y no se cambian. Para otra combinación se agrega otro ID.
 - No se permite cambiar tipoProductoId, versionTipoProducto, modalidad, manejo de stock, presencia de variantes, moneda ni unidad. Esos cambios requieren un flujo posterior de migración; crear otro producto o consultar al equipo, sin modificar Firestore manualmente.
 
-Editar actualiza actualizadoEn del producto incluso si solo cambió una variante. La vista pública conserva su última publicación; volver a publicar aplica el nuevo texto, precios y variantes activas. Desactivar una variante en el borrador no la retira inmediatamente de la vista pública. Para retirada inmediata del producto completo, usar retirarProducto.
+Editar actualiza actualizadoEn del producto incluso si solo cambió una variante. Si el producto y su tienda siguen publicados y existe una proyección pública vigente, la misma transacción actualiza nombre, descripción, precio, atributos y variantes activas en el catálogo público. La web y la app compradora muestran esos cambios al volver a cargar, sin retirar ni republicar el producto. Desactivar una variante la quita del catálogo de inmediato; si el producto deja de tener disponibilidad publicable, se oculta hasta que vuelva a estar disponible. Los borradores no crean ni modifican proyecciones públicas. Para retirar el producto completo, usar retirarProducto.
 
 ## Validación y reintentos
 

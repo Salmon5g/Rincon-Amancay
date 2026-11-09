@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { Firestore, DocumentData } from 'firebase-admin/firestore';
-import { ErrorOperacion, version } from './publicacion.ts';
+import type { Firestore, DocumentData, QueryDocumentSnapshot } from 'firebase-admin/firestore';
+import { ErrorOperacion, version, estado } from './publicacion.ts';
 
 export type AccionProducto = 'crearProducto' | 'editarProducto' | 'eliminarProducto';
 function exigir(ok: unknown, code: string, message: string): asserts ok {
@@ -109,11 +109,14 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
     const storeRef = db.doc(`tiendasPrivadas/${d.tiendaId}`);
     const ref = storeRef.collection('productos').doc(d.productoId);
     const receiptRef = storeRef.collection('operacionesProductos').doc(d.operacionId);
+    const publicStoreRef = db.doc(`tiendasPublicas/${d.tiendaId}`);
+    const publicRef = publicStoreRef.collection('productos').doc(d.productoId);
+    const approvalRef = ref.collection('publicacion').doc('vigente');
     return db.runTransaction(async tx => {
-      const [access, store, source, receipt, type, definition, category, publicSource] = await tx.getAll(
+      const [access, store, source, receipt, type, definition, category, publicSource, publicStore] = await tx.getAll(
         db.doc(`accesos/${identidad.uid}`), storeRef, ref, receiptRef,
         db.doc(`tiposProducto/${p.tipoProductoId}`), db.doc(`tiposProducto/${p.tipoProductoId}/versiones/${p.versionTipoProducto}`),
-        db.doc(`categorias/${p.categoriaId}`), db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`),
+        db.doc(`categorias/${p.categoriaId}`), publicRef, publicStoreRef,
       );
       const a = access.data();
       exigir(a?.estado === 'activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId === d.tiendaId && store.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
@@ -174,10 +177,98 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         writes.push({id:v.varianteId,data});
       }
       saved.actualizadoEn=now;
+      const sincronizarCatalogo = !crear
+        && old?.estadoPublicacion === 'publicado'
+        && store.data()?.estadoPublicacion === 'publicado'
+        && publicStore.data()?.estadoPublicacion === 'publicado'
+        && publicStore.data()?.habilitada === true
+        && publicSource.exists;
+      let proyeccion: DocumentData | null = null;
+      let variantesPublicas: {id: string; data: DocumentData}[] = [];
+      let snapshotAprobado: DocumentData | null = null;
+      let publicVariants: QueryDocumentSnapshot[] = [];
+      if (sincronizarCatalogo) {
+        const publicData = publicSource.data()!;
+        const imagenesPublicas = Array.isArray(publicData.imagenes)
+          ? publicData.imagenes.filter((ruta: unknown): ruta is string => typeof ruta === 'string')
+          : [];
+        const miniaturasPublicas = Array.isArray(publicData.miniaturas)
+          ? publicData.miniaturas.filter((ruta: unknown): ruta is string => typeof ruta === 'string')
+          : [];
+        const base: DocumentData = {
+          nombre: p.nombre,
+          descripcion: p.descripcion,
+          tipoProductoId: p.tipoProductoId,
+          versionTipoProducto: p.versionTipoProducto,
+          categoriaId: p.categoriaId,
+          imagenes: imagenesPublicas,
+          ...(miniaturasPublicas.length ? {miniaturas: miniaturasPublicas} : {}),
+          atributosEspecificos: attrs,
+          tieneVariantes: p.tieneVariantes,
+          moneda: 'CLP',
+          unidadVenta: 'unidad',
+          modalidad: p.modalidad,
+          estadoPublicacion: 'publicado',
+          actualizadoEn: now,
+        };
+        if (!p.tieneVariantes) base.precioBase = p.precioBase;
+        const politica = {modalidad: p.modalidad, manejaStock: p.manejaStock, alAgotarse: p.alAgotarse};
+        const estadosDisponibilidad: string[] = [];
+        const aprobadas: Record<string, DocumentData> = Object.create(null);
+        if (p.tieneVariantes) {
+          for (const variante of writes) {
+            if (!variante.data.activa) continue;
+            const aprobada = {opciones: variante.data.opciones, precio: variante.data.precio, activa: true};
+            aprobadas[variante.id] = aprobada;
+            const disponibilidad = estado(saved, variante.data.stock);
+            if (!disponibilidad) continue;
+            estadosDisponibilidad.push(disponibilidad);
+            variantesPublicas.push({
+              id: variante.id,
+              data: {...aprobada, estadoDisponibilidad: disponibilidad, actualizadoEn: now},
+            });
+          }
+        } else {
+          const disponibilidad = estado(saved, saved.stock);
+          if (disponibilidad) {
+            estadosDisponibilidad.push(disponibilidad);
+          }
+        }
+        if (estadosDisponibilidad.length) {
+          base.estadoDisponibilidad = estadosDisponibilidad.includes('disponible')
+            ? 'disponible'
+            : estadosDisponibilidad.includes('a_pedido') ? 'a_pedido' : 'agotado';
+          proyeccion = base;
+        }
+        snapshotAprobado = {
+          schema: 1,
+          cicloCatalogo: store.data()?.cicloCatalogo ?? 0,
+          politica,
+          producto: base,
+          variantes: aprobadas,
+          aprobadoEn: now,
+        };
+        const publicVariantSnapshot = await tx.get(publicRef.collection('variantes').limit(101));
+        exigir(publicVariantSnapshot.size <= 100, 'limite-local', 'Demasiadas variantes públicas; no se aplicó la edición.');
+        publicVariants = publicVariantSnapshot.docs;
+      }
       if (crear) tx.create(ref,{...saved,imagenes:[],disponible:true,piezaUnicaVendida:false,estadoPublicacion:'borrador',creadoEn:now});
       else tx.update(ref,saved);
       for (const v of writes) tx.set(ref.collection('variantes').doc(v.id),v.data);
-      const resultado = {accion,productoId:d.productoId,operacionId:d.operacionId};
+      if (sincronizarCatalogo) {
+        const nuevasVariantes = new Set(variantesPublicas.map(v => v.id));
+        for (const variante of publicVariants) if (!nuevasVariantes.has(variante.id)) tx.delete(variante.ref);
+        for (const variante of variantesPublicas) tx.set(publicRef.collection('variantes').doc(variante.id), variante.data);
+        if (proyeccion) tx.set(publicRef, proyeccion);
+        else tx.delete(publicRef);
+        tx.set(approvalRef, snapshotAprobado!);
+      }
+      const resultado = {
+        accion,
+        productoId:d.productoId,
+        operacionId:d.operacionId,
+        ...(sincronizarCatalogo ? {actualizacionCatalogo: proyeccion ? 'actualizado' : 'oculto'} : {}),
+      };
       tx.create(receiptRef,{firma,resultado,creadoEn:now});
       return resultado;
     });

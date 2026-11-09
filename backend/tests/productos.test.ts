@@ -87,13 +87,13 @@ test('edición de productos y variantes mediante API local', async t => {
       multi.variantes=d.variantes;
     });
     await t.test('no omite variantes ni cambia su identidad',async()=>{let d=await edit(multi);d.variantes.pop();await post(d,'editarProducto',400);d=await edit(multi);d.variantes[0].opciones.color='Verde';await post(d,'editarProducto',409);});
-    await t.test('publicación refleja edición solo al publicar de nuevo',async()=>{
+    await t.test('edición sincroniza la proyección pública mientras sigue publicada',async()=>{
       const ref=store.collection('productos').doc(multi.productoId);await ref.update({imagenes:['fixture-solo-test']});
       const publish=async()=>post({tiendaId,productoId:multi.productoId,operacionId:randomUUID(),versionEsperada:version((await ref.get()).data()!)},'publicarProducto');
       await publish();const pub=publicStore.collection('productos').doc(multi.productoId);
       const d=await edit(multi);d.producto.nombre='Nombre editado';d.variantes[0].activa=false;
-      await post(d,'editarProducto');assert.equal((await pub.get()).data()!.nombre,'Gorro');assert.equal((await pub.collection('variantes').doc('azul_m').get()).exists,true);
-      await publish();assert.equal((await pub.get()).data()!.nombre,'Nombre editado');assert.equal((await pub.collection('variantes').doc('azul_m').get()).exists,false);
+      await post(d,'editarProducto');assert.equal((await pub.get()).data()!.nombre,'Nombre editado');assert.equal((await pub.collection('variantes').doc('azul_m').get()).exists,false);
+      assert.equal((await pub.collection('variantes').doc('rojo_m').get()).data()!.precio,6000);
     });
     await t.test('dos ediciones concurrentes no se pisan',async()=>{
       const d=await edit(simple);const requests=[d,{...d,operacionId:randomUUID(),producto:{...d.producto,nombre:'Alternativo'}}];

@@ -16,6 +16,7 @@ Rincón Amancay: web Nuxt en `web/`, API en `backend/`, configuración Firebase 
 - SDK Android habitual: `C:\Users\asus\AppData\Local\Android\Sdk`.
 
 ## Estado actual
+- 2026-11-09: `editarProducto` sincroniza en una sola transacción la ficha privada y la proyección pública cuando producto y tienda siguen publicados; el nombre, precio, atributos y cambios de variantes quedan visibles al recargar la web/app compradora sin retirar y republicar. Se actualizó el contrato 07 y la expectativa existente de la prueba de productos. `npm.cmd run typecheck` en `backend/` pasa; no se ejecutó la suite de pruebas ni se hizo commit/push.
 - 2026-11-04: en Administración → Emprendedoras, el formulario para crear una emprendedora dejó de mostrar las opciones «Mostrar precios en el catálogo» y «Activar historial de ventas». Se retiraron solo esos controles visuales; no se ejecutaron pruebas ni se hizo commit/push.
 - 2026-11-04: en Administración → Ferias y eventos, el formulario dejó de mostrar los campos de latitud y longitud. Se conserva el manejo interno de coordenadas existentes; no se ejecutaron pruebas ni se hizo commit/push.
 - 2026-11-04: se corrigió la conversión de coordenadas en `FeriasAdmin.vue` para aceptar valores numéricos o texto y evitar el error al llamar `.trim()` sobre un número. No se ejecutaron pruebas ni se hizo commit/push.
