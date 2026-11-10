@@ -50,6 +50,9 @@ import com.example.amancay.data.CuentaEmprendedora
 import com.example.amancay.data.OpcionCatalogoEmprendedora
 import com.example.amancay.data.ProductoEmprendedora
 import com.example.amancay.data.ProductosEmprendedoraRepository
+import com.example.amancay.data.VentaRegistrada
+import com.example.amancay.data.FeriaParaVenta
+import com.example.amancay.data.PreferenciasCatalogoEmprendedora
 import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.data.ImagenProductoPreparada
 import com.example.amancay.emprendedora.leerLogoLocalTienda
@@ -62,9 +65,12 @@ import com.example.amancay.data.crearRepositorioDemostracion
 import com.example.amancay.data.decodificarVistaPreviaProducto
 import com.example.amancay.emprendedora.PantallaEdicionTienda
 import com.example.amancay.emprendedora.ProductosEmprendedoraPanel
+import com.example.amancay.emprendedora.OrganizarCatalogoScreen
 import com.example.amancay.emprendedora.AvisoEmprendedora
 import com.example.amancay.emprendedora.DialogoAjusteStock
 import com.example.amancay.emprendedora.mensajeProducto
+import com.example.amancay.emprendedora.VentasEmprendedoraScreen
+import com.example.amancay.emprendedora.ConfiguracionVistaPreviaScreen
 import com.example.amancay.ui.*
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -211,11 +217,14 @@ enum class Tab(val label: String, val icon: Int) {
 sealed interface Screen {
     data object Home : Screen
     data object Products : Screen
+    data object OrganizarCatalogo : Screen
     data object Sell : Screen
     data object Sale : Screen
     data object History : Screen
     data class Preview(val productId: String?) : Screen
     data object Settings : Screen
+    data object ConfiguracionCatalogo : Screen
+    data object Ventas : Screen
     data object Ferias : Screen
     data class FeriaDetalle(val invitacionId: String?) : Screen
     data object Camara : Screen
@@ -297,9 +306,11 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
         if (t != null) tab = t
         else tab = when (s) {
             is Screen.Home -> Tab.INICIO
-            is Screen.Products, is Screen.Preview -> Tab.PRODUCTOS
+            is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> Tab.PRODUCTOS
             is Screen.Sell, is Screen.Sale, is Screen.History, is Screen.Camara -> tab
+            is Screen.Ventas -> Tab.INICIO
             is Screen.Settings -> Tab.MAS
+            is Screen.ConfiguracionCatalogo -> Tab.MAS
             is Screen.Ferias -> Tab.INICIO
             is Screen.FeriaDetalle -> Tab.INICIO
         }
@@ -361,11 +372,10 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
     } else {
     Scaffold(
         containerColor = Cream,
-        topBar = { if (screen !is Screen.Camara) AmancayTopBar(onHelp = { showHelp = true }, onExit = onExit) },
+        topBar = { if (screen !is Screen.Camara && screen !is Screen.Sell) AmancayTopBar(onHelp = { showHelp = true }, onExit = onExit) },
         bottomBar = {
-            if (screen !is Screen.Camara) {
-            Column {
-                HorizontalDivider(color = Line, thickness = 1.dp)
+            if (screen !is Screen.Camara && screen !is Screen.Sell) {
+            Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
             NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
                     val selected = tab == t
@@ -396,7 +406,7 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                         colors = NavigationBarItemDefaults.colors(indicatorColor = CardPink)
                     )
                 }
-                }
+            }
             }
             }
         },
@@ -440,6 +450,8 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                     settings = settings,
                     onSettings = { repositorio.updateSettings(it) }
                 )
+                is Screen.OrganizarCatalogo -> Text("Organizar catálogo está disponible en el espacio conectado de emprendedora.", modifier = Modifier.padding(24.dp), color = Muted)
+                is Screen.ConfiguracionCatalogo -> Text("La configuración del catálogo está disponible con la sesión conectada.", modifier = Modifier.padding(24.dp), color = Muted)
                 is Screen.Preview -> {
                     val p = s.productId?.let { repositorio.obtener(it) } ?: productos.firstOrNull { it.publicado }
                     PreviewCatalogScreen(
@@ -530,6 +542,7 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                             onBack = { sellStep = 4 }, onSaveExit = { saveExit() })
                     }
                 }
+                is Screen.Ventas -> AvisoEmprendedora("Las ventas conectadas están disponibles dentro de la sesión de emprendedora.", false)
             }
             }
         }
@@ -643,9 +656,9 @@ internal fun EmprendedoraAppConectada(
     val context = LocalContext.current
     val productos by productosRepository.productos.collectAsState()
     val tiposProducto by productosRepository.tipos.collectAsState()
-    // Fuente local de ventas/invitaciones de feria (flujo del prototipo).
+    val categoriasProducto by productosRepository.categorias.collectAsState()
+    // Las invitaciones de feria siguen siendo un flujo legado de demostración.
     val local = remember(sesion.uid) { crearRepositorioDemostracion() }
-    val ventas by local.ventas.collectAsState()
     val invitaciones by local.invitaciones.collectAsState()
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -668,6 +681,39 @@ internal fun EmprendedoraAppConectada(
     var avisoProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var errorProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var productoAjustando by remember(sesion.uid) { mutableStateOf<ProductoEmprendedora?>(null) }
+    var ventasGuardadas by remember(sesion.uid) { mutableStateOf<List<VentaRegistrada>>(emptyList()) }
+    var feriasVenta by remember(sesion.uid) { mutableStateOf<List<FeriaParaVenta>>(emptyList()) }
+    var historialVentasActivo by remember(sesion.uid) { mutableStateOf(false) }
+    var abrirHistorialVentas by remember(sesion.uid) { mutableStateOf(false) }
+    var valoresDefecto by remember(sesion.tiendaId) {
+        mutableStateOf(PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, sesion.tiendaId))
+    }
+    var catalogoSinConexion by remember(sesion.tiendaId) {
+        mutableStateOf(PreferenciasCatalogoEmprendedora.catalogoSinConexion(context, sesion.tiendaId))
+    }
+    var cargandoVentas by remember(sesion.uid) { mutableStateOf(false) }
+    var errorVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(screen, sesion.tiendaId) {
+        if (screen == Screen.ConfiguracionCatalogo) {
+            try {
+                historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
+            } catch (e: Exception) {
+                errorVentas = e.message ?: "No se pudo leer la configuración del historial."
+            }
+            return@LaunchedEffect
+        }
+        if (screen != Screen.Ventas) return@LaunchedEffect
+        cargandoVentas = true
+        errorVentas = null
+        try {
+            historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
+            ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
+            feriasVenta = productosRepository.listarFeriasPublicadas()
+        } catch (e: Exception) {
+            errorVentas = e.message ?: "No se pudo cargar el historial de ventas."
+        } finally { cargandoVentas = false }
+    }
 
     LaunchedEffect(screen, productoVista, reintentoFotoVista) {
         val preview = screen as? Screen.Preview ?: return@LaunchedEffect
@@ -708,7 +754,7 @@ internal fun EmprendedoraAppConectada(
         screen = when (nuevoTab) {
             Tab.INICIO -> Screen.Home
             Tab.PRODUCTOS, Tab.AGREGAR -> Screen.Products
-            Tab.MAS -> Screen.Settings
+            Tab.MAS -> Screen.ConfiguracionCatalogo
         }
         editandoProducto = nuevoTab == Tab.AGREGAR
         productoInicialId = null
@@ -753,7 +799,7 @@ internal fun EmprendedoraAppConectada(
             publicado = producto.estadoPublicacion == "publicado",
             esBorrador = producto.estadoPublicacion != "publicado",
             estadoCatalogo = when (producto.estadoPublicacion) {
-                "publicado" -> "Visible"
+                "publicado" -> if (producto.disponible) "Visible" else "No disponible"
                 "archivado" -> "Retirado"
                 else -> "Borrador"
             },
@@ -766,10 +812,10 @@ internal fun EmprendedoraAppConectada(
 
     Scaffold(
         containerColor = Cream,
-        topBar = { AmancayTopBar(onHelp = { showHelp = true }, etiquetaEspacio = true) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true) },
         bottomBar = {
-            Column {
-                HorizontalDivider(color = Line, thickness = 1.dp)
+            if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) {
+            Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
                 NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                     Tab.entries.forEach { item ->
                         val selected = tab == item
@@ -796,6 +842,7 @@ internal fun EmprendedoraAppConectada(
                     }
                 }
             }
+            }
         },
         snackbarHost = {
             SnackbarHost(snackbar) { data ->
@@ -816,7 +863,7 @@ internal fun EmprendedoraAppConectada(
                         borrador = null,
                         publicados = productos.count { it.estadoPublicacion == "publicado" },
                         borradores = productos.count { it.estadoPublicacion == "borrador" },
-                        ventasCount = ventas.size,
+                        ventasCount = ventasGuardadas.size,
                         linkCompartido = linkCompartido,
                         invitacionesPendientes = invitaciones.count { it.estado == "pendiente" },
                         onAgregar = { abrirTab(Tab.AGREGAR) },
@@ -826,8 +873,12 @@ internal fun EmprendedoraAppConectada(
                             productoVista = productos.firstOrNull { it.estadoPublicacion == "publicado" }?.id
                             screen = Screen.Preview(productoVista)
                         },
+                        onVerVentas = { screen = Screen.Ventas },
+                        onVerMiTienda = { tab = Tab.MAS; screen = Screen.Settings; editandoTienda = false },
                         onVerFerias = { screen = Screen.Ferias },
                         tiendaVisible = tienda.estadoPublicacion == "publicado",
+                        nombreEmprendedora = sesion.nombreMostrar,
+                        productosRecientes = productos.take(3).map { productoLegado(it, miniaturasProductos[it.id]) },
                         contenidoAdicional = {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -866,9 +917,48 @@ internal fun EmprendedoraAppConectada(
                                             enabled = !enviando && tienda.nombre.isNotBlank() && tienda.sectorId.isNotBlank() && tienda.tipoEmprendimientoId.isNotBlank()
                                         )
                                     }
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlineButton("Registrar venta · Historial de encargos", { screen = Screen.Ventas })
                                 }
                             }
                         }
+                    )
+                    Screen.OrganizarCatalogo -> OrganizarCatalogoScreen(
+                        productos = productos,
+                        categorias = categoriasProducto,
+                        miniaturas = miniaturasProductos,
+                        enviando = enviandoProducto,
+                        alEditar = { producto ->
+                            productoInicialId = producto.id
+                            editandoProducto = true
+                            screen = Screen.Products
+                        },
+                        alCambiarDisponibilidad = { seleccion, disponible ->
+                            scope.launch {
+                                enviandoProducto = true
+                                errorProducto = null
+                                avisoProducto = null
+                                try {
+                                    productosRepository.cambiarDisponibilidad(sesion.tiendaId, seleccion, disponible)
+                                    avisoProducto = if (disponible) "Productos marcados como disponibles." else "Productos marcados como no disponibles. Siguen en tu catálogo."
+                                } catch (e: Exception) {
+                                    errorProducto = mensajeProducto(e)
+                                } finally { enviandoProducto = false }
+                            }
+                        },
+                        alEliminar = { producto ->
+                            scope.launch {
+                                enviandoProducto = true
+                                errorProducto = null
+                                avisoProducto = null
+                                try {
+                                    productosRepository.eliminar(sesion.tiendaId, producto)
+                                    avisoProducto = "Producto eliminado del catálogo."
+                                } catch (e: Exception) {
+                                    errorProducto = mensajeProducto(e)
+                                } finally { enviandoProducto = false }
+                            }
+                        },
                     )
                     Screen.Products -> if (editandoProducto) {
                         ProductosEmprendedoraPanel(
@@ -950,9 +1040,36 @@ internal fun EmprendedoraAppConectada(
                             },
                             onAjustarStock = { legado ->
                                 productoAjustando = productos.firstOrNull { it.id == legado.id }
-                            }
+                            },
+                            onOrganizeCatalog = { screen = Screen.OrganizarCatalogo }
                         )
                     }
+                    Screen.ConfiguracionCatalogo -> ConfiguracionVistaPreviaScreen(
+                        productos = productos,
+                        miniaturas = miniaturasProductos,
+                        historialActivo = historialVentasActivo,
+                        valoresDefecto = valoresDefecto,
+                        catalogoSinConexion = catalogoSinConexion,
+                        enviando = enviandoProducto,
+                        alGuardarValoresDefecto = { valores ->
+                            PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valores)
+                            valoresDefecto = valores
+                            avisoProducto = "Valores por defecto guardados para los próximos productos."
+                        },
+                        alCambiarCatalogoSinConexion = { activo ->
+                            PreferenciasCatalogoEmprendedora.guardarCatalogoSinConexion(context, sesion.tiendaId, activo)
+                            catalogoSinConexion = activo
+                        },
+                        alVerHistorial = {
+                            abrirHistorialVentas = true
+                            screen = Screen.Ventas
+                        },
+                        alVerTiendaPublica = {
+                            productoVista = productos.firstOrNull { it.estadoPublicacion == "publicado" && it.disponible }?.id
+                            screen = Screen.Preview(productoVista)
+                        },
+                        alVolver = { screen = Screen.Home; tab = Tab.INICIO }
+                    )
                     Screen.Settings -> if (editandoTienda) {
                         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                             Spacer(Modifier.height(8.dp))
@@ -985,6 +1102,39 @@ internal fun EmprendedoraAppConectada(
                             onCambiarEscalaTexto = alCambiarEscalaTexto
                         )
                     }
+                    Screen.Ventas -> VentasEmprendedoraScreen(
+                        productos = productos,
+                        ventas = ventasGuardadas,
+                        ferias = feriasVenta,
+                        historialActivo = historialVentasActivo,
+                        abrirHistorial = abrirHistorialVentas,
+                        cargando = cargandoVentas,
+                        error = errorVentas,
+                        enviando = enviandoProducto,
+                        alCambiarHistorial = { activo ->
+                            scope.launch {
+                                enviandoProducto = true; errorVentas = null
+                                try {
+                                    productosRepository.configurarHistorialVentas(sesion.tiendaId, activo)
+                                    historialVentasActivo = activo
+                                } catch (e: Exception) { errorVentas = e.message ?: "No se pudo guardar la configuración del historial." }
+                                finally { enviandoProducto = false }
+                            }
+                        },
+                        alRegistrar = { producto, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, operacionId, fecha, alExito ->
+                            scope.launch {
+                                enviandoProducto = true; errorVentas = null
+                                try {
+                                    productosRepository.registrarVenta(sesion.tiendaId, producto.id, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, fecha=fecha, operacionId=operacionId)
+                                    ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
+                                    avisoProducto = "Venta guardada y stock actualizado."
+                                    alExito()
+                                } catch (e: Exception) { errorVentas = e.message ?: "No se pudo registrar la venta." }
+                                finally { enviandoProducto = false }
+                            }
+                        },
+                        alVolver = { abrirHistorialVentas = false; screen = Screen.Home; tab = Tab.INICIO }
+                    )
                     is Screen.Preview -> PreviewCatalogScreen(
                         producto = productoDeVista,
                         privateImageBitmap = fotoVistaProducto,

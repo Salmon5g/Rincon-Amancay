@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +36,25 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.RadioButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Checkroom
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -60,6 +82,7 @@ import com.example.amancay.data.ProductoSolicitud
 import com.example.amancay.data.ProductosEmprendedoraRepository
 import com.example.amancay.data.decodificarVistaPreviaProducto
 import com.example.amancay.data.prepararImagenProducto
+import com.example.amancay.data.PreferenciasCatalogoEmprendedora
 import com.example.amancay.data.TipoProductoEmprendedora
 import com.example.amancay.data.VarianteProductoEmprendedora
 import com.example.amancay.data.VarianteProductoSolicitud
@@ -79,6 +102,9 @@ import com.example.amancay.ui.StepScaffold
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.mutableIntStateOf
 import java.io.File
+import java.io.FileOutputStream
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 import kotlinx.coroutines.launch
 
@@ -97,10 +123,71 @@ private fun crearUriFotoTemporalProducto(context: Context): Uri {
 }
 
 private fun eliminarFotoTemporalProducto(context: Context, uri: Uri?) {
+    if (uri?.scheme == "file") {
+        val archivo = uri.path?.let(::File) ?: return
+        val directorio = File(context.filesDir, "borradores-producto").canonicalFile
+        if (archivo.canonicalFile.parentFile == directorio) archivo.delete()
+        return
+    }
     if (uri?.authority != "${context.packageName}.fileprovider") return
     val nombre = uri.lastPathSegment ?: return
     if (!nombre.matches(Regex("amancay-product-[A-Za-z0-9_-]+\\.jpg"))) return
     File(File(context.cacheDir, "product-photos"), nombre).delete()
+}
+
+private fun copiarFotoPersistente(context: Context, uri: Uri): Uri {
+    val directorio = File(context.filesDir, "borradores-producto").apply { mkdirs() }
+    val destino = File(directorio, "${UUID.randomUUID()}.jpg")
+    context.contentResolver.openInputStream(uri)?.use { entrada -> FileOutputStream(destino).use(entrada::copyTo) }
+        ?: throw IllegalStateException("No se pudo conservar la foto seleccionada.")
+    return Uri.fromFile(destino)
+}
+
+private data class BorradorAlta(
+    val tipoId: String, val categoriaId: String, val nombre: String, val descripcion: String,
+    val modalidad: String, val manejaStock: Boolean, val alAgotarse: String,
+    val precio: String, val stock: String, val paso: Int, val foto: String?,
+    val archivoId: String, val atributos: Map<String, String>, val variantes: List<VarianteBorrador>,
+    val conVariantes: Boolean = false
+)
+
+private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? = runCatching {
+    val raw = context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).getString(tiendaId, null) ?: return null
+    val json = JSONObject(raw)
+    val atributosJson = json.optJSONObject("atributos") ?: JSONObject()
+    val variantesJson = json.optJSONArray("variantes") ?: JSONArray()
+    BorradorAlta(
+        json.optString("tipoId"), json.optString("categoriaId"), json.optString("nombre"), json.optString("descripcion"),
+        json.optString("modalidad", "regular"), json.optBoolean("manejaStock", true), json.optString("alAgotarse", "mostrar_agotado"),
+        json.optString("precio"), json.optString("stock"), json.optInt("paso", 1), json.optString("foto").takeIf(String::isNotBlank),
+        json.optString("archivoId", UUID.randomUUID().toString()), atributosJson.keys().asSequence().associateWith { atributosJson.optString(it) },
+        (0 until variantesJson.length()).map { i ->
+            val v = variantesJson.getJSONObject(i)
+            val op = v.optJSONObject("opciones") ?: JSONObject()
+            VarianteBorrador(v.optString("id"), op.keys().asSequence().associateWith { op.optString(it) }, v.optString("precio"), v.optString("stock"), v.optBoolean("activa", true), false,
+                fotoUri = v.optString("foto").takeIf(String::isNotBlank)?.let(Uri::parse), archivoId = v.optString("archivoId", UUID.randomUUID().toString()), fotoNueva = v.optBoolean("fotoNueva"))
+        },
+        json.optBoolean("conVariantes", variantesJson.length() > 0)
+    )
+}.getOrNull()
+
+private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: BorradorAlta) {
+    val atributos = JSONObject().apply { borrador.atributos.forEach { (k, v) -> put(k, v) } }
+    val variantes = JSONArray().apply { borrador.variantes.forEach { v ->
+        put(JSONObject().apply {
+            put("id", v.id); put("opciones", JSONObject().apply { v.opciones.forEach { (k, value) -> put(k, value) } })
+            put("precio", v.precio); put("stock", v.stock); put("activa", v.activa); put("foto", v.fotoUri?.toString().orEmpty())
+            put("archivoId", v.archivoId); put("fotoNueva", v.fotoNueva)
+        })
+    } }
+    val json = JSONObject().apply {
+        put("tipoId", borrador.tipoId); put("categoriaId", borrador.categoriaId); put("nombre", borrador.nombre); put("descripcion", borrador.descripcion)
+        put("modalidad", borrador.modalidad); put("manejaStock", borrador.manejaStock); put("alAgotarse", borrador.alAgotarse)
+        put("precio", borrador.precio); put("stock", borrador.stock); put("paso", borrador.paso); put("foto", borrador.foto.orEmpty())
+        put("archivoId", borrador.archivoId); put("atributos", atributos); put("variantes", variantes)
+        put("conVariantes", borrador.conVariantes)
+    }
+    context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().putString(tiendaId, json.toString()).apply()
 }
 
 @Composable
@@ -179,7 +266,8 @@ internal fun ProductosEmprendedoraPanel(
                 editando = null
                 alFinalizarEdicion()
             },
-            onSave = { solicitud, imagen ->
+            tiendaPublicada = tiendaPublicada,
+            onSave = { solicitud, imagen, imagenesVariantes, publicar ->
                 scope.launch {
                     alEnviando(true); alError(null); alAviso(null)
                     try {
@@ -189,8 +277,24 @@ internal fun ProductosEmprendedoraPanel(
                             repository.subirImagen(tiendaId, productoId, imagen.archivoId, preparada)
                             eliminarFotoTemporalProducto(context, imagen.uri)
                         }
+                        imagenesVariantes.forEach { (varianteId, fotoVariante) ->
+                            val preparada = prepararImagenProducto(context.contentResolver, fotoVariante.uri, fotoVariante.bitmap)
+                            val ruta = repository.subirImagen(tiendaId, productoId, fotoVariante.archivoId, preparada)
+                            repository.asignarImagenVariante(tiendaId, productoId, varianteId, ruta)
+                            eliminarFotoTemporalProducto(context, fotoVariante.uri)
+                        }
+                        if (publicar) {
+                            val publicado = repository.leerCompleto(tiendaId, productoId)
+                            repository.publicar(tiendaId, publicado)
+                        }
                         nuevo = false; editando = null
-                        alAviso(if (imagen == null) "Borrador guardado en Firebase." else "Borrador e imagen guardados. La foto quedó protegida hasta publicar el producto.")
+                        alAviso(
+                            when {
+                                publicar -> "Producto publicado. Tus clientes lo verán según stock y disponibilidad."
+                                imagen == null && imagenesVariantes.isEmpty() -> "Borrador guardado en Firebase."
+                                else -> "Borrador e imágenes guardados. Las fotos quedaron protegidas hasta publicar el producto."
+                            }
+                        )
                         alFinalizarEdicion()
                     } catch (e: Exception) {
                         alError(e.message ?: "No se pudo guardar el producto.")
@@ -507,46 +611,69 @@ private fun EditorProductoEmprendedora(
     tipos: List<TipoProductoEmprendedora>,
     categorias: List<CategoriaEmprendedora>,
     enviando: Boolean,
+    tiendaPublicada: Boolean,
     onCancel: () -> Unit,
-    onSave: (ProductoSolicitud, ImagenSeleccionadaProducto?) -> Unit
+    onSave: (ProductoSolicitud, ImagenSeleccionadaProducto?, Map<String, ImagenSeleccionadaProducto>, Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val borradorGuardado = remember(context, tiendaId, original?.id) { if (original == null) leerBorradorAlta(context, tiendaId) else null }
+    val valoresDefecto = remember(context, tiendaId, original?.id) { PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, tiendaId) }
     val tiposNuevos = tipos.filter { it.activo }
     val tiposDisponibles = if (original == null) tiposNuevos else tipos.filter { it.activo || it.id == original.tipoProductoId }
     val initialTipo = original?.tipoProductoId ?: tiposNuevos.firstOrNull()?.id.orEmpty()
     val initialCategory = original?.categoriaId ?: categorias.firstOrNull { it.activo }?.id.orEmpty()
-    var tipoId by remember(original?.id, tipos) { mutableStateOf(initialTipo) }
-    var categoriaId by remember(original?.id, categorias) { mutableStateOf(initialCategory) }
-    var nombre by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.nombre.orEmpty()) }
-    var descripcion by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.descripcion.orEmpty()) }
-    var modalidad by remember(original?.id) { mutableStateOf(original?.modalidad ?: "regular") }
-    var manejaStock by remember(original?.id) { mutableStateOf(original?.manejaStock ?: true) }
-    var alAgotarse by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.alAgotarse ?: "mostrar_agotado") }
-    var precioBase by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.precioBase?.toString().orEmpty()) }
-    var stockInicial by remember(original?.id) { mutableStateOf(original?.stock?.toString().orEmpty()) }
-    var paso by remember(original?.id) { mutableIntStateOf(1) }
-    val fotoLocal = remember(original?.id) { DraftState() }
+    var tipoId by remember(original?.id) { mutableStateOf(borradorGuardado?.tipoId?.takeIf(String::isNotBlank) ?: initialTipo) }
+    var categoriaId by remember(original?.id) { mutableStateOf(borradorGuardado?.categoriaId?.takeIf(String::isNotBlank) ?: initialCategory) }
+    var nombre by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.nombre ?: original?.nombre.orEmpty()) }
+    var descripcion by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.descripcion ?: original?.descripcion.orEmpty()) }
+    var modalidad by remember(original?.id) { mutableStateOf(borradorGuardado?.modalidad ?: original?.modalidad ?: valoresDefecto.modalidad) }
+    var manejaStock by remember(original?.id) { mutableStateOf(borradorGuardado?.manejaStock ?: original?.manejaStock ?: if (valoresDefecto.modalidad == "pieza_unica") true else valoresDefecto.manejaStock) }
+    var alAgotarse by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.alAgotarse ?: original?.alAgotarse ?: valoresDefecto.alAgotarse) }
+    var precioBase by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.precio ?: original?.precioBase?.toString().orEmpty()) }
+    var stockInicial by remember(original?.id) { mutableStateOf(borradorGuardado?.stock ?: original?.stock?.toString().orEmpty()) }
+    var paso by remember(original?.id) { mutableIntStateOf(borradorGuardado?.paso ?: 1) }
+    val fotoLocal = remember(original?.id) { DraftState().apply { photoUri = borradorGuardado?.foto?.let(Uri::parse); fotoLista = photoUri != null } }
     var capturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
+    var varianteConFotoTemporal by remember { mutableStateOf<String?>(null) }
+    var varianteCapturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
     var imagenPrivada by remember(original?.id, original?.imagenes) { mutableStateOf<Bitmap?>(null) }
     var cargandoVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf(false) }
     var errorVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf<String?>(null) }
-    var archivoId by remember(original?.id) { mutableStateOf(UUID.randomUUID().toString()) }
+    var archivoId by remember(original?.id) { mutableStateOf(borradorGuardado?.archivoId ?: UUID.randomUUID().toString()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var variantes by remember(original?.id, original?.versionEsperada) {
+        mutableStateOf(original?.variantes?.map { v ->
+            VarianteBorrador(v.id, v.opciones, v.precio.toString(), v.stock?.toString().orEmpty(), v.activa, true, imagen = v.imagen)
+        } ?: borradorGuardado?.variantes.orEmpty())
+    }
     val selectorGaleria = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
-            fotoLocal.photoUri = uri
-            fotoLocal.photoBitmap = null
-            fotoLocal.fotoLista = true
-            archivoId = UUID.randomUUID().toString()
-        }
+            val idVariante = varianteConFotoTemporal
+            if (idVariante != null) {
+                val persistida = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
+                variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
+                varianteConFotoTemporal = null
+            } else {
+                eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
+                fotoLocal.photoUri = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
+                fotoLocal.photoBitmap = null
+                fotoLocal.fotoLista = true
+                archivoId = UUID.randomUUID().toString()
+            }
+        } else varianteConFotoTemporal = null
     }
     val selectorCamara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { guardada ->
         val uri = capturaPendiente?.let(Uri::parse)
         capturaPendiente = null
-        if (guardada && uri != null) {
+        val idVariante = varianteCapturaPendiente
+        varianteCapturaPendiente = null
+        if (guardada && uri != null && idVariante != null) {
+            val persistida = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
+            variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
+        } else if (guardada && uri != null) {
             eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
             fotoLocal.photoBitmap = null
-            fotoLocal.photoUri = uri
+            fotoLocal.photoUri = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
             fotoLocal.fotoLista = true
             archivoId = UUID.randomUUID().toString()
         } else {
@@ -555,16 +682,13 @@ private fun EditorProductoEmprendedora(
     }
     fun cancelarEditor() {
         eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
+        variantes.forEach { eliminarFotoTemporalProducto(context, it.fotoUri) }
         capturaPendiente?.let { eliminarFotoTemporalProducto(context, Uri.parse(it)) }
         capturaPendiente = null
+        if (original == null) context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().remove(tiendaId).apply()
         onCancel()
     }
-    var atributos by remember(original?.id, original?.versionEsperada) { mutableStateOf(original?.atributosEspecificos.orEmpty()) }
-    var variantes by remember(original?.id, original?.versionEsperada) {
-        mutableStateOf(original?.variantes?.map { v ->
-            VarianteBorrador(v.id, v.opciones, v.precio.toString(), v.stock?.toString().orEmpty(), v.activa, true)
-        } ?: emptyList())
-    }
+    var atributos by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.atributos ?: original?.atributosEspecificos.orEmpty()) }
     var tipoHistorico by remember(original?.id, original?.versionEsperada) { mutableStateOf<TipoProductoEmprendedora?>(null) }
     var falloTipoHistorico by remember(original?.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(tiendaId, original?.id, original?.imagenes) {
@@ -581,6 +705,19 @@ private fun EditorProductoEmprendedora(
             cargandoVistaPrevia = false
         }
     }
+    LaunchedEffect(tiendaId, original?.id, original?.imagenes, variantes.map { it.id to it.imagen }) {
+        val producto = original ?: return@LaunchedEffect
+        variantes.forEachIndexed { index, row ->
+            if (row.imagen != null && row.fotoBitmap == null && row.fotoUri == null) {
+                val imageIndex = producto.imagenes.indexOf(row.imagen)
+                if (imageIndex >= 0) runCatching {
+                    decodificarVistaPreviaProducto(repository.leerImagenPrivada(tiendaId, producto.id, imageIndex))
+                }.getOrNull()?.let { bitmap ->
+                    variantes = variantes.mapIndexed { i, variant -> if (i == index) variant.copy(fotoBitmap = bitmap) else variant }
+                }
+            }
+        }
+    }
     LaunchedEffect(original?.tipoProductoId, original?.versionTipoProducto) {
         if (original != null) {
             try { tipoHistorico = repository.leerTipo(original.tipoProductoId, original.versionTipoProducto) }
@@ -594,15 +731,31 @@ private fun EditorProductoEmprendedora(
     } else tipoActual
     val campos = tipo?.campos.orEmpty()
     val opciones = tipo?.opcionesVariante.orEmpty()
-    val conVariantes = original?.tieneVariantes ?: opciones.isNotEmpty()
+    var conVariantes by remember(original?.id) {
+        mutableStateOf(borradorGuardado?.conVariantes ?: original?.tieneVariantes ?: (tipos.firstOrNull { it.id == tipoId }?.opcionesVariante?.isNotEmpty() ?: false))
+    }
+    fun guardarLocalYSalir() {
+        if (original == null) {
+            guardarBorradorAlta(
+                context,
+                tiendaId,
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes)
+            )
+            onCancel()
+        } else onCancel()
+    }
     val categoriasDisponibles = categorias.filter { it.activo || it.id == original?.categoriaId }
-    var error by remember { mutableStateOf<String?>(null) }
     val productoIdNuevo = remember(original?.id) { if (original == null) UUID.randomUUID().toString() else null }
     val operacionId = remember(original?.id, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) { UUID.randomUUID().toString() }
 
+    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes) {
+        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes))
+    }
+
     LaunchedEffect(tipoId, original?.id) {
-        if (original == null) {
+        if (original == null && (borradorGuardado == null || tipoId != borradorGuardado.tipoId)) {
             atributos = emptyMap()
+            conVariantes = opciones.isNotEmpty()
             variantes = if (opciones.isNotEmpty()) listOf(nuevaVariante(opciones)) else emptyList()
         }
     }
@@ -613,7 +766,7 @@ private fun EditorProductoEmprendedora(
             (manejaStock && !row.existente && row.stock.toIntOrNull() == null)
     }
     val stockValue = stockInicial.toIntOrNull()
-    fun guardarBorrador() {
+    fun guardarBorrador(publicar: Boolean = false) {
         error = when {
             tipo == null -> "Espera a que se carguen los tipos de producto."
             categoriasDisponibles.none { it.id == categoriaId } -> "Selecciona una categoría."
@@ -623,6 +776,8 @@ private fun EditorProductoEmprendedora(
             !conVariantes && (precioBase.toLongOrNull() ?: 0L) <= 0L -> "Ingresa un precio válido."
             !conVariantes && manejaStock && original == null && (stockValue == null || stockValue < 0) -> "Ingresa un stock inicial válido."
             modalidad == "pieza_unica" && stockValue != 1 && original == null -> "Una pieza única comienza con stock 1."
+            publicar && fotoLocal.fotoLista.not() && original?.imagenes.isNullOrEmpty() -> "Agrega una foto antes de publicar."
+            publicar && !tiendaPublicada -> "Publica primero tu tienda desde Inicio."
             else -> null
         }
         if (error == null && tipo != null) {
@@ -639,7 +794,14 @@ private fun EditorProductoEmprendedora(
             val imagen = if (fotoLocal.fotoLista && (fotoLocal.photoUri != null || fotoLocal.photoBitmap != null)) {
                 ImagenSeleccionadaProducto(fotoLocal.photoUri, fotoLocal.photoBitmap, archivoId)
             } else null
-            onSave(solicitud, imagen)
+            val fotosVariantes = variantes.mapNotNull { row ->
+                if (row.fotoNueva) {
+                    row.fotoUri?.let { row.id to ImagenSeleccionadaProducto(it, row.fotoBitmap, row.archivoId) }
+                        ?: row.fotoBitmap?.let { bitmap -> row.id to ImagenSeleccionadaProducto(null, bitmap, row.archivoId) }
+                } else null
+            }.toMap()
+            if (original == null) context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().remove(tiendaId).apply()
+            onSave(solicitud, imagen, fotosVariantes, publicar)
         }
     }
     if (paso == 1) {
@@ -649,7 +811,7 @@ private fun EditorProductoEmprendedora(
                 .onFailure { error = it.message ?: "No se pudo preparar la cámara." }
         },
             onPickPhoto={ selectorGaleria.launch("image/*") }, onNext={ paso=2 },
-            onBack=::cancelarEditor, onSaveExit=::cancelarEditor, showSaveExit=false,
+            onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
             mensajeImagenExistente=when {
@@ -659,31 +821,68 @@ private fun EditorProductoEmprendedora(
                 else -> "La imagen está guardada de forma privada. Puedes agregar otra foto aquí."
             })
     } else if (paso == 2) {
-        StepScaffold("Paso 2 de 5", "Cuéntanos lo básico", "Usaremos estos datos para mostrar tu producto.",
+        StepScaffold("Paso 2 de 5", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
             onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=::cancelarEditor,
-            nextEnabled=nombre.isNotBlank() && tipo != null, pasoActual=2, showSaveExit=false) {
-            AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto", "")
+            nextEnabled=nombre.isNotBlank() && categoriasDisponibles.any { it.id == categoriaId } && (precioBase.toLongOrNull() ?: 0L) > 0L, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
+            Column(Modifier.padding(16.dp)) {
+            AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres")
             Spacer(Modifier.height(16.dp))
-            AmancayField(descripcion, { descripcion=it.take(2000) }, "Descripción", "", singleLine=false, minLines=3)
+            AmancayField(descripcion, { descripcion=it.take(500) }, "Descripción *", "Cuenta sus características, materiales y medidas.", singleLine=false, minLines=4)
+            Text("${descripcion.length}/500", modifier=Modifier.fillMaxWidth(), textAlign=TextAlign.End, color=Muted, fontSize=12.sp)
             Spacer(Modifier.height(16.dp))
-            Text("¿Qué tipo de producto es?", fontSize=15.sp, fontWeight=FontWeight.Bold, color=Dark, modifier=Modifier.padding(top=12.dp))
-            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                tiposDisponibles.chunked(2).forEach { fila ->
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp), modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        fila.forEach { item -> SelectableChip(item.nombre, tipoId == item.id) { tipoId=item.id; error=null } }
+            SelectorProducto("Categoría", categoriasDisponibles.map { it.id to it.nombre }, categoriaId) { categoriaId=it }
+            Spacer(Modifier.height(14.dp))
+            AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base *", "Ej.: 6.990", keyboardType=KeyboardType.Number)
+            Text("Ingresa el precio en pesos chilenos.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=6.dp))
+            }
+            }
+            Spacer(Modifier.height(10.dp))
+            AvisoEmprendedora("Guardaremos lo que ya escribiste. Puedes continuar más tarde desde donde quedaste.", false)
+        }
+    } else if (paso == 3) {
+        StepScaffold("Paso 3 de 5", "Tipo de producto",
+            "Elige el tipo para mostrar los campos que necesitas.",
+            onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=::cancelarEditor,
+            nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            tiposDisponibles.forEach { item ->
+                val seleccionado = tipoId == item.id
+                Card(
+                    modifier=Modifier.fillMaxWidth().padding(bottom=8.dp).clickable {
+                        tipoId=item.id
+                        conVariantes=item.opcionesVariante.isNotEmpty()
+                        error=null
+                    },
+                    colors=CardDefaults.cardColors(containerColor=if (seleccionado) Color(0xFFFFF0EB) else Color.White),
+                    shape=RoundedCornerShape(18.dp),
+                    border=BorderStroke(if (seleccionado) 2.dp else 1.dp, if (seleccionado) Wine else Line)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
+                        Box(Modifier.size(46.dp).background(Color(0xFFFFE5D9), RoundedCornerShape(50)), contentAlignment=Alignment.Center) {
+                            val icono = when {
+                                item.nombre.contains("ropa", true) || item.nombre.contains("textil", true) -> Icons.Filled.Checkroom
+                                item.nombre.contains("alimento", true) -> Icons.Filled.Restaurant
+                                item.nombre.contains("artesanía", true) || item.nombre.contains("artesania", true) -> Icons.Filled.Palette
+                                else -> Icons.Filled.MoreHoriz
+                            }
+                            Icon(icono, contentDescription=null, tint=Color(0xFFEA7459), modifier=Modifier.size(24.dp))
+                        }
+                        Text(item.nombre, modifier=Modifier.weight(1f).padding(start=12.dp), color=Wine, fontSize=17.sp, fontWeight=FontWeight.Bold)
+                        RadioButton(selected=seleccionado, onClick={
+                            tipoId=item.id
+                            conVariantes=item.opcionesVariante.isNotEmpty()
+                            error=null
+                        })
                     }
                 }
             }
-            if (tipo == null) AvisoEmprendedora(falloTipoHistorico ?: "Cargando la definición del tipo de producto…", falloTipoHistorico != null)
-            Spacer(Modifier.height(12.dp))
-            SelectorProducto("Categoría", categoriasDisponibles.map { it.id to it.nombre }, categoriaId) { categoriaId=it }
-            Text("Elegir un tipo adapta las preguntas del siguiente paso.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=10.dp))
-        }
-    } else if (paso == 3) {
-        StepScaffold("Paso 3 de 5", if (tipo == null) "Detalles del producto" else "Detalles de " + tipo.nombre,
-            "Solo te pedimos lo que ayuda a decidir un encargo.",
-            onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=::cancelarEditor,
-            nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false) {
+            if (tipo == null) AvisoEmprendedora(falloTipoHistorico ?: "Cargando la definición de este tipo…", falloTipoHistorico != null)
+            if (campos.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text("Detalles de ${tipo?.nombre.orEmpty()}", fontWeight=FontWeight.Bold, color=Wine, fontSize=19.sp)
+                Text("Completa los campos específicos para este producto.", color=Muted, fontSize=14.sp)
+                Spacer(Modifier.height(8.dp))
+            }
             if (campos.isEmpty()) Text("Este tipo no requiere detalles adicionales. Puedes continuar.", fontSize=15.sp, color=Muted)
             campos.forEach { f ->
                 AmancayField(atributos[f.clave].orEmpty(),
@@ -695,39 +894,59 @@ private fun EditorProductoEmprendedora(
             Text("No necesitas escribir mucho. Puedes completar o editar estos datos más adelante.", fontSize=13.sp, color=Muted)
         }
     } else if (paso == 4) {
-        StepScaffold("Paso 4 de 5", "Precio, variantes y stock", "Cada variante puede tener su propio precio, foto y cantidad.",
+        StepScaffold("Paso 4 de 5", "Variantes", "Cada variante puede tener su propio precio, foto y stock.",
             onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=::cancelarEditor,
-            nextEnabled=if (conVariantes) variantes.isNotEmpty() else precioBase.isNotBlank(),
-            pasoActual=4, showSaveExit=false) {
-            Text("Modalidad de venta", color=Dark, fontWeight=FontWeight.Bold)
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp), modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                listOf("regular" to "Regular", "a_pedido" to "A pedido", "pieza_unica" to "Pieza única").forEach { (value,label) ->
-                    SelectableChip(text=label, selected=modalidad == value, enabled=original == null && (!conVariantes || value != "pieza_unica")) {
-                        modalidad=value
-                        if (value == "pieza_unica") { manejaStock=true; stockInicial="1" }
-                    }
+            nextEnabled=if (conVariantes) variantes.isNotEmpty() && !invalidVariant else (precioBase.toLongOrNull() ?: 0L) > 0L && (!manejaStock || stockValue != null || original != null),
+            pasoActual=4, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp), verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=!conVariantes, enabled=original==null, onCheckedChange={ sinVariantes ->
+                        conVariantes=!sinVariantes
+                        variantes=if (sinVariantes) emptyList() else listOf(nuevaVariante(opciones))
+                    })
+                    Text("Este producto no tiene variantes", color=Dark, fontSize=14.sp)
                 }
             }
+            Spacer(Modifier.height(12.dp))
             if (!conVariantes) {
-                AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio en pesos chilenos", "", keyboardType=KeyboardType.Number)
-                Row(verticalAlignment=Alignment.CenterVertically) {
-                    Checkbox(checked=manejaStock, onCheckedChange={ if (original == null && modalidad != "pieza_unica") manejaStock=it }, enabled=original == null && modalidad != "pieza_unica", modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp))
-                    Text("Controlar unidades disponibles", color=Dark)
-                }
-                if (manejaStock && original == null) AmancayField(stockInicial, { stockInicial=it.filter(Char::isDigit).take(9) }, "Stock inicial", "", keyboardType=KeyboardType.Number)
-                else if (original != null && manejaStock) Text("Stock actual: " + (original.stock ?: 0) + ". Usa “Ajustar stock” desde la lista.", color=Muted, fontSize=12.sp)
+                AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio", "Ingresa el precio", keyboardType=KeyboardType.Number)
+                Spacer(Modifier.height(12.dp))
+                if (manejaStock && original == null) AmancayField(stockInicial, { stockInicial=it.filter(Char::isDigit).take(9) }, "Stock inicial", "Cantidad disponible", keyboardType=KeyboardType.Number)
+                else if (original != null && manejaStock) Text("Stock actual: ${original.stock ?: 0}. Ajusta las unidades desde el catálogo.", color=Muted, fontSize=13.sp)
             } else {
                 Text("Variantes", color=Dark, fontWeight=FontWeight.Bold)
-                Text("Completa " + opciones.joinToString(", ") + ". Las variantes guardadas se conservan; puedes desactivarlas.", color=Muted, fontSize=12.sp)
+                Text("Cada variante guarda su foto, precio y stock por separado.", color=Muted, fontSize=13.sp)
                 variantes.forEachIndexed { index,v ->
-                    Card(Modifier.fillMaxWidth().padding(top=8.dp), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
+                    Card(Modifier.fillMaxWidth().padding(top=10.dp), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
                         Column(Modifier.padding(12.dp)) {
+                            Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                ProductImage(fallback=Fig.VASE_REVIEW, size=82.dp, uri=v.fotoUri, bitmap=v.fotoBitmap, hasPhoto=v.fotoUri != null || v.fotoBitmap != null || v.imagen != null)
+                                Column(Modifier.weight(1f)) {
+                                    Text("Foto de esta variante", color=Dark, fontWeight=FontWeight.Bold)
+                                    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                        TextButton(onClick={ varianteConFotoTemporal=v.id; selectorGaleria.launch("image/*") }, modifier=Modifier.heightIn(min=48.dp)) { Text("Galería", color=Wine) }
+                                        TextButton(onClick={
+                                            runCatching { crearUriFotoTemporalProducto(context) }.onSuccess { uri ->
+                                                varianteCapturaPendiente=v.id
+                                                capturaPendiente=uri.toString()
+                                                selectorCamara.launch(uri)
+                                            }.onFailure { error=it.message ?: "No se pudo abrir la cámara." }
+                                        }, modifier=Modifier.heightIn(min=48.dp)) { Text("Cámara", color=Wine) }
+                                    }
+                                    if (v.imagen != null && v.fotoUri == null) Text("Foto guardada", color=Muted, fontSize=12.sp)
+                                }
+                            }
                             opciones.forEach { key -> CampoProducto(key.replaceFirstChar { it.uppercase() }, v.opciones[key].orEmpty(),
                                 { value -> variantes=variantes.mapIndexed { i,old -> if (i == index && !old.existente) old.copy(opciones=old.opciones + (key to value)) else old } },
                                 100, readOnly=v.existente) }
-                            AmancayField(v.precio, { value -> variantes=variantes.actualizar(index) { it.copy(precio=value.filter(Char::isDigit).take(12)) } }, "Precio (CLP)", "", keyboardType=KeyboardType.Number)
-                            if (manejaStock && !v.existente) AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock inicial", "", keyboardType=KeyboardType.Number)
-                            else if (v.existente && manejaStock) Text("Stock: " + (original?.variantes?.firstOrNull { it.id == v.id }?.stock ?: 0) + ". Ajusta desde la lista.", color=Muted, fontSize=12.sp)
+                            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                Box(Modifier.weight(1f)) { AmancayField(v.precio, { value -> variantes=variantes.actualizar(index) { it.copy(precio=value.filter(Char::isDigit).take(12)) } }, "Precio (CLP)", "", keyboardType=KeyboardType.Number) }
+                                if (manejaStock && !v.existente) {
+                                    Box(Modifier.weight(1f)) { AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock", "", keyboardType=KeyboardType.Number) }
+                                } else if (v.existente && manejaStock) {
+                                    Text("Stock: " + (original?.variantes?.firstOrNull { it.id == v.id }?.stock ?: 0) + ". Ajusta desde la lista.", color=Muted, fontSize=12.sp)
+                                }
+                            }
                             if (v.existente) Row(verticalAlignment=Alignment.CenterVertically) {
                                 Checkbox(checked=v.activa, onCheckedChange={ active -> variantes=variantes.actualizar(index) { it.copy(activa=active) } }, modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp))
                                 Text("Variante activa", color=Dark)
@@ -737,16 +956,49 @@ private fun EditorProductoEmprendedora(
                 }
                 if (variantes.size < 20 && original == null) OutlineButton("＋ Agregar variante", { variantes=variantes + nuevaVariante(opciones) })
             }
-            if (original == null || !manejaStock) SelectorProducto("Al agotarse",
-                listOf("mostrar_agotado" to "Mostrar agotado", "ocultar" to "Ocultar", "pasar_a_pedido" to "Pasar a pedido"), alAgotarse) { alAgotarse=it }
             error?.let { AvisoEmprendedora(it, true) }
-            Text("El stock existente se modifica desde “Ajustar stock” en el catálogo para conservar su historial.", fontSize=13.sp, color=Muted)
+            if (original != null && manejaStock) Text("El stock existente se modifica desde el catálogo para conservar el historial.", fontSize=13.sp, color=Muted)
+        }
+    } else if (paso == 5) {
+        StepScaffold("Paso 5 de 5", "Disponibilidad", "Cuéntanos cómo quieres vender este producto.",
+            onNext={ paso=6 }, onBack={ paso=4 }, onSaveExit=::cancelarEditor,
+            nextEnabled=!enviando, pasoActual=5, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            Text("Tipo de disponibilidad", color=Dark, fontWeight=FontWeight.Bold, fontSize=18.sp)
+            Text("Selecciona cómo estará disponible este producto.", color=Muted, fontSize=14.sp)
+            Spacer(Modifier.height(10.dp))
+            OpcionDisponibilidad("Regular", "Producto siempre disponible en forma habitual.", Icons.Filled.Inventory2, modalidad=="regular", original==null) { modalidad="regular" }
+            OpcionDisponibilidad("A pedido", "Se realiza especialmente tras la compra.", Icons.Filled.Schedule, modalidad=="a_pedido", original==null) { modalidad="a_pedido" }
+            OpcionDisponibilidad("Pieza única", "Producto único, no se repite.", Icons.Filled.Star, modalidad=="pieza_unica", original==null && !conVariantes) {
+                modalidad="pieza_unica"; manejaStock=true; stockInicial="1"
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("¿Maneja stock?", color=Dark, fontWeight=FontWeight.Bold, fontSize=18.sp)
+            Text("Indica si llevas control de la cantidad disponible.", color=Muted, fontSize=14.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFFF6E8E6)).border(1.dp, Wine, RoundedCornerShape(16.dp))) {
+                listOf(true to "Sí", false to "No").forEach { (valor, texto) ->
+                    Box(Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(15.dp)).background(if (manejaStock==valor) Wine else Color.Transparent).clickable(enabled=original==null && modalidad!="pieza_unica") { manejaStock=valor }, contentAlignment=Alignment.Center) {
+                        Text(texto, color=if (manejaStock==valor) Color.White else Wine, fontWeight=FontWeight.Bold, fontSize=16.sp)
+                    }
+                }
+            }
+            if (manejaStock) {
+                Spacer(Modifier.height(14.dp))
+                Text("Cuando se agote", color=Dark, fontWeight=FontWeight.Bold, fontSize=18.sp)
+                Text("Elige qué quieres que pase cuando no haya más stock.", color=Muted, fontSize=14.sp)
+                Spacer(Modifier.height(8.dp))
+                OpcionDisponibilidad("Mostrar agotado", "El producto sigue visible, pero se muestra como agotado.", Icons.Filled.Visibility, alAgotarse=="mostrar_agotado", original==null) { alAgotarse="mostrar_agotado" }
+                OpcionDisponibilidad("Ocultar producto", "No se mostrará hasta que vuelva a tener stock.", Icons.Filled.VisibilityOff, alAgotarse=="ocultar", original==null) { alAgotarse="ocultar" }
+                OpcionDisponibilidad("Pasar a pedido", "Al agotarse, cambiará automáticamente a pedido.", Icons.Filled.SwapHoriz, alAgotarse=="pasar_a_pedido", original==null) { alAgotarse="pasar_a_pedido" }
+            }
+            if (manejaStock && conVariantes && original==null) Text("El stock inicial se define por separado para cada variante.", color=Muted, fontSize=13.sp, modifier=Modifier.padding(top=8.dp))
+            error?.let { AvisoEmprendedora(it, true) }
         }
     } else {
-        StepScaffold("Paso 5 de 5", "Revisa y publica", "Tú decides cuándo se muestra y cómo se descuenta.",
-            onNext={ guardarBorrador() }, onBack={ paso=4 }, onSaveExit=::cancelarEditor,
-            nextLabel=if (original == null) "Guardar borrador" else "Guardar cambios", nextEnabled=!enviando,
-            pasoActual=5, showSaveExit=false) {
+        StepScaffold("Último paso", "Revisa tu producto", "Verifica que toda la información esté correcta antes de publicarlo.",
+            onNext={ guardarBorrador(publicar = original == null && tiendaPublicada) }, onBack={ paso=5 }, onSaveExit={ guardarBorrador(false) },
+            nextLabel=when { original != null -> "Guardar cambios"; tiendaPublicada -> "Publicar producto"; else -> "Guardar borrador" }, nextEnabled=!enviando,
+            pasoActual=5, showSaveExit=original==null, onExit=::guardarLocalYSalir) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
@@ -783,9 +1035,70 @@ private fun EditorProductoEmprendedora(
                 else -> "Puedes guardar el borrador sin foto, pero tendrás que agregar una imagen antes de publicarlo."
             }
             AvisoEmprendedora(mensajeImagen, false)
+            listOf(
+                "Información general" to "Nombre, descripción y categoría" to 2,
+                "Fotos del producto" to "Imagen principal y galería" to 1,
+                "Precio y variantes" to "Precio, opciones y modalidad" to 4,
+                "Stock y disponibilidad" to "Comportamiento del stock y visibilidad" to 5
+            ).forEach { (par, destino) ->
+                val (titulo, detalle) = par
+                Card(
+                    modifier=Modifier.fillMaxWidth().padding(top=8.dp).clickable { paso=destino },
+                    colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), border=BorderStroke(1.dp,Line)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
+                        val icono = when (titulo) {
+                            "Información general" -> Icons.Filled.Storefront
+                            "Fotos del producto" -> Icons.Filled.PhotoLibrary
+                            "Precio y variantes" -> Icons.Filled.Sell
+                            "Stock y disponibilidad" -> Icons.Filled.Inventory2
+                            else -> Icons.Filled.Person
+                        }
+                        Box(Modifier.size(42.dp).background(Color(0xFFFFE9E0), RoundedCornerShape(50)), contentAlignment=Alignment.Center) { Icon(icono, contentDescription=null, tint=Wine, modifier=Modifier.size(22.dp)) }
+                        Column(Modifier.weight(1f).padding(start=10.dp)) {
+                            Text(titulo, color=Wine, fontWeight=FontWeight.Bold, fontSize=15.sp)
+                            Text(detalle, color=Muted, fontSize=12.sp)
+                        }
+                        Row(verticalAlignment=Alignment.CenterVertically) {
+                            Text("Editar", color=Wine, fontWeight=FontWeight.Bold, fontSize=13.sp)
+                            Icon(Icons.Filled.ArrowForward, contentDescription=null, tint=Wine, modifier=Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
             error?.let { AvisoEmprendedora(it, true) }
         }
     }}
+
+@Composable
+private fun OpcionDisponibilidad(
+    titulo: String,
+    detalle: String,
+    icono: ImageVector,
+    seleccionada: Boolean,
+    habilitada: Boolean = true,
+    alSeleccionar: () -> Unit
+) {
+    Card(
+        modifier=Modifier.fillMaxWidth().padding(vertical=4.dp).clickable(enabled=habilitada, onClick=alSeleccionar),
+        colors=CardDefaults.cardColors(containerColor=if (seleccionada) Color(0xFFFFF5F0) else Color.White),
+        shape=RoundedCornerShape(18.dp),
+        border=BorderStroke(if (seleccionada) 1.5.dp else 1.dp, if (seleccionada) Wine else Line)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
+            Box(Modifier.size(46.dp).background(Color(0xFFFFE9E0), RoundedCornerShape(50)), contentAlignment=Alignment.Center) {
+                Icon(icono, contentDescription=null, tint=Wine, modifier=Modifier.size(23.dp))
+            }
+            Column(Modifier.weight(1f).padding(horizontal=10.dp)) {
+                Text(titulo, color=Wine, fontWeight=FontWeight.Bold, fontSize=15.sp)
+                Text(detalle, color=Muted, fontSize=12.sp, lineHeight=16.sp)
+            }
+            Box(Modifier.size(22.dp).border(2.dp, if (seleccionada) Wine else Muted, RoundedCornerShape(50)), contentAlignment=Alignment.Center) {
+                if (seleccionada) Box(Modifier.size(12.dp).background(Wine, RoundedCornerShape(50)))
+            }
+        }
+    }
+}
 
 private data class VarianteBorrador(
     val id: String,
@@ -793,7 +1106,12 @@ private data class VarianteBorrador(
     val precio: String,
     val stock: String,
     val activa: Boolean,
-    val existente: Boolean
+    val existente: Boolean,
+    val fotoUri: Uri? = null,
+    val fotoBitmap: Bitmap? = null,
+    val archivoId: String = UUID.randomUUID().toString(),
+    val imagen: String? = null,
+    val fotoNueva: Boolean = false
 )
 
 private fun nuevaVariante(opciones: List<String>) = VarianteBorrador(UUID.randomUUID().toString(), opciones.associateWith { "" }, "", "", true, false)

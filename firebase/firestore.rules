@@ -60,6 +60,7 @@ service cloud.firestore {
         && request.resource.data.actualizadoEn == request.time;
       match /configuracion/general { allow get: if owner(tiendaId); }
       match /movimientosStock/{movimientoId} { allow read: if owner(tiendaId); }
+      match /ventas/{ventaId} { allow read: if owner(tiendaId); }
       match /productos/{productoId} {
         allow read: if owner(tiendaId);
         // Selección del borrador: Storage se valida en el backend al publicar.

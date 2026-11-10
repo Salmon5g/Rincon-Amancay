@@ -41,6 +41,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +64,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.R
@@ -72,6 +80,7 @@ import com.example.amancay.data.OpcionCatalogoEmprendedora
 import com.example.amancay.data.ProductosEmprendedoraRepository
 import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.ui.Fig
+import com.example.amancay.ui.BotanicalBackdrop
 import com.example.amancay.ui.OutlineButton
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
@@ -467,88 +476,108 @@ private fun PantallaIngresoEmprendedora(
     alIngresar: () -> Unit,
     alGoogle: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
-            TextButton(onClick = alVolver, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
-                Text("‹  Volver", color = Wine, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.weight(1f))
-            Image(painterResource(Fig.LOGO), contentDescription = "Rincón Amancay", modifier = Modifier.size(52.dp))
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text("Rincón", fontSize = 13.sp, color = Muted)
-                Text("Amancay", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-            }
-        }
-        Text("ESPACIO EMPRENDEDORA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed, letterSpacing = 2.sp)
-        Text("Ingresa a tu espacio", fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-        Text("Administra tu tienda desde aquí.", color = Muted, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            shape = RoundedCornerShape(24.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-            modifier = Modifier.fillMaxWidth()
+    var mostrarContrasena by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize()) {
+        BotanicalBackdrop()
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-        Column(Modifier.padding(18.dp)) {
-        AmancayInput("Correo electrónico", correo, alCambiarCorreo)
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = contrasena,
-            onValueChange = alCambiarContrasena,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Contraseña") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            shape = RoundedCornerShape(16.dp),
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Wine,
-                unfocusedBorderColor = Line,
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White,
-                cursorColor = Wine,
-                focusedTextColor = Dark,
-                unfocusedTextColor = Dark
-            )
-        )
-        aviso?.let { AvisoEmprendedora(it, false) }
-        error?.let { AvisoEmprendedora(it, true) }
-        TextButton(
-            onClick = alRecuperarContrasena,
-            enabled = !enviando && !googleCargando && !recuperacionCargando,
-            modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)
-        ) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp)) {
+                TextButton(onClick = alVolver, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text("←  Volver", color = Wine, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                Image(painterResource(Fig.LOGO), contentDescription = "Rincón Amancay", modifier = Modifier.size(52.dp))
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Rincón", fontSize = 14.sp, color = Muted)
+                    Text("Amancay", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+                }
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(64.dp))
+            }
+            Spacer(Modifier.height(22.dp))
+            Text("ESPACIO EMPRENDEDORA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentRed, letterSpacing = 2.2.sp)
+            Text("Ingresa a\ntu espacio", fontSize = 48.sp, lineHeight = 48.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+            Text("Administra tu tienda desde aquí.", color = Muted, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.97f)),
+                shape = RoundedCornerShape(26.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
+                    AmancayInput("Correo electrónico", correo, alCambiarCorreo)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Contraseña", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark, modifier = Modifier.padding(bottom = 6.dp))
+                    OutlinedTextField(
+                        value = contrasena,
+                        onValueChange = alCambiarContrasena,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Tu contraseña", color = Muted) },
+                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = Wine) },
+                        trailingIcon = {
+                            IconButton(onClick = { mostrarContrasena = !mostrarContrasena }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                                Icon(if (mostrarContrasena) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, contentDescription = if (mostrarContrasena) "Ocultar contraseña" else "Mostrar contraseña", tint = Wine)
+                            }
+                        },
+                        singleLine = true,
+                        visualTransformation = if (mostrarContrasena) VisualTransformation.None else PasswordVisualTransformation(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Wine,
+                            unfocusedBorderColor = Line,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            cursorColor = Wine,
+                            focusedTextColor = Dark,
+                            unfocusedTextColor = Dark
+                        )
+                    )
+                    TextButton(
+                        onClick = alRecuperarContrasena,
+                        enabled = !enviando && !googleCargando && !recuperacionCargando,
+                        modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)
+                    ) {
+                        Text(if (recuperacionCargando) "Enviando enlace…" else "¿Olvidaste tu contraseña?", color = Wine)
+                    }
+                    aviso?.let { AvisoEmprendedora(it, false) }
+                    error?.let { AvisoEmprendedora(it, true) }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = alIngresar,
+                        enabled = !enviando && !googleCargando && !recuperacionCargando && correo.isNotBlank() && contrasena.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Wine),
+                        shape = RoundedCornerShape(28.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 18.dp)
+                    ) {
+                        if (enviando) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+                        else Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(Modifier.weight(1f))
+                            Text("Ingresar", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Spacer(Modifier.weight(1f))
+                            Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlineButton(
+                        "Iniciar sesión con Google",
+                        alGoogle,
+                        enabled = !googleCargando && !enviando && !recuperacionCargando
+                    )
+                }
+            }
             Text(
-                if (recuperacionCargando) "Enviando enlace…" else "¿Olvidaste tu contraseña?",
-                color = Wine
+                "Si administración creó tu cuenta, ingresa primero esas credenciales para vincular Google.",
+                color = Muted,
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             )
+            Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 11.sp, color = Wine, letterSpacing = 1.5.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 18.dp, bottom = 12.dp))
         }
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = alIngresar,
-            enabled = !enviando && !googleCargando && !recuperacionCargando && correo.isNotBlank() && contrasena.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Wine),
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 18.dp)
-        ) {
-            if (enviando) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp)) else Text("Ingresar", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        }
-        Spacer(Modifier.height(10.dp))
-        OutlineButton(
-            "Iniciar sesión con Google",
-            alGoogle,
-            enabled = !googleCargando && !enviando && !recuperacionCargando
-        )
-        }
-        }
-        Text(
-            "Si administración creó tu cuenta, ingresa primero esas credenciales para vincular Google.",
-            color = Muted,
-            fontSize = 12.sp,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 11.sp, color = Wine, letterSpacing = 1.5.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 14.dp))
     }
 }
 

@@ -80,4 +80,4 @@ En el modo compartido, la app carga imágenes de productos mediante la API local
 
 El modo emulador mantiene Firebase Storage. El modo compartido local usa las políticas y rutas de Supabase del contrato 05. No poner la contraseña de la cuenta técnica ni una clave `service_role` en Android, Nuxt o Git.
 
-La autenticación de emprendedoras utiliza correo y contraseña asignados por la administración, con desbloqueo biométrico opcional por dispositivo. El registro de ventas y las invitaciones a ferias no forman parte de esta integración todavía.
+La autenticación de emprendedoras utiliza correo y contraseña asignados por la administración, con desbloqueo biométrico opcional por dispositivo. El registro de ventas usa la API autenticada local y persiste precio, fecha, lugar y descuento de stock en Firestore; el historial lee hasta 200 registros como propietaria. Las invitaciones a ferias siguen siendo de demostración. Para leer ventas en Firebase remoto, publicar primero la regla de lectura propietaria añadida a `firebase/firestore.rules`.

@@ -20,6 +20,15 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,25 +77,35 @@ fun StepScaffold(
     onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit,
     nextLabel: String = "Continuar", nextEnabled: Boolean = true, pasoActual: Int = 1,
     showSaveExit: Boolean = true,
+    showBackButton: Boolean = true,
+    onExit: () -> Unit = onSaveExit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(8.dp))
-        StepHeader(paso, titulo, subtitulo)
-        Spacer(Modifier.height(12.dp))
-        StepProgressBar(actual = pasoActual)
-        Spacer(Modifier.height(20.dp))
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), content = content)
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlineButton("Atrás", onBack, modifier = Modifier.weight(1f), fontSize = 14.sp)
-            PrimaryButton(nextLabel, onNext, modifier = Modifier.weight(1f), enabled = nextEnabled, fontSize = 14.sp)
+    Box(Modifier.fillMaxSize()) {
+        BotanicalBackdrop()
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            ProductWizardTopBar(onExit)
+            Spacer(Modifier.height(8.dp))
+            StepHeader(paso, titulo, subtitulo)
+            Spacer(Modifier.height(12.dp))
+            StepProgressBar(actual = pasoActual)
+            Spacer(Modifier.height(14.dp))
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), content = content)
+            Spacer(Modifier.height(12.dp))
+            if (showSaveExit) OutlineButton("Guardar borrador", onSaveExit, modifier = Modifier.fillMaxWidth(), fontSize = 14.sp)
+            Spacer(Modifier.height(8.dp))
+            if (showBackButton) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlineButton("Atrás", onBack, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                    PrimaryButton(nextLabel, onNext, modifier = Modifier.weight(1f), enabled = nextEnabled, fontSize = 14.sp)
+                }
+            } else PrimaryButton(nextLabel, onNext, enabled = nextEnabled, fontSize = 16.sp)
+            Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 9.sp, color = Wine, letterSpacing = 2.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+            Spacer(Modifier.height(8.dp))
         }
-        if (showSaveExit) GhostButton("Salir y guardar", onSaveExit)
-        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -105,123 +124,95 @@ fun HomeScreen(
     onMisProductos: () -> Unit,
     onVerCatalogo: () -> Unit,
     onVerFerias: () -> Unit,
+    onVerVentas: () -> Unit = onVerFerias,
+    onVerMiTienda: () -> Unit = onVerCatalogo,
     invitacionesDisponibles: Boolean = true,
     tiendaVisible: Boolean = false,
+    nombreEmprendedora: String = "artesana",
+    productosRecientes: List<Product> = emptyList(),
     contenidoAdicional: @Composable ColumnScope.() -> Unit = {}
 ) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-        Spacer(Modifier.height(8.dp))
-        Text("HOLA, ARTESANA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-        Text("Tu tienda, paso a paso", fontSize = 32.sp, lineHeight = 38.sp, color = Dark, fontFamily = FontFamily.Serif)
-        Text(
-            "Administra productos, ventas y visibilidad desde un solo lugar.",
-            fontSize = 15.sp, lineHeight = 22.sp, color = Muted
-        )
-        Spacer(Modifier.height(14.dp))
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Wine),
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(20.dp)) {
-                Text("HOY EN TU TIENDA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = 1.5.sp)
-                Spacer(Modifier.height(14.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    ResumenTienda("$publicados", "Productos")
-                    ResumenTienda("$ventasCount", "Ventas")
-                    ResumenTienda(if (tiendaVisible) "Visible" else "En preparación", "Tienda")
+    Box(Modifier.fillMaxSize()) {
+        BotanicalBackdrop()
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Hola, ${nombreEmprendedora.substringBefore(' ').ifBlank { "artesana" }}", fontSize = 38.sp, lineHeight = 42.sp, color = Wine, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
+                    Text("ESPACIO EMPRENDEDORA", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color(0xFFEF5452))
+                }
+                if (invitacionesPendientes > 0) Surface(color = Color(0xFFF8E9EA), shape = CircleShape) {
+                    Text("$invitacionesPendientes", modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp), color = Wine, fontWeight = FontWeight.Bold)
                 }
             }
-        }
-        Spacer(Modifier.height(14.dp))
-        if (borrador != null) {
-            DraftBanner(onContinue = onContinuarBorrador)
+            Text("¿Qué quieres hacer hoy?", fontSize = 20.sp, color = Muted, modifier = Modifier.padding(top = 10.dp, bottom = 14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TarjetaAccionInicio(Icons.Filled.ShoppingBag, "Mis productos", "Edita y organiza tu catálogo.", Modifier.weight(1f), onMisProductos)
+                TarjetaAccionInicio(Icons.Filled.ReceiptLong, "Encargos", "Revisa y gestiona tus ventas.", Modifier.weight(1f), onVerVentas)
+                TarjetaAccionInicio(Icons.Filled.Storefront, "Mi tienda", "Personaliza tu espacio online.", Modifier.weight(1f), onVerMiTienda)
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Productos recientes", fontSize = 26.sp, color = Wine, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = onMisProductos, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text("Ver todos", color = Wine, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Wine)
+                }
+            }
+            if (borrador != null) {
+                DraftBanner(onContinue = onContinuarBorrador)
+                Spacer(Modifier.height(8.dp))
+            }
+            productosRecientes.take(3).forEach { producto ->
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp).clickable { onMisProductos() }) {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ProductImage(Fig.VASE_THUMB, 76.dp, uri = producto.photoUri, bitmap = producto.photoBitmap, hasPhoto = producto.tieneFoto, corner = 16.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(producto.nombre, color = Wine, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif, fontSize = 18.sp, maxLines = 1)
+                            Text(formatPrice(producto.precioPrincipal()), color = Muted, fontSize = 16.sp)
+                            val visible = producto.publicado && !producto.estadoCatalogo.orEmpty().contains("No disponible", true)
+                            Surface(color = if (visible) GreenBg else CardPink, shape = RoundedCornerShape(50)) {
+                                Text(producto.estadoCatalogo ?: if (producto.publicado) "Visible" else "Borrador", color = if (visible) GreenText else Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp))
+                            }
+                        }
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Wine, modifier = Modifier.size(26.dp))
+                    }
+                }
+            }
+            if (productosRecientes.isEmpty()) {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Tu catálogo aparecerá aquí cuando agregues productos.", color = Muted, modifier = Modifier.padding(18.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            PrimaryButton("＋  Agregar producto", onAgregar, fontSize = 17.sp)
+            Spacer(Modifier.height(16.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line), modifier = Modifier.fillMaxWidth().clickable { onVerFerias() }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Invitaciones a ferias", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wine)
+                        Text(if (!invitacionesDisponibles) "Consulta de invitaciones no disponible" else if (invitacionesPendientes > 0) "$invitacionesPendientes por responder" else "Sin invitaciones pendientes", fontSize = 13.sp, color = Muted)
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Wine, modifier = Modifier.size(26.dp))
+                }
+            }
+            contenidoAdicional()
             Spacer(Modifier.height(14.dp))
         }
-        Text(fechaHoy(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed)
-        Spacer(Modifier.height(6.dp))
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            shape = RoundedCornerShape(20.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(22.dp)) {
-                Text("¿Qué quieres hacer hoy?", fontSize = 23.sp, lineHeight = 29.sp, color = Dark, fontFamily = FontFamily.Serif)
-                Text(
-                    "Elige una acción. Te acompañamos en cada paso.",
-                    fontSize = 14.sp, lineHeight = 20.sp, color = Muted
-                )
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = onAgregar, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Wine),
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(vertical = 18.dp)
-                ) {
-                    Text("+  Agregar producto", color = Color.White,fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
+    }
+}
+
+@Composable
+private fun TarjetaAccionInicio(icono: androidx.compose.ui.graphics.vector.ImageVector, titulo: String, detalle: String, modifier: Modifier, onClick: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp), modifier = modifier.heightIn(min = 146.dp).clickable(onClick = onClick)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Box(Modifier.size(50.dp).clip(CircleShape).background(Color(0xFFFFE9E0)), contentAlignment = Alignment.Center) {
+                Icon(icono, contentDescription = null, tint = Color(0xFFEF6D57), modifier = Modifier.size(27.dp))
             }
+            Spacer(Modifier.height(8.dp))
+            Text(titulo, color = Wine, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif, textAlign = TextAlign.Center, maxLines = 1)
+            Text(detalle, color = Muted, fontSize = 11.sp, lineHeight = 14.sp, textAlign = TextAlign.Center, maxLines = 2)
         }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                modifier = Modifier.fillMaxWidth().clickable { onMisProductos() }
-            ) {
-                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(Fig.CARD_GRID), contentDescription = null,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Mis productos", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
-                        Text(
-                            "$publicados publicados · $borradores borradores",
-                            fontSize = 14.sp, lineHeight = 20.sp, color = Muted
-                        )
-                    }
-                    Text("›", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Wine)
-                }
-            }
-        }
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            shape = RoundedCornerShape(20.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-            modifier = Modifier.fillMaxWidth().clickable { onVerFerias() }
-        ) {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Invitaciones a ferias", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
-                    Text(
-                        if (!invitacionesDisponibles) "Consulta de invitaciones no disponible"
-                        else if (invitacionesPendientes > 0) "$invitacionesPendientes por responder"
-                        else "Sin invitaciones pendientes",
-                        fontSize = 13.sp, color = Muted
-                    )
-                }
-                if (invitacionesPendientes > 0) {
-                    Box(
-                        modifier = Modifier.size(32.dp).background(Wine, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("$invitacionesPendientes", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        ProgressChecklist(
-            tieneProducto = publicados > 0,
-            tieneVenta = ventasCount > 0,
-            compartido = linkCompartido,
-            onVerCatalogo = onVerCatalogo
-        )
-        Spacer(Modifier.height(16.dp))
-        contenidoAdicional()
     }
 }
 
@@ -590,7 +581,7 @@ fun CameraScreen(
                     modifier = Modifier.size(60.dp).background(Wine, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("◉", color = Color.White, fontSize = 28.sp)
+                    Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
                 }
             }
             TextButton(onClick = onGaleria) {
@@ -612,7 +603,7 @@ fun PhotoStep(
     imagenPrevia: Bitmap? = null,
     mensajeImagenExistente: String? = null
 ) {
-    StepScaffold("Paso 1 de 5", "Primero, una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit) {
+    StepScaffold("Paso 1 de 5", "Agrega una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit) {
         Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
             if (lista) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -636,34 +627,27 @@ fun PhotoStep(
                     )
                 }
             } else {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                    color = Color.White,
-                    modifier = Modifier.fillMaxWidth().clickable { onPickPhoto() }
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(vertical = 28.dp, horizontal = 20.dp)
-                    ) {
-                        Image(
-                            painter = painterResource(Fig.CAMERA), contentDescription = null,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text("Agrega una foto", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Dark)
-                        Text(
-                            "Elige una foto clara; podrás revisarla antes de guardar el producto.",
-                            fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
-                        )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf("Tomar foto" to onTakePhoto, "Elegir de galería" to onPickPhoto).forEachIndexed { index, (etiqueta, accion) ->
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                            color = Color.White,
+                            modifier = Modifier.weight(1f).height(190.dp).clickable(onClick = accion)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.padding(12.dp)) {
+                                if (index == 0) Image(painter = painterResource(Fig.CAMERA), contentDescription = null, modifier = Modifier.size(76.dp))
+                else Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine, modifier = Modifier.size(76.dp))
+                                Spacer(Modifier.height(12.dp))
+                                Text(etiqueta, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wine, textAlign = TextAlign.Center)
+                            }
+                        }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        PrimaryButton("Usar cámara", onTakePhoto)
-        Spacer(Modifier.height(10.dp))
-        OutlineButton("Elegir galería", onPickPhoto)
+        Spacer(Modifier.height(14.dp))
+        Text("Puedes agregar otra foto después", color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -726,7 +710,7 @@ fun DetailsStep(draft: DraftState, bump: () -> Unit, onNext: () -> Unit, onBack:
 
 @Composable
 fun PriceStep(draft: DraftState, bump: () -> Unit, onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit) {
-    StepScaffold("Paso 4 de 5", "Precio, variantes y stock", "Cada variante puede tener su propio precio, foto y cantidad.", onNext, onBack, onSaveExit, nextEnabled = draft.variantes.any { it.precioLong() > 0L }, pasoActual = 4) {
+    StepScaffold("Paso 4 de 5", "Variantes", "Cada variante puede tener su propio precio, foto y stock.", onNext, onBack, onSaveExit, nextEnabled = draft.variantes.any { it.precioLong() > 0L }, pasoActual = 4) {
         draft.variantes.forEachIndexed { i, v ->
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -852,7 +836,8 @@ fun ProductsScreen(
     mostrarEliminar: Boolean = true,
     onAccionPublicacion: ((Product) -> Unit)? = null,
     onAjustarStock: ((Product) -> Unit)? = null,
-    mensajeEliminar: ((String) -> String)? = null
+    mensajeEliminar: ((String) -> String)? = null,
+    onOrganizeCatalog: (() -> Unit)? = null
 ) {
     var tab by remember { mutableStateOf(0) }
     var busqueda by remember { mutableStateOf("") }
@@ -860,16 +845,26 @@ fun ProductsScreen(
     val porEstado = when (tab) {
         1 -> productos.filter { it.publicado }
         2 -> productos.filter { it.esBorrador }
+        3 -> productos.filter { it.estadoCatalogo?.contains("No disponible", ignoreCase = true) == true }
         else -> productos
     }
     val filtrados = porEstado.filter { it.nombre.contains(busqueda, ignoreCase = true) }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+    Box(Modifier.fillMaxSize()) {
+    BotanicalBackdrop()
+    Column(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.weight(1f).padding(horizontal = 18.dp)) {
         item {
             Spacer(Modifier.height(8.dp))
-            Text("MI CATÁLOGO", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-            Text("Mis productos", fontSize = 30.sp, color = Dark, fontFamily = FontFamily.Serif)
-            Text("Aquí puedes revisar y organizar lo que ofreces.", fontSize = 15.sp, color = Muted)
-            Spacer(Modifier.height(14.dp))
+            Text("ESPACIO EMPRENDEDORA", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color(0xFFEF5452))
+            Text("Mis productos", fontSize = 40.sp, lineHeight = 44.sp, color = Wine, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
+            Text("Administra los productos de tu tienda.", fontSize = 16.sp, color = Muted)
+            onOrganizeCatalog?.let { organizar ->
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = organizar, modifier = Modifier.heightIn(min = 44.dp), contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("Organizar catálogo  ›", color = Wine, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
             OutlinedTextField(
                 value = busqueda,
                 onValueChange = { busqueda = it },
@@ -877,7 +872,7 @@ fun ProductsScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 placeholder = { Text("Buscar producto", color = Muted) },
-                leadingIcon = { Text("⌕", fontSize = 25.sp, color = Muted) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(25.dp)) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Wine,
                     unfocusedBorderColor = Line,
@@ -886,13 +881,12 @@ fun ProductsScreen(
                 )
             )
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FiltroProducto("Todos · ${productos.size}", tab == 0, Modifier.weight(1f)) { tab = 0 }
-                FiltroProducto("Publicados · ${productos.count { it.publicado }}", tab == 1, Modifier.weight(1f)) { tab = 1 }
-                FiltroProducto("Borradores · ${productos.count { it.esBorrador }}", tab == 2, Modifier.weight(1f)) { tab = 2 }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FiltroProducto("Todos", tab == 0) { tab = 0 }
+                FiltroProducto("Publicados", tab == 1) { tab = 1 }
+                FiltroProducto("Borradores", tab == 2) { tab = 2 }
+                FiltroProducto("No disponibles", tab == 3) { tab = 3 }
             }
-            Spacer(Modifier.height(16.dp))
-            PrimaryButton("＋  Agregar producto", onCreate, modifier = Modifier.fillMaxWidth(), fontSize = 17.sp)
             Spacer(Modifier.height(16.dp))
         }
         items(filtrados, key = { it.id }) { p ->
@@ -903,42 +897,60 @@ fun ProductsScreen(
                 border = androidx.compose.foundation.BorderStroke(1.dp, Line),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).animateItem().clickable { onPreview(p) }
             ) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     ProductImage(
-                        fallback = Fig.VASE_THUMB, size = 120.dp,
-                        uri = p.photoUri, bitmap = p.photoBitmap, hasPhoto = p.tieneFoto
+                        fallback = Fig.VASE_THUMB, size = 92.dp,
+                        uri = p.photoUri, bitmap = p.photoBitmap, hasPhoto = p.tieneFoto, corner = 16.dp
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.nombre, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 23.sp, color = Dark, fontFamily = FontFamily.Serif, maxLines = 2)
-                            Box {
-                                Surface(shape = RoundedCornerShape(14.dp), color = CardPink) {
-                                    IconButton(onClick = { menuAbierto = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = "Más acciones para ${p.nombre}", tint = Wine)
-                                    }
-                                }
-                                DropdownMenu(expanded = menuAbierto, onDismissRequest = { menuAbierto = false }) {
-                                    onAccionPublicacion?.let { accion -> DropdownMenuItem(text = { Text(if (p.publicado) "Retirar del catálogo" else "Publicar") }, onClick = { menuAbierto = false; accion(p) }) }
-                                    onAjustarStock?.let { ajustar -> DropdownMenuItem(text = { Text("Ajustar stock") }, onClick = { menuAbierto = false; ajustar(p) }) }
-                                    if (mostrarEliminar) DropdownMenuItem(text = { Text("Eliminar", color = AccentRed) }, onClick = { menuAbierto = false; toDelete = p })
-                                }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f).padding(end = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(p.nombre, fontWeight = FontWeight.Bold, fontSize = 17.sp, lineHeight = 19.sp, color = Wine, fontFamily = FontFamily.Serif, maxLines = 2)
+                        Text(formatPrice(p.precioPrincipal()), fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Muted)
+                        val noDisponible = p.estadoCatalogo?.contains("No disponible", ignoreCase = true) == true
+                        Surface(color = if (noDisponible) Color(0xFFF0E9EC) else if (p.publicado) GreenBg else CardPink, shape = RoundedCornerShape(50)) {
+                            Text(p.estadoCatalogo ?: if (p.publicado) "Publicado" else "Borrador", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (noDisponible) Muted else if (p.publicado) GreenText else Muted, maxLines = 1)
+                        }
+                    }
+                    Column(Modifier.width(78.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box {
+                            IconButton(onClick = { menuAbierto = true }, modifier = Modifier.size(40.dp)) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Más acciones para ${p.nombre}", tint = Wine)
+                            }
+                            DropdownMenu(expanded = menuAbierto, onDismissRequest = { menuAbierto = false }) {
+                                onAccionPublicacion?.let { accion -> DropdownMenuItem(text = { Text(if (p.publicado) "Retirar del catálogo" else "Publicar") }, onClick = { menuAbierto = false; accion(p) }) }
+                                onAjustarStock?.let { ajustar -> DropdownMenuItem(text = { Text("Ajustar stock") }, onClick = { menuAbierto = false; ajustar(p) }) }
+                                if (mostrarEliminar) DropdownMenuItem(text = { Text("Eliminar", color = AccentRed) }, onClick = { menuAbierto = false; toDelete = p })
                             }
                         }
-                        Text(formatPrice(p.precioPrincipal()), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Wine)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Surface(color = if (p.publicado) GreenBg else CardPink, shape = RoundedCornerShape(50)) {
-                                Text(p.estadoCatalogo ?: if (p.publicado) "Publicado" else "Borrador", modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (p.publicado) GreenText else Muted, maxLines = 1)
-                            }
-                            OutlinedButton(onClick = { onEdit(p) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.5.dp, Wine), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) {
-                                Text("Editar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Wine)
-                            }
+                        OutlinedButton(
+                            onClick = { onEdit(p) },
+                            modifier = Modifier.width(78.dp).heightIn(min = 44.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, Wine),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                        ) {
+                            Image(painter = painterResource(Fig.EDIT), contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Editar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
                         }
                     }
                 }
             }
         }
         item { Spacer(Modifier.height(16.dp)) }
+    }
+    Button(
+        onClick = onCreate,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 58.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Wine),
+        contentPadding = PaddingValues(vertical = 16.dp)
+    ) {
+        Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.width(10.dp))
+        Text("Agregar producto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    }
+    }
     }
 
     toDelete?.let { p ->

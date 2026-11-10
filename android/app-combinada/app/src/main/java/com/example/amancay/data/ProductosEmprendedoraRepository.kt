@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
+import java.util.Date
 
 data class CampoTipoProducto(val clave: String, val etiqueta: String, val obligatorio: Boolean)
 
@@ -29,7 +30,8 @@ data class VarianteProductoEmprendedora(
     val opciones: Map<String, String>,
     val precio: Long,
     val stock: Int?,
-    val activa: Boolean
+    val activa: Boolean,
+    val imagen: String? = null
 )
 
 data class ProductoEmprendedora(
@@ -49,8 +51,55 @@ data class ProductoEmprendedora(
     val variantes: List<VarianteProductoEmprendedora>,
     val imagenes: List<String>,
     val estadoPublicacion: String,
-    val versionEsperada: String
+    val versionEsperada: String,
+    val disponible: Boolean = true
 )
+
+fun unidadesDisponibles(producto: ProductoEmprendedora): Int =
+    if (producto.tieneVariantes) producto.variantes.filter { it.activa }.sumOf { it.stock ?: 0 }
+    else producto.stock ?: 0
+
+fun visibleEnCatalogoPublico(producto: ProductoEmprendedora): Boolean {
+    if (producto.estadoPublicacion != "publicado" || !producto.disponible) return false
+    val unidades = unidadesDisponibles(producto)
+    if (producto.modalidad == "pieza_unica" && unidades <= 0) return false
+    if (producto.manejaStock && unidades <= 0 && producto.alAgotarse == "ocultar") return false
+    return true
+}
+
+fun etiquetaCatalogoCliente(producto: ProductoEmprendedora): String {
+    if (!producto.disponible) return "No disponible · solo en tu tienda"
+    if (producto.estadoPublicacion != "publicado") return "Borrador · no aparece en la web"
+    val unidades = unidadesDisponibles(producto)
+    if (producto.modalidad == "pieza_unica" && unidades <= 0) return "Pieza única vendida · no aparece en la web"
+    if (producto.manejaStock && unidades <= 0) return when (producto.alAgotarse) {
+        "ocultar" -> "Oculto al agotarse"
+        "pasar_a_pedido" -> "A pedido"
+        else -> "Agotado"
+    }
+    return when (producto.modalidad) {
+        "a_pedido" -> "A pedido"
+        "pieza_unica" -> "Pieza única · disponible"
+        else -> if (producto.manejaStock) "En stock ($unidades)" else "Disponible para encargar"
+    }
+}
+
+data class VentaRegistrada(
+    val id: String,
+    val productoId: String,
+    val productoNombre: String,
+    val varianteId: String?,
+    val varianteNombre: String?,
+    val precioUnitario: Long,
+    val cantidad: Int,
+    val total: Long,
+    val fecha: Date,
+    val lugarTipo: String,
+    val feriaId: String?,
+    val lugarTexto: String?
+)
+
+data class FeriaParaVenta(val id: String, val nombre: String, val direccion: String, val fechaInicio: Date?)
 
 data class VarianteProductoSolicitud(
     val id: String,
@@ -247,6 +296,28 @@ class ProductosEmprendedoraRepository(
     suspend fun leerImagenPrivada(tiendaId: String, productoId: String, indice: Int = 0): ByteArray =
         api.leerImagenPrivadaProducto(tiendaId, productoId, indice)
 
+    suspend fun asignarImagenVariante(tiendaId: String, productoId: String, varianteId: String, imagen: String) {
+        api.llamar("asignarImagenVariante", mapOf(
+            "tiendaId" to tiendaId,
+            "productoId" to productoId,
+            "varianteId" to varianteId,
+            "operacionId" to UUID.randomUUID().toString(),
+            "imagen" to imagen
+        ))
+    }
+
+    suspend fun cambiarDisponibilidad(tiendaId: String, productos: List<ProductoEmprendedora>, disponible: Boolean) {
+        require(productos.isNotEmpty())
+        productos.distinctBy { it.id }.chunked(20).forEach { grupo ->
+            api.llamar("cambiarDisponibilidadProductos", mapOf(
+                "tiendaId" to tiendaId,
+                "operacionId" to UUID.randomUUID().toString(),
+                "disponible" to disponible,
+                "items" to grupo.map { mapOf("productoId" to it.id, "versionEsperada" to it.versionEsperada) }
+            ))
+        }
+    }
+
     suspend fun leerCompleto(tiendaId: String, productoId: String): ProductoEmprendedora = withContext(Dispatchers.IO) {
         val referencia = db.collection("tiendasPrivadas").document(tiendaId).collection("productos").document(productoId)
         val documento = Tasks.await(referencia.get())
@@ -305,6 +376,62 @@ class ProductosEmprendedoraRepository(
         api.llamar("ajustarStock", solicitud)
     }
 
+    suspend fun registrarVenta(
+        tiendaId: String,
+        productoId: String,
+        varianteId: String?,
+        cantidad: Int,
+        lugarTipo: String,
+        feriaId: String? = null,
+        lugarTexto: String? = null,
+        fecha: String? = null,
+        operacionId: String = UUID.randomUUID().toString()
+    ) {
+        val solicitud = linkedMapOf<String, Any?>(
+            "tiendaId" to tiendaId,
+            "productoId" to productoId,
+            "operacionId" to operacionId,
+            "cantidad" to cantidad,
+            "lugarTipo" to lugarTipo
+        )
+        varianteId?.let { solicitud["varianteId"] = it }
+        feriaId?.let { solicitud["feriaId"] = it }
+        lugarTexto?.let { solicitud["lugarTexto"] = it }
+        fecha?.let { solicitud["fecha"] = it }
+        api.llamar("registrarVenta", solicitud)
+    }
+
+    suspend fun configurarHistorialVentas(tiendaId: String, activo: Boolean) {
+        api.llamar("configurarHistorialVentas", mapOf("tiendaId" to tiendaId, "historialVentasActivo" to activo))
+    }
+
+    suspend fun leerHistorialActivo(tiendaId: String): Boolean = withContext(Dispatchers.IO) {
+        Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general").get())
+            .getBoolean("historialVentasActivo") == true
+    }
+
+    suspend fun listarVentas(tiendaId: String): List<VentaRegistrada> = withContext(Dispatchers.IO) {
+        Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("ventas")
+            .orderBy("fecha", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(200).get())
+            .documents.mapNotNull { doc ->
+                val fecha = doc.getTimestamp("fecha")?.toDate() ?: (doc.get("fecha") as? Date) ?: return@mapNotNull null
+                VentaRegistrada(
+                    id=doc.id, productoId=doc.getString("productoId").orEmpty(), productoNombre=doc.getString("productoNombre").orEmpty(),
+                    varianteId=doc.getString("varianteId"),
+                    varianteNombre=(doc.get("opcionesVariante") as? Map<*, *>)?.values?.filterIsInstance<String>()?.joinToString(" · ")?.takeIf(String::isNotBlank),
+                    precioUnitario=doc.getLong("precioUnitario") ?: 0L,
+                    cantidad=doc.getLong("cantidad")?.toInt() ?: 0, total=doc.getLong("total") ?: 0L, fecha=fecha,
+                    lugarTipo=doc.getString("lugarTipo") ?: "otro", feriaId=doc.getString("feriaId"), lugarTexto=doc.getString("lugarTexto")
+                )
+            }
+    }
+
+    suspend fun listarFeriasPublicadas(): List<FeriaParaVenta> = withContext(Dispatchers.IO) {
+        Tasks.await(db.collection("ferias").whereEqualTo("estado", "publicada").limit(100).get()).documents.map { doc ->
+            FeriaParaVenta(doc.id, doc.getString("nombre").orEmpty(), doc.getString("direccion").orEmpty(), doc.getTimestamp("fechaInicio")?.toDate())
+        }
+    }
+
     fun cerrar() {
         productSubscription?.remove()
         typeSubscription?.remove()
@@ -334,7 +461,8 @@ class ProductosEmprendedoraRepository(
         variantes = variantsById[id].orEmpty(),
         imagenes = (get("imagenes") as? List<*>).orEmpty().filterIsInstance<String>(),
         estadoPublicacion = getString("estadoPublicacion") ?: "borrador",
-        versionEsperada = versionEsperada()
+        versionEsperada = versionEsperada(),
+        disponible = getBoolean("disponible") != false
     )
 
     private fun DocumentSnapshot.aVariante() = VarianteProductoEmprendedora(
@@ -342,7 +470,8 @@ class ProductosEmprendedoraRepository(
         opciones = mapaTexto("opciones"),
         precio = getLong("precio") ?: 0L,
         stock = getLong("stock")?.toInt(),
-        activa = getBoolean("activa") != false
+        activa = getBoolean("activa") != false,
+        imagen = getString("imagen")
     )
 
     private fun DocumentSnapshot.mapaTexto(campo: String) =

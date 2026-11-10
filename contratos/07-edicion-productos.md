@@ -52,6 +52,8 @@ Producto con variantes: tieneVariantes=true, sin precioBase ni stockInicial en e
 
 Cada variante maneja su propio precio y, si corresponde, stock. Sin manejo de stock, omitir stockInicial también en variantes. No duplicar IDs ni combinaciones de opciones; la comparación de combinaciones ignora mayúsculas y espacios externos. El tipo debe definir opciones de variante; no se inventan claves libres.
 
+La foto de una variante se selecciona desde cámara o galería, se sube como original privado mediante el endpoint de imágenes del producto y se asigna con `POST /api/v1/asignarImagenVariante` (`tiendaId`, `productoId`, `varianteId`, `operacionId`, `imagen`). `imagen` debe ser una ruta privada ya incluida en `imagenes` del producto. Al publicar se valida y transforma en WebP; cada documento público de variante expone `imagen` y `miniatura` propias. La foto general del producto permanece independiente. Al editar otros datos, la imagen asignada se conserva.
+
 ## Editar
 
 `/api/v1/editarProducto` recibe la misma estructura completa de campos editables, más versionEsperada en el nivel principal. Su valor es seconds:nanoseconds de actualizadoEn del producto privado releído. Usar un operacionId nuevo para una nueva intención.

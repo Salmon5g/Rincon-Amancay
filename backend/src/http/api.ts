@@ -20,6 +20,8 @@ import type { AccionAdministracion, crearAdministracionPlataforma } from '../mod
 import { accionesFeria } from '../modules/ferias.ts';
 import type { AccionFeria, crearFerias } from '../modules/ferias.ts';
 import type { crearEdicionTiendaEmprendedora } from '../modules/tienda-emprendedora.ts';
+import { accionesVenta } from '../modules/ventas.ts';
+import type { AccionVenta, crearVentas } from '../modules/ventas.ts';
 
 const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'];
 const status: Record<string, number> = {
@@ -75,7 +77,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -90,12 +92,13 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;
       const esStock = req.url === '/api/v1/ajustarStock' && stock !== undefined;
       const esDesactivacion = req.url === '/api/v1/desactivarEmprendedora' && desactivar !== undefined;
-      const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto|eliminarProducto)$/)?.[1] as AccionProducto | undefined;
+      const accionProducto = productos && req.url?.match(/^\/api\/v1\/(crearProducto|editarProducto|eliminarProducto|asignarImagenVariante|cambiarDisponibilidadProductos)$/)?.[1] as AccionProducto | undefined;
       const accionCatalogo = catalogos ? accionesCatalogo.find(a => req.url === `/api/v1/${a}`) as AccionCatalogo | undefined : undefined;
       const accionAsociacion = asociaciones ? accionesAsociacion.find(a => req.url === `/api/v1/${a}`) as AccionAsociacion | undefined : undefined;
       const accionAdministracion = administracion ? accionesAdministracion.find(a => req.url === `/api/v1/${a}`) as AccionAdministracion | undefined : undefined;
       const accionFeria = ferias ? accionesFeria.find(a => req.url === `/api/v1/${a}`) as AccionFeria | undefined : undefined;
       const esEdicionTiendaEmprendedora = req.url === '/api/v1/editarTiendaEmprendedora' && editarTiendaEmprendedora !== undefined;
+      const accionVenta = ventas ? accionesVenta.find(a => req.url === `/api/v1/${a}`) as AccionVenta | undefined : undefined;
       const subidaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes$/);
       const lecturaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes\/([0-4])$/);
       const subidaLogo=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/logo$/);
@@ -104,7 +107,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esLecturaImagen=Boolean(lecturaImagen && imagenes?.leer);
       const esSubidaLogo=Boolean(subidaLogo && imagenes?.subirTienda);
       const esSubidaLogoAsociacion=Boolean(subidaLogoAsociacion && imagenes?.subirLogoAsociacion);
-      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id', 'Cache-Control': 'no-store' });
         return res.end();
@@ -148,6 +151,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const input = await body(req);
       const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : accionAsociacion ? await asociaciones!(accionAsociacion,{uid},input) : accionAdministracion ? await administracion!(accionAdministracion,{uid},input) : accionFeria ? await ferias!(accionFeria,{uid},input) : esEdicionTiendaEmprendedora ? await editarTiendaEmprendedora!({uid},input) : esAlta ? await alta!({uid}, input)
         : esDesactivacion ? await desactivar!({uid}, input)
+        : accionVenta ? await ventas!(accionVenta, {uid}, input)
         : esStock ? await stock!({uid}, input)
         : accionProducto ? await productos!(accionProducto, {uid}, input)
         : await ejecutar(action!, { uid }, solicitudPublicacion(input, action!));

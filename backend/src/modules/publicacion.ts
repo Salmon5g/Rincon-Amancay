@@ -175,6 +175,12 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const nuevasRutas=new Set([...imagenes,...miniaturas]);
           for(const path of [...(Array.isArray(oldPublic?.imagenes)?oldPublic!.imagenes:[]),...(Array.isArray(oldPublic?.miniaturas)?oldPublic!.miniaturas:[])])if(typeof path==='string' && !nuevasRutas.has(path))limpiar.add(path);
           const oldVariants = await hijos(tx, target, 'variantes');
+          for (const oldVariant of oldVariants) {
+            const image = oldVariant.data().imagen;
+            const thumbnail = oldVariant.data().miniatura;
+            if (typeof image === 'string') limpiar.add(image);
+            if (typeof thumbnail === 'string') limpiar.add(thumbnail);
+          }
           borrar.push(...oldVariants.map(v => v.ref));
           const projection: DocumentData = {
             nombre: texto(data.nombre, 120), descripcion: texto(data.descripcion, 2000),
@@ -193,10 +199,20 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
               const availability = estado(data, v.stock);
               const options: DocumentData = {};
               for (const key of definition.data()!.opcionesVariante) options[key] = texto(v.opciones?.[key], 100);
-              variantesAprobadas[variant.id]={opciones:options,precio:precio(v.precio),activa:true};
+              let fotoVariante: {imagen:string;miniatura:string}|undefined;
+              if (v.imagen !== undefined) {
+                exigir(typeof v.imagen === 'string', 'imagen-no-autorizada', 'Ruta de imagen de variante inválida.');
+                if (!imagenesPreparadas.has(v.imagen)) imagenesPreparadas.set(v.imagen, await imagenAutorizada(v.imagen, solicitud.tiendaId, solicitud.productoId!));
+                const preparada = imagenesPreparadas.get(v.imagen)!;
+                exigir(preparada && typeof preparada === 'object', 'imagen-no-autorizada', 'La foto de la variante no pudo validarse.');
+                fotoVariante = {imagen:preparada.imagen,miniatura:preparada.miniatura};
+                limpiar.delete(preparada.imagen);
+                limpiar.delete(preparada.miniatura);
+              }
+              variantesAprobadas[variant.id]={opciones:options,precio:precio(v.precio),activa:true,...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{})};
               if(!availability) continue;
               states.push(availability);
-              escribir.push({ ref: target.collection('variantes').doc(variant.id), data: { opciones: options, precio: precio(v.precio), activa: true, estadoDisponibilidad: availability, actualizadoEn: now } });
+              escribir.push({ ref: target.collection('variantes').doc(variant.id), data: { opciones: options, precio: precio(v.precio), activa: true, ...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{}), estadoDisponibilidad: availability, actualizadoEn: now } });
             }
             exigir(states.length > 0, 'no-publicable', 'No hay variantes publicables.');
             projection.estadoDisponibilidad = states.includes('disponible') ? 'disponible' : states.includes('a_pedido') ? 'a_pedido' : 'agotado';
