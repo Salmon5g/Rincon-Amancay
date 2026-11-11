@@ -4,6 +4,8 @@ Una sola aplicación Nuxt 4 + Vue + TypeScript para todos los perfiles. La ruta 
 
 ## Ejecutar
 
+Usar Node.js 24.15 o superior dentro de la serie 24 para instalar y compilar la web. Comprueba la versión con `node --version`.
+
 Desde la raíz: npm --prefix web ci y npm --prefix web run dev. Abrir http://localhost:3000/admin.
 
 El único plugin activo es app/plugins/firebase.client.ts. No copiar plugins adicionales desde ejemplos/nuxt/: duplicarían la inicialización. NUXT_PUBLIC_FIREBASE_MODO selecciona el entorno y requiere reiniciar Nuxt y recargar la página al cambiarlo:

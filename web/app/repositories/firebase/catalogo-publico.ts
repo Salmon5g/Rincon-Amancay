@@ -93,6 +93,7 @@ function mapearVariante(documento: QueryDocumentSnapshot<DocumentData>): Variant
   return {
     id: documento.id,
     opciones: mapaDeTextos(datos.opciones),
+    imagen: texto(datos.imagen).trim() || undefined,
     precio: numero(datos.precio),
     stock: numero(datos.stock),
     estadoDisponibilidad: texto(datos.estadoDisponibilidad, 'consultar'),

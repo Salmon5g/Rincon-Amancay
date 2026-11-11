@@ -48,6 +48,8 @@ Esta opción conecta el emulador Android con Authentication/Firestore reales y c
 
    `local.properties` está ignorado por Git. `10.0.2.2` permite que el emulador Android alcance el servidor local del computador; no sirve desde un teléfono físico.
 
+   Para la demo en un teléfono físico por USB, habilita la depuración USB, comprueba que `adb devices` muestre el teléfono como `device` y ejecuta `adb reverse tcp:8080 tcp:8080`. En `local.properties` usa `amancay.api.baseUrl=http://127.0.0.1:8080/api/v1/` y recompila e instala la app. Tras reconectar el teléfono, comprueba el túnel con `adb reverse --list`.
+
 4. Sincroniza Gradle y ejecuta la configuración `app` en un emulador.
 5. Entra a **Modo emprendedora** con el correo y contraseña asignados. La app valida sesión, rol, estado y vínculo con la tienda antes de abrir las pantallas acordadas en el commit `23ceb82`.
 6. En **Más → Mi tienda**, comprueba la lectura y edición de nombre, descripción, tipo, sector y contacto. Si está publicada, el backend actualiza la proyección pública de la tienda en la misma operación.

@@ -36,6 +36,7 @@ let revision = 0;
 let avisoTimer: ReturnType<typeof setTimeout> | undefined;
 let pausaSincronizacionRuta = 0;
 let temporizadorRuta: ReturnType<typeof setTimeout> | undefined;
+let rutaInicializada = false;
 
 function valorRuta(valor: unknown): string {
     if (Array.isArray(valor)) return typeof valor[0] === 'string' ? valor[0] : '';
@@ -179,6 +180,7 @@ function fichaVariante(elemento: VariantePublica): FichaComprador {
             nombre,
             descripcion: '',
             opciones: elemento.opciones,
+            imagen: elemento.imagen,
             estadoDisponibilidad: elemento.estadoDisponibilidad,
             precio: elemento.precio,
             stock: elemento.stock,
@@ -201,7 +203,10 @@ const mensajeVacio = computed(() => busqueda.value
     : tienda.value
         ? 'Esta tienda todavía no tiene productos publicados.'
         : 'Todavía no hay tiendas publicadas.');
-const imagenes = computed<string[]>(() => (producto.value?.datos.imagenes ?? []).filter((r: unknown) => typeof r === 'string'));
+const imagenes = computed<string[]>(() => {
+    const imagenVariante = variante.value?.datos.imagen;
+    return imagenVariante ? [imagenVariante] : (producto.value?.datos.imagenes ?? []);
+});
 const etiquetaSector = computed(() => ubicacionTienda(tienda.value?.datos));
 // La ubicación mostrada es la dirección escrita por la emprendedora; si no tiene,
 // se muestra la zona del catálogo (comportamiento anterior).
@@ -568,6 +573,7 @@ function reintentar() {
 watch(
     () => [valorRuta(route.query.tienda), valorRuta(route.query.producto)],
     ([tiendaRuta, productoRuta]) => {
+        if (!rutaInicializada) return;
         if (tiendaRuta === (tienda.value?.id ?? '') && productoRuta === (producto.value?.id ?? '')) return;
         void restaurarVistaDesdeUrl();
     },
@@ -608,8 +614,12 @@ async function compartirTienda() {
 // Ciclo de vida
 onMounted(() => {
     void cargarCatalogos();
-    void restaurarVistaDesdeUrl();
     window.addEventListener('keydown', alTeclearRapido);
+});
+onNuxtReady(() => {
+    // En Hosting, Nuxt restaura la consulta de la URL tras hidratar la página estática.
+    rutaInicializada = true;
+    void restaurarVistaDesdeUrl();
 });
 onBeforeUnmount(() => {
     revision++;
@@ -1089,7 +1099,7 @@ onBeforeUnmount(() => {
             <h2 class="rapido-titulo">{{ productoRapido.datos.nombre }}</h2>
             <div class="rapido-foto">
               <ImagenPublica
-                :ruta="productoRapido.datos.imagenes?.[0]"
+                :ruta="varianteRapida?.datos.imagen ?? productoRapido.datos.imagenes?.[0]"
                 :alt="productoRapido.datos.nombre"
                 ajuste="contain"
                 :zoom="false"
@@ -1105,7 +1115,11 @@ onBeforeUnmount(() => {
               {{ disponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad) }}
             </span>
             <p v-if="variantesCargando" class="rapido-linea">Cargando variantes…</p>
-            <ul v-else-if="variantesRapidas.length" class="rapido-variantes">
+            <label v-else-if="variantesRapidas.length" for="variante-rapida">Variante</label>
+            <select v-if="variantesRapidas.length" id="variante-rapida" v-model="seleccionRapida" class="ficha-select">
+              <option v-for="v in variantesRapidas" :key="v.id" :value="v.id">{{ nombreRapidoVariante(v) }}</option>
+            </select>
+            <ul v-if="variantesRapidas.length" class="rapido-variantes">
               <li v-for="v in variantesRapidas" :key="v.id">
                 <span>{{ nombreRapidoVariante(v) }}<small>{{ textoStock(v.datos.stock, productoRapido.datos.manejaStock) }}</small></span>
                 <b v-if="tiendaRapida.datos.mostrarPrecios !== false">{{ precio(v.datos.precio) }}</b>

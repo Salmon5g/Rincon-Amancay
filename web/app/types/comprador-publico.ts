@@ -42,6 +42,7 @@ export interface ProductoPublico {
 export interface VariantePublica {
   id: string;
   opciones: Record<string, string>;
+  imagen?: string;
   precio: number | null;
   stock?: number | null;
   estadoDisponibilidad: string;
@@ -60,6 +61,7 @@ export interface FichaComprador {
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;
     logo?: string;
+    imagen?: string;
     imagenes?: string[];
     tieneVariantes?: boolean;
     manejaStock?: boolean;
