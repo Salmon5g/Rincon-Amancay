@@ -14,8 +14,8 @@ El servidor exige producto existente, variante activa cuando corresponda, precio
 
 Desactivar el historial deja de guardar nuevas entradas y conserva las anteriores; no bloquea el registro manual ni el descuento de stock. La fecha se almacena como instante y la interfaz debe presentar la zona horaria local.
 
-La app consulta ventas directamente en Firestore como propietaria, ordenadas por fecha descendente, con un límite inicial de 200 documentos; aplica localmente filtros por fecha, feria/lugar y producto. Las reglas locales permiten la lectura solo a la propietaria. Para historiales mayores se requiere paginación antes de dar A22 por cerrado.
+La app consulta todas las ventas directamente en Firestore como propietaria, ordenadas por fecha descendente, y aplica localmente filtros por fecha, feria/lugar y producto. No hay un límite explícito de documentos consultados. Las reglas locales permiten la lectura solo a la propietaria.
 
 ## Pendiente
 
-Siguen pendientes la paginación más allá de 200 ventas, la operación de disponibilidad masiva y la cola offline. Las reglas locales permiten lectura de ventas a la propietaria; deben publicarse en Firebase para usar el historial contra el proyecto remoto. Las invitaciones a ferias mantienen su implementación demo aparte.
+Siguen pendientes la operación de disponibilidad masiva y la cola offline. Las reglas locales permiten lectura de ventas a la propietaria; deben publicarse en Firebase para usar el historial contra el proyecto remoto. Las invitaciones a ferias mantienen su implementación demo aparte.

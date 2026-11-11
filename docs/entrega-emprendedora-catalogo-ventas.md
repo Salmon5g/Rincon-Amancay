@@ -21,7 +21,7 @@ La app unificada es el destino de esta entrega. La sesión de emprendedora valid
 | A18–A19 | Implementado localmente | La sección **Ventas → Registrar venta** captura producto, variante cuando corresponda y cantidad. La API descuenta en una transacción solo la variante vendida (o el stock del producto) y actualiza el catálogo público. Esto funciona aunque el historial esté apagado. |
 | A20 | Implementado localmente | El interruptor de historial está en **Más → Configuración y vista previa**; también se conserva un acceso desde Ventas. Apagarlo conserva el historial anterior y no bloquea las ventas ni el descuento de stock. |
 | A21 | Implementado localmente | Con el historial activo, la venta conserva precio vigente, fecha y feria/lugar; el nombre de la feria también queda como copia para mantener la referencia histórica. |
-| A22 | Implementación local inicial | Historial filtra por fechas, feria/lugar y producto. La primera versión carga hasta 200 ventas recientes; falta paginación para historiales mayores. |
+| A22 | Implementado localmente | El historial consulta todas las ventas y permite filtrar por fechas, feria/lugar y producto. |
 
 ## Secciones de interfaz previstas
 
@@ -34,10 +34,10 @@ Estas pantallas deben leer y escribir datos persistidos de la cuenta autenticada
 Para cerrar los puntos pendientes de 1.2 y completar la verificación, aún se necesitan:
 
 1. Persistir los valores por defecto en la cuenta, no solo en el dispositivo (A15).
-2. Paginación del historial para cuentas con más de 200 ventas (A22).
-3. Caché/cola local de mutaciones offline, con reintento idempotente y resolución visible de conflictos (A17).
-4. Vista previa conjunta del catálogo completo (A16).
-5. Comprobación manual en un dispositivo con sesión real y de los resultados de stock en la web.
+
+2. Caché/cola local de mutaciones offline, con reintento idempotente y resolución visible de conflictos (A17).
+3. Vista previa conjunta del catálogo completo (A16).
+4. Comprobación manual en un dispositivo con sesión real y de los resultados de stock en la web.
 
 La venta guarda una feria publicada de la plataforma o texto libre; la fecha se muestra en la zona horaria local y se conserva como instante. Al desactivar el historial no se guardan nuevas ventas históricas, pero el registro manual y el descuento de stock siguen funcionando; las ventas anteriores se conservan. El contrato 07 describe las fotos independientes por variante.
 

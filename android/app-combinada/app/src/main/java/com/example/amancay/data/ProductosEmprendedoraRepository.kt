@@ -431,7 +431,7 @@ class ProductosEmprendedoraRepository(
 
     suspend fun listarVentas(tiendaId: String): List<VentaRegistrada> = withContext(Dispatchers.IO) {
         Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("ventas")
-            .orderBy("fecha", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(200).get())
+            .orderBy("fecha", com.google.firebase.firestore.Query.Direction.DESCENDING).get())
             .documents.mapNotNull { doc ->
                 val fecha = doc.getTimestamp("fecha")?.toDate() ?: (doc.get("fecha") as? Date) ?: return@mapNotNull null
                 VentaRegistrada(
