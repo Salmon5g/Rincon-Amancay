@@ -1051,10 +1051,22 @@ internal fun EmprendedoraAppConectada(
                         valoresDefecto = valoresDefecto,
                         catalogoSinConexion = catalogoSinConexion,
                         enviando = enviandoProducto,
+                        error = errorVentas,
                         alGuardarValoresDefecto = { valores ->
                             PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valores)
                             valoresDefecto = valores
                             avisoProducto = "Valores por defecto guardados para los próximos productos."
+                        },
+                        alCambiarHistorial = { activo ->
+                            scope.launch {
+                                enviandoProducto = true; errorVentas = null
+                                try {
+                                    productosRepository.configurarHistorialVentas(sesion.tiendaId, activo)
+                                    historialVentasActivo = activo
+                                    avisoProducto = if (activo) "Historial de ventas activado." else "Historial de ventas desactivado. El stock seguirá actualizándose al registrar ventas."
+                                } catch (e: Exception) { errorVentas = e.message ?: "No se pudo guardar la configuración del historial." }
+                                finally { enviandoProducto = false }
+                            }
                         },
                         alCambiarCatalogoSinConexion = { activo ->
                             PreferenciasCatalogoEmprendedora.guardarCatalogoSinConexion(context, sesion.tiendaId, activo)
@@ -1111,23 +1123,13 @@ internal fun EmprendedoraAppConectada(
                         cargando = cargandoVentas,
                         error = errorVentas,
                         enviando = enviandoProducto,
-                        alCambiarHistorial = { activo ->
-                            scope.launch {
-                                enviandoProducto = true; errorVentas = null
-                                try {
-                                    productosRepository.configurarHistorialVentas(sesion.tiendaId, activo)
-                                    historialVentasActivo = activo
-                                } catch (e: Exception) { errorVentas = e.message ?: "No se pudo guardar la configuración del historial." }
-                                finally { enviandoProducto = false }
-                            }
-                        },
                         alRegistrar = { producto, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, operacionId, fecha, alExito ->
                             scope.launch {
                                 enviandoProducto = true; errorVentas = null
                                 try {
-                                    productosRepository.registrarVenta(sesion.tiendaId, producto.id, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, fecha=fecha, operacionId=operacionId)
+                                    val historialRegistrado = productosRepository.registrarVenta(sesion.tiendaId, producto.id, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, fecha=fecha, operacionId=operacionId)
                                     ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
-                                    avisoProducto = "Venta guardada y stock actualizado."
+                                    avisoProducto = if (historialRegistrado) "Venta guardada y stock actualizado." else "Stock actualizado. El historial está apagado, así que la venta no quedó guardada en él."
                                     alExito()
                                 } catch (e: Exception) { errorVentas = e.message ?: "No se pudo registrar la venta." }
                                 finally { enviandoProducto = false }

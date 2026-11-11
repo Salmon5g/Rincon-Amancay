@@ -32,14 +32,13 @@ export function crearVentas(db: Firestore) {
     exigir(Object.keys(d).every(k => ['tiendaId','operacionId','productoId','varianteId','cantidad','lugarTipo','feriaId','lugarTexto','fecha'].includes(k)), 'datos-invalidos', 'La solicitud contiene campos no permitidos.');
     exigir(id(d.operacionId) && id(d.productoId) && Number.isSafeInteger(d.cantidad) && Number(d.cantidad) > 0 && Number(d.cantidad) <= 10000, 'datos-invalidos', 'Producto, operación y cantidad válidos son obligatorios.');
     exigir(typeof d.varianteId === 'undefined' || id(d.varianteId), 'datos-invalidos', 'Variante inválida.');
-    exigir(d.lugarTipo === 'feria' ? id(d.feriaId) : d.lugarTipo === 'otro' && typeof d.lugarTexto === 'string' && d.lugarTexto.trim().length > 0 && d.lugarTexto.length <= 200, 'datos-invalidos', 'Indica una feria o un lugar.');
     const fecha = typeof d.fecha === 'string' ? new Date(d.fecha) : new Date();
     exigir(Number.isFinite(fecha.getTime()), 'datos-invalidos', 'Fecha inválida.');
     const producto = tienda.collection('productos').doc(d.productoId as string);
     const variante = typeof d.varianteId === 'string' ? producto.collection('variantes').doc(d.varianteId) : undefined;
     const operacion = tienda.collection('operacionesVentas').doc(d.operacionId as string);
     const venta = tienda.collection('ventas').doc(d.operacionId as string);
-    const feria = d.lugarTipo === 'feria' ? db.doc(`ferias/${d.feriaId}`) : undefined;
+    const feria = d.lugarTipo === 'feria' && id(d.feriaId) ? db.doc(`ferias/${d.feriaId}`) : undefined;
     const firma = createHash('sha256').update(JSON.stringify([identidad.uid,d.tiendaId,d.operacionId,d.productoId,d.varianteId ?? null,d.cantidad,d.lugarTipo,d.feriaId ?? null,d.lugarTexto ?? null,fecha.toISOString()])).digest('hex');
     const publicProduct = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`);
     const publicShop = db.doc(`tiendasPublicas/${d.tiendaId}`);
@@ -50,9 +49,15 @@ export function crearVentas(db: Firestore) {
       const [acceso, shop, config, p, previous] = snapshots;
       exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && shop.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
       exigir(previous.exists ? previous.data()?.firma === firma : true, 'id-reutilizado', 'operacionId corresponde a otra solicitud.');
-      if (previous.exists) return previous.data()!.resultado;
-      if (feria) exigir(snapshots[snapshots.length - 1].exists && snapshots[snapshots.length - 1].data()?.estado === 'publicada', 'no-encontrado', 'La feria debe estar publicada en la plataforma.');
-      exigir(config.data()?.historialVentasActivo === true, 'conflicto', 'Activa el historial de ventas antes de registrar ventas.');
+      if (previous.exists) {
+        const resultadoAnterior = previous.data()!.resultado as Record<string, unknown>;
+        return {...resultadoAnterior, historialRegistrado: typeof resultadoAnterior.historialRegistrado === 'boolean' ? resultadoAnterior.historialRegistrado : true};
+      }
+      const historialRegistrado = config.data()?.historialVentasActivo === true;
+      if (historialRegistrado) {
+        exigir(d.lugarTipo === 'feria' ? id(d.feriaId) : d.lugarTipo === 'otro' && typeof d.lugarTexto === 'string' && d.lugarTexto.trim().length > 0 && d.lugarTexto.length <= 200, 'datos-invalidos', 'Indica una feria o un lugar.');
+        if (feria) exigir(snapshots[snapshots.length - 1].exists && snapshots[snapshots.length - 1].data()?.estado === 'publicada', 'no-encontrado', 'La feria debe estar publicada en la plataforma.');
+      }
       exigir(p.exists && p.data()?.estadoPublicacion !== 'eliminado', 'no-encontrado', 'Producto inexistente.');
       const data = p.data()!;
       exigir(data.manejaStock === false || Number.isSafeInteger(d.cantidad), 'datos-invalidos', 'Cantidad inválida.');
@@ -66,7 +71,9 @@ export function crearVentas(db: Firestore) {
       if (data.manejaStock === true) exigir(Number.isSafeInteger(saldo) && Number(saldo) >= Number(d.cantidad), 'conflicto', 'No hay stock suficiente para registrar esta venta.');
       const total = Number(precio) * Number(d.cantidad);
       exigir(Number.isSafeInteger(total), 'datos-invalidos', 'El total excede el rango permitido.');
-      const resultado: Record<string, unknown> = {operacionId: d.operacionId, precioUnitario: Number(precio), cantidad: Number(d.cantidad), total};
+      const resultado: Record<string, unknown> = historialRegistrado
+        ? {operacionId: d.operacionId, precioUnitario: Number(precio), cantidad: Number(d.cantidad), total, historialRegistrado}
+        : {operacionId: d.operacionId, historialRegistrado};
       const now = FieldValue.serverTimestamp();
       const stockNuevo = data.manejaStock === true ? Number(saldo) - Number(d.cantidad) : undefined;
       let proyeccion: Record<string, unknown> | null = null;
@@ -126,7 +133,10 @@ export function crearVentas(db: Firestore) {
           if (proyeccion) tx.set(publicProduct, {...proyeccion, actualizadoEn: now}); else if (actualizacionCatalogo !== 'sin_publicacion') tx.delete(publicProduct);
         }
       }
-      tx.create(venta, {productoId: d.productoId, ...(variante ? {varianteId: d.varianteId, opcionesVariante: v!.data()!.opciones} : {}), productoNombre: data.nombre, precioUnitario: Number(precio), cantidad: Number(d.cantidad), total, fecha: fecha, lugarTipo: d.lugarTipo, ...(d.lugarTipo === 'feria' ? {feriaId: d.feriaId} : {lugarTexto: texto(d.lugarTexto,200,'Lugar') }), creadoPor: identidad.uid, creadoEn: now});
+      if (historialRegistrado) {
+        const datosFeria = feria ? snapshots[snapshots.length - 1].data() : undefined;
+        tx.create(venta, {productoId: d.productoId, ...(variante ? {varianteId: d.varianteId, opcionesVariante: v!.data()!.opciones} : {}), productoNombre: data.nombre, precioUnitario: Number(precio), cantidad: Number(d.cantidad), total, fecha: fecha, lugarTipo: d.lugarTipo, ...(d.lugarTipo === 'feria' ? {feriaId: d.feriaId, feriaNombre: typeof datosFeria?.nombre === 'string' ? datosFeria.nombre : d.feriaId} : {lugarTexto: texto(d.lugarTexto,200,'Lugar') }), creadoPor: identidad.uid, creadoEn: now});
+      }
       tx.create(operacion, {firma, resultado, creadoEn: now});
       return resultado;
     });

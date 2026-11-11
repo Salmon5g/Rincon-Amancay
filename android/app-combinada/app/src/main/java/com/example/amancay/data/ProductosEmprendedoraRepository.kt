@@ -386,7 +386,7 @@ class ProductosEmprendedoraRepository(
         lugarTexto: String? = null,
         fecha: String? = null,
         operacionId: String = UUID.randomUUID().toString()
-    ) {
+    ): Boolean {
         val solicitud = linkedMapOf<String, Any?>(
             "tiendaId" to tiendaId,
             "productoId" to productoId,
@@ -398,7 +398,7 @@ class ProductosEmprendedoraRepository(
         feriaId?.let { solicitud["feriaId"] = it }
         lugarTexto?.let { solicitud["lugarTexto"] = it }
         fecha?.let { solicitud["fecha"] = it }
-        api.llamar("registrarVenta", solicitud)
+        return api.llamar("registrarVenta", solicitud).optBoolean("historialRegistrado", false)
     }
 
     suspend fun configurarHistorialVentas(tiendaId: String, activo: Boolean) {
@@ -421,7 +421,7 @@ class ProductosEmprendedoraRepository(
                     varianteNombre=(doc.get("opcionesVariante") as? Map<*, *>)?.values?.filterIsInstance<String>()?.joinToString(" · ")?.takeIf(String::isNotBlank),
                     precioUnitario=doc.getLong("precioUnitario") ?: 0L,
                     cantidad=doc.getLong("cantidad")?.toInt() ?: 0, total=doc.getLong("total") ?: 0L, fecha=fecha,
-                    lugarTipo=doc.getString("lugarTipo") ?: "otro", feriaId=doc.getString("feriaId"), lugarTexto=doc.getString("lugarTexto")
+                    lugarTipo=doc.getString("lugarTipo") ?: "otro", feriaId=doc.getString("feriaId"), lugarTexto=doc.getString("lugarTexto") ?: doc.getString("feriaNombre")
                 )
             }
     }

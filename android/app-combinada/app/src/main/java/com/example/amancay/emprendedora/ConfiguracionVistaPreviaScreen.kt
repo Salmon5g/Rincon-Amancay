@@ -80,7 +80,9 @@ internal fun ConfiguracionVistaPreviaScreen(
     valoresDefecto: ValoresDefectoProducto,
     catalogoSinConexion: Boolean,
     enviando: Boolean,
+    error: String?,
     alGuardarValoresDefecto: (ValoresDefectoProducto) -> Unit,
+    alCambiarHistorial: (Boolean) -> Unit,
     alCambiarCatalogoSinConexion: (Boolean) -> Unit,
     alVerHistorial: () -> Unit,
     alVerTiendaPublica: () -> Unit,
@@ -101,7 +103,15 @@ internal fun ConfiguracionVistaPreviaScreen(
 
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    FilaAjuste("Historial de encargos", if (historialActivo) "Activo. Guarda precio, fecha y lugar de cada venta." else "Apagado. Las ventas nuevas no se registran en el historial.", Icons.Filled.ReceiptLong, alVerHistorial)
+                    FilaAjuste("Historial de encargos", if (historialActivo) "Activo. Guarda precio, fecha y lugar de cada venta." else "Apagado. Las ventas nuevas no se registran en el historial.", Icons.Filled.ReceiptLong, alVerHistorial) {
+                        Switch(
+                            checked = historialActivo,
+                            onCheckedChange = alCambiarHistorial,
+                            enabled = !enviando,
+                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                            colors = SwitchDefaults.colors(checkedTrackColor = Wine, checkedThumbColor = Color.White)
+                        )
+                    }
                     HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
                     FilaAjuste("Valores por defecto", "Modalidad, stock y qué pasa al agotarse en cada producto nuevo.", Icons.Filled.Settings, { editandoDefecto = !editandoDefecto })
                     HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
@@ -115,6 +125,7 @@ internal fun ConfiguracionVistaPreviaScreen(
                     }
                 }
             }
+            error?.let { Text(it, color = Wine, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, start = 4.dp)) }
 
             if (editandoDefecto) {
                 Spacer(Modifier.height(12.dp))
