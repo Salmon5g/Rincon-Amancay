@@ -622,9 +622,17 @@ fun PhotoStep(
                     Spacer(Modifier.height(4.dp))
                     Text(
                             if (draft.fotoLista) "La foto está seleccionada. Se guardará junto con el borrador."
-                            else mensajeImagenExistente ?: "Ya hay una foto guardada de forma privada. Puedes agregar otra imagen aquí.",
+                            else mensajeImagenExistente ?: "La foto está guardada de forma privada. Puedes reemplazarla desde la cámara o la galería.",
                         fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
                     )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = onTakePhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text("Tomar otra", color = Wine)
+                        }
+                        OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text("Elegir otra", color = Wine)
+                        }
+                    }
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -647,7 +655,11 @@ fun PhotoStep(
             }
         }
         Spacer(Modifier.height(14.dp))
-        Text("Puedes agregar otra foto después", color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(
+            if (draft.fotoLista || imagenExistente) "Puedes cambiar esta foto desde la cámara o la galería."
+            else "La foto se guardará con el borrador; puedes continuar más tarde.",
+            color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
+        )
         Spacer(Modifier.height(8.dp))
     }
 }

@@ -117,6 +117,7 @@ data class ProductoSolicitud(
     val nombre: String,
     val descripcion: String,
     val tipo: TipoProductoEmprendedora,
+    val tieneVariantes: Boolean,
     val categoriaId: String,
     val atributos: Map<String, String>,
     val modalidad: String,
@@ -245,7 +246,7 @@ class ProductosEmprendedoraRepository(
             "versionTipoProducto" to solicitud.tipo.version,
             "categoriaId" to solicitud.categoriaId,
             "atributosEspecificos" to solicitud.atributos,
-            "tieneVariantes" to solicitud.tipo.opcionesVariante.isNotEmpty(),
+            "tieneVariantes" to solicitud.tieneVariantes,
             "moneda" to "CLP",
             "unidadVenta" to "unidad",
             "pasoCantidad" to 1,
@@ -253,7 +254,7 @@ class ProductosEmprendedoraRepository(
             "manejaStock" to solicitud.manejaStock,
             "alAgotarse" to solicitud.alAgotarse
         )
-        if (solicitud.tipo.opcionesVariante.isEmpty()) {
+        if (!solicitud.tieneVariantes) {
             solicitud.precioBase?.let { product["precioBase"] = it }
             if (solicitud.manejaStock && solicitud.id == null) solicitud.stockInicial?.let { product["stockInicial"] = it }
         }

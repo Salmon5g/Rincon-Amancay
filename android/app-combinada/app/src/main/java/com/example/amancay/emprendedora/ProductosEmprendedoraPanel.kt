@@ -138,9 +138,14 @@ private fun eliminarFotoTemporalProducto(context: Context, uri: Uri?) {
 private fun copiarFotoPersistente(context: Context, uri: Uri): Uri {
     val directorio = File(context.filesDir, "borradores-producto").apply { mkdirs() }
     val destino = File(directorio, "${UUID.randomUUID()}.jpg")
-    context.contentResolver.openInputStream(uri)?.use { entrada -> FileOutputStream(destino).use(entrada::copyTo) }
-        ?: throw IllegalStateException("No se pudo conservar la foto seleccionada.")
-    return Uri.fromFile(destino)
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { entrada -> FileOutputStream(destino).use(entrada::copyTo) }
+            ?: throw IllegalStateException("No se pudo conservar la foto seleccionada.")
+        Uri.fromFile(destino)
+    } catch (error: Exception) {
+        destino.delete()
+        throw error
+    }
 }
 
 private data class BorradorAlta(
@@ -148,7 +153,9 @@ private data class BorradorAlta(
     val modalidad: String, val manejaStock: Boolean, val alAgotarse: String,
     val precio: String, val stock: String, val paso: Int, val foto: String?,
     val archivoId: String, val atributos: Map<String, String>, val variantes: List<VarianteBorrador>,
-    val conVariantes: Boolean = false
+    val conVariantes: Boolean = false,
+    val operacionId: String = "",
+    val productoIdNuevo: String = ""
 )
 
 private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? = runCatching {
@@ -167,7 +174,8 @@ private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? 
             VarianteBorrador(v.optString("id"), op.keys().asSequence().associateWith { op.optString(it) }, v.optString("precio"), v.optString("stock"), v.optBoolean("activa", true), false,
                 fotoUri = v.optString("foto").takeIf(String::isNotBlank)?.let(Uri::parse), archivoId = v.optString("archivoId", UUID.randomUUID().toString()), fotoNueva = v.optBoolean("fotoNueva"))
         },
-        json.optBoolean("conVariantes", variantesJson.length() > 0)
+        json.optBoolean("conVariantes", variantesJson.length() > 0),
+        json.optString("operacionId"), json.optString("productoIdNuevo")
     )
 }.getOrNull()
 
@@ -186,6 +194,7 @@ private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: Bo
         put("precio", borrador.precio); put("stock", borrador.stock); put("paso", borrador.paso); put("foto", borrador.foto.orEmpty())
         put("archivoId", borrador.archivoId); put("atributos", atributos); put("variantes", variantes)
         put("conVariantes", borrador.conVariantes)
+        put("operacionId", borrador.operacionId); put("productoIdNuevo", borrador.productoIdNuevo)
     }
     context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().putString(tiendaId, json.toString()).apply()
 }
@@ -275,18 +284,21 @@ internal fun ProductosEmprendedoraPanel(
                         if (imagen != null) {
                             val preparada = prepararImagenProducto(context.contentResolver, imagen.uri, imagen.bitmap)
                             repository.subirImagen(tiendaId, productoId, imagen.archivoId, preparada)
-                            eliminarFotoTemporalProducto(context, imagen.uri)
                         }
                         imagenesVariantes.forEach { (varianteId, fotoVariante) ->
                             val preparada = prepararImagenProducto(context.contentResolver, fotoVariante.uri, fotoVariante.bitmap)
                             val ruta = repository.subirImagen(tiendaId, productoId, fotoVariante.archivoId, preparada)
                             repository.asignarImagenVariante(tiendaId, productoId, varianteId, ruta)
-                            eliminarFotoTemporalProducto(context, fotoVariante.uri)
                         }
                         if (publicar) {
                             val publicado = repository.leerCompleto(tiendaId, productoId)
                             repository.publicar(tiendaId, publicado)
                         }
+                        if (solicitud.id == null) {
+                            context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().remove(tiendaId).apply()
+                        }
+                        eliminarFotoTemporalProducto(context, imagen?.uri)
+                        imagenesVariantes.values.forEach { eliminarFotoTemporalProducto(context, it.uri) }
                         nuevo = false; editando = null
                         alAviso(
                             when {
@@ -649,35 +661,71 @@ private fun EditorProductoEmprendedora(
     val selectorGaleria = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val idVariante = varianteConFotoTemporal
-            if (idVariante != null) {
-                val persistida = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
+            val persistida = runCatching { copiarFotoPersistente(context, uri) }.getOrElse {
+                error = it.message ?: "No se pudo conservar la foto elegida. Inténtalo otra vez."
+                null
+            }
+            if (persistida != null && idVariante != null) {
                 variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
-                varianteConFotoTemporal = null
-            } else {
-                eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
-                fotoLocal.photoUri = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
+            } else if (persistida != null) {
+                val fotoAnterior = fotoLocal.photoUri
+                fotoLocal.photoUri = persistida
                 fotoLocal.photoBitmap = null
                 fotoLocal.fotoLista = true
                 archivoId = UUID.randomUUID().toString()
+                eliminarFotoTemporalProducto(context, fotoAnterior)
             }
-        } else varianteConFotoTemporal = null
+        }
+        varianteConFotoTemporal = null
+    }
+    fun abrirGaleriaParaFoto(idVariante: String? = null) {
+        varianteConFotoTemporal = idVariante
+        try {
+            selectorGaleria.launch("image/*")
+        } catch (e: Exception) {
+            varianteConFotoTemporal = null
+            error = e.message ?: "No se pudo abrir la galería de fotos."
+        }
     }
     val selectorCamara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { guardada ->
         val uri = capturaPendiente?.let(Uri::parse)
         capturaPendiente = null
         val idVariante = varianteCapturaPendiente
         varianteCapturaPendiente = null
-        if (guardada && uri != null && idVariante != null) {
-            val persistida = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
-            variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
-        } else if (guardada && uri != null) {
-            eliminarFotoTemporalProducto(context, fotoLocal.photoUri)
-            fotoLocal.photoBitmap = null
-            fotoLocal.photoUri = runCatching { copiarFotoPersistente(context, uri) }.getOrElse { error = it.message; uri }
-            fotoLocal.fotoLista = true
-            archivoId = UUID.randomUUID().toString()
-        } else {
+        if (guardada && uri != null) {
+            val persistida = runCatching { copiarFotoPersistente(context, uri) }.getOrElse {
+                error = it.message ?: "No se pudo conservar la foto tomada. Inténtalo otra vez."
+                null
+            }
+            if (persistida != null && idVariante != null) {
+                variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
+            } else if (persistida != null) {
+                val fotoAnterior = fotoLocal.photoUri
+                fotoLocal.photoBitmap = null
+                fotoLocal.photoUri = persistida
+                fotoLocal.fotoLista = true
+                archivoId = UUID.randomUUID().toString()
+                eliminarFotoTemporalProducto(context, fotoAnterior)
+            }
+        }
+        eliminarFotoTemporalProducto(context, uri)
+    }
+    fun abrirCamaraParaFoto(idVariante: String? = null) {
+        val uri = try {
+            crearUriFotoTemporalProducto(context)
+        } catch (e: Exception) {
+            error = e.message ?: "No se pudo preparar la cámara."
+            return
+        }
+        capturaPendiente = uri.toString()
+        varianteCapturaPendiente = idVariante
+        try {
+            selectorCamara.launch(uri)
+        } catch (e: Exception) {
+            capturaPendiente = null
+            varianteCapturaPendiente = null
             eliminarFotoTemporalProducto(context, uri)
+            error = e.message ?: "No se encontró una aplicación de cámara disponible."
         }
     }
     fun cancelarEditor() {
@@ -734,22 +782,25 @@ private fun EditorProductoEmprendedora(
     var conVariantes by remember(original?.id) {
         mutableStateOf(borradorGuardado?.conVariantes ?: original?.tieneVariantes ?: (tipos.firstOrNull { it.id == tipoId }?.opcionesVariante?.isNotEmpty() ?: false))
     }
+    val categoriasDisponibles = categorias.filter { it.activo || it.id == original?.categoriaId }
+    val productoIdNuevo = remember(original?.id) {
+        if (original == null) borradorGuardado?.productoIdNuevo?.takeIf(String::isNotBlank) ?: UUID.randomUUID().toString() else null
+    }
+    val operacionId = remember(original?.id, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) {
+        borradorGuardado?.operacionId?.takeIf(String::isNotBlank) ?: UUID.randomUUID().toString()
+    }
     fun guardarLocalYSalir() {
         if (original == null) {
             guardarBorradorAlta(
                 context,
                 tiendaId,
-                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes)
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId, productoIdNuevo.orEmpty())
             )
             onCancel()
         } else onCancel()
     }
-    val categoriasDisponibles = categorias.filter { it.activo || it.id == original?.categoriaId }
-    val productoIdNuevo = remember(original?.id) { if (original == null) UUID.randomUUID().toString() else null }
-    val operacionId = remember(original?.id, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) { UUID.randomUUID().toString() }
-
-    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes) {
-        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes))
+    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, productoIdNuevo) {
+        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId, productoIdNuevo.orEmpty()))
     }
 
     LaunchedEffect(tipoId, original?.id) {
@@ -771,6 +822,7 @@ private fun EditorProductoEmprendedora(
             tipo == null -> "Espera a que se carguen los tipos de producto."
             categoriasDisponibles.none { it.id == categoriaId } -> "Selecciona una categoría."
             nombre.isBlank() || (original == null && tipos.none { it.id == tipoId && it.activo }) -> "Completa el nombre y selecciona un tipo habilitado."
+            descripcion.isBlank() -> "Completa la descripción del producto."
             invalidField != null -> "Completa el campo " + invalidField.etiqueta + "."
             conVariantes && (variantes.isEmpty() || invalidVariant) -> "Completa las opciones, precios y stock inicial de cada variante."
             !conVariantes && (precioBase.toLongOrNull() ?: 0L) <= 0L -> "Ingresa un precio válido."
@@ -785,7 +837,7 @@ private fun EditorProductoEmprendedora(
             val solicitud = ProductoSolicitud(
                 id=original?.id, versionEsperada=original?.versionEsperada, operacionId=operacionId,
                 productoIdNuevo=productoIdNuevo, nombre=nombre.trim(), descripcion=descripcion.trim(),
-                tipo=tipo, categoriaId=categoriaId, atributos=atributos.filterValues { it.isNotBlank() },
+                tipo=tipo, tieneVariantes=conVariantes, categoriaId=categoriaId, atributos=atributos.filterValues { it.isNotBlank() },
                 modalidad=modalidad, manejaStock=manejaStock, alAgotarse=alAgotarse,
                 precioBase=if (conVariantes) null else precioBase.toLong(),
                 stockInicial=if (!conVariantes && manejaStock && original == null) stockValue else null,
@@ -800,17 +852,12 @@ private fun EditorProductoEmprendedora(
                         ?: row.fotoBitmap?.let { bitmap -> row.id to ImagenSeleccionadaProducto(null, bitmap, row.archivoId) }
                 } else null
             }.toMap()
-            if (original == null) context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().remove(tiendaId).apply()
             onSave(solicitud, imagen, fotosVariantes, publicar)
         }
     }
     if (paso == 1) {
-        PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={
-            runCatching { crearUriFotoTemporalProducto(context) }
-                .onSuccess { uri -> capturaPendiente = uri.toString(); selectorCamara.launch(uri) }
-                .onFailure { error = it.message ?: "No se pudo preparar la cámara." }
-        },
-            onPickPhoto={ selectorGaleria.launch("image/*") }, onNext={ paso=2 },
+        PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ abrirCamaraParaFoto() },
+            onPickPhoto={ abrirGaleriaParaFoto() }, onNext={ paso=2 },
             onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
@@ -823,7 +870,7 @@ private fun EditorProductoEmprendedora(
     } else if (paso == 2) {
         StepScaffold("Paso 2 de 5", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
             onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=::cancelarEditor,
-            nextEnabled=nombre.isNotBlank() && categoriasDisponibles.any { it.id == categoriaId } && (precioBase.toLongOrNull() ?: 0L) > 0L, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            nextEnabled=nombre.isNotBlank() && descripcion.isNotBlank() && categoriasDisponibles.any { it.id == categoriaId }, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
             Column(Modifier.padding(16.dp)) {
             AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres")
@@ -831,10 +878,14 @@ private fun EditorProductoEmprendedora(
             AmancayField(descripcion, { descripcion=it.take(500) }, "Descripción *", "Cuenta sus características, materiales y medidas.", singleLine=false, minLines=4)
             Text("${descripcion.length}/500", modifier=Modifier.fillMaxWidth(), textAlign=TextAlign.End, color=Muted, fontSize=12.sp)
             Spacer(Modifier.height(16.dp))
-            SelectorProducto("Categoría", categoriasDisponibles.map { it.id to it.nombre }, categoriaId) { categoriaId=it }
+            if (categoriasDisponibles.isNotEmpty()) {
+                SelectorProducto("Categoría", categoriasDisponibles.map { it.id to it.nombre }, categoriaId) { categoriaId=it }
+            } else {
+                Text("No hay categorías activas. Pide a administración que habilite una para tu tienda.", color=Wine, fontSize=14.sp)
+            }
             Spacer(Modifier.height(14.dp))
-            AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base *", "Ej.: 6.990", keyboardType=KeyboardType.Number)
-            Text("Ingresa el precio en pesos chilenos.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=6.dp))
+            AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base", "Ej.: 6.990", keyboardType=KeyboardType.Number)
+            Text("Si agregas variantes, el precio se define para cada una. Si no, completa aquí el precio del producto.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=6.dp))
             }
             }
             Spacer(Modifier.height(10.dp))
@@ -845,6 +896,9 @@ private fun EditorProductoEmprendedora(
             "Elige el tipo para mostrar los campos que necesitas.",
             onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=::cancelarEditor,
             nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            if (tiposDisponibles.isEmpty()) {
+                AvisoEmprendedora("No hay tipos de producto activos. Pide a administración que habilite uno para continuar.", true)
+            }
             tiposDisponibles.forEach { item ->
                 val seleccionado = tipoId == item.id
                 Card(
@@ -876,7 +930,7 @@ private fun EditorProductoEmprendedora(
                     }
                 }
             }
-            if (tipo == null) AvisoEmprendedora(falloTipoHistorico ?: "Cargando la definición de este tipo…", falloTipoHistorico != null)
+            if (tipo == null && tiposDisponibles.isNotEmpty()) AvisoEmprendedora(falloTipoHistorico ?: "Cargando la definición de este tipo…", falloTipoHistorico != null)
             if (campos.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Text("Detalles de ${tipo?.nombre.orEmpty()}", fontWeight=FontWeight.Bold, color=Wine, fontSize=19.sp)
@@ -924,14 +978,8 @@ private fun EditorProductoEmprendedora(
                                 Column(Modifier.weight(1f)) {
                                     Text("Foto de esta variante", color=Dark, fontWeight=FontWeight.Bold)
                                     Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                                        TextButton(onClick={ varianteConFotoTemporal=v.id; selectorGaleria.launch("image/*") }, modifier=Modifier.heightIn(min=48.dp)) { Text("Galería", color=Wine) }
-                                        TextButton(onClick={
-                                            runCatching { crearUriFotoTemporalProducto(context) }.onSuccess { uri ->
-                                                varianteCapturaPendiente=v.id
-                                                capturaPendiente=uri.toString()
-                                                selectorCamara.launch(uri)
-                                            }.onFailure { error=it.message ?: "No se pudo abrir la cámara." }
-                                        }, modifier=Modifier.heightIn(min=48.dp)) { Text("Cámara", color=Wine) }
+                                        TextButton(onClick={ abrirGaleriaParaFoto(v.id) }, modifier=Modifier.heightIn(min=48.dp)) { Text("Galería", color=Wine) }
+                                        TextButton(onClick={ abrirCamaraParaFoto(v.id) }, modifier=Modifier.heightIn(min=48.dp)) { Text("Cámara", color=Wine) }
                                     }
                                     if (v.imagen != null && v.fotoUri == null) Text("Foto guardada", color=Muted, fontSize=12.sp)
                                 }
@@ -1013,6 +1061,16 @@ private fun EditorProductoEmprendedora(
                     Text(descripcion.ifBlank { "Sin descripción." }, color=Dark, modifier=Modifier.padding(top=10.dp))
                     Text(if (conVariantes) "${variantes.size} ${if (variantes.size == 1) "variante" else "variantes"}" else "Precio: " + (precioBase.toLongOrNull()?.let(::pesos) ?: "Pendiente"), color=Muted, modifier=Modifier.padding(top=8.dp))
                     Text("Modalidad: " + modalidad.replace('_',' '), color=Muted)
+                    Text("Control de stock: " + if (manejaStock) "Activado" else "No se controla", color=Muted)
+                    if (manejaStock) Text("Al agotarse: " + when (alAgotarse) {
+                        "ocultar" -> "ocultar el producto"
+                        "pasar_a_pedido" -> "pasar a pedido"
+                        else -> "mostrarlo como agotado"
+                    }, color=Muted)
+                    Text(
+                        "Disponibilidad inicial: " + if (original?.disponible == false) "No disponible" else "Disponible",
+                        color=Muted
+                    )
                     campos.filter { !atributos[it.clave].isNullOrBlank() }.forEach { field ->
                         Text(field.etiqueta + ": " + atributos[field.clave], color=Muted, modifier=Modifier.padding(top=4.dp))
                     }
