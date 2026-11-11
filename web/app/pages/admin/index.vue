@@ -118,6 +118,7 @@ const secciones = ref<Seccion[]>([
 const activa = ref('inicio')
 const busqueda = ref('')
 const filtro = ref('Todos')
+const filtroCatalogo = ref<ColeccionCatalogoEditable | ''>('')
 const seccion = computed(() => secciones.value.find((s) => s.id === activa.value) ?? null)
 const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long' }).toUpperCase()
 const { $amancay } = useNuxtApp()
@@ -475,13 +476,16 @@ const resumen = computed(() =>
   })),
 )
 
-const estados = computed(() => ['Todos', ...new Set(seccion.value?.items.map((i) => i.estado) ?? [])])
+const estados = computed(() => activa.value === 'catalogos'
+  ? ['Activo', 'Inactivo']
+  : ['Todos', ...new Set(seccion.value?.items.map((i) => i.estado) ?? [])])
 
 const visibles = computed(() => {
   const q = busqueda.value.trim().toLowerCase()
   return (seccion.value?.items ?? []).filter(
     (i) =>
       (filtro.value === 'Todos' || i.estado === filtro.value) &&
+      (activa.value !== 'catalogos' || !filtroCatalogo.value || i.catalogo === filtroCatalogo.value) &&
       (!q || `${i.titulo} ${i.detalle}`.toLowerCase().includes(q)),
   )
 })
@@ -495,6 +499,12 @@ function tono(estado: string) {
 
 function iniciales(t: string) {
   return t.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()
+}
+
+function limpiarFiltros() {
+  busqueda.value = ''
+  filtro.value = activa.value === 'catalogos' ? 'Activo' : 'Todos'
+  filtroCatalogo.value = ''
 }
 
 async function ir(id: string) {
@@ -518,8 +528,7 @@ async function ir(id: string) {
   edicionCuentaReintentoObligatorio.value = false
   activa.value = id
   formularioAbierto.value = false
-  busqueda.value = ''
-  filtro.value = 'Todos'
+  limpiarFiltros()
   window.scrollTo({ top: 0, behavior: 'smooth' })
   await cargarSeccion()
 }
@@ -1326,12 +1335,15 @@ async function guardarEdicionCuentaEmprendedora() {
       </nav>
       <div class="pie">
         <img class="pie-avatar" src="/logo-amancay.png" alt="" />
-        <span><b>{{ sesion }}</b><small>{{ entorno }}</small></span>
+        <span><b>{{ sesion }}</b><small v-if="activa !== 'catalogos' || config.firebaseModo !== 'real-api'">{{ entorno }}</small></span>
       </div>
     </aside>
 
     <main class="contenido">
-      <div class="estado-conexion"><span>{{ entorno }} · {{ sesion }}</span><button class="editar" @click="salir">Cerrar sesión</button></div>
+      <div class="estado-conexion">
+        <span><template v-if="activa !== 'catalogos' || config.firebaseModo !== 'real-api'">{{ entorno }} · </template>{{ sesion }}</span>
+        <button class="editar" @click="salir">Cerrar sesión</button>
+      </div>
       <p v-if="errorSesion" role="alert">{{ errorSesion }}</p>
       <template v-if="!seccion">
         <header class="encabezado">
@@ -1709,7 +1721,16 @@ async function guardarEdicionCuentaEmprendedora() {
         <p v-if="seccion.id === 'asociaciones'">Las asociaciones guardan una ficha administrativa y relaciones de integrantes. Las bajas son lógicas para conservar historial.</p>
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
         <p v-else-if="seccion.id !== 'catalogos'">Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
-        <button v-if="lecturaDisponible" class="editar" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
+        <div v-if="lecturaDisponible" class="acciones-listado">
+          <button class="editar" type="button" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
+          <select v-if="seccion.id === 'catalogos'" v-model="filtroCatalogo" class="filtro-catalogo" aria-label="Tipo de catálogo">
+            <option value="">Todos</option>
+            <option value="sectores">Sectores</option>
+            <option value="categorias">Categorías</option>
+            <option value="tiposEmprendimiento">Tipo de emprendimiento</option>
+            <option value="tiposProducto">Tipo de productos</option>
+          </select>
+        </div>
         <p v-if="cargandoDatos || cargandoCatalogos" role="status">Leyendo Firestore…</p>
         <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
         <div class="herramientas">
@@ -1724,6 +1745,7 @@ async function guardarEdicionCuentaEmprendedora() {
               type="button"
               class="chip"
               :class="{ on: filtro === e }"
+              :aria-pressed="filtro === e"
               @click="filtro = e"
             >
               {{ e }}
@@ -1775,7 +1797,7 @@ async function guardarEdicionCuentaEmprendedora() {
         <div v-else-if="!cargandoDatos && !cargandoCatalogos && !errorDatos" class="vacio">
           <span aria-hidden="true">{{ seccion.aviso ? '🔒' : '🌼' }}</span>
           <p>{{ seccion.aviso || 'No hay registros para mostrar con estos filtros.' }}</p>
-          <button v-if="!seccion.aviso" class="editar" type="button" @click="(busqueda = ''), (filtro = 'Todos')">
+          <button v-if="!seccion.aviso" class="editar" type="button" @click="limpiarFiltros">
             Limpiar filtros
           </button>
         </div>
@@ -2679,6 +2701,24 @@ h1 {
 }
 
 /* Herramientas y lista */
+.acciones-listado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.filtro-catalogo {
+  max-width: 100%;
+  padding: .5rem .8rem;
+  border: 1.5px solid var(--vino);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--vino);
+  font: inherit;
+  font-size: .85rem;
+}
+
 .herramientas {
   display: flex;
   align-items: center;
