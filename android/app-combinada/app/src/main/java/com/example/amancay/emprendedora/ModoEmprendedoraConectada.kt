@@ -811,6 +811,13 @@ internal fun PantallaEdicionTienda(
     }
 
     val errorContacto = validarContactoTienda(contactoTipo, contactoValor)
+    val errorFicha = when {
+        nombre.isBlank() -> "Escribe el nombre de la tienda."
+        tipoId.isBlank() -> "Selecciona el tipo de emprendimiento."
+        sectorId.isBlank() -> "Selecciona un sector para guardar la ficha."
+        mostrarContacto && contactoValor.isBlank() -> "Ingresa un dato de contacto para mostrarlo en la tienda pública."
+        else -> null
+    }
 
     Text("MI TIENDA", fontSize = 12.sp, color = Wine, fontWeight = FontWeight.Bold)
     Text("Mi tienda", fontSize = 32.sp, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
@@ -896,7 +903,7 @@ internal fun PantallaEdicionTienda(
     Spacer(Modifier.height(12.dp))
     SelectorCatalogo("Tipo de emprendimiento", tipos, tipoId, { tipoId = it })
     Spacer(Modifier.height(12.dp))
-    AmancayInput("Dirección de la tienda", direccion, { direccion = it }, 200)
+    AmancayInput("Dirección de la tienda (opcional)", direccion, { direccion = it }, 200)
     Spacer(Modifier.height(16.dp))
     // Propuesta para el equipo (zona + mapa): bloque aislado y destacado para poder
     // presentarla y quitarla completo si se descarta. Lo que se usa hoy es la dirección.
@@ -953,14 +960,16 @@ internal fun PantallaEdicionTienda(
     Spacer(Modifier.height(8.dp))
     OutlineButton("Volver a configuración", alCancelar)
     Spacer(Modifier.height(8.dp))
+    errorFicha?.let {
+        Text(it, color = AccentRed, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+    }
     PrimaryButton(
         text = if (enviando) "Guardando…" else "Guardar ficha",
         onClick = {
             val contacto = contactoValor.trim().takeIf(String::isNotEmpty)?.let { ContactoEmprendedora(contactoTipo, it) }
             alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, direccion = direccion.trim(), contacto = contacto, mostrarContacto = mostrarContacto))
         },
-        enabled = !enviando && !logoEnviando && nombre.isNotBlank() && sectorId.isNotBlank() && tipoId.isNotBlank() && direccion.isNotBlank() &&
-            (!mostrarContacto || contactoValor.isNotBlank()) && errorContacto == null,
+        enabled = !enviando && !logoEnviando && errorFicha == null && errorContacto == null,
         fontSize = 16.sp
     )
     Text("Tienda asignada: ${cuenta.tiendaId}", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
