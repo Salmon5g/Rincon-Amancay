@@ -192,7 +192,10 @@ internal fun ConfiguracionVistaPreviaScreen(
                 MiniEstado("Disponible para encargar", Color(0xFFE4F0E6), GreenText, Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
-            productos.take(6).forEach { producto ->
+            if (productos.isEmpty()) {
+                Text("Cuando agregues productos, aquí verás cómo se verán en tu catálogo.", color = Muted)
+            }
+            productos.forEach { producto ->
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     shape = RoundedCornerShape(16.dp),
@@ -203,6 +206,8 @@ internal fun ConfiguracionVistaPreviaScreen(
                         Column(Modifier.weight(1f)) {
                             Text(producto.nombre, fontWeight = FontWeight.Bold, color = Dark, maxLines = 1)
                             Text(etiquetaCatalogoCliente(producto), color = if (visibleEnCatalogoPublico(producto)) GreenText else Muted, fontSize = 12.sp)
+                            val precioVista = if (producto.tieneVariantes) producto.variantes.filter { it.activa }.minOfOrNull { it.precio } ?: 0L else producto.precioBase ?: 0L
+                            Text(formatPrice(precioVista) + " CLP", color = Muted, fontSize = 11.sp)
                         }
                     }
                 }

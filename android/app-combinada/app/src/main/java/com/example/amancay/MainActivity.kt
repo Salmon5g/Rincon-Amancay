@@ -53,6 +53,7 @@ import com.example.amancay.data.ProductosEmprendedoraRepository
 import com.example.amancay.data.VentaRegistrada
 import com.example.amancay.data.FeriaParaVenta
 import com.example.amancay.data.PreferenciasCatalogoEmprendedora
+import com.example.amancay.data.ColaOfflineCatalogo
 import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.data.ImagenProductoPreparada
 import com.example.amancay.emprendedora.leerLogoLocalTienda
@@ -694,12 +695,19 @@ internal fun EmprendedoraAppConectada(
     var cargandoVentas by remember(sesion.uid) { mutableStateOf(false) }
     var errorVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        if (ColaOfflineCatalogo.hayRed(context)) {
+            scope.launch { ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId) }
+        }
+    }
     LaunchedEffect(screen, sesion.tiendaId) {
         if (screen == Screen.ConfiguracionCatalogo) {
             try {
                 historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
+                valoresDefecto = productosRepository.leerValoresDefecto(sesion.tiendaId)
+                PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valoresDefecto)
             } catch (e: Exception) {
-                errorVentas = e.message ?: "No se pudo leer la configuración del historial."
+                errorVentas = e.message ?: "No se pudo leer la configuración del catálogo."
             }
             return@LaunchedEffect
         }
@@ -939,8 +947,19 @@ internal fun EmprendedoraAppConectada(
                                 errorProducto = null
                                 avisoProducto = null
                                 try {
-                                    productosRepository.cambiarDisponibilidad(sesion.tiendaId, seleccion, disponible)
-                                    avisoProducto = if (disponible) "Productos marcados como disponibles." else "Productos marcados como no disponibles. Siguen en tu catálogo."
+                                    if (ColaOfflineCatalogo.hayRed(context)) {
+                                        ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+                                        productosRepository.cambiarDisponibilidad(sesion.tiendaId, seleccion, disponible)
+                                        avisoProducto = if (disponible) "Productos marcados como disponibles." else "Productos marcados como no disponibles. Siguen en tu catálogo."
+                                    } else {
+                                        ColaOfflineCatalogo.encolarDisponibilidad(
+                                            context, sesion.tiendaId,
+                                            seleccion.map { it.id },
+                                            seleccion.map { it.versionEsperada },
+                                            disponible
+                                        )
+                                        avisoProducto = "Sin conexión: el cambio se guardó y se sincronizará al volver internet."
+                                    }
                                 } catch (e: Exception) {
                                     errorProducto = mensajeProducto(e)
                                 } finally { enviandoProducto = false }
@@ -1053,9 +1072,20 @@ internal fun EmprendedoraAppConectada(
                         enviando = enviandoProducto,
                         error = errorVentas,
                         alGuardarValoresDefecto = { valores ->
-                            PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valores)
-                            valoresDefecto = valores
-                            avisoProducto = "Valores por defecto guardados para los próximos productos."
+                            scope.launch {
+                                enviandoProducto = true
+                                errorVentas = null
+                                try {
+                                    productosRepository.configurarValoresDefecto(sesion.tiendaId, valores)
+                                    PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valores)
+                                    valoresDefecto = valores
+                                    avisoProducto = "Valores por defecto guardados para los próximos productos."
+                                } catch (e: Exception) {
+                                    errorVentas = e.message ?: "No se pudo guardar los valores por defecto."
+                                } finally {
+                                    enviandoProducto = false
+                                }
+                            }
                         },
                         alCambiarHistorial = { activo ->
                             scope.launch {
