@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
 import FeriasAdmin from '~/components/admin/FeriasAdmin.vue'
 import ConfiguracionAdmin from '~/components/admin/ConfiguracionAdmin.vue'
@@ -86,6 +86,8 @@ const datosVacios: DatosAdmin = {
   catalogos: { sectores: [], categorias: [], tiposEmprendimiento: [], tiposProducto: [] },
   asociaciones: [],
 }
+const route = useRoute()
+const router = useRouter()
 const datos = ref<DatosAdmin>(datosVacios)
 const formularioAbierto = ref(false)
 const aviso = ref('')
@@ -115,7 +117,9 @@ const secciones = ref<Seccion[]>([
   { id: 'administradores', icono: '🛡️', titulo: 'Administradores', descripcion: 'Gestionar otras cuentas administradoras de la plataforma.', accion: '+ Agregar administrador', items: [] },
 ])
 
-const activa = ref('inicio')
+const seccionesValidas = new Set(['inicio', ...secciones.value.map((seccion) => seccion.id)])
+const seccionEnUrl = typeof route.query.seccion === 'string' ? route.query.seccion : ''
+const activa = ref(seccionesValidas.has(seccionEnUrl) ? seccionEnUrl : 'inicio')
 const busqueda = ref('')
 const filtro = ref('Todos')
 const filtroCatalogo = ref<ColeccionCatalogoEditable | ''>('')
@@ -506,6 +510,22 @@ function limpiarFiltros() {
   filtro.value = activa.value === 'catalogos' ? 'Activo' : 'Todos'
   filtroCatalogo.value = ''
 }
+
+watch(activa, (id) => {
+  if (!import.meta.client) return
+  const query = { ...route.query }
+  if (id === 'inicio') delete query.seccion
+  else query.seccion = id
+  void router.replace({ path: '/admin', query, hash: route.hash })
+})
+
+watch(() => route.query.seccion, (valor) => {
+  const id = typeof valor === 'string' && seccionesValidas.has(valor) ? valor : 'inicio'
+  if (id === activa.value) return
+  activa.value = id
+  limpiarFiltros()
+  if (autorizado.value) void cargarSeccion()
+})
 
 async function ir(id: string) {
   if (cuentaAltaPendiente.value) {

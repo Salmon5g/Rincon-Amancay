@@ -366,6 +366,7 @@
           "cuidados": "Lavado a mano"
         },
         "tieneVariantes": true,
+        "manejaStock": true,
         "moneda": "CLP",
         "unidadVenta": "unidad",
         "modalidad": "regular",
@@ -402,6 +403,7 @@
           "color": "azul"
         },
         "precio": 8000,
+        "stock": 3,
         "estadoDisponibilidad": "disponible",
         "actualizadoEn": {
           "$timestamp": "2026-10-08T12:00:00Z"
@@ -435,6 +437,7 @@
           "color": "rojo"
         },
         "precio": 8500,
+        "stock": 1,
         "estadoDisponibilidad": "disponible",
         "actualizadoEn": {
           "$timestamp": "2026-10-08T12:00:00Z"
@@ -490,6 +493,7 @@
           "presentacion": "Caja de 6 unidades"
         },
         "tieneVariantes": false,
+        "manejaStock": false,
         "moneda": "CLP",
         "unidadVenta": "unidad",
         "modalidad": "a_pedido",
@@ -498,7 +502,8 @@
         "actualizadoEn": {
           "$timestamp": "2026-10-08T12:00:00Z"
         },
-        "precioBase": 4500
+        "precioBase": 4500,
+        "stock": null
       }
     },
     {
@@ -550,6 +555,7 @@
           "tamanoMaceta": "10 cm"
         },
         "tieneVariantes": false,
+        "manejaStock": true,
         "moneda": "CLP",
         "unidadVenta": "unidad",
         "modalidad": "regular",
@@ -558,7 +564,8 @@
         "actualizadoEn": {
           "$timestamp": "2026-10-08T12:00:00Z"
         },
-        "precioBase": 3000
+        "precioBase": 3000,
+        "stock": 4
       }
     }
   ]

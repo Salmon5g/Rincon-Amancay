@@ -36,7 +36,7 @@ datos-prueba/catalogo-local.json es la instantánea ejecutable local: 29 documen
 - Gorro: dos variantes talla/color. Precio y stock en cada variante, no duplicados en el producto padre.
 - Alfajores: a pedido, sin manejo de stock. PrecioBase en producto; atributos de ingredientes y alérgenos meramente ficticios.
 - Planta: sin variantes, precioBase y stock en producto.
-- Las vistas públicas no contienen propietarioUid ni stock exacto. Los precios están visibles porque mostrarPrecios es true en esta instantánea.
+- Las vistas públicas contienen el stock exacto de los productos que lo controlan y de cada variante; en productos sin control se indica que no se lleva inventario. No contienen propietarioUid ni la política privada de agotamiento. Los precios están visibles porque mostrarPrecios es true en esta instantánea.
 
 Los ejemplos de cuentas-tiendas.json son ilustrativos y no se cargan: muestran una tienda borrador. catalogo-local.json representa otro escenario publicado. Los UID del fixture no son cuentas Authentication para login: ejecutar `npm --prefix backend run cuentas:demo` desde la raíz para crear una administradora y candidata con sus propios UID y credenciales locales en `backend/.local/`, según la guía de arranque.
 
@@ -50,7 +50,7 @@ seed reemplaza el contenido de los 29 documentos conocidos por el del fixture. N
 
 La carga REST usa la autoridad especial del emulador para preparar fixtures. Está fijada a localhost y al proyecto demo; no lee .env ni credenciales del proyecto real, rechaza destinos de emulador distintos y no sigue redirecciones. No reutilizar este mecanismo como backend de producción.
 
-Las reglas permiten catálogo público y acceso privado por rol. La propietaria puede editar textos de tienda y seleccionar imágenes de productos. Publicar/retirar requiere la API. Ventas, stock y conexión Android siguen pendientes.
+Las reglas permiten catálogo público y acceso privado por rol. La API autenticada gestiona publicación/retiro, ventas y ajustes de stock; el fixture sirve para explorar datos ficticios y lecturas locales.
 
 Referencia oficial: https://firebase.google.com/docs/emulator-suite/connect_firestore
 

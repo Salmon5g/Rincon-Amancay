@@ -112,6 +112,7 @@ export function crearVentas(db: Firestore) {
           const policy = aprobacionData.politica;
           exigir(policy && ['regular','a_pedido','pieza_unica'].includes(policy.modalidad) && typeof policy.manejaStock === 'boolean' && ['mostrar_agotado','ocultar','pasar_a_pedido'].includes(policy.alAgotarse), 'conflicto', 'Publicación aprobada inconsistente.');
           const base = aprobacionData.producto as Record<string, unknown>;
+          base.manejaStock = policy.manejaStock;
           if (base.tieneVariantes === true) {
             const variantesAprobadas = aprobacionData.variantes as Record<string, Record<string, unknown>>;
             const ids = Object.keys(variantesAprobadas);
@@ -124,13 +125,15 @@ export function crearVentas(db: Firestore) {
               const disponibilidad = estado(policy, nuevoSaldo);
               if (!disponibilidad) return [];
               estados.push(disponibilidad);
-              return [{id: saldoVariante.id, data: {...variantesAprobadas[saldoVariante.id], estadoDisponibilidad: disponibilidad}}];
+              const stockPublico = policy.manejaStock ? nuevoSaldo : null;
+              return [{id: saldoVariante.id, data: {...variantesAprobadas[saldoVariante.id], stock: stockPublico, estadoDisponibilidad: disponibilidad}}];
             });
             if (estados.length) proyeccion = {...base, estadoDisponibilidad: estados.includes('disponible') ? 'disponible' : estados.includes('a_pedido') ? 'a_pedido' : 'agotado'};
           } else {
             const disponibilidad = data.modalidad === 'pieza_unica' && stockNuevo === 0
               ? null
               : estado(policy, stockNuevo);
+            base.stock = policy.manejaStock ? stockNuevo : null;
             if (disponibilidad) proyeccion = {...base, estadoDisponibilidad: disponibilidad};
           }
           actualizacionCatalogo = proyeccion ? 'actualizado' : 'oculto';

@@ -26,7 +26,7 @@
         >{{ nombreVariante(v.opciones) }}</button>
       </div>
       <button class="am-boton-mostaza">Contactar a la tienda</button>
-      <p class="am-desc">El precio y la disponibilidad los define la tienda. El stock exacto no se muestra.</p>
+      <p class="am-desc">El precio y la disponibilidad los define la tienda. El stock publicado se muestra junto a los datos del producto.</p>
     </main>
   </div>
 </template>

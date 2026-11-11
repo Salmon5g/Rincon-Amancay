@@ -117,6 +117,7 @@ test('ventas manuales descuentan stock y guardan el historial configurado', asyn
           await publica.set({ nombre: id, estadoDisponibilidad: 'disponible' });
           await ventas('registrarVenta', { uid }, { tiendaId, operacionId: randomUUID(), productoId: id, cantidad: 1, lugarTipo: 'otro', lugarTexto: 'Tienda' });
           assert.equal((await publica.get()).data()?.estadoDisponibilidad, estadoEsperado);
+          assert.equal((await publica.get()).data()?.stock, 0);
         });
       }
       await t.test('ocultar retira el producto hasta que se reponga y publique', async () => {

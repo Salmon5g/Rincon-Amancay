@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import '~/assets/amancay-tokens.css'
 import { cargarCuentaEmprendedora, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
@@ -33,7 +33,13 @@ const mostrarContrasena = ref(false)
 const enviandoCambioContrasena = ref(false)
 const error = ref('')
 const aviso = ref('')
-const seccion = ref<Seccion>('inicio')
+const ruta = useRoute()
+const router = useRouter()
+const vistasValidas = new Set<Seccion>(['inicio', 'productos', 'agregar', 'mas'])
+const vistaEnUrl = typeof ruta.query.vista === 'string' && vistasValidas.has(ruta.query.vista as Seccion)
+  ? ruta.query.vista as Seccion
+  : 'inicio'
+const seccion = ref<Seccion>(vistaEnUrl)
 const filtro = ref<Filtro>('todos')
 const fecha = ref('')
 const editandoTienda = ref(false)
@@ -364,6 +370,19 @@ function irA(destino: Seccion) {
   aviso.value = ''
   error.value = ''
 }
+
+watch(seccion, (vista) => {
+  if (!import.meta.client) return
+  const query = { ...ruta.query }
+  if (vista === 'inicio') delete query.vista
+  else query.vista = vista
+  void router.replace({ path: '/emprendedora', query, hash: ruta.hash })
+})
+
+watch(() => ruta.query.vista, (valor) => {
+  const vista = typeof valor === 'string' && vistasValidas.has(valor as Seccion) ? valor as Seccion : 'inicio'
+  if (vista !== seccion.value) seccion.value = vista
+})
 
 function precioBonito(precio: number | null) {
   if (precio === null) return 'Precio por definir'

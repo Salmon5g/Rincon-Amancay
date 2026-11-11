@@ -86,6 +86,19 @@ import com.example.amancay.ui.theme.Muted
 import com.example.amancay.ui.theme.Wine
 import kotlinx.coroutines.launch
 
+private fun mensajeCargaVentas(error: Exception, recurso: String): String {
+    val firestoreError = generateSequence(error as Throwable?) { it.cause }
+        .filterIsInstance<com.google.firebase.firestore.FirebaseFirestoreException>()
+        .firstOrNull()
+    return when (firestoreError?.code) {
+        com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+            "Firebase no autorizó la lectura de $recurso. Revisa los permisos de esta cuenta y vuelve a intentarlo."
+        com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE ->
+            "No hay conexión con Firebase para cargar $recurso. Comprueba la conexión y vuelve a intentarlo."
+        else -> "No se pudo cargar $recurso. Vuelve a intentarlo."
+    }
+}
+
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -736,8 +749,13 @@ internal fun EmprendedoraAppConectada(
     var cargandoVentas by remember(sesion.uid) { mutableStateOf(false) }
     var errorVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var errorCargaVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var cargandoHistorialVentas by remember(sesion.uid) { mutableStateOf(false) }
+    var errorHistorialVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var cargandoFeriasVenta by remember(sesion.uid) { mutableStateOf(false) }
+    var errorFeriasVenta by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var historialConfiguracionCargada by remember(sesion.uid) { mutableStateOf(false) }
     var reintentoCargaVentas by remember(sesion.uid) { mutableIntStateOf(0) }
+    var reintentoHistorialVentas by remember(sesion.uid) { mutableIntStateOf(0) }
 
     LaunchedEffect(sesion.tiendaId) {
         valoresDefectoListos = false
@@ -818,15 +836,41 @@ internal fun EmprendedoraAppConectada(
         cargandoVentas = true
         errorVentas = null
         errorCargaVentas = null
+        errorFeriasVenta = null
         historialConfiguracionCargada = false
         try {
             historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
             historialConfiguracionCargada = true
-            ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
-            feriasVenta = productosRepository.listarFeriasPublicadas()
+            if (historialVentasActivo) {
+                cargandoFeriasVenta = true
+                try {
+                    feriasVenta = productosRepository.listarFeriasPublicadas()
+                } catch (e: Exception) {
+                    feriasVenta = emptyList()
+                    errorFeriasVenta = mensajeCargaVentas(e, "las ferias")
+                } finally {
+                    cargandoFeriasVenta = false
+                }
+            } else {
+                feriasVenta = emptyList()
+            }
         } catch (e: Exception) {
-            errorCargaVentas = e.message ?: "No se pudo cargar la información de ventas."
+            errorCargaVentas = mensajeCargaVentas(e, "la configuración de ventas")
         } finally { cargandoVentas = false }
+    }
+
+    LaunchedEffect(screen, sesion.tiendaId, abrirHistorialVentas, historialConfiguracionCargada, reintentoHistorialVentas) {
+        if (screen != Screen.Ventas || !abrirHistorialVentas || !historialConfiguracionCargada) return@LaunchedEffect
+        cargandoHistorialVentas = true
+        errorHistorialVentas = null
+        try {
+            ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
+        } catch (e: Exception) {
+            ventasGuardadas = emptyList()
+            errorHistorialVentas = mensajeCargaVentas(e, "el historial de ventas")
+        } finally {
+            cargandoHistorialVentas = false
+        }
     }
 
     LaunchedEffect(screen, productoVista, reintentoFotoVista) {
@@ -1320,6 +1364,12 @@ internal fun EmprendedoraAppConectada(
                         error = errorVentas,
                         errorCarga = errorCargaVentas,
                         enviando = enviandoProducto,
+                        cargandoHistorial = cargandoHistorialVentas,
+                        errorHistorial = errorHistorialVentas,
+                        cargandoFerias = cargandoFeriasVenta,
+                        errorFerias = errorFeriasVenta,
+                        alCambiarSeccionHistorial = { abrir -> abrirHistorialVentas = abrir },
+                        alReintentarHistorial = { reintentoHistorialVentas++ },
                         alRegistrar = { producto, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, operacionId, fecha, alExito ->
                             scope.launch {
                                 enviandoProducto = true; errorVentas = null
@@ -1328,10 +1378,13 @@ internal fun EmprendedoraAppConectada(
                                     avisoProducto = if (historialRegistrado) "Venta guardada y stock actualizado." else "Stock actualizado. El historial está apagado, así que la venta no quedó guardada en él."
                                     alExito()
                                     errorCargaVentas = null
-                                    try {
-                                        ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
-                                    } catch (e: Exception) {
-                                        errorCargaVentas = "La venta y el stock se guardaron, pero no se pudo actualizar el historial. Vuelve a cargarlo."
+                                    if (abrirHistorialVentas && historialRegistrado) {
+                                        try {
+                                            ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
+                                            errorHistorialVentas = null
+                                        } catch (e: Exception) {
+                                            errorHistorialVentas = mensajeCargaVentas(e, "el historial de ventas")
+                                        }
                                     }
                                 } catch (e: Exception) { errorVentas = e.message ?: "No se pudo registrar la venta." }
                                 finally { enviandoProducto = false }

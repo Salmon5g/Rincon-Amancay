@@ -30,9 +30,9 @@ test('disponibilidad pública independiente del borrador',async t=>{
       await reset();await publicacion('publicarProducto');
       await product.update({nombre:'Nombre borrador',precioBase:9999,imagenes:['foto-borrador'],alAgotarse:'ocultar'});
       const r=await stock(-2);assert.equal(r.requiereRepublicar,false);
-      const p=(await pub.get()).data()!;assert.equal(p.estadoDisponibilidad,'agotado');assert.equal(p.nombre,'Nombre aprobado');assert.equal(p.precioBase,1500);assert.deepEqual(p.imagenes,['foto-aprobada']);assert(!('stock' in p));
+      const p=(await pub.get()).data()!;assert.equal(p.estadoDisponibilidad,'agotado');assert.equal(p.nombre,'Nombre aprobado');assert.equal(p.precioBase,1500);assert.deepEqual(p.imagenes,['foto-aprobada']);assert.equal(p.stock,0);
       assert.equal((await product.get()).data()!.estadoPublicacion,'publicado');
-      await stock(1);assert.equal((await pub.get()).data()!.estadoDisponibilidad,'disponible');
+      await stock(1);assert.equal((await pub.get()).data()!.estadoDisponibilidad,'disponible');assert.equal((await pub.get()).data()!.stock,1);
     });
     await t.test('ocultar al agotarse y reponer recupera la ficha aprobada',async()=>{
       await reset({alAgotarse:'ocultar'});await publicacion('publicarProducto');await stock(-2);assert.equal((await pub.get()).exists,false);

@@ -60,6 +60,7 @@ export function crearStock(db: Firestore) {
         exigir(policy && ['regular','a_pedido','pieza_unica'].includes(policy.modalidad) && typeof policy.manejaStock==='boolean' && ['mostrar_agotado','ocultar','pasar_a_pedido'].includes(policy.alAgotarse),'conflicto','Publicación aprobada inconsistente.');
         const base=aprobada.producto;
         exigir(base && base.tieneVariantes===data.tieneVariantes,'conflicto','La estructura publicada cambió.');
+        base.manejaStock=policy.manejaStock===true;
         if(base.tieneVariantes) {
           const ids=Object.keys(aprobada.variantes);
           exigir(ids.length>0 && ids.length<=100 && ids.every(id),'conflicto','Variantes aprobadas inválidas.');
@@ -67,14 +68,16 @@ export function crearStock(db: Firestore) {
           const states:string[]=[];
           for(const saldo of saldos) {
             exigir(saldo.exists,'conflicto','Falta una variante aprobada; revisar la publicación.');
-            const disponibilidad=estado(policy,saldo.id===d.varianteId?stockNuevo:saldo.data()!.stock);
+            const stockActualizado=saldo.id===d.varianteId?stockNuevo:saldo.data()!.stock;
+            const disponibilidad=estado(policy,stockActualizado);
             if(!disponibilidad)continue;
             states.push(disponibilidad);
-            publicarVariantes.push({id:saldo.id,data:{...aprobada.variantes[saldo.id],estadoDisponibilidad:disponibilidad}});
+            publicarVariantes.push({id:saldo.id,data:{...aprobada.variantes[saldo.id],stock:policy.manejaStock?stockActualizado:null,estadoDisponibilidad:disponibilidad}});
           }
           if(states.length) proyeccion={...base,estadoDisponibilidad:states.includes('disponible')?'disponible':states.includes('a_pedido')?'a_pedido':'agotado'};
         } else {
           const disponibilidad=estado(policy,stockNuevo);
+          base.stock=policy.manejaStock?stockNuevo:null;
           if(disponibilidad) proyeccion={...base,estadoDisponibilidad:disponibilidad};
         }
       }

@@ -186,7 +186,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             nombre: texto(data.nombre, 120), descripcion: texto(data.descripcion, 2000),
             tipoProductoId: data.tipoProductoId, versionTipoProducto: data.versionTipoProducto,
             categoriaId: data.categoriaId, imagenes, ...(miniaturas.length?{miniaturas}:{}), atributosEspecificos: attrs,
-            tieneVariantes: data.tieneVariantes, moneda: 'CLP', unidadVenta: 'unidad', modalidad: data.modalidad,
+            tieneVariantes: data.tieneVariantes, manejaStock: data.manejaStock, moneda: 'CLP', unidadVenta: 'unidad', modalidad: data.modalidad,
             estadoPublicacion: 'publicado', actualizadoEn: now,
           };
           const variantesAprobadas: Record<string,DocumentData> = Object.create(null);
@@ -209,10 +209,11 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
                 limpiar.delete(preparada.imagen);
                 limpiar.delete(preparada.miniatura);
               }
+              const stockPublico = data.manejaStock ? v.stock : null;
               variantesAprobadas[variant.id]={opciones:options,precio:precio(v.precio),activa:true,...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{})};
               if(!availability) continue;
               states.push(availability);
-              escribir.push({ ref: target.collection('variantes').doc(variant.id), data: { opciones: options, precio: precio(v.precio), activa: true, ...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{}), estadoDisponibilidad: availability, actualizadoEn: now } });
+              escribir.push({ ref: target.collection('variantes').doc(variant.id), data: { opciones: options, precio: precio(v.precio), activa: true, stock:stockPublico, ...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{}), estadoDisponibilidad: availability, actualizadoEn: now } });
             }
             exigir(states.length > 0, 'no-publicable', 'No hay variantes publicables.');
             projection.estadoDisponibilidad = states.includes('disponible') ? 'disponible' : states.includes('a_pedido') ? 'a_pedido' : 'agotado';
@@ -221,11 +222,14 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             const availability = estado(data, data.stock);
             exigir(availability, 'no-publicable', 'Producto agotado configurado para ocultarse.');
             projection.precioBase = precio(data.precioBase);
+            projection.stock = data.manejaStock ? data.stock : null;
             projection.estadoDisponibilidad = availability;
           }
+          const productoAprobado = {...projection};
+          delete productoAprobado.stock;
           escribir.push({ref:aprobacion!,data:{schema:1,cicloCatalogo:store.cicloCatalogo??0,
             politica:{modalidad:data.modalidad,manejaStock:data.manejaStock,alAgotarse:data.alAgotarse},
-            producto:projection,variantes:variantesAprobadas,aprobadoEn:now}});
+            producto:productoAprobado,variantes:variantesAprobadas,aprobadoEn:now}});
           escribir.push({ ref: target, data: projection });
         }
       }

@@ -19,6 +19,8 @@ export interface CatalogosPublicos {
 export interface CatalogoPublicoRepository {
   listarTiendas(cursor?: string | null): Promise<PaginaRepositorio<TiendaPublica>>
   listarProductos(tiendaId: string, cursor?: string | null): Promise<PaginaRepositorio<ProductoPublico>>
+  leerTienda(tiendaId: string): Promise<TiendaPublica>
+  leerProducto(tiendaId: string, productoId: string): Promise<ProductoPublico>
   listarVariantes(tiendaId: string, productoId: string): Promise<VariantePublica[]>
   listarCatalogosPublicos(): Promise<CatalogosPublicos>
   resolverUrlImagen(ruta: string): string | null

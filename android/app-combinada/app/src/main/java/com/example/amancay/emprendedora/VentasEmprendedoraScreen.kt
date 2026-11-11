@@ -58,6 +58,10 @@ internal fun VentasEmprendedoraScreen(
     historialConfiguracionCargada: Boolean,
     abrirHistorial: Boolean = false,
     cargando: Boolean, error: String?, errorCarga: String?, enviando: Boolean,
+    cargandoHistorial: Boolean = false, errorHistorial: String? = null,
+    cargandoFerias: Boolean = false, errorFerias: String? = null,
+    alCambiarSeccionHistorial: (Boolean) -> Unit = {},
+    alReintentarHistorial: () -> Unit = {},
     alRegistrar: (ProductoEmprendedora, String?, Int, String, String?, String?, String, String, () -> Unit) -> Unit,
     alReintentarCarga: () -> Unit,
     alVolver: () -> Unit
@@ -106,8 +110,14 @@ internal fun VentasEmprendedoraScreen(
         Text(if (seccion == "Historial") "Aquí puedes ver tus ventas y encargos realizados." else "Registra una venta y actualiza el stock de tu catálogo.", fontSize=15.sp, color=Muted)
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            SelectableChip("Registrar venta", seccion == "Registrar") { seccion = "Registrar" }
-            SelectableChip("Historial", seccion == "Historial") { seccion = "Historial" }
+            SelectableChip("Registrar venta", seccion == "Registrar") {
+                seccion = "Registrar"
+                alCambiarSeccionHistorial(false)
+            }
+            SelectableChip("Historial", seccion == "Historial") {
+                seccion = "Historial"
+                alCambiarSeccionHistorial(true)
+            }
         }
         Spacer(Modifier.height(12.dp))
         Card(colors=CardDefaults.cardColors(containerColor=if (historialActivo) Color(0xFFE2F4E4) else Color(0xFFF0E9EC)), shape=RoundedCornerShape(24.dp), modifier=Modifier.fillMaxWidth()) {
@@ -155,7 +165,14 @@ internal fun VentasEmprendedoraScreen(
                             SelectableChip("Otro lugar", lugarTipo == "otro", enabled=!enviando) { lugarTipo="otro" }
                         }
                         if (lugarTipo == "feria") {
-                            if (ferias.isEmpty()) Text("No hay ferias publicadas disponibles. Elige «Otro lugar» para registrar dónde fue la venta.", color=Muted, fontSize=13.sp)
+                            if (errorFerias != null) {
+                                Text("No se pudieron consultar las ferias. Elige «Otro lugar» o vuelve a cargar la información.", color=Wine, fontSize=13.sp)
+                                OutlinedButton(onClick=alReintentarCarga, enabled=!cargando && !cargandoFerias, modifier=Modifier.fillMaxWidth()) {
+                                    Text("Reintentar ferias", color=Wine)
+                                }
+                            }
+                            else if (cargandoFerias) Text("Cargando ferias publicadas…", color=Muted, fontSize=13.sp)
+                            else if (ferias.isEmpty()) Text("No hay ferias publicadas disponibles. Elige «Otro lugar» para registrar dónde fue la venta.", color=Muted, fontSize=13.sp)
                             SelectorVentas("Feria", ferias.map { it.id to it.nombre }, feriaId, enabled=!enviando && ferias.isNotEmpty()) { feriaId=it }
                         } else OutlinedTextField(lugarOtro, { lugarOtro=it.take(200) }, label={Text("Lugar")}, placeholder={Text("Ej.: Feria Plaza Ñuñoa", color=Muted)}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
                     }
@@ -179,6 +196,16 @@ internal fun VentasEmprendedoraScreen(
                 }
             }
         } else {
+            if (cargandoHistorial || errorHistorial != null) {
+                Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF3E8)), shape=RoundedCornerShape(18.dp), modifier=Modifier.fillMaxWidth().padding(top=10.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text(errorHistorial ?: "Cargando el historial de ventas…", color=Dark)
+                        if (errorHistorial != null) OutlinedButton(onClick=alReintentarHistorial, modifier=Modifier.fillMaxWidth()) {
+                            Text("Reintentar carga", color=Wine)
+                        }
+                    }
+                }
+            }
             Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("Filtrar historial", color=Dark, fontWeight=FontWeight.Bold)
@@ -210,7 +237,7 @@ internal fun VentasEmprendedoraScreen(
                     }
                 }
             }
-            if (!cargando && ventasFiltradas.isEmpty()) {
+            if (!cargandoHistorial && errorHistorial == null && ventasFiltradas.isEmpty()) {
                 Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), modifier=Modifier.fillMaxWidth().padding(top=8.dp)) {
                     Text(if (ventas.isEmpty()) "Todavía no hay ventas en el historial." else "No hay ventas que coincidan con estos filtros.", color=Muted, modifier=Modifier.padding(16.dp))
                 }

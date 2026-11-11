@@ -1,6 +1,6 @@
-import { collection, documentId, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore'
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore'
 import { getBlob, ref as storageRef } from 'firebase/storage'
-import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
+import type { DocumentData, DocumentSnapshot, QueryDocumentSnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
 import type { ContactoPublico, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
@@ -35,7 +35,9 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
     return await operacion()
   } catch (error) {
     const codigo = (error as { code?: string })?.code
-    const code = codigo === 'permission-denied'
+    const code = codigo === 'no-encontrado'
+      ? 'no-encontrado'
+      : codigo === 'permission-denied'
       ? 'sin-permiso'
       : ['unavailable', 'storage/retry-limit-exceeded', 'auth/network-request-failed'].includes(String(codigo))
         ? 'sin-conexion'
@@ -45,8 +47,8 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
   }
 }
 
-function mapearTienda(documento: QueryDocumentSnapshot<DocumentData>): TiendaPublica {
-  const datos = documento.data()
+function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica {
+  const datos = documento.data() ?? {}
   const contactoDatos = datos.contacto as Record<string, unknown> | undefined
   const contacto = contactoDatos && ['whatsapp', 'correo', 'web'].includes(String(contactoDatos.tipo)) && typeof contactoDatos.valor === 'string'
     ? { tipo: contactoDatos.tipo as ContactoPublico['tipo'], valor: contactoDatos.valor }
@@ -65,8 +67,8 @@ function mapearTienda(documento: QueryDocumentSnapshot<DocumentData>): TiendaPub
   }
 }
 
-function mapearProducto(documento: QueryDocumentSnapshot<DocumentData>): ProductoPublico {
-  const datos = documento.data()
+function mapearProducto(documento: DocumentSnapshot<DocumentData>): ProductoPublico {
+  const datos = documento.data() ?? {}
   return {
     id: documento.id,
     nombre: texto(datos.nombre, documento.id),
@@ -74,11 +76,13 @@ function mapearProducto(documento: QueryDocumentSnapshot<DocumentData>): Product
     categoriaId: texto(datos.categoriaId),
     tipoProductoId: texto(datos.tipoProductoId),
     tieneVariantes: datos.tieneVariantes === true,
+    ...(typeof datos.manejaStock === 'boolean' ? { manejaStock: datos.manejaStock } : {}),
     moneda: texto(datos.moneda, 'CLP'),
     unidadVenta: texto(datos.unidadVenta),
     modalidad: texto(datos.modalidad),
     estadoDisponibilidad: texto(datos.estadoDisponibilidad, 'consultar'),
     precioBase: numero(datos.precioBase),
+    stock: numero(datos.stock),
     atributosEspecificos: mapaDeTextos(datos.atributosEspecificos),
     imagenes: listaDeTextos(datos.imagenes),
   }
@@ -90,6 +94,7 @@ function mapearVariante(documento: QueryDocumentSnapshot<DocumentData>): Variant
     id: documento.id,
     opciones: mapaDeTextos(datos.opciones),
     precio: numero(datos.precio),
+    stock: numero(datos.stock),
     estadoDisponibilidad: texto(datos.estadoDisponibilidad, 'consultar'),
     activa: datos.activa === true,
   }
@@ -161,6 +166,28 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
         )
         const resultado = await getDocs(consulta)
         return cursorSiguiente(resultado.docs, resultado.docs.map(mapearProducto))
+      })
+    },
+
+    async leerTienda(tiendaId) {
+      return ejecutarConErrorNormalizado(async () => {
+        const documento = await getDoc(doc(db, 'tiendasPublicas', validarId(tiendaId)))
+        if (!documento.exists() || documento.data().estadoPublicacion !== 'publicado' || documento.data().habilitada !== true) {
+          throw Object.assign(new Error('La tienda solicitada ya no está disponible.'), { code: 'no-encontrado' })
+        }
+        return mapearTienda(documento)
+      })
+    },
+
+    async leerProducto(tiendaId, productoId) {
+      return ejecutarConErrorNormalizado(async () => {
+        const tienda = validarId(tiendaId)
+        const producto = validarId(productoId)
+        const documento = await getDoc(doc(db, 'tiendasPublicas', tienda, 'productos', producto))
+        if (!documento.exists() || documento.data().estadoPublicacion !== 'publicado') {
+          throw Object.assign(new Error('El producto solicitado ya no está disponible.'), { code: 'no-encontrado' })
+        }
+        return mapearProducto(documento)
       })
     },
 

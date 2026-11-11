@@ -6,7 +6,9 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 
 class ApiEmprendedoraException(
@@ -30,8 +32,8 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
         val connection = URL(BuildConfig.API_BASE_URL.trimEnd('/') + "/" + operacion).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 10_000
-            connection.readTimeout = 15_000
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 90_000
             connection.doOutput = true
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -53,6 +55,16 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
             response.optJSONObject("datos") ?: JSONObject()
         } catch (error: ApiEmprendedoraException) {
             throw error
+        } catch (_: SocketTimeoutException) {
+            throw ApiEmprendedoraException(
+                "tiempo-agotado",
+                "La respuesta de la API tardó más de lo esperado. Puedes reintentar esta misma operación sin cambiar los datos."
+            )
+        } catch (_: ConnectException) {
+            throw ApiEmprendedoraException(
+                "sin-conexion",
+                "No se pudo conectar con la API local. Comprueba que esté encendida y que la dirección del emulador sea correcta."
+            )
         } catch (_: Exception) {
             throw ApiEmprendedoraException("sin-conexion", "No se pudo conectar con la API local. Comprueba que esté encendida y que la dirección del emulador sea correcta.")
         } finally {

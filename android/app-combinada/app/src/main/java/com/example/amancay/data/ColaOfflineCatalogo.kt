@@ -502,7 +502,7 @@ object ColaOfflineCatalogo {
             if (tiendaId.isBlank() || ids.isEmpty() || ids.size != versiones.size) continue
             val disponible = op.optBoolean("disponible", true)
             val operacionId = op.optString("operacionId").takeIf(String::isNotBlank)
-                ?: UUID.nameUUIDFromBytes("$tiendaId/${ids.joinToString(",")}/${versiones.joinToString(",")}/$disponible".toByteArray())
+                ?: UUID.nameUUIDFromBytes("$tiendaId/${ids.joinToString(",")}/${versiones.joinToString(",")}/$disponible".toByteArray()).toString()
             resultado.add(
                 OperacionDisponibilidad(
                     operacionId = operacionId,

@@ -8,7 +8,7 @@ Al publicar un producto, el servidor conserva la ficha aprobada en:
 
 `tiendasPrivadas/{tiendaId}/productos/{productoId}/publicacion/vigente`
 
-Contiene `schema: 1`, `cicloCatalogo`, política aprobada (`modalidad`, `manejaStock`, `alAgotarse`), producto proyectado, variantes aprobadas y fecha de aprobación. Es un documento interno: ningún cliente puede leerlo o escribirlo directamente. No contiene el stock; los saldos vigentes siguen en el producto/variantes privados.
+Contiene `schema: 1`, `cicloCatalogo`, política aprobada (`modalidad`, `manejaStock`, `alAgotarse`), producto proyectado sin saldos, variantes aprobadas sin saldos y fecha de aprobación. Es un documento interno: ningún cliente puede leerlo o escribirlo directamente. Los saldos vigentes siguen en el producto/variantes privados.
 
 Un ajuste de stock utiliza esta copia para reconstruir únicamente la disponibilidad pública. No incorpora nombre, descripción, precio, fotos, atributos, política de agotamiento ni cambios de variantes que sigan en el borrador. La actualización del saldo, disponibilidad, historial y comprobante se confirma en una transacción Firestore.
 
@@ -18,7 +18,7 @@ Un ajuste de stock utiliza esta copia para reconstruir únicamente la disponibil
 | `pasar_a_pedido` | Ficha visible con `a_pedido`. | Vuelve a `disponible`. |
 | `ocultar` | Se quita la proyección pública; se conserva la aprobación interna. | Reaparece la ficha aprobada. |
 
-Los productos de modalidad `a_pedido` mantienen esa disponibilidad. La cantidad exacta sigue siendo privada. Una pérdida de pieza única no se registra como venta ni cambia `piezaUnicaVendida`.
+Los productos de modalidad `a_pedido` mantienen esa disponibilidad. La proyección pública muestra el saldo exacto cuando `manejaStock` está activo, tanto para el producto simple como para cada variante; sin manejo de stock se publica `manejaStock:false` y saldo nulo. Una pérdida de pieza única no se registra como venta ni cambia `piezaUnicaVendida`.
 
 En productos con variantes se sincronizan solo las aprobadas, incluidas las que tenían cero unidades al publicar. Una variante nueva del borrador no se publica por ajustar su stock. Cambiar `activa` o el precio en el borrador requiere publicación explícita. Si todas las variantes aprobadas quedan ocultas, se oculta también el producto; una reposición puede restaurarlo con los valores aprobados.
 

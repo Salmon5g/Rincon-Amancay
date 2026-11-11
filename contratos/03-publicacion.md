@@ -33,7 +33,7 @@ La transacción detecta cambios concurrentes en sus lecturas. versionEsperada se
 - Se exige entre 1 y 5 referencias de imagen distintas. La API comprueba, decodifica y prepara WebP/miniaturas de Storage según el contrato 11. Las pruebas aisladas de negocio usan un sustituto; el servidor y la integración web usan el procesador real. Las copias se generan antes de confirmar Firestore; Storage no integra esa transacción.
 - Publicar productos requiere mostrarPrecios=true en configuración privada y ficha pública. Consultar precio requiere el siguiente incremento. Publicar tienda con false mantiene su catálogo bloqueado por las reglas actuales.
 - Máximo 100 documentos por subcolección consultada y 200 cambios públicos por operación; al excederlos falla sin cambios. Catálogos grandes requerirán retirada por indicador y limpieza paginada.
-- Variantes agotadas con política ocultar se omiten. Si ninguna queda publicable, se rechaza publicar y debe solicitarse retirar explícitamente. No hay sincronización automática de stock.
+- Las proyecciones públicas incluyen `manejaStock` y el saldo exacto de productos simples o de cada variante. Los ajustes de inventario y ventas actualizan ese saldo junto con la disponibilidad; las variantes agotadas con política `ocultar` se omiten. Si ninguna queda publicable, se rechaza publicar y debe solicitarse retirar explícitamente.
 - Las reglas no controlan al SDK Admin: la API mantiene las verificaciones del módulo. La desactivación coordinada está implementada según 09-desactivacion-cuentas.md; reactivación local en 10-ciclo-cuentas.md; otras operaciones administrativas siguen pendientes.
 
 Probado solo en emulador. Sin API pública, Storage real ni despliegue; la nube sigue cerrada.

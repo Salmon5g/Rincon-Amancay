@@ -89,6 +89,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
           let proyeccion: DocumentData | null = null;
           const nuevasVariantes: {id:string; data:DocumentData}[] = [];
           const estados: string[] = [];
+          base.manejaStock = policy.manejaStock === true;
           if (base.tieneVariantes === true) {
             const aprobadas = approved.variantes as Record<string, DocumentData>;
             for (const varianteRef of consulta.variantes.docs) {
@@ -97,10 +98,11 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
               const disponibilidad = estado(policy, v.stock);
               if (!disponibilidad) continue;
               estados.push(disponibilidad);
-              nuevasVariantes.push({id:varianteRef.id, data:{...a, estadoDisponibilidad:disponibilidad, actualizadoEn:ahora}});
+              nuevasVariantes.push({id:varianteRef.id, data:{...a, stock:policy.manejaStock ? v.stock : null, estadoDisponibilidad:disponibilidad, actualizadoEn:ahora}});
             }
           } else {
             const disponibilidad = estado(policy, data.stock);
+            base.stock = policy.manejaStock ? data.stock : null;
             if (disponibilidad) estados.push(disponibilidad);
           }
           if (estados.length) {
@@ -352,13 +354,17 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
           ...(miniaturasPublicas.length ? {miniaturas: miniaturasPublicas} : {}),
           atributosEspecificos: attrs,
           tieneVariantes: p.tieneVariantes,
+          manejaStock: p.manejaStock,
           moneda: 'CLP',
           unidadVenta: 'unidad',
           modalidad: p.modalidad,
           estadoPublicacion: 'publicado',
           actualizadoEn: now,
         };
-        if (!p.tieneVariantes) base.precioBase = p.precioBase;
+        if (!p.tieneVariantes) {
+          base.precioBase = p.precioBase;
+          base.stock = p.manejaStock ? saved.stock : null;
+        }
         const politica = {modalidad: p.modalidad, manejaStock: p.manejaStock, alAgotarse: p.alAgotarse};
         const estadosDisponibilidad: string[] = [];
         const aprobadas: Record<string, DocumentData> = Object.create(null);
@@ -371,9 +377,10 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
             const disponibilidad = estado(saved, variante.data.stock);
             if (!disponibilidad) continue;
             estadosDisponibilidad.push(disponibilidad);
+            const stockPublico = p.manejaStock ? variante.data.stock : null;
             variantesPublicas.push({
               id: variante.id,
-              data: {...aprobada, ...(variante.data.imagenPublica ? {imagen:variante.data.imagenPublica} : {}), ...(variante.data.miniaturaPublica ? {miniatura:variante.data.miniaturaPublica} : {}), estadoDisponibilidad: disponibilidad, actualizadoEn: now},
+              data: {...aprobada, stock: stockPublico, ...(variante.data.imagenPublica ? {imagen:variante.data.imagenPublica} : {}), ...(variante.data.miniaturaPublica ? {miniatura:variante.data.miniaturaPublica} : {}), estadoDisponibilidad: disponibilidad, actualizadoEn: now},
             });
           }
         } else {
@@ -388,11 +395,13 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
             : estadosDisponibilidad.includes('a_pedido') ? 'a_pedido' : 'agotado';
           proyeccion = base;
         }
+        const productoAprobado = {...base};
+        delete productoAprobado.stock;
         snapshotAprobado = {
           schema: 1,
           cicloCatalogo: store.data()?.cicloCatalogo ?? 0,
           politica,
-          producto: base,
+          producto: productoAprobado,
           variantes: aprobadas,
           aprobadoEn: now,
         };

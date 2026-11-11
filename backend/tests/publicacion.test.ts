@@ -61,13 +61,13 @@ test('operaciones locales de publicación', async t => {
       assert.deepEqual((await pubProduct.get()).data(),before);
       assert.equal((await store.collection('operacionesPublicacion').doc(req.operacionId).get()).exists,false);
     });
-    await t.test('producto proyecta variantes sin stock ni atributos desconocidos', async () => {
+    await t.test('producto proyecta stock de variantes sin publicar atributos desconocidos', async () => {
       await reset(); await product.update({imagenes:[imagen], 'atributosEspecificos.notaPrivada':'secreto'});
       await ejecutar('publicarProducto',identidad,await input('publicarProducto'));
       const data=(await pubProduct.get()).data()!;
-      assert(!('notaPrivada' in data.atributosEspecificos)); assert(!('stock' in data));
+      assert(!('notaPrivada' in data.atributosEspecificos)); assert.equal(data.manejaStock, true); assert(!('stock' in data));
       const v=(await pubProduct.collection('variantes').doc('v_azul_m').get()).data()!;
-      assert.equal(v.precio,8000); assert(!('stock' in v));
+      assert.equal(v.precio,8000); assert.equal(v.stock,3);
     });
     await t.test('republicar elimina variantes inactivas antiguas', async () => {
       await reset(); await product.update({imagenes:[imagen]});
@@ -75,14 +75,15 @@ test('operaciones locales de publicación', async t => {
       await ejecutar('publicarProducto',identidad,await input('publicarProducto'));
       assert.equal((await pubProduct.collection('variantes').doc('v_rojo_m').get()).exists,false);
     });
-    await t.test('producto a pedido sin variantes publica precioBase y no stock', async () => {
+    await t.test('producto a pedido sin manejo de stock publica precioBase y saldo nulo', async () => {
       await reset(); const simple=store.collection('productos').doc('p_alfajor_01');
       await simple.update({imagenes:[imagen]});
       const req=await input('publicarProducto');
       req.productoId='p_alfajor_01'; req.versionEsperada=version((await simple.get()).data()!);
       await ejecutar('publicarProducto',identidad,req);
       const result=(await pub.collection('productos').doc('p_alfajor_01').get()).data()!;
-      assert.equal(result.precioBase,4500); assert.equal(result.estadoDisponibilidad,'a_pedido'); assert(!('stock' in result));
+      assert.equal(result.precioBase,4500); assert.equal(result.estadoDisponibilidad,'a_pedido');
+      assert.equal(result.manejaStock,false); assert.equal(result.stock,null);
     });
     await t.test('stock negativo rechaza publicación completa', async () => {
       await reset(); await product.update({imagenes:[imagen]});

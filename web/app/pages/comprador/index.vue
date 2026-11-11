@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import '~/assets/amancay-tokens.css';
 import type { FichaComprador, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico';
 useHead({
@@ -11,6 +11,8 @@ useHead({
 
 // Cliente y estado de la página
 const { $catalogoPublico } = useNuxtApp();
+const route = useRoute();
+const router = useRouter();
 const tienda = ref<FichaComprador | null>(null);
 const producto = ref<FichaComprador | null>(null);
 const filas = ref<FichaComprador[]>([]);
@@ -32,6 +34,107 @@ let cursores: (string | null)[] = [null];
 let cursorSiguiente: string | null = null;
 let revision = 0;
 let avisoTimer: ReturnType<typeof setTimeout> | undefined;
+let pausaSincronizacionRuta = 0;
+let temporizadorRuta: ReturnType<typeof setTimeout> | undefined;
+
+function valorRuta(valor: unknown): string {
+    if (Array.isArray(valor)) return typeof valor[0] === 'string' ? valor[0] : '';
+    return typeof valor === 'string' ? valor : '';
+}
+
+function paginaRuta(): number {
+    const valor = Number(valorRuta(route.query.pagina));
+    return Number.isSafeInteger(valor) && valor > 0 ? Math.min(valor, 100) : 1;
+}
+
+function queryVista(tiendaId = tienda.value?.id, productoId = producto.value?.id) {
+    const query = { ...route.query };
+    if (tiendaId) query.tienda = tiendaId;
+    else delete query.tienda;
+    if (productoId && tiendaId) query.producto = productoId;
+    else delete query.producto;
+    if (categoriaSeleccionada.value) query.categoria = categoriaSeleccionada.value;
+    else delete query.categoria;
+    if (busqueda.value.trim()) query.buscar = busqueda.value.trim();
+    else delete query.buscar;
+    if (pagina.value > 1) query.pagina = String(pagina.value);
+    else delete query.pagina;
+    return query;
+}
+
+async function guardarVistaEnUrl(metodo: 'push' | 'replace' = 'replace') {
+    if (!import.meta.client) return;
+    const destino = { path: '/comprador', query: queryVista(), hash: route.hash };
+    if (metodo === 'push') await router.push(destino);
+    else await router.replace(destino);
+}
+
+async function cargarPaginaRestaurada(destinoSolicitado: number) {
+    const destino = Math.min(Math.max(destinoSolicitado, 1), 100);
+    let destinoDisponible = 1;
+    for (let paginaCursor = 1; paginaCursor < destino; paginaCursor++) {
+        if (cursores[paginaCursor] === undefined) {
+            const paginaAnterior = tienda.value
+                ? await $catalogoPublico.listarProductos(tienda.value.id, cursores[paginaCursor - 1] ?? null)
+                : await $catalogoPublico.listarTiendas(cursores[paginaCursor - 1] ?? null);
+            cursores[paginaCursor] = paginaAnterior.cursorSiguiente;
+        }
+        if (!cursores[paginaCursor]) break;
+        destinoDisponible = paginaCursor + 1;
+    }
+    await cargar(destinoDisponible);
+}
+
+async function restaurarVistaDesdeUrl() {
+    pausaSincronizacionRuta++;
+    try {
+        const tiendaId = valorRuta(route.query.tienda);
+        const productoId = valorRuta(route.query.producto);
+        const busquedaGuardada = valorRuta(route.query.buscar);
+        const categoriaGuardada = valorRuta(route.query.categoria);
+        const paginaGuardada = paginaRuta();
+
+        tienda.value = null;
+        producto.value = null;
+        variantes.value = [];
+        seleccion.value = '';
+        cursores = [null];
+        cursorSiguiente = null;
+        pagina.value = 1;
+        filas.value = [];
+        siguiente.value = false;
+        busqueda.value = '';
+        categoriaSeleccionada.value = '';
+        error.value = '';
+
+        if (tiendaId) {
+            const encontrada = await $catalogoPublico.leerTienda(tiendaId);
+            tienda.value = fichaTienda(encontrada);
+        }
+
+        await cargarPaginaRestaurada(paginaGuardada);
+        busqueda.value = busquedaGuardada;
+        categoriaSeleccionada.value = categoriaGuardada;
+
+        if (productoId && tienda.value) {
+            const encontrado = await $catalogoPublico.leerProducto(tienda.value.id, productoId);
+            await abrir(fichaProducto(encontrado), false);
+        }
+
+        const ancla = valorRuta(route.hash).slice(1);
+        if (ancla) {
+            await nextTick();
+            document.getElementById(ancla)?.scrollIntoView({ behavior: 'smooth' });
+        }
+    } catch (causa) {
+        error.value = fallo(causa);
+    } finally {
+        pausaSincronizacionRuta--;
+        if (route.query.tienda !== tienda.value?.id || route.query.producto !== producto.value?.id) {
+            await guardarVistaEnUrl('replace');
+        }
+    }
+}
 
 function fichaTienda(elemento: TiendaPublica): FichaComprador {
     return {
@@ -57,10 +160,12 @@ function fichaProducto(elemento: ProductoPublico): FichaComprador {
             categoriaId: elemento.categoriaId,
             imagenes: elemento.imagenes,
             tieneVariantes: elemento.tieneVariantes,
+            manejaStock: elemento.manejaStock,
             unidadVenta: elemento.unidadVenta,
             modalidad: elemento.modalidad,
             estadoDisponibilidad: elemento.estadoDisponibilidad,
             precioBase: elemento.precioBase,
+            stock: elemento.stock,
             atributosEspecificos: elemento.atributosEspecificos,
         },
     };
@@ -76,6 +181,7 @@ function fichaVariante(elemento: VariantePublica): FichaComprador {
             opciones: elemento.opciones,
             estadoDisponibilidad: elemento.estadoDisponibilidad,
             precio: elemento.precio,
+            stock: elemento.stock,
         },
     };
 }
@@ -130,6 +236,8 @@ let revisionRapida = 0;
 let overflowRapido = '';
 
 const varianteRapida = computed(() => variantesRapidas.value.find(v => v.id === seleccionRapida.value));
+const stockProducto = computed(() => textoStockProducto(producto.value, variantes.value, cargando.value));
+const stockProductoRapido = computed(() => textoStockProducto(productoRapido.value, variantesRapidas.value, variantesCargando.value));
 const categoriaRapida = computed(() => {
     const id = productoRapido.value?.datos.categoriaId;
     return id ? categorias.value[id] ?? id : '';
@@ -212,8 +320,28 @@ async function copiarContacto() {
 }
 
 function nombreRapidoVariante(v: FichaComprador) {
-    const partes = Object.entries(v.datos.opciones ?? {}).map(([k, val]) => `${val}`);
+    const partes = Object.entries(v.datos.opciones ?? {}).map(([k, val]) => `${k}: ${val}`);
     return partes.length ? partes.join(' · ') : v.id;
+}
+
+function textoStock(stock: number | null | undefined, manejaStock?: boolean): string {
+    if (manejaStock === false) return 'Sin control de stock';
+    if (manejaStock !== true) return 'Stock no informado';
+    if (typeof stock !== 'number' || !Number.isSafeInteger(stock) || stock < 0) return 'Stock no informado';
+    return `${stock} ${stock === 1 ? 'unidad disponible' : 'unidades disponibles'}`;
+}
+
+function textoStockProducto(ficha: FichaComprador | null, listaVariantes: FichaComprador[], cargandoVariantes = false): string {
+    if (!ficha) return '';
+    if (ficha.datos.tieneVariantes !== true) return textoStock(ficha.datos.stock, ficha.datos.manejaStock);
+    if (ficha.datos.manejaStock === false) return 'Sin control de stock';
+    if (ficha.datos.manejaStock !== true) return 'Stock no informado';
+    if (!listaVariantes.length) return cargandoVariantes ? 'Cargando…' : 'Sin variantes disponibles';
+    const saldos = listaVariantes.map(variante => variante.datos.stock);
+    if (saldos.some(stock => typeof stock !== 'number' || !Number.isSafeInteger(stock) || stock < 0)) return 'Stock no informado';
+    const total = saldos.reduce((suma, stock) => suma + (stock as number), 0);
+    if (!Number.isSafeInteger(total)) return 'Stock no informado';
+    return `${total} ${total === 1 ? 'unidad disponible' : 'unidades disponibles'} en total`;
 }
 
 function alTeclearRapido(evento: KeyboardEvent) {
@@ -257,7 +385,9 @@ function claseDisponibilidad(valor: unknown) {
 function fallo(errorConsulta: unknown) {
     const codigo = (errorConsulta as { code?: string }).code;
 
-    return codigo === 'sin-permiso'
+    return codigo === 'no-encontrado'
+        ? 'La tienda o el producto ya no está disponible.'
+        : codigo === 'sin-permiso'
         ? 'No se pudo leer el catálogo público. Revisa los permisos de lectura.'
         : codigo === 'sin-conexion'
             ? 'No pudimos conectar con el servicio. Revisa la conexión y vuelve a intentar.'
@@ -356,21 +486,29 @@ async function irSeccion(id: string) {
 }
 
 async function navegar(ficha: FichaComprador | null) {
-    revision++;
-    tienda.value = ficha;
-    producto.value = null;
-    cursores = [null];
-    cursorSiguiente = null;
-    pagina.value = 1;
-    filas.value = [];
-    siguiente.value = false;
-    busqueda.value = '';
-    categoriaSeleccionada.value = '';
+    pausaSincronizacionRuta++;
+    try {
+        revision++;
+        tienda.value = ficha;
+        producto.value = null;
+        variantes.value = [];
+        seleccion.value = '';
+        cursores = [null];
+        cursorSiguiente = null;
+        pagina.value = 1;
+        filas.value = [];
+        siguiente.value = false;
+        busqueda.value = '';
+        categoriaSeleccionada.value = '';
 
-    await cargar(1);
+        await cargar(1);
+        await guardarVistaEnUrl('push');
+    } finally {
+        pausaSincronizacionRuta--;
+    }
 }
 
-async function abrir(f: FichaComprador) {
+async function abrir(f: FichaComprador, guardarEnUrl = true) {
     if (!tienda.value)
         return;
     const actual = ++revision;
@@ -393,8 +531,10 @@ async function abrir(f: FichaComprador) {
             error.value = fallo(e);
     }
     finally {
-        if (actual === revision)
+        if (actual === revision) {
             cargando.value = false;
+            if (guardarEnUrl) await guardarVistaEnUrl('push');
+        }
     }
 }
 
@@ -404,10 +544,12 @@ async function abrirDestacado(d: { tienda: FichaComprador; producto: FichaCompra
 }
 
 function volver() {
+    pausaSincronizacionRuta++;
     revision++;
     producto.value = null;
     error.value = '';
     cargando.value = false;
+    void guardarVistaEnUrl('replace').finally(() => { pausaSincronizacionRuta--; });
 }
 
 async function avanzar() {
@@ -422,6 +564,20 @@ function reintentar() {
         void cargar();
     }
 }
+
+watch(
+    () => [valorRuta(route.query.tienda), valorRuta(route.query.producto)],
+    ([tiendaRuta, productoRuta]) => {
+        if (tiendaRuta === (tienda.value?.id ?? '') && productoRuta === (producto.value?.id ?? '')) return;
+        void restaurarVistaDesdeUrl();
+    },
+);
+
+watch([busqueda, categoriaSeleccionada, pagina], () => {
+    if (!import.meta.client || pausaSincronizacionRuta > 0) return;
+    clearTimeout(temporizadorRuta);
+    temporizadorRuta = setTimeout(() => { void guardarVistaEnUrl('replace'); }, 250);
+});
 
 async function compartirTienda() {
     if (!tienda.value) return;
@@ -452,15 +608,13 @@ async function compartirTienda() {
 // Ciclo de vida
 onMounted(() => {
     void cargarCatalogos();
-    void cargar(1).then(() => {
-        const id = window.location.hash.slice(1);
-        if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-    });
+    void restaurarVistaDesdeUrl();
     window.addEventListener('keydown', alTeclearRapido);
 });
 onBeforeUnmount(() => {
     revision++;
     clearTimeout(avisoTimer);
+    clearTimeout(temporizadorRuta);
     window.removeEventListener('keydown', alTeclearRapido);
     if (productoRapido.value && import.meta.client) document.body.style.overflow = overflowRapido;
 });
@@ -772,15 +926,27 @@ onBeforeUnmount(() => {
                 <span class="ficha-dato-etiqueta">Categoría</span>
                 <span>{{ categorias[producto.datos.categoriaId] }}</span>
               </div>
+              <div class="ficha-dato">
+                <span class="ficha-dato-etiqueta">{{ producto.datos.tieneVariantes ? 'Stock total' : 'Stock' }}</span>
+                <span>{{ stockProducto }}</span>
+              </div>
             </div>
             <template v-if="producto.datos.tieneVariantes">
               <label class="ficha-label" for="variante">Elige una variante</label>
               <select id="variante" class="ficha-select" v-model="seleccion" :disabled="cargando || !variantes.length">
                 <option v-for="v in variantes" :key="v.id" :value="v.id">
-                  {{ Object.entries(v.datos.opciones
-                                  ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || v.id }}
+                  {{ nombreRapidoVariante(v) }} · {{ textoStock(v.datos.stock, producto.datos.manejaStock) }}
                 </option>
               </select>
+              <section v-if="variantes.length" class="ficha-stock-variantes" aria-label="Stock por variante">
+                <h3>Stock por variante</h3>
+                <ul>
+                  <li v-for="v in variantes" :key="v.id">
+                    <span>{{ nombreRapidoVariante(v) }}</span>
+                    <b>{{ textoStock(v.datos.stock, producto.datos.manejaStock) }}</b>
+                  </li>
+                </ul>
+              </section>
               <p v-if="!cargando && !error && !variantes.length" class="ficha-nota">No hay variantes disponibles.</p>
               <small v-if="variantes.length === 100" class="ficha-nota">Se muestran hasta 100 variantes activas.</small>
             </template>
@@ -934,13 +1100,14 @@ onBeforeUnmount(() => {
             <p class="rapido-linea">{{ productoRapido.datos.descripcion }}</p>
             <p v-if="productoRapido.datos.unidadVenta" class="rapido-linea">Venta: {{ productoRapido.datos.unidadVenta }}</p>
             <p v-if="etiquetaModalidad" class="rapido-linea">Modalidad: {{ etiquetaModalidad }}</p>
+            <p class="rapido-linea"><b>{{ productoRapido.datos.tieneVariantes ? 'Stock total:' : 'Stock:' }}</b> {{ stockProductoRapido }}</p>
             <span class="badge" :class="claseDisponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad)">
               {{ disponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad) }}
             </span>
             <p v-if="variantesCargando" class="rapido-linea">Cargando variantes…</p>
             <ul v-else-if="variantesRapidas.length" class="rapido-variantes">
               <li v-for="v in variantesRapidas" :key="v.id">
-                <span>{{ nombreRapidoVariante(v) }}</span>
+                <span>{{ nombreRapidoVariante(v) }}<small>{{ textoStock(v.datos.stock, productoRapido.datos.manejaStock) }}</small></span>
                 <b v-if="tiendaRapida.datos.mostrarPrecios !== false">{{ precio(v.datos.precio) }}</b>
               </li>
             </ul>
@@ -2174,6 +2341,42 @@ article.tarjeta-tienda:hover {
     color: var(--amancay-tinta-suave);
 }
 
+.ficha-stock-variantes {
+    width: 100%;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--amancay-borde);
+    border-radius: 14px;
+    background: var(--amancay-fondo);
+    box-sizing: border-box;
+}
+
+.ficha-stock-variantes h3 {
+    margin: 0 0 0.55rem;
+    color: var(--amancay-bordo);
+    font-size: 0.9rem;
+}
+
+.ficha-stock-variantes ul {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ficha-stock-variantes li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    color: var(--amancay-tinta);
+    font-size: 0.86rem;
+}
+
+.ficha-stock-variantes b {
+    text-align: right;
+}
+
 .ficha-precio-caja {
     width: 100%;
     margin-top: 0.25rem;
@@ -2349,6 +2552,16 @@ article.tarjeta-tienda:hover {
     font-weight: 400;
     font-size: 1rem;
     white-space: nowrap;
+}
+
+.rapido-variantes li > span {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.rapido-variantes small {
+    color: var(--amancay-tinta-suave);
+    font-size: 0.78rem;
 }
 
 .rapido-precio-unico {

@@ -189,7 +189,16 @@ internal fun OrganizarCatalogoScreen(
 
         filtrados.forEach { producto ->
             val seleccionado = producto.id in seleccionados
-            val categoria = categorias.firstOrNull { it.id == producto.categoriaId }?.nombre.orEmpty()
+            val modalidad = when (producto.modalidad) {
+                "a_pedido", "por_encargo" -> "A pedido"
+                "pieza_unica" -> "Pieza única"
+                else -> "Regular"
+            }
+            val reglaAgotamiento = when (producto.alAgotarse) {
+                "ocultar" -> "Ocultar producto"
+                "pasar_a_pedido" -> "Pasar a pedido"
+                else -> "Mostrar agotado"
+            }
             val stock = when {
                 !producto.manejaStock -> "Sin control de stock"
                 producto.tieneVariantes -> "Stock total: ${producto.variantes.filter { it.activa }.sumOf { it.stock ?: 0 }}"
@@ -211,12 +220,19 @@ internal fun OrganizarCatalogoScreen(
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(producto.nombre, color = Wine, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2)
-                        Text(categoria, color = Muted, fontSize = 12.sp, maxLines = 1)
+                        Text("Modalidad · $modalidad", color = Wine, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 2)
                         Text(if (producto.tieneVariantes) "${producto.variantes.count { it.activa }} variantes · $stock" else stock, color = if (agotado) Color(0xFFE94848) else Muted, fontSize = 11.sp, maxLines = 2)
-                        if (agotado) Text("Agotado · ${producto.alAgotarse.replace('_', ' ')}", color = Color(0xFFE94848), fontSize = 10.sp, maxLines = 1)
+                        Text(
+                            if (producto.manejaStock) "Al agotarse · $reglaAgotamiento" else "Al agotarse · No aplica",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            maxLines = 2
+                        )
+                        if (agotado) Text("Estado actual · Agotado", color = Color(0xFFE94848), fontSize = 10.sp, maxLines = 1)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Disponible", color = Muted, fontSize = 10.sp, maxLines = 1)
+                        Text(if (producto.disponible) "Disponible" else "No disponible", color = Muted, fontSize = 10.sp, maxLines = 2)
                         Switch(
                             checked = producto.disponible,
                             onCheckedChange = { disponible -> alCambiarDisponibilidad(listOf(producto), disponible) },
