@@ -7,7 +7,7 @@ function exigir(ok: unknown, code: string, message: string): asserts ok { if (!o
 function id(v: unknown): v is string { return typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v); }
 function texto(v: unknown, max: number, label: string): string { exigir(typeof v === 'string' && v.trim().length > 0 && v.trim().length <= max, 'datos-invalidos', `${label} es obligatorio.`); return v.trim(); }
 
-export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas'] as const;
+export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto'] as const;
 export type AccionVenta = typeof accionesVenta[number];
 
 export function crearVentas(db: Firestore) {
@@ -26,6 +26,18 @@ export function crearVentas(db: Firestore) {
         exigir(config.exists, 'no-encontrado', 'No existe la configuración de la tienda.');
         tx.update(configuracion, {historialVentasActivo: d.historialVentasActivo, actualizadoEn: FieldValue.serverTimestamp()});
         return {historialVentasActivo: d.historialVentasActivo};
+      });
+    }
+    if (accion === 'configurarValoresDefecto') {
+      exigir(typeof d.modalidad === 'string' && ['regular','a_pedido','pieza_unica'].includes(d.modalidad), 'datos-invalidos', 'Modalidad inválida.');
+      exigir(typeof d.manejaStock === 'boolean', 'datos-invalidos', 'Maneja stock inválido.');
+      exigir(typeof d.alAgotarse === 'string' && ['mostrar_agotado','ocultar','pasar_a_pedido'].includes(d.alAgotarse), 'datos-invalidos', 'Regla al agotarse inválida.');
+      return db.runTransaction(async tx => {
+        const [acceso, shop, config] = await tx.getAll(accesoRef, tienda, configuracion);
+        exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && shop.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
+        exigir(config.exists, 'no-encontrado', 'No existe la configuración de la tienda.');
+        tx.update(configuracion, {modalidadDefecto: d.modalidad, manejaStockDefecto: d.manejaStock, alAgotarseDefecto: d.alAgotarse, actualizadoEn: FieldValue.serverTimestamp()});
+        return {modalidad: d.modalidad, manejaStock: d.manejaStock, alAgotarse: d.alAgotarse};
       });
     }
 

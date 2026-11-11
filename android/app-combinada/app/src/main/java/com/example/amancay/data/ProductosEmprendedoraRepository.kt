@@ -405,6 +405,24 @@ class ProductosEmprendedoraRepository(
         api.llamar("configurarHistorialVentas", mapOf("tiendaId" to tiendaId, "historialVentasActivo" to activo))
     }
 
+    suspend fun configurarValoresDefecto(tiendaId: String, valores: ValoresDefectoProducto) {
+        api.llamar("configurarValoresDefecto", mapOf(
+            "tiendaId" to tiendaId,
+            "modalidad" to valores.modalidad,
+            "manejaStock" to valores.manejaStock,
+            "alAgotarse" to valores.alAgotarse
+        ))
+    }
+
+    suspend fun leerValoresDefecto(tiendaId: String): ValoresDefectoProducto = withContext(Dispatchers.IO) {
+        val doc = Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general").get())
+        ValoresDefectoProducto(
+            modalidad = doc.getString("modalidadDefecto") ?: "regular",
+            manejaStock = doc.getBoolean("manejaStockDefecto") ?: true,
+            alAgotarse = doc.getString("alAgotarseDefecto") ?: "mostrar_agotado"
+        )
+    }
+
     suspend fun leerHistorialActivo(tiendaId: String): Boolean = withContext(Dispatchers.IO) {
         Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general").get())
             .getBoolean("historialVentasActivo") == true
