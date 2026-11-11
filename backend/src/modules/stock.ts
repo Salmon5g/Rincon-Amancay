@@ -51,8 +51,8 @@ export function crearStock(db: Firestore) {
       const publicVariants=await tx.get(pub.collection('variantes').limit(101));
       exigir(publicVariants.size<=100,'limite-local','Demasiadas variantes públicas; no se aplicó el ajuste.');
       const aprobada=aprobacion.data();
-      const sincronizar=aprobada?.schema===1 && aprobada.cicloCatalogo===(shop.data()?.cicloCatalogo??0) && shop.data()?.estadoPublicacion==='publicado' && publicShop.exists && data.estadoPublicacion==='publicado';
-      const requiereRepublicar=!sincronizar && (publicProduct.exists || !publicVariants.empty || data.estadoPublicacion==='publicado');
+      const sincronizar=data.disponible!==false && aprobada?.schema===1 && aprobada.cicloCatalogo===(shop.data()?.cicloCatalogo??0) && shop.data()?.estadoPublicacion==='publicado' && publicShop.exists && data.estadoPublicacion==='publicado';
+      const requiereRepublicar=data.disponible!==false && !sincronizar && (publicProduct.exists || !publicVariants.empty || data.estadoPublicacion==='publicado');
       const publicarVariantes: {id:string;data:FirebaseFirestore.DocumentData}[]=[];
       let proyeccion:FirebaseFirestore.DocumentData|null=null;
       if(sincronizar) {

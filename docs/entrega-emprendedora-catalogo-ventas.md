@@ -13,31 +13,28 @@ La app unificada es el destino de esta entrega. La sesión de emprendedora valid
 | A07–A09 | Implementados en el editor | Modalidad, control de stock y las tres políticas de agotamiento se guardan en la ficha privada. |
 | A10 | Implementado localmente | Se puede marcar disponible/no disponible desde Organizar catálogo, incluso seleccionando un solo producto. La API autenticada retira la proyección pública al desactivar y conserva la ficha privada para la tienda de la emprendedora. |
 | A11 | Implementado localmente | El asistente guarda en almacenamiento privado local los campos, paso actual, atributos, variantes, fotos, ID de producto e ID de operación; al volver a Agregar producto restaura el borrador y puede reintentar una operación interrumpida sin crear otro producto. Guardar con éxito o cancelar explícitamente lo elimina. Falta comprobar en dispositivo tras cierre forzado. |
-| A12–A13 | Implementados | Editar usa `editarProducto`; eliminar conserva tombstone privado y retira su proyección pública. |
-| A14 | Implementado localmente | Organizar catálogo permite seleccionar productos visibles por categoría o todo el catálogo y aplicar disponibilidad por lotes con control de versión. La API procesa grupos de hasta 20 productos y la app fragmenta selecciones mayores. Falta comprobación con sesión real y web. |
-| A15 | Implementado localmente | Configuración guarda modalidad, control de stock y regla de agotamiento en preferencias del dispositivo; el asistente las aplica a cada alta nueva. Aún no se sincronizan entre dispositivos. |
-| A16 | Parcial | Existe vista previa de producto, pero no una vista de catálogo que represente el conjunto de políticas de disponibilidad y visibilidad. |
-| A17 | Pendiente | Firestore mantiene lecturas en caché, pero las mutaciones del flujo conectado dependen de API en línea; no hay cola de cambios offline con reintento seguro. |
-| A18–A19 | Implementado localmente | La sección **Ventas → Registrar venta** captura producto, variante cuando corresponda y cantidad. La API descuenta en una transacción solo la variante vendida (o el stock del producto) y actualiza el catálogo público. Esto funciona aunque el historial esté apagado. |
+| A12–A13 | Implementados en línea; edición y eliminación también se encolan sin conexión | Editar usa `editarProducto`; eliminar conserva tombstone privado y retira su proyección pública. El listener filtra tombstones. Sin conexión se guardan localmente las ediciones de campos y eliminaciones; los cambios de fotos necesitan conexión. |
+| A14 | Implementado localmente | Organizar catálogo permite seleccionar productos por categoría, todos los filtrados o el catálogo completo. La API aplica lotes de hasta 20 con control de versión. Los grupos se confirman por separado: si falla un grupo intermedio, los anteriores ya quedaron guardados y se pueden volver a seleccionar/reintentar. |
+| A15 | Implementado localmente | Antes de abrir un alta, la app consulta los valores por defecto del servidor y guarda una copia local sincronizada. Sin conexión usa esa copia si ya se había descargado; si el dispositivo nunca obtuvo la configuración, bloquea el alta hasta conectarse. |
+| A16 | Implementado localmente | Configuración y vista previa recorre todos los productos. La etiqueta por producto se calcula con modalidad, stock, regla al agotarse, disponibilidad y estado de publicación; el destacado además muestra interacción de cantidad/encargo. |
+| A17 | Parcial, requiere comprobación en dispositivo | Firestore conserva lecturas en caché. La cola local por tienda cubre disponibilidad, ajustes de stock, eliminación y edición de campos de productos existentes; usa IDs idempotentes, reintenta al reconectar y conserva operaciones fallidas con un motivo visible. En conflictos de versión vuelve a leer la versión del servidor antes de reintentar. La edición de fotos y la carga remota de un producto nuevo todavía requieren conexión; no se sincronizan desde la cola. |
+| A18–A19 | Implementado localmente | **Ventas → Registrar venta** captura producto, variante cuando corresponde y cantidad. La API descuenta en transacción solo la variante elegida (o el producto simple), y actualiza su proyección pública según stock. La venta funciona con historial apagado. Se corrigió para que vender o ajustar stock de un producto no disponible no vuelva a publicarlo. |
 | A20 | Implementado localmente | El interruptor de historial está en **Más → Configuración y vista previa**; también se conserva un acceso desde Ventas. Apagarlo conserva el historial anterior y no bloquea las ventas ni el descuento de stock. |
 | A21 | Implementado localmente | Con el historial activo, la venta conserva precio vigente, fecha y feria/lugar; el nombre de la feria también queda como copia para mantener la referencia histórica. |
 | A22 | Implementado localmente | El historial consulta todas las ventas y permite filtrar por fechas, feria/lugar y producto. |
 
 ## Secciones de interfaz previstas
 
-Tomando los mockups como referencia, **Productos → Organizar catálogo** usa tarjetas marfil, acentos ciruela, títulos serif, filtros por categoría y controles visibles para disponibilidad; el asistente de alta conserva sus pasos visuales para foto, datos, tipo, variantes, stock y revisión. **Más → Configuración y vista previa** ofrece valores por defecto, el interruptor del historial y una vista previa de producto con modalidad, stock, agotamiento y visibilidad. La opción offline todavía solo guarda una preferencia: falta la caché con cola de sincronización para A17. La vista previa conjunta de todo el catálogo también queda pendiente para cerrar A16.
+Tomando los mockups como referencia, **Productos → Organizar catálogo** usa tarjetas marfil, acentos ciruela, títulos serif, filtros por categoría y controles visibles para disponibilidad; el asistente de alta conserva sus pasos visuales para foto, datos, tipo, variantes, stock y revisión. **Más → Configuración y vista previa** ofrece valores por defecto, el interruptor del historial y una tarjeta destacada más un resumen de todos los productos con su estado de catálogo. Las lecturas offline usan la caché de Firestore y las mutaciones compatibles usan una cola local por tienda.
 
 Estas pantallas deben leer y escribir datos persistidos de la cuenta autenticada. No se deben reutilizar las listas locales de ejemplo como fuente de ventas reales. Para la comprobación web, el flujo de stock de la app debe dejar en la proyección pública los estados que prueban W09–W12; en especial, la última venta de una pieza única debe retirar su ficha pública de manera permanente.
 
 ## Dependencias de implementación
 
-Para cerrar los puntos pendientes de 1.2 y completar la verificación, aún se necesitan:
+Para completar la verificación aún se necesitan:
 
-1. Persistir los valores por defecto en la cuenta, no solo en el dispositivo (A15).
-
-2. Caché/cola local de mutaciones offline, con reintento idempotente y resolución visible de conflictos (A17).
-3. Vista previa conjunta del catálogo completo (A16).
-4. Comprobación manual en un dispositivo con sesión real y de los resultados de stock en la web.
+1. Probar en dispositivo la lectura del catálogo sin red y la sincronización al recuperar conexión, incluidos conflictos y cierres de la app (A17).
+2. Comprobar con sesión real en la app los flujos A12–A19 y los estados de stock que se proyectan en la web. La cola offline no carga fotos ni publica productos nuevos.
 
 La venta guarda una feria publicada de la plataforma o texto libre; la fecha se muestra en la zona horaria local y se conserva como instante. Al desactivar el historial no se guardan nuevas ventas históricas, pero el registro manual y el descuento de stock siguen funcionando; las ventas anteriores se conservan. El contrato 07 describe las fotos independientes por variante.
 
@@ -48,6 +45,16 @@ La pantalla de ventas conserva la misma fecha y el mismo identificador durante u
 Se añadieron estados vacíos para productos, variantes activas e historial, una explicación cuando no hay ferias publicadas, una alerta al ingresar más unidades que el stock elegido y ejemplos para cantidad, lugar, fechas, atributos, variantes y ajustes de stock. El filtro ahora rechaza fechas inválidas o un rango invertido. Se corrigió el rótulo «ESPACIO EMPRENDEDORA» por «ESPACIO DE EMPRENDIMIENTO» y se pluralizan «variante(s)» y los conteos.
 
 La prueba de ventas en Firestore Emulator cubre el descuento exclusivo de la variante elegida, precio/cantidad/fecha/lugar, reintentos idempotentes, stock insuficiente, historial apagado, requisito de lugar, copia del nombre de feria, las tres políticas al agotarse y retirada de una pieza única vendida. La compilación Android y la comprobación TypeScript se registran en `AGENTS.md`.
+
+## Revisión de catálogo y ventas A12–A22 (2026-11-11)
+
+A12 y A13 usan operaciones autenticadas con control de versión. La edición de campos sin conexión se conserva en una cola local; la eliminación quita la ficha del catálogo local mediante una superposición y sincroniza el tombstone cuando vuelve la red. Las imágenes no se editan ni se suben offline. A14 procesa lotes de hasta 20 y permite reintentar grupos pendientes. A15 consulta la configuración remota antes de habilitar una alta y usa la copia local solo si ya fue sincronizada. A16 representa modalidad, stock, regla de agotamiento y visibilidad por producto.
+
+A17 ya tiene caché de lectura y cola persistente por tienda para disponibilidad, edición de campos, ajustes de stock y eliminaciones. Las operaciones conservan su ID en reintentos con resultado incierto; solo los conflictos de versión se rebasan leyendo Firestore del servidor. Los errores de validación u otros conflictos no se reescriben como éxito: se conservan en cola y su detalle se muestra a la emprendedora. La reconexión inicia el reintento y también se intenta sincronizar al abrir el espacio. Falta probar este ciclo en un dispositivo con sesión real. Las operaciones que requieren cargar fotos y la publicación remota de productos nuevos no están cubiertas por la cola.
+
+A18 y A19 registran la venta con producto, variante cuando corresponde y cantidad; la API descuenta en transacción únicamente el stock elegido. Se corrigió ventas y ajustes para no volver a publicar productos marcados no disponibles y se añadió una prueba de regresión. A20 y A21 conservan el interruptor del historial y los datos de precio, fecha y lugar. A22 obtiene todos los registros ordenados por fecha y permite filtrar por rango, feria/lugar y producto.
+
+`backend npm.cmd run typecheck` y `git diff --check` pasan. La compilación Android no se pudo verificar en esta sesión: Gradle inicia, pero no establece su canal IPC con el daemon dentro del entorno. No se ejecutaron suites de pruebas ni se hizo commit/push.
 
 ## Revisión del alta de productos A01–A11 (2026-11-11)
 

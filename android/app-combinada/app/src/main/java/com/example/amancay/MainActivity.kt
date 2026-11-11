@@ -655,7 +655,14 @@ internal fun EmprendedoraAppConectada(
     alCambiarEscalaTexto: (Float) -> Unit
 ) {
     val context = LocalContext.current
-    val productos by productosRepository.productos.collectAsState()
+    val productosBase by productosRepository.productos.collectAsState()
+    var revisionColaOffline by remember(sesion.tiendaId) { mutableIntStateOf(0) }
+    var cambiosPendientesOffline by remember(sesion.tiendaId) {
+        mutableIntStateOf(ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId))
+    }
+    val productos = remember(productosBase, revisionColaOffline, sesion.tiendaId) {
+        ColaOfflineCatalogo.aplicarCambiosLocales(context, sesion.tiendaId, productosBase)
+    }
     val tiposProducto by productosRepository.tipos.collectAsState()
     val categoriasProducto by productosRepository.categorias.collectAsState()
     // Las invitaciones de feria siguen siendo un flujo legado de demostración.
@@ -689,6 +696,8 @@ internal fun EmprendedoraAppConectada(
     var valoresDefecto by remember(sesion.tiendaId) {
         mutableStateOf(PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, sesion.tiendaId))
     }
+    var valoresDefectoListos by remember(sesion.tiendaId) { mutableStateOf(false) }
+    var altaNuevaPendiente by remember(sesion.tiendaId) { mutableStateOf(false) }
     var catalogoSinConexion by remember(sesion.tiendaId) {
         mutableStateOf(PreferenciasCatalogoEmprendedora.catalogoSinConexion(context, sesion.tiendaId))
     }
@@ -698,11 +707,67 @@ internal fun EmprendedoraAppConectada(
     var historialConfiguracionCargada by remember(sesion.uid) { mutableStateOf(false) }
     var reintentoCargaVentas by remember(sesion.uid) { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(sesion.tiendaId) {
+        valoresDefectoListos = false
+        try {
+            valoresDefecto = productosRepository.leerValoresDefecto(sesion.tiendaId)
+            PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valoresDefecto)
+            valoresDefectoListos = true
+        } catch (e: Exception) {
+            if (PreferenciasCatalogoEmprendedora.hayValoresDefectoSincronizados(context, sesion.tiendaId)) {
+                valoresDefecto = PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, sesion.tiendaId)
+                valoresDefectoListos = true
+            } else {
+                errorProducto = e.message ?: "Conéctate para cargar los valores por defecto antes de crear un producto."
+            }
+        }
         if (ColaOfflineCatalogo.hayRed(context)) {
-            scope.launch { ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId) }
+            val resultado = ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+            revisionColaOffline++
+            cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+            if (resultado.aplicadas > 0) avisoProducto = "Se sincronizaron ${resultado.aplicadas} cambios del catálogo."
+            if (resultado.pendientes > 0) {
+                val detalle = ColaOfflineCatalogo.primerErrorPendiente(context, sesion.tiendaId)
+                errorProducto = detalle?.let { "Quedan ${resultado.pendientes} cambios pendientes: $it" }
+                    ?: "Quedan ${resultado.pendientes} cambios del catálogo pendientes."
+            }
+        } else {
+            cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+            if (cambiosPendientesOffline > 0) avisoProducto = "Hay $cambiosPendientesOffline cambios guardados en este dispositivo; se sincronizarán al volver internet."
         }
     }
+
+    DisposableEffect(context, productosRepository, sesion.tiendaId) {
+        val detenerObservador = ColaOfflineCatalogo.observarReconexiones(context) {
+            scope.launch {
+                try {
+                    valoresDefecto = productosRepository.leerValoresDefecto(sesion.tiendaId)
+                    PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valoresDefecto)
+                    valoresDefectoListos = true
+                } catch (e: Exception) {
+                    if (!PreferenciasCatalogoEmprendedora.hayValoresDefectoSincronizados(context, sesion.tiendaId)) {
+                        errorProducto = e.message ?: "No se pudieron cargar los valores por defecto."
+                    }
+                }
+                val resultado = ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+                revisionColaOffline++
+                cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+                if (resultado.aplicadas > 0) {
+                    avisoProducto = "Se sincronizaron ${resultado.aplicadas} cambios del catálogo."
+                    errorProducto = null
+                }
+                if (resultado.omitidas > 0) {
+                    errorProducto = "${resultado.omitidas} cambios no se aplicaron porque esos productos ya no existen."
+                } else if (resultado.pendientes > 0) {
+                    val detalle = ColaOfflineCatalogo.primerErrorPendiente(context, sesion.tiendaId)
+                    errorProducto = detalle?.let { "Quedan ${resultado.pendientes} cambios pendientes: $it" }
+                        ?: "Quedan ${resultado.pendientes} cambios del catálogo pendientes. Se conservaron para reintentar."
+                }
+            }
+        }
+        onDispose { detenerObservador() }
+    }
+
     LaunchedEffect(screen, sesion.tiendaId, reintentoCargaVentas) {
         if (screen == Screen.ConfiguracionCatalogo) {
             historialConfiguracionCargada = false
@@ -766,16 +831,83 @@ internal fun EmprendedoraAppConectada(
         }
     }
 
+    fun abrirAltaProducto() {
+        if (!valoresDefectoListos) {
+            altaNuevaPendiente = true
+            scope.launch { snackbar.showSnackbar("Estamos cargando los valores por defecto del catálogo.") }
+            scope.launch {
+                try {
+                    valoresDefecto = productosRepository.leerValoresDefecto(sesion.tiendaId)
+                    PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valoresDefecto)
+                    valoresDefectoListos = true
+                    errorProducto = null
+                } catch (e: Exception) {
+                    errorProducto = e.message ?: "Conéctate para cargar los valores por defecto antes de crear un producto."
+                }
+            }
+            return
+        }
+        altaNuevaPendiente = false
+        tab = Tab.AGREGAR
+        screen = Screen.Products
+        editandoProducto = true
+        productoInicialId = null
+        editandoTienda = false
+    }
+
+    suspend fun eliminarDelCatalogo(producto: ProductoEmprendedora) {
+        enviandoProducto = true
+        errorProducto = null
+        avisoProducto = null
+        try {
+            if (ColaOfflineCatalogo.hayRed(context)) {
+                val sync = ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+                revisionColaOffline++
+                productosRepository.eliminar(sesion.tiendaId, producto)
+                avisoProducto = "Producto eliminado del catálogo."
+                if (sync.pendientes > 0) errorProducto = "Quedan ${sync.pendientes} cambios anteriores pendientes de revisión."
+            } else if (!catalogoSinConexion) {
+                errorProducto = "Activa «Guardar catálogo sin conexión» para conservar esta eliminación y sincronizarla después."
+            } else {
+                val agregada = ColaOfflineCatalogo.encolarEliminacion(context, sesion.tiendaId, producto)
+                revisionColaOffline++
+                cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+                avisoProducto = if (agregada > 0) "Sin conexión: el producto se quitó de la lista y la eliminación se sincronizará al volver internet." else "La eliminación ya está guardada para sincronizarse."
+            }
+        } catch (e: Exception) {
+            errorProducto = mensajeProducto(e)
+        } finally {
+            enviandoProducto = false
+        }
+    }
+
     fun abrirTab(nuevoTab: Tab) {
+        if (nuevoTab == Tab.AGREGAR) {
+            abrirAltaProducto()
+            return
+        }
         tab = nuevoTab
         screen = when (nuevoTab) {
             Tab.INICIO -> Screen.Home
-            Tab.PRODUCTOS, Tab.AGREGAR -> Screen.Products
+            Tab.PRODUCTOS -> Screen.Products
             Tab.MAS -> Screen.ConfiguracionCatalogo
+            Tab.AGREGAR -> Screen.Products
         }
-        editandoProducto = nuevoTab == Tab.AGREGAR
+        editandoProducto = false
         productoInicialId = null
         if (nuevoTab != Tab.MAS) editandoTienda = false
+    }
+
+    LaunchedEffect(valoresDefectoListos, altaNuevaPendiente) {
+        if (valoresDefectoListos && altaNuevaPendiente) {
+            altaNuevaPendiente = false
+            tab = Tab.AGREGAR
+            screen = Screen.Products
+            editandoProducto = true
+            productoInicialId = null
+            editandoTienda = false
+            snackbar.showSnackbar("Configuración cargada. Ya puedes completar el producto.")
+        }
     }
 
     fun productoLegado(producto: ProductoEmprendedora, miniatura: Bitmap? = null): Product {
@@ -957,17 +1089,26 @@ internal fun EmprendedoraAppConectada(
                                 avisoProducto = null
                                 try {
                                     if (ColaOfflineCatalogo.hayRed(context)) {
-                                        ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+                                        val sync = ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+                                        revisionColaOffline++
                                         productosRepository.cambiarDisponibilidad(sesion.tiendaId, seleccion, disponible)
                                         avisoProducto = if (disponible) "Productos marcados como disponibles." else "Productos marcados como no disponibles. Siguen en tu catálogo."
+                                        if (sync.pendientes > 0) errorProducto = "El cambio nuevo se guardó, pero quedan ${sync.pendientes} cambios anteriores pendientes de revisión."
                                     } else {
-                                        ColaOfflineCatalogo.encolarDisponibilidad(
-                                            context, sesion.tiendaId,
-                                            seleccion.map { it.id },
-                                            seleccion.map { it.versionEsperada },
-                                            disponible
-                                        )
-                                        avisoProducto = "Sin conexión: el cambio se guardó y se sincronizará al volver internet."
+                                        if (!catalogoSinConexion) {
+                                            errorProducto = "Activa «Guardar catálogo sin conexión» para guardar este cambio y sincronizarlo después."
+                                        } else {
+                                            val grupos = ColaOfflineCatalogo.encolarDisponibilidad(
+                                                context, sesion.tiendaId,
+                                                seleccion.map { it.id },
+                                                seleccion.map { it.versionEsperada },
+                                                disponible
+                                            )
+                                            revisionColaOffline++
+                                            cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+                                            avisoProducto = "Sin conexión: el cambio quedó guardado en este dispositivo y se sincronizará al volver internet."
+                                            if (grupos > 1) avisoProducto += " Se guardaron $grupos grupos de productos."
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     errorProducto = mensajeProducto(e)
@@ -975,17 +1116,7 @@ internal fun EmprendedoraAppConectada(
                             }
                         },
                         alEliminar = { producto ->
-                            scope.launch {
-                                enviandoProducto = true
-                                errorProducto = null
-                                avisoProducto = null
-                                try {
-                                    productosRepository.eliminar(sesion.tiendaId, producto)
-                                    avisoProducto = "Producto eliminado del catálogo."
-                                } catch (e: Exception) {
-                                    errorProducto = mensajeProducto(e)
-                                } finally { enviandoProducto = false }
-                            }
+                            scope.launch { eliminarDelCatalogo(producto) }
                         },
                     )
                     Screen.Products -> if (editandoProducto) {
@@ -996,7 +1127,11 @@ internal fun EmprendedoraAppConectada(
                             enviando = enviando || enviandoProducto,
                             alEnviando = { enviandoProducto = it },
                             alError = { errorProducto = it },
-                            alAviso = { avisoProducto = it },
+                            alAviso = {
+                                avisoProducto = it
+                                revisionColaOffline++
+                                cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+                            },
                             abrirNuevoAlIniciar = productoInicialId == null,
                             soloEditor = true,
                             productoInicialId = productoInicialId,
@@ -1017,23 +1152,11 @@ internal fun EmprendedoraAppConectada(
                             onDelete = { legado ->
                                 val remoto = productos.firstOrNull { it.id == legado.id }
                                 if (remoto != null) scope.launch {
-                                    enviandoProducto = true
-                                    errorProducto = null
-                                    avisoProducto = null
-                                    try {
-                                        productosRepository.eliminar(sesion.tiendaId, remoto)
-                                        avisoProducto = "Producto quitado de tu lista y del catálogo. Se conservó su historial."
-                                    } catch (e: Exception) {
-                                        errorProducto = mensajeProducto(e)
-                                    } finally {
-                                        enviandoProducto = false
-                                    }
+                                    eliminarDelCatalogo(remoto)
                                 }
                             },
                             onCreate = {
-                                productoInicialId = null
-                                editandoProducto = true
-                                tab = Tab.AGREGAR
+                                abrirAltaProducto()
                             },
                             onPreview = {
                                 productoVista = it.id
@@ -1234,9 +1357,24 @@ internal fun EmprendedoraAppConectada(
                     errorProducto = null
                     avisoProducto = null
                     try {
-                        productosRepository.ajustarStock(sesion.tiendaId, producto, varianteId, cantidad, motivo, nota, operacionId)
-                        productoAjustando = null
-                        avisoProducto = "Ajuste de stock guardado con su historial."
+                        if (ColaOfflineCatalogo.hayRed(context)) {
+                            val sync = ColaOfflineCatalogo.sincronizar(context, productosRepository, sesion.tiendaId)
+                            revisionColaOffline++
+                            productosRepository.ajustarStock(sesion.tiendaId, producto, varianteId, cantidad, motivo, nota, operacionId)
+                            productoAjustando = null
+                            avisoProducto = "Ajuste de stock guardado con su historial."
+                            if (sync.pendientes > 0) errorProducto = "Quedan ${sync.pendientes} cambios anteriores pendientes de revisión."
+                        } else if (!catalogoSinConexion) {
+                            errorProducto = "Activa «Guardar catálogo sin conexión» para conservar este ajuste y sincronizarlo después."
+                        } else {
+                            ColaOfflineCatalogo.encolarAjusteStock(
+                                context, sesion.tiendaId, producto, varianteId, cantidad, motivo, nota, operacionId
+                            )
+                            revisionColaOffline++
+                            cambiosPendientesOffline = ColaOfflineCatalogo.cantidadPendiente(context, sesion.tiendaId)
+                            productoAjustando = null
+                            avisoProducto = "Sin conexión: el ajuste quedó guardado en este dispositivo y se sincronizará al volver internet."
+                        }
                     } catch (e: Exception) {
                         errorProducto = mensajeProducto(e)
                     } finally {

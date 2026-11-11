@@ -3,6 +3,7 @@ package com.example.amancay.data
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Source
 import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -307,15 +308,31 @@ class ProductosEmprendedoraRepository(
         ))
     }
 
-    suspend fun cambiarDisponibilidad(tiendaId: String, productos: List<ProductoEmprendedora>, disponible: Boolean) {
+    suspend fun cambiarDisponibilidad(
+        tiendaId: String,
+        productos: List<ProductoEmprendedora>,
+        disponible: Boolean,
+        operacionIds: List<String> = emptyList()
+    ) {
         require(productos.isNotEmpty())
-        productos.distinctBy { it.id }.chunked(20).forEach { grupo ->
+        productos.distinctBy { it.id }.chunked(20).forEachIndexed { indice, grupo ->
             api.llamar("cambiarDisponibilidadProductos", mapOf(
                 "tiendaId" to tiendaId,
-                "operacionId" to UUID.randomUUID().toString(),
+                "operacionId" to operacionIds.getOrNull(indice).orEmpty().ifBlank { UUID.randomUUID().toString() },
                 "disponible" to disponible,
                 "items" to grupo.map { mapOf("productoId" to it.id, "versionEsperada" to it.versionEsperada) }
             ))
+        }
+    }
+
+    suspend fun leerVersionesDisponibilidad(tiendaId: String, productoIds: List<String>): Map<String, String?> = withContext(Dispatchers.IO) {
+        productoIds.distinct().associateWith { productoId ->
+            val documento = Tasks.await(
+                db.collection("tiendasPrivadas").document(tiendaId)
+                    .collection("productos").document(productoId).get(Source.SERVER)
+            )
+            if (!documento.exists() || documento.getString("estadoPublicacion") == "eliminado") null
+            else documento.versionEsperada()
         }
     }
 
@@ -346,11 +363,11 @@ class ProductosEmprendedoraRepository(
         ))
     }
 
-    suspend fun eliminar(tiendaId: String, producto: ProductoEmprendedora) {
+    suspend fun eliminar(tiendaId: String, producto: ProductoEmprendedora, operacionId: String? = null) {
         api.llamar("eliminarProducto", mapOf(
             "tiendaId" to tiendaId,
             "productoId" to producto.id,
-            "operacionId" to operationId("eliminar", tiendaId, producto.id, producto.versionEsperada),
+            "operacionId" to (operacionId ?: operationId("eliminar", tiendaId, producto.id, producto.versionEsperada)),
             "versionEsperada" to producto.versionEsperada
         ))
     }
@@ -416,7 +433,16 @@ class ProductosEmprendedoraRepository(
     }
 
     suspend fun leerValoresDefecto(tiendaId: String): ValoresDefectoProducto = withContext(Dispatchers.IO) {
-        val doc = Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general").get())
+        val referencia = db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general")
+        val doc = try {
+            Tasks.await(referencia.get(Source.SERVER))
+        } catch (_: Exception) {
+            val cache = runCatching { Tasks.await(referencia.get(Source.CACHE)) }.getOrNull()
+            if (cache == null || !cache.exists()) {
+                throw ApiEmprendedoraException("sin-conexion", "No se pudo comprobar la configuración de productos. Conéctate para iniciar un alta segura.")
+            }
+            cache
+        }
         ValoresDefectoProducto(
             modalidad = doc.getString("modalidadDefecto") ?: "regular",
             manejaStock = doc.getBoolean("manejaStockDefecto") ?: true,

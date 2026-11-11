@@ -66,6 +66,20 @@ test('ajustes de stock e historial privados',async t=>{
       const r=await expect(await input({cantidad:-1,motivo:'perdida'}),200);assert.equal(r.datos.requiereRepublicar,true);
       assert.equal((await pub.get()).exists,false);assert.equal((await pub.collection('variantes').get()).size,0);assert.equal((await product.get()).data()!.estadoPublicacion,'archivado');assert.equal((await product.get()).data()!.nombre,'Borrador nuevo');
     });
+    await t.test('ajustar stock no vuelve a publicar un producto no disponible',async()=>{
+      await reset({estadoPublicacion:'publicado',disponible:false});
+      await store.update({estadoPublicacion:'publicado'});
+      await product.collection('publicacion').doc('vigente').set({schema:1,cicloCatalogo:0,politica:{modalidad:'regular',manejaStock:true,alAgotarse:'mostrar_agotado'},producto:{nombre:'Producto oculto',tieneVariantes:false}});
+      await db.doc(`tiendasPublicas/${tiendaId}`).set({estadoPublicacion:'publicado',habilitada:true});
+      const r=await expect(await input({cantidad:-1,motivo:'perdida'}),200);
+      assert.equal(r.datos.requiereRepublicar,false);
+      assert.equal((await pub.get()).exists,false);
+      assert.equal((await product.get()).data()!.stock,4);
+      assert.equal((await product.get()).data()!.estadoPublicacion,'publicado');
+      assert.equal((await product.get()).data()!.disponible,false);
+      await product.collection('publicacion').doc('vigente').delete();
+      await db.doc(`tiendasPublicas/${tiendaId}`).delete();
+    });
     await t.test('variante actualiza también versión del producto',async()=>{
       await reset({tieneVariantes:true});await product.update({stock:FieldValue.delete()});
       await product.collection('variantes').doc('azul').set({stock:4,activa:false});

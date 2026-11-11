@@ -100,12 +100,14 @@ export function crearVentas(db: Firestore) {
         const tiendaPublica = snapshots[indiceProyeccion + 2];
         variantesPublicasActuales = await tx.get(publicProduct.collection('variantes').limit(101));
         exigir(variantesPublicasActuales.size <= 100, 'limite-local', 'Demasiadas variantes públicas; no se registró la venta.');
-        const sincronizar = aprobacionData?.schema === 1
+        const sincronizar = data.disponible !== false
+          && aprobacionData?.schema === 1
           && aprobacionData.cicloCatalogo === (shop.data()?.cicloCatalogo ?? 0)
           && shop.data()?.estadoPublicacion === 'publicado'
           && tiendaPublica.exists
           && data.estadoPublicacion === 'publicado';
-        requiereRepublicar = !sincronizar && (pubSnap.exists || !variantesPublicasActuales.empty || data.estadoPublicacion === 'publicado');
+        requiereRepublicar = data.disponible !== false && !sincronizar
+          && (pubSnap.exists || !variantesPublicasActuales.empty || data.estadoPublicacion === 'publicado');
         if (sincronizar) {
           const policy = aprobacionData.politica;
           exigir(policy && ['regular','a_pedido','pieza_unica'].includes(policy.modalidad) && typeof policy.manejaStock === 'boolean' && ['mostrar_agotado','ocultar','pasar_a_pedido'].includes(policy.alAgotarse), 'conflicto', 'Publicación aprobada inconsistente.');
@@ -142,7 +144,8 @@ export function crearVentas(db: Firestore) {
           const ids = new Set(proyeccionesVariantes.map(item => item.id));
           for (const item of variantesPublicasActuales.docs) if (!ids.has(item.id)) tx.delete(item.ref);
           for (const item of proyeccionesVariantes) tx.set(publicProduct.collection('variantes').doc(item.id), {...item.data, actualizadoEn: now});
-          if (proyeccion) tx.set(publicProduct, {...proyeccion, actualizadoEn: now}); else if (actualizacionCatalogo !== 'sin_publicacion') tx.delete(publicProduct);
+          if (proyeccion) tx.set(publicProduct, {...proyeccion, actualizadoEn: now});
+          else if (data.disponible === false || actualizacionCatalogo !== 'sin_publicacion') tx.delete(publicProduct);
         }
       }
       if (historialRegistrado) {

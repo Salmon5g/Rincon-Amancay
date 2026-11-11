@@ -129,6 +129,19 @@ test('ventas manuales descuentan stock y guardan el historial configurado', asyn
         await ventas('registrarVenta', { uid }, { tiendaId, operacionId: randomUUID(), productoId: id, cantidad: 1, lugarTipo: 'otro', lugarTexto: 'Tienda' });
         assert.equal((await publica.get()).exists, false);
       });
+      await t.test('una venta no vuelve a publicar un producto marcado no disponible', async () => {
+        const id = 'producto_no_disponible';
+        const ficha = tienda.collection('productos').doc(id);
+        const publica = db.doc(`tiendasPublicas/${tiendaId}/productos/${id}`);
+        await ficha.set({ nombre: id, estadoPublicacion: 'publicado', disponible: false, modalidad: 'regular', manejaStock: true, alAgotarse: 'mostrar_agotado', tieneVariantes: false, precioBase: 3000, stock: 4, piezaUnicaVendida: false, actualizadoEn: Timestamp.now() });
+        await ficha.collection('publicacion').doc('vigente').set({ schema: 1, cicloCatalogo: 0, politica: { modalidad: 'regular', manejaStock: true, alAgotarse: 'mostrar_agotado' }, producto: { nombre: id, tieneVariantes: false } });
+        const operacionId = randomUUID();
+        await ventas('registrarVenta', { uid }, { tiendaId, operacionId, productoId: id, cantidad: 1, lugarTipo: 'otro', lugarTexto: 'Tienda' });
+        assert.equal((await publica.get()).exists, false);
+        assert.equal((await ficha.get()).data()?.stock, 3);
+        assert.equal((await ficha.get()).data()?.estadoPublicacion, 'publicado');
+        assert.equal((await ficha.get()).data()?.disponible, false);
+      });
     });
 
     await t.test('al vender una pieza única elimina su ficha pública y la marca como vendida', async () => {

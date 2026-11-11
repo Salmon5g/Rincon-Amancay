@@ -95,6 +95,17 @@ test('edición de productos y variantes mediante API local', async t => {
       await post(d,'editarProducto');assert.equal((await pub.get()).data()!.nombre,'Nombre editado');assert.equal((await pub.collection('variantes').doc('azul_m').get()).exists,false);
       assert.equal((await pub.collection('variantes').doc('rojo_m').get()).data()!.precio,6000);
     });
+    await t.test('editar un producto no disponible no lo repone en la tienda pública',async()=>{
+      const ref=store.collection('productos').doc(multi.productoId),pub=publicStore.collection('productos').doc(multi.productoId);
+      await ref.update({disponible:false});
+      const publicVariants=await pub.collection('variantes').get();
+      await Promise.all(publicVariants.docs.map(variant=>variant.ref.delete()));
+      await pub.delete();
+      const d=await edit(multi);d.producto.nombre='Edición privada';
+      await post(d,'editarProducto');
+      assert.equal((await ref.get()).data()!.nombre,'Edición privada');
+      assert.equal((await pub.get()).exists,false);
+    });
     await t.test('dos ediciones concurrentes no se pisan',async()=>{
       const d=await edit(simple);const requests=[d,{...d,operacionId:randomUUID(),producto:{...d.producto,nombre:'Alternativo'}}];
       const statuses=await Promise.all(requests.map(body=>fetch(base+'editarProducto',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(body)}).then(r=>r.status)));

@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.amancay.data.ApiEmprendedoraException
 import com.example.amancay.data.CategoriaEmprendedora
+import com.example.amancay.data.ColaOfflineCatalogo
 import com.example.amancay.data.DraftState
 import com.example.amancay.data.ProductoEmprendedora
 import com.example.amancay.data.ProductoSolicitud
@@ -280,6 +281,25 @@ internal fun ProductosEmprendedoraPanel(
                 scope.launch {
                     alEnviando(true); alError(null); alAviso(null)
                     try {
+                        if (!ColaOfflineCatalogo.hayRed(context)) {
+                            if (solicitud.id == null) {
+                                nuevo = false; editando = null
+                                alAviso("El producto quedó guardado como borrador local. Podrás continuar y sincronizarlo al volver internet.")
+                                alFinalizarEdicion()
+                                return@launch
+                            }
+                            if (imagen != null || imagenesVariantes.isNotEmpty()) {
+                                throw ApiEmprendedoraException("sin-conexion", "Los cambios de fotos necesitan conexión. Conservamos el formulario para que puedas guardarlo al volver internet.")
+                            }
+                            if (!PreferenciasCatalogoEmprendedora.catalogoSinConexion(context, tiendaId)) {
+                                throw ApiEmprendedoraException("sin-conexion", "Activa «Guardar catálogo sin conexión» para conservar esta edición.")
+                            }
+                            ColaOfflineCatalogo.encolarEdicion(context, tiendaId, solicitud, publicar)
+                            nuevo = false; editando = null
+                            alAviso("Sin conexión: los cambios del producto quedaron guardados y se sincronizarán al volver internet.")
+                            alFinalizarEdicion()
+                            return@launch
+                        }
                         val productoId = repository.guardar(tiendaId, solicitud)
                         if (imagen != null) {
                             val preparada = prepararImagenProducto(context.contentResolver, imagen.uri, imagen.bitmap)
@@ -1206,11 +1226,17 @@ internal fun DialogoAjusteStock(
         confirmButton = {
             Button(enabled = !enviando, onClick = {
                 val value = cantidad.toIntOrNull()
+                val stockActual = if (producto.tieneVariantes) {
+                    producto.variantes.firstOrNull { it.id == varianteId }?.stock
+                } else producto.stock
                 error = when {
                     value == null || value == 0 -> "Ingresa una cantidad distinta de cero."
                     motivo == "reposicion" && value < 0 -> "La reposición debe sumar unidades."
                     motivo == "perdida" && value > 0 -> "La pérdida debe restar unidades."
                     producto.tieneVariantes && varianteId.isBlank() -> "Selecciona una variante."
+                    producto.manejaStock && stockActual == null -> "No se pudo consultar el stock actual. Vuelve a cargar el producto."
+                    producto.manejaStock && stockActual != null && stockActual + value < 0 -> "El stock no puede quedar en negativo. Hay $stockActual unidades para este producto o variante."
+                    producto.modalidad == "pieza_unica" && stockActual != null && stockActual + value > 1 -> "Una pieza única no puede tener más de una unidad disponible."
                     else -> null
                 }
                 if (error == null && value != null) onConfirm(if (producto.tieneVariantes) varianteId else null, value, motivo, nota.trim().takeIf(String::isNotEmpty), operacionId)
