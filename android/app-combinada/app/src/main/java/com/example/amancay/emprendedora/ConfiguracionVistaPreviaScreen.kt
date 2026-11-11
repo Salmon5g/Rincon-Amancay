@@ -115,7 +115,7 @@ internal fun ConfiguracionVistaPreviaScreen(
                     HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
                     FilaAjuste("Valores por defecto", "Modalidad, stock y qué pasa al agotarse en cada producto nuevo.", Icons.Filled.Settings, { editandoDefecto = !editandoDefecto })
                     HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
-                    FilaAjuste("Guardar catálogo sin conexión", if (catalogoSinConexion) "Mantén tu catálogo disponible aunque no haya internet." else "Activa esta opción para conservar una copia local.", Icons.Filled.WifiOff, null) {
+                    FilaAjuste("Guardar catálogo sin conexión", if (catalogoSinConexion) "Consulta el catálogo guardado y sincroniza cambios de disponibilidad y stock al volver internet." else "Activa esta opción para conservar los cambios de disponibilidad y stock hechos sin conexión.", Icons.Filled.WifiOff, null) {
                         Switch(
                             checked = catalogoSinConexion,
                             onCheckedChange = alCambiarCatalogoSinConexion,

@@ -55,9 +55,11 @@ private data class FiltrosVentas(val desde: String = "", val hasta: String = "",
 @Composable
 internal fun VentasEmprendedoraScreen(
     productos: List<ProductoEmprendedora>, ventas: List<VentaRegistrada>, ferias: List<FeriaParaVenta>, historialActivo: Boolean,
+    historialConfiguracionCargada: Boolean,
     abrirHistorial: Boolean = false,
-    cargando: Boolean, error: String?, enviando: Boolean,
+    cargando: Boolean, error: String?, errorCarga: String?, enviando: Boolean,
     alRegistrar: (ProductoEmprendedora, String?, Int, String, String?, String?, String, String, () -> Unit) -> Unit,
+    alReintentarCarga: () -> Unit,
     alVolver: () -> Unit
 ) {
     var seccion by remember(abrirHistorial) { mutableStateOf(if (abrirHistorial) "Historial" else "Registrar") }
@@ -73,7 +75,7 @@ internal fun VentasEmprendedoraScreen(
     var hasta by remember { mutableStateOf("") }
     var filtrosAplicados by remember { mutableStateOf(FiltrosVentas()) }
     var operacionId by remember(productoId, varianteId, cantidad, lugarTipo, feriaId, lugarOtro) { mutableStateOf(java.util.UUID.randomUUID().toString()) }
-    var fechaVenta by remember(operacionId) { mutableStateOf(java.time.Instant.now().toString()) }
+    var fechaVenta by remember(operacionId) { mutableStateOf<String?>(null) }
     val producto = productos.firstOrNull { it.id == productoId } ?: productos.firstOrNull()
     val variantes = producto?.variantes?.filter { it.activa }.orEmpty()
     if (producto != null && producto.id != productoId) productoId = producto.id
@@ -87,6 +89,9 @@ internal fun VentasEmprendedoraScreen(
     }
     val desdeInvalido = desde.isNotBlank() && runCatching { LocalDate.parse(desde) }.isFailure
     val hastaInvalido = hasta.isNotBlank() && runCatching { LocalDate.parse(hasta) }.isFailure
+    val desdeParseado = desde.takeIf { it.isNotBlank() && !desdeInvalido }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val hastaParseado = hasta.takeIf { it.isNotBlank() && !hastaInvalido }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val rangoInvalido = desdeParseado != null && hastaParseado != null && desdeParseado.isAfter(hastaParseado)
     val productosFiltro = (ventas.map { it.productoId to it.productoNombre } + productos.map { it.id to it.nombre })
         .distinctBy { it.first }
     val lugaresFiltro = (ferias.map { it.id to it.nombre } + ventas.mapNotNull { venta ->
@@ -96,7 +101,7 @@ internal fun VentasEmprendedoraScreen(
         BotanicalBackdrop()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp, vertical=8.dp)) {
         ProductWizardTopBar(onBack=alVolver)
-        Text("ESPACIO EMPRENDEDORA", fontSize=12.sp, fontWeight=FontWeight.Bold, color=Wine)
+        Text("ESPACIO DE EMPRENDIMIENTO", fontSize=12.sp, fontWeight=FontWeight.Bold, color=Wine)
         Text(if (seccion == "Historial") "Historial de encargos" else "Registrar una venta", fontSize=31.sp, color=Dark, fontFamily=FontFamily.Serif)
         Text(if (seccion == "Historial") "Aquí puedes ver tus ventas y encargos realizados." else "Registra una venta y actualiza el stock de tu catálogo.", fontSize=15.sp, color=Muted)
         Spacer(Modifier.height(14.dp))
@@ -111,30 +116,64 @@ internal fun VentasEmprendedoraScreen(
                 if (!historialActivo) Text("El stock igual se actualiza", color=Muted, fontSize=12.sp)
             }
         }
+        if (errorCarga != null || !historialConfiguracionCargada) {
+            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF3E8)), shape=RoundedCornerShape(18.dp), modifier=Modifier.fillMaxWidth().padding(top=10.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        errorCarga ?: if (cargando) "Cargando la configuración y el historial…" else "No se pudo cargar la configuración de ventas.",
+                        color=Dark
+                    )
+                    if (!cargando) OutlinedButton(onClick=alReintentarCarga, modifier=Modifier.fillMaxWidth()) { Text("Reintentar carga", color=Wine) }
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
         if (seccion == "Registrar") {
             Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
                     Text("Registrar una venta", color=Dark, fontWeight=FontWeight.Bold, fontSize=19.sp)
-                    SelectorVentas("Producto", productos.map { it.id to it.nombre }, producto?.id.orEmpty()) { productoId=it; varianteId="" }
-                    if (producto?.tieneVariantes == true) SelectorVentas("Variante", variantes.map { it.id to it.opciones.values.joinToString(" · ") }, varianteId) { varianteId=it }
+                    if (productos.isEmpty()) {
+                        Text("Todavía no tienes productos para vender. Agrégalos desde Productos para registrar una venta.", color=Muted)
+                    } else {
+                        SelectorVentas("Producto", productos.map { it.id to it.nombre }, producto?.id.orEmpty(), enabled=!enviando) { productoId=it; varianteId="" }
+                    }
+                    if (producto?.tieneVariantes == true && variantes.isNotEmpty()) SelectorVentas("Variante", variantes.map { it.id to it.opciones.values.joinToString(" · ") }, varianteId, enabled=!enviando) { varianteId=it }
+                    else if (producto?.tieneVariantes == true) Text("Este producto no tiene variantes activas. Activa o agrega una desde Productos.", color=Wine, fontSize=13.sp)
                     val variante = variantes.firstOrNull { it.id == varianteId }
                     val precio = variante?.precio ?: producto?.precioBase ?: 0L
                     Text("Precio unitario: ${pesosVenta(precio)}", color=Wine, fontWeight=FontWeight.Bold)
-                    OutlinedTextField(cantidad, { cantidad=it.filter(Char::isDigit).take(5) }, label={Text("Cantidad")}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
+                    OutlinedTextField(cantidad, { cantidad=it.filter(Char::isDigit).take(5) }, label={Text("Cantidad")}, placeholder={Text("Ej.: 2", color=Muted)}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
+                    val cantidadSolicitada = cantidad.toIntOrNull()
+                    val stockDisponible = if (producto?.tieneVariantes == true) variante?.stock ?: 0 else producto?.stock
+                    val stockInsuficiente = producto != null && producto.manejaStock && cantidadSolicitada != null && stockDisponible != null && cantidadSolicitada > stockDisponible
+                    if (stockInsuficiente) {
+                        Text("Stock insuficiente. Hay $stockDisponible unidades disponibles para esta selección.", color=Wine, fontSize=13.sp)
+                    }
                     if (historialActivo) {
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            SelectableChip("Feria", lugarTipo == "feria") { lugarTipo="feria" }
-                            SelectableChip("Otro lugar", lugarTipo == "otro") { lugarTipo="otro" }
+                            SelectableChip("Feria", lugarTipo == "feria", enabled=!enviando) { lugarTipo="feria" }
+                            SelectableChip("Otro lugar", lugarTipo == "otro", enabled=!enviando) { lugarTipo="otro" }
                         }
-                        if (lugarTipo == "feria") SelectorVentas("Feria", ferias.map { it.id to it.nombre }, feriaId) { feriaId=it }
-                        else OutlinedTextField(lugarOtro, { lugarOtro=it.take(200) }, label={Text("Lugar")}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
+                        if (lugarTipo == "feria") {
+                            if (ferias.isEmpty()) Text("No hay ferias publicadas disponibles. Elige «Otro lugar» para registrar dónde fue la venta.", color=Muted, fontSize=13.sp)
+                            SelectorVentas("Feria", ferias.map { it.id to it.nombre }, feriaId, enabled=!enviando && ferias.isNotEmpty()) { feriaId=it }
+                        } else OutlinedTextField(lugarOtro, { lugarOtro=it.take(200) }, label={Text("Lugar")}, placeholder={Text("Ej.: Feria Plaza Ñuñoa", color=Muted)}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
+                    }
+                    val puedeRegistrarVenta = if (producto == null) false else {
+                        val seleccionValida = !producto.tieneVariantes || varianteId.isNotBlank()
+                        val cantidadValida = cantidadSolicitada != null && cantidadSolicitada > 0
+                        val stockValido = !producto.manejaStock || (stockDisponible ?: 0) >= (cantidadSolicitada ?: Int.MAX_VALUE)
+                        val lugarValido = !historialActivo || if (lugarTipo == "feria") feriaId.isNotBlank() else lugarOtro.isNotBlank()
+                        !enviando && historialConfiguracionCargada && seleccionValida && cantidadValida && stockValido && lugarValido
                     }
                     Button(
-                        onClick={ if (producto != null) alRegistrar(producto, if (producto.tieneVariantes) varianteId else null, cantidad.toIntOrNull() ?: 0, lugarTipo, feriaId.takeIf { lugarTipo == "feria" }, lugarOtro.takeIf { lugarTipo == "otro" }, operacionId, fechaVenta) { operacionId=java.util.UUID.randomUUID().toString(); fechaVenta=java.time.Instant.now().toString() } },
-                        enabled=!enviando && producto != null && (!producto.tieneVariantes || varianteId.isNotBlank()) && (cantidad.toIntOrNull() ?: 0) > 0 &&
-                            (!producto.manejaStock || (variante?.stock ?: producto.stock ?: 0) >= (cantidad.toIntOrNull() ?: Int.MAX_VALUE)) &&
-                            (!historialActivo || if (lugarTipo == "feria") feriaId.isNotBlank() else lugarOtro.isNotBlank()),
+                        onClick={
+                            val fechaOperacion = fechaVenta ?: java.time.Instant.now().toString().also { fechaVenta=it }
+                            if (producto != null) alRegistrar(producto, if (producto.tieneVariantes) varianteId else null, cantidad.toIntOrNull() ?: 0, lugarTipo, feriaId.takeIf { lugarTipo == "feria" }, lugarOtro.takeIf { lugarTipo == "otro" }, operacionId, fechaOperacion) {
+                                operacionId=java.util.UUID.randomUUID().toString()
+                            }
+                        },
+                        enabled=puedeRegistrarVenta,
                         colors=ButtonDefaults.buttonColors(containerColor=Wine), modifier=Modifier.fillMaxWidth().height(52.dp)
                     ) { Text(if (enviando) "Guardando…" else "Guardar venta", color=Color.White, fontWeight=FontWeight.Bold) }
                 }
@@ -143,18 +182,19 @@ internal fun VentasEmprendedoraScreen(
             Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("Filtrar historial", color=Dark, fontWeight=FontWeight.Bold)
-                    OutlinedTextField(desde, {desde=it.take(10)}, label={Text("Desde (AAAA-MM-DD)")}, modifier=Modifier.fillMaxWidth())
-                    OutlinedTextField(hasta, {hasta=it.take(10)}, label={Text("Hasta (AAAA-MM-DD)")}, modifier=Modifier.fillMaxWidth())
+                    OutlinedTextField(desde, {desde=it.take(10)}, label={Text("Desde")}, placeholder={Text("Ej.: 2025-03-01", color=Muted)}, modifier=Modifier.fillMaxWidth())
+                    OutlinedTextField(hasta, {hasta=it.take(10)}, label={Text("Hasta")}, placeholder={Text("Ej.: 2025-03-31", color=Muted)}, modifier=Modifier.fillMaxWidth())
                     if (desdeInvalido || hastaInvalido) Text("Revisa las fechas: usa el formato AAAA-MM-DD.", color=Wine, fontSize=13.sp)
+                    else if (rangoInvalido) Text("La fecha «Desde» debe ser anterior o igual a «Hasta».", color=Wine, fontSize=13.sp)
                     SelectorVentas("Producto", listOf("" to "Todos los productos") + productosFiltro, filtroProducto) { filtroProducto=it }
                     SelectorVentas("Feria o lugar", listOf("" to "Todos los lugares") + lugaresFiltro, filtroLugar) { filtroLugar=it }
                     Button(
                         onClick = { filtrosAplicados = FiltrosVentas(desde, hasta, filtroProducto, filtroLugar) },
-                        enabled = !enviando,
+                        enabled = !enviando && !desdeInvalido && !hastaInvalido && !rangoInvalido,
                         colors = ButtonDefaults.buttonColors(containerColor = Wine),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) { Text("Aplicar filtros", color = Color.White, fontWeight = FontWeight.Bold) }
-                    Text("${ventasFiltradas.size} ventas", color=Muted)
+                    Text("${ventasFiltradas.size} ${if (ventasFiltradas.size == 1) "venta encontrada" else "ventas encontradas"}", color=Muted)
                 }
             }
             ventasFiltradas.forEach { venta ->
@@ -170,6 +210,11 @@ internal fun VentasEmprendedoraScreen(
                     }
                 }
             }
+            if (!cargando && ventasFiltradas.isEmpty()) {
+                Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), modifier=Modifier.fillMaxWidth().padding(top=8.dp)) {
+                    Text(if (ventas.isEmpty()) "Todavía no hay ventas en el historial." else "No hay ventas que coincidan con estos filtros.", color=Muted, modifier=Modifier.padding(16.dp))
+                }
+            }
         }
         error?.let { Text(it, color=Wine, modifier=Modifier.padding(top=8.dp)) }
         if (cargando) Text("Cargando información…", color=Muted, modifier=Modifier.padding(top=10.dp))
@@ -178,14 +223,14 @@ internal fun VentasEmprendedoraScreen(
 }
 
 @Composable
-private fun SelectorVentas(titulo: String, opciones: List<Pair<String,String>>, seleccionado: String, alElegir: (String)->Unit) {
+private fun SelectorVentas(titulo: String, opciones: List<Pair<String,String>>, seleccionado: String, enabled: Boolean = true, alElegir: (String)->Unit) {
     var expandido by remember(titulo) { mutableStateOf(false) }
     val actual = opciones.firstOrNull { it.first == seleccionado }?.second ?: "Seleccionar"
     Column {
         Text(titulo, color=Dark, fontSize=13.sp, fontWeight=FontWeight.Bold)
-        OutlinedButton(onClick={expandido=true}, modifier=Modifier.fillMaxWidth().height(50.dp), shape=RoundedCornerShape(14.dp)) { Text(actual, color=Wine) }
+        OutlinedButton(onClick={expandido=true}, enabled=enabled, modifier=Modifier.fillMaxWidth().height(50.dp), shape=RoundedCornerShape(14.dp)) { Text(actual, color=Wine) }
         DropdownMenu(expanded=expandido, onDismissRequest={expandido=false}) {
-            opciones.forEach { (id,nombre) -> DropdownMenuItem(text={Text(nombre)}, onClick={expandido=false; alElegir(id)}) }
+            opciones.forEach { (id,nombre) -> DropdownMenuItem(text={Text(nombre)}, enabled=enabled, onClick={expandido=false; alElegir(id)}) }
         }
     }
 }

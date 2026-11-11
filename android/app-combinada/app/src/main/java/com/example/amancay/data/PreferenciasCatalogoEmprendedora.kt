@@ -22,12 +22,18 @@ object PreferenciasCatalogoEmprendedora {
     }
 
     fun guardarValoresDefecto(context: Context, tiendaId: String, valores: ValoresDefectoProducto) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        val guardados = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(clave(tiendaId, "modalidad"), valores.modalidad)
             .putBoolean(clave(tiendaId, "manejaStock"), valores.manejaStock)
             .putString(clave(tiendaId, "alAgotarse"), valores.alAgotarse)
-            .apply()
+            .putBoolean(clave(tiendaId, "valoresDefectoSincronizados"), true)
+            .commit()
+        check(guardados) { "No se pudo guardar la configuración local del catálogo." }
     }
+
+    fun hayValoresDefectoSincronizados(context: Context, tiendaId: String): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(clave(tiendaId, "valoresDefectoSincronizados"), false)
 
     fun catalogoSinConexion(context: Context, tiendaId: String): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

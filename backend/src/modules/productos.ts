@@ -325,6 +325,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
       saved.actualizadoEn=now;
       const sincronizarCatalogo = !crear
         && old?.estadoPublicacion === 'publicado'
+        && old?.disponible !== false
         && store.data()?.estadoPublicacion === 'publicado'
         && publicStore.data()?.estadoPublicacion === 'publicado'
         && publicStore.data()?.habilitada === true

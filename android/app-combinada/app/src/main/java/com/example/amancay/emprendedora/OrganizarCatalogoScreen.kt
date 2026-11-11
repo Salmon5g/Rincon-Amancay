@@ -88,7 +88,7 @@ internal fun OrganizarCatalogoScreen(
     Box(Modifier.fillMaxSize()) {
     BotanicalBackdrop()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 8.dp)) {
-        Text("ESPACIO EMPRENDEDORA", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color(0xFFEF5452))
+        Text("ESPACIO DE EMPRENDIMIENTO", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color(0xFFEF5452))
         Text("Organizar\ncatálogo", fontSize = 38.sp, lineHeight = 39.sp, color = Wine, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
         Text("Selecciona productos para organizarlos, cambiar su disponibilidad o eliminarlos.", fontSize = 15.sp, lineHeight = 21.sp, color = Muted)
         Spacer(Modifier.height(16.dp))
@@ -106,7 +106,7 @@ internal fun OrganizarCatalogoScreen(
                 Text(if (todosSeleccionados) "Quitar\nselección" else "Seleccionar\ntodos (${filtrados.size})", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 2)
             }
             Box(Modifier.weight(1f)) {
-                OutlinedButton(onClick = { menuCategorias = true }, enabled = !enviando, modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Wine), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
+                OutlinedButton(onClick = { menuCategorias = true }, enabled = !enviando && categorias.any { it.activo }, modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Wine), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                     Icon(Icons.Filled.GridView, contentDescription = null, tint = Wine, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(4.dp))
                     Text("Por\ncategoría", color = Wine, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 2)
@@ -169,9 +169,23 @@ internal fun OrganizarCatalogoScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             Text("Productos", fontSize = 25.sp, color = Dark, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            Text("${filtrados.size}  ·  ${seleccionados.size} seleccionados", fontSize = 11.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp))
+            Text("${filtrados.size} ${if (filtrados.size == 1) "producto" else "productos"} · ${seleccionados.size} seleccionados", fontSize = 11.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp))
         }
         Spacer(Modifier.height(6.dp))
+        if (categorias.none { it.activo }) {
+            Text("Aún no hay categorías activas para filtrar productos.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+        }
+
+        if (filtrados.isEmpty()) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Line), modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (productos.isEmpty()) "Todavía no tienes productos en tu catálogo. Agrega uno para comenzar."
+                    else "No hay productos en esta categoría.",
+                    color = Muted,
+                    modifier = Modifier.padding(18.dp)
+                )
+            }
+        }
 
         filtrados.forEach { producto ->
             val seleccionado = producto.id in seleccionados

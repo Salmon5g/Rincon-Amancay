@@ -499,7 +499,7 @@ private fun PantallaIngresoEmprendedora(
                 Spacer(Modifier.width(64.dp))
             }
             Spacer(Modifier.height(22.dp))
-            Text("ESPACIO EMPRENDEDORA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentRed, letterSpacing = 2.2.sp)
+            Text("ESPACIO DE EMPRENDIMIENTO", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentRed, letterSpacing = 2.2.sp)
             Text("Ingresa a\ntu espacio", fontSize = 48.sp, lineHeight = 48.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
             Text("Administra tu tienda desde aquí.", color = Muted, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
             Card(
