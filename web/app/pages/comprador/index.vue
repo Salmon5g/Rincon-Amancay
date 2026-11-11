@@ -125,7 +125,6 @@ const productoRapido = ref<FichaComprador | null>(null);
 const tiendaRapida = ref<FichaComprador | null>(null);
 const variantesRapidas = ref<FichaComprador[]>([]);
 const seleccionRapida = ref('');
-const mensajeEncargar = ref('');
 const variantesCargando = ref(false);
 let revisionRapida = 0;
 let overflowRapido = '';
@@ -148,7 +147,6 @@ async function abrirRapido(producto: FichaComprador, tiendaFicha: FichaComprador
     tiendaRapida.value = tiendaFicha;
     variantesRapidas.value = [];
     seleccionRapida.value = '';
-    mensajeEncargar.value = '';
     variantesCargando.value = producto.datos.tieneVariantes === true;
     if (import.meta.client) {
         overflowRapido = document.body.style.overflow;
@@ -173,17 +171,44 @@ function cerrarRapido() {
     productoRapido.value = null;
     tiendaRapida.value = null;
     variantesRapidas.value = [];
-    mensajeEncargar.value = '';
     variantesCargando.value = false;
     if (import.meta.client) document.body.style.overflow = overflowRapido;
 }
 
-function encargarRapido() {
-    mensajeEncargar.value = 'Para encargar este producto debes crearte una cuenta en Rincón Amancay. Usa “Iniciar sesión” para registrarte o ingresar.';
+// Ventana de contacto: solo muestra datos públicos de la tienda.
+const tiendaContacto = ref<FichaComprador | null>(null);
+const estadoCopia = ref<'' | 'ok' | 'error'>('');
+let overflowContacto = '';
+const tiposContacto: Record<string, string> = { correo: 'Correo', whatsapp: 'WhatsApp', web: 'Sitio web' };
+const sectorContacto = computed(() => {
+    const id = tiendaContacto.value?.datos.sectorId;
+    return id ? sectores.value[id] ?? '' : '';
+});
+
+function abrirContacto(ficha: FichaComprador | null) {
+    if (!ficha) return;
+    tiendaContacto.value = ficha;
+    estadoCopia.value = '';
+    if (import.meta.client) {
+        overflowContacto = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+    }
 }
 
-function encargarDetalle() {
-    mostrarAviso('Para encargar este producto debes crearte una cuenta. Usa “Iniciar sesión”.');
+function cerrarContacto() {
+    tiendaContacto.value = null;
+    if (import.meta.client) document.body.style.overflow = overflowContacto;
+}
+
+async function copiarContacto() {
+    const valor = tiendaContacto.value?.datos.contacto?.valor;
+    if (!valor) return;
+    try {
+        await navigator.clipboard.writeText(valor);
+        estadoCopia.value = 'ok';
+    } catch {
+        estadoCopia.value = 'error';
+    }
 }
 
 function nombreRapidoVariante(v: FichaComprador) {
@@ -192,7 +217,9 @@ function nombreRapidoVariante(v: FichaComprador) {
 }
 
 function alTeclearRapido(evento: KeyboardEvent) {
-    if (evento.key === 'Escape' && productoRapido.value) cerrarRapido();
+    if (evento.key !== 'Escape') return;
+    if (tiendaContacto.value) cerrarContacto();
+    else if (productoRapido.value) cerrarRapido();
 }
 
 // Formato de precios, disponibilidad y errores
@@ -771,8 +798,8 @@ onBeforeUnmount(() => {
               </template>
             </dl>
             <div class="ficha-acciones">
-              <button class="boton boton-mostaza" type="button" @click="encargarDetalle">
-                Encargar producto
+              <button class="boton boton-mostaza" type="button" @click="abrirContacto(tienda)">
+                Contactar emprendedora
               </button>
               <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">{{ enlaceContacto.texto }}</a>
               <button class="boton boton-secundario" type="button" @click="volver">Volver a los productos</button>
@@ -921,10 +948,64 @@ onBeforeUnmount(() => {
               v-else-if="productoRapido.datos.tieneVariantes === false && tiendaRapida.datos.mostrarPrecios !== false"
               class="rapido-precio-unico"
             >{{ precio(productoRapido.datos.precioBase) }}</p>
-            <p v-if="mensajeEncargar" class="rapido-aviso" role="status">{{ mensajeEncargar }}</p>
             <div class="rapido-acciones">
-              <button class="boton boton-mostaza" type="button" @click="encargarRapido">Encargar producto</button>
+              <button class="boton boton-mostaza" type="button" @click="abrirContacto(tiendaRapida)">Contactar emprendedora</button>
               <button class="boton boton-secundario" type="button" @click="cerrarRapido">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Ventana de contacto con la emprendedora -->
+    <Teleport to="body">
+      <div
+        v-if="tiendaContacto"
+        class="rapido-fondo contacto-fondo"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contacto-titulo"
+        @click.self="cerrarContacto"
+      >
+        <div class="rapido contacto">
+          <button class="rapido-cerrar" type="button" aria-label="Cerrar" @click="cerrarContacto">✕</button>
+          <div class="rapido-scroll">
+            <h2 id="contacto-titulo" class="rapido-titulo">Contactar emprendedora</h2>
+            <div class="dato-tienda">
+              <span class="dato-icono" aria-hidden="true">🏪</span>
+              <div>
+                <b>Tienda</b>
+                <p>{{ tiendaContacto.datos.nombre }}</p>
+              </div>
+            </div>
+            <div v-if="sectorContacto" class="dato-tienda">
+              <span class="dato-icono" aria-hidden="true">📍</span>
+              <div>
+                <b>Sector</b>
+                <p>{{ sectorContacto }}</p>
+              </div>
+            </div>
+            <div v-if="tiendaContacto.datos.contacto" class="dato-tienda">
+              <span class="dato-icono" aria-hidden="true">☎</span>
+              <div>
+                <b>{{ tiposContacto[tiendaContacto.datos.contacto.tipo] ?? 'Contacto' }}</b>
+                <p class="contacto-valor">{{ tiendaContacto.datos.contacto.valor }}</p>
+              </div>
+            </div>
+            <p v-else class="contacto-aviso" role="status">
+              Esta emprendedora aún no publicó un medio de contacto.
+            </p>
+            <p v-if="estadoCopia" class="contacto-copia" role="status">
+              {{ estadoCopia === 'ok' ? 'Contacto copiado.' : 'No se pudo copiar. Selecciona el texto y cópialo manualmente.' }}
+            </p>
+            <div class="rapido-acciones">
+              <button
+                v-if="tiendaContacto.datos.contacto"
+                class="boton boton-mostaza"
+                type="button"
+                @click="copiarContacto"
+              >Copiar contacto</button>
+              <button class="boton boton-secundario" type="button" @click="cerrarContacto">Cerrar</button>
             </div>
           </div>
         </div>
@@ -2277,8 +2358,25 @@ article.tarjeta-tienda:hover {
     color: var(--amancay-bordo);
 }
 
-.rapido-aviso {
-    margin: 0.55rem 0 0;
+.contacto-fondo {
+    z-index: 10001;
+}
+
+.contacto {
+    width: min(400px, 100%);
+}
+
+.contacto .dato-tienda {
+    width: 100%;
+}
+
+.contacto-valor {
+    overflow-wrap: anywhere;
+}
+
+.contacto-aviso,
+.contacto-copia {
+    margin: 0.35rem 0 0;
     padding: 0.7rem 0.9rem;
     border-radius: 12px;
     background: var(--amancay-mostaza-suave);
@@ -2287,6 +2385,12 @@ article.tarjeta-tienda:hover {
     line-height: 1.45;
     color: #6a4a00;
     font-weight: 600;
+}
+
+.contacto-copia {
+    background: var(--amancay-fondo);
+    border-color: var(--amancay-borde);
+    color: var(--amancay-tinta);
 }
 
 .rapido-acciones {
