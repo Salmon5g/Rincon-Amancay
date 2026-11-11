@@ -887,7 +887,7 @@ private fun EditorProductoEmprendedora(
             campos.forEach { f ->
                 AmancayField(atributos[f.clave].orEmpty(),
                     { v -> atributos=atributos + (f.clave to v.take(500)) },
-                    f.etiqueta + if (f.obligatorio) " *" else "", "", singleLine=false, minLines=2)
+                    f.etiqueta + if (f.obligatorio) " *" else "", "Ingresa ${f.etiqueta.lowercase()}", singleLine=false, minLines=2)
                 Spacer(Modifier.height(12.dp))
             }
             error?.let { AvisoEmprendedora(it, true) }
@@ -938,11 +938,11 @@ private fun EditorProductoEmprendedora(
                             }
                             opciones.forEach { key -> CampoProducto(key.replaceFirstChar { it.uppercase() }, v.opciones[key].orEmpty(),
                                 { value -> variantes=variantes.mapIndexed { i,old -> if (i == index && !old.existente) old.copy(opciones=old.opciones + (key to value)) else old } },
-                                100, readOnly=v.existente) }
+                                100, readOnly=v.existente, placeholder=ejemploOpcionVariante(key)) }
                             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                Box(Modifier.weight(1f)) { AmancayField(v.precio, { value -> variantes=variantes.actualizar(index) { it.copy(precio=value.filter(Char::isDigit).take(12)) } }, "Precio (CLP)", "", keyboardType=KeyboardType.Number) }
+                                Box(Modifier.weight(1f)) { AmancayField(v.precio, { value -> variantes=variantes.actualizar(index) { it.copy(precio=value.filter(Char::isDigit).take(12)) } }, "Precio (CLP)", "Ej.: 18.000", keyboardType=KeyboardType.Number) }
                                 if (manejaStock && !v.existente) {
-                                    Box(Modifier.weight(1f)) { AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock", "", keyboardType=KeyboardType.Number) }
+                                    Box(Modifier.weight(1f)) { AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock", "Ej.: 3", keyboardType=KeyboardType.Number) }
                                 } else if (v.existente && manejaStock) {
                                     Text("Stock: " + (original?.variantes?.firstOrNull { it.id == v.id }?.stock ?: 0) + ". Ajusta desde la lista.", color=Muted, fontSize=12.sp)
                                 }
@@ -1011,7 +1011,7 @@ private fun EditorProductoEmprendedora(
                         }
                     }
                     Text(descripcion.ifBlank { "Sin descripción." }, color=Dark, modifier=Modifier.padding(top=10.dp))
-                    Text(if (conVariantes) variantes.size.toString() + " variante(s)" else "Precio: " + (precioBase.toLongOrNull()?.let(::pesos) ?: "Pendiente"), color=Muted, modifier=Modifier.padding(top=8.dp))
+                    Text(if (conVariantes) "${variantes.size} ${if (variantes.size == 1) "variante" else "variantes"}" else "Precio: " + (precioBase.toLongOrNull()?.let(::pesos) ?: "Pendiente"), color=Muted, modifier=Modifier.padding(top=8.dp))
                     Text("Modalidad: " + modalidad.replace('_',' '), color=Muted)
                     campos.filter { !atributos[it.clave].isNullOrBlank() }.forEach { field ->
                         Text(field.etiqueta + ": " + atributos[field.clave], color=Muted, modifier=Modifier.padding(top=4.dp))
@@ -1138,10 +1138,10 @@ internal fun DialogoAjusteStock(
                 Text(producto.nombre, color = Muted)
                 if (producto.tieneVariantes) SelectorProducto("Variante", producto.variantes.map { it.id to resumenOpciones(it) }, varianteId) { varianteId = it }
                 Spacer(Modifier.height(8.dp))
-                CampoProducto("Cantidad (+ suma, − resta)", cantidad, { cantidad = it.filter { c -> c.isDigit() || c == '-' || c == '+' }.take(10) }, 10)
+                CampoProducto("Cantidad (usa + para sumar y − para restar)", cantidad, { cantidad = it.filter { c -> c.isDigit() || c == '-' || c == '+' }.take(10) }, 10, placeholder="Ej.: +5 o -2")
                 SelectorProducto("Motivo", listOf("reposicion" to "Reposición", "perdida" to "Pérdida", "correccion" to "Corrección"), motivo) { motivo = it }
                 Spacer(Modifier.height(8.dp))
-                CampoProducto("Nota (opcional)", nota, { nota = it }, 500)
+                CampoProducto("Nota (opcional)", nota, { nota = it }, 500, placeholder="Ej.: Reposición de materiales")
                 error?.let { AvisoEmprendedora(it, true) }
             }
         },
@@ -1165,12 +1165,13 @@ internal fun DialogoAjusteStock(
 }
 
 @Composable
-private fun CampoProducto(label: String, value: String, onValue: (String) -> Unit, max: Int, multiline: Boolean = false, readOnly: Boolean = false) {
+private fun CampoProducto(label: String, value: String, onValue: (String) -> Unit, max: Int, multiline: Boolean = false, readOnly: Boolean = false, placeholder: String = "") {
     OutlinedTextField(
         value = value,
         onValueChange = { if (!readOnly) onValue(it.take(max)) },
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
+        placeholder = { if (placeholder.isNotBlank()) Text(placeholder, color = Muted) },
         minLines = if (multiline) 3 else 1,
         singleLine = !multiline,
         readOnly = readOnly,
@@ -1185,6 +1186,13 @@ private fun CampoProducto(label: String, value: String, onValue: (String) -> Uni
             unfocusedTextColor = Dark
         )
     )
+}
+
+private fun ejemploOpcionVariante(clave: String): String = when {
+    clave.contains("color", ignoreCase = true) -> "Ej.: Mostaza"
+    clave.contains("talla", ignoreCase = true) || clave.contains("talle", ignoreCase = true) -> "Ej.: M"
+    clave.contains("material", ignoreCase = true) -> "Ej.: Lana"
+    else -> "Ingresa ${clave.replace('_', ' ').lowercase()}"
 }
 
 @Composable

@@ -39,7 +39,15 @@ Para cerrar los puntos pendientes de 1.2 y completar la verificación, aún se n
 4. Vista previa conjunta del catálogo completo (A16).
 5. Comprobación manual en un dispositivo con sesión real y de los resultados de stock en la web.
 
-La venta guarda una feria publicada de la plataforma o texto libre; la fecha se muestra en la zona horaria local y se conserva como instante. Desactivar el historial detiene nuevas capturas y conserva las anteriores. El contrato 07 describe las fotos independientes por variante.
+La venta guarda una feria publicada de la plataforma o texto libre; la fecha se muestra en la zona horaria local y se conserva como instante. Al desactivar el historial no se guardan nuevas ventas históricas, pero el registro manual y el descuento de stock siguen funcionando; las ventas anteriores se conservan. El contrato 07 describe las fotos independientes por variante.
+
+## Revisión de flujos y textos (2026-11-11)
+
+La pantalla de ventas conserva la misma fecha y el mismo identificador durante un reintento, para que una respuesta de red ambigua no repita el descuento. Si la API confirma la venta pero falla la recarga del historial, la app informa que la venta sí quedó guardada y ofrece recargar. El registro espera a leer la configuración del historial antes de habilitarse. El saldo mostrado se toma de la variante seleccionada y no usa el saldo general como respaldo.
+
+Se añadieron estados vacíos para productos, variantes activas e historial, una explicación cuando no hay ferias publicadas, una alerta al ingresar más unidades que el stock elegido y ejemplos para cantidad, lugar, fechas, atributos, variantes y ajustes de stock. El filtro ahora rechaza fechas inválidas o un rango invertido. Se corrigió el rótulo «ESPACIO EMPRENDEDORA» por «ESPACIO DE EMPRENDIMIENTO» y se pluralizan «variante(s)» y los conteos.
+
+La prueba de ventas en Firestore Emulator cubre el descuento exclusivo de la variante elegida, precio/cantidad/fecha/lugar, reintentos idempotentes, stock insuficiente, historial apagado, requisito de lugar, copia del nombre de feria, las tres políticas al agotarse y retirada de una pieza única vendida. La compilación Android y la comprobación TypeScript se registran en `AGENTS.md`.
 
 ## Mockups
 

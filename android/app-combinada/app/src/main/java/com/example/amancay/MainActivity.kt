@@ -693,11 +693,17 @@ internal fun EmprendedoraAppConectada(
     }
     var cargandoVentas by remember(sesion.uid) { mutableStateOf(false) }
     var errorVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var errorCargaVentas by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var historialConfiguracionCargada by remember(sesion.uid) { mutableStateOf(false) }
+    var reintentoCargaVentas by remember(sesion.uid) { mutableIntStateOf(0) }
 
-    LaunchedEffect(screen, sesion.tiendaId) {
+    LaunchedEffect(screen, sesion.tiendaId, reintentoCargaVentas) {
         if (screen == Screen.ConfiguracionCatalogo) {
+            historialConfiguracionCargada = false
+            errorVentas = null
             try {
                 historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
+                historialConfiguracionCargada = true
             } catch (e: Exception) {
                 errorVentas = e.message ?: "No se pudo leer la configuración del historial."
             }
@@ -706,12 +712,15 @@ internal fun EmprendedoraAppConectada(
         if (screen != Screen.Ventas) return@LaunchedEffect
         cargandoVentas = true
         errorVentas = null
+        errorCargaVentas = null
+        historialConfiguracionCargada = false
         try {
             historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
+            historialConfiguracionCargada = true
             ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
             feriasVenta = productosRepository.listarFeriasPublicadas()
         } catch (e: Exception) {
-            errorVentas = e.message ?: "No se pudo cargar el historial de ventas."
+            errorCargaVentas = e.message ?: "No se pudo cargar la información de ventas."
         } finally { cargandoVentas = false }
     }
 
@@ -1063,6 +1072,7 @@ internal fun EmprendedoraAppConectada(
                                 try {
                                     productosRepository.configurarHistorialVentas(sesion.tiendaId, activo)
                                     historialVentasActivo = activo
+                                    historialConfiguracionCargada = true
                                     avisoProducto = if (activo) "Historial de ventas activado." else "Historial de ventas desactivado. El stock seguirá actualizándose al registrar ventas."
                                 } catch (e: Exception) { errorVentas = e.message ?: "No se pudo guardar la configuración del historial." }
                                 finally { enviandoProducto = false }
@@ -1119,22 +1129,30 @@ internal fun EmprendedoraAppConectada(
                         ventas = ventasGuardadas,
                         ferias = feriasVenta,
                         historialActivo = historialVentasActivo,
+                        historialConfiguracionCargada = historialConfiguracionCargada,
                         abrirHistorial = abrirHistorialVentas,
                         cargando = cargandoVentas,
                         error = errorVentas,
+                        errorCarga = errorCargaVentas,
                         enviando = enviandoProducto,
                         alRegistrar = { producto, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, operacionId, fecha, alExito ->
                             scope.launch {
                                 enviandoProducto = true; errorVentas = null
                                 try {
                                     val historialRegistrado = productosRepository.registrarVenta(sesion.tiendaId, producto.id, varianteId, cantidad, lugarTipo, feriaId, lugarTexto, fecha=fecha, operacionId=operacionId)
-                                    ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
                                     avisoProducto = if (historialRegistrado) "Venta guardada y stock actualizado." else "Stock actualizado. El historial está apagado, así que la venta no quedó guardada en él."
                                     alExito()
+                                    errorCargaVentas = null
+                                    try {
+                                        ventasGuardadas = productosRepository.listarVentas(sesion.tiendaId)
+                                    } catch (e: Exception) {
+                                        errorCargaVentas = "La venta y el stock se guardaron, pero no se pudo actualizar el historial. Vuelve a cargarlo."
+                                    }
                                 } catch (e: Exception) { errorVentas = e.message ?: "No se pudo registrar la venta." }
                                 finally { enviandoProducto = false }
                             }
                         },
+                        alReintentarCarga = { reintentoCargaVentas++ },
                         alVolver = { abrirHistorialVentas = false; screen = Screen.Home; tab = Tab.INICIO }
                     )
                     is Screen.Preview -> PreviewCatalogScreen(
