@@ -61,6 +61,8 @@ import com.example.amancay.data.Product
 import com.example.amancay.data.ProductType
 import com.example.amancay.data.ShopSettings
 import com.example.amancay.data.Variant
+import com.example.amancay.data.FirebaseClientServices
+import com.example.amancay.data.CatalogoCompradorRepository
 import com.example.amancay.data.crearCatalogoCompradorFirebase
 import com.example.amancay.data.crearRepositorioDemostracion
 import com.example.amancay.data.decodificarVistaPreviaProducto
@@ -108,61 +110,91 @@ fun AmancayApp() {
     }
     var modo by remember { mutableStateOf<String?>(null) }
     val densidad = LocalDensity.current
+    val cambiarEscalaTexto: (Float) -> Unit = { escala ->
+        escalaTexto = escala
+        prefsTexto.edit().putFloat("escala_texto", escala).apply()
+    }
     CompositionLocalProvider(LocalDensity provides Density(densidad.density, densidad.fontScale * escalaTexto)) {
+        ContenidoAmancay(
+            modo = modo,
+            firebaseServices = firebaseServices,
+            catalogoComprador = catalogoComprador,
+            escalaTexto = escalaTexto,
+            alCambiarEscalaTexto = cambiarEscalaTexto,
+            alCambiarModo = { modo = it }
+        )
+    }
+}
+
+@Composable
+private fun ContenidoAmancay(
+    modo: String?,
+    firebaseServices: FirebaseClientServices,
+    catalogoComprador: CatalogoCompradorRepository,
+    escalaTexto: Float,
+    alCambiarEscalaTexto: (Float) -> Unit,
+    alCambiarModo: (String?) -> Unit
+) {
     when (modo) {
         "comprador" -> ModoCompradorScreen(
             repositorio = catalogoComprador,
             auth = firebaseServices.auth,
             webClientId = BuildConfig.WEB_CLIENT_ID
-        ) { modo = null }
-        "emprendedora" -> ModoEmprendedoraConectada(firebaseServices, BuildConfig.WEB_CLIENT_ID, escalaTexto, { escala ->
-            escalaTexto = escala
-            prefsTexto.edit().putFloat("escala_texto", escala).apply()
-        }) { modo = null }
-        else -> Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Cream)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(Modifier.height(36.dp))
-            Image(
-                painter = painterResource(Fig.LOGO),
-                contentDescription = "Rincón Amancay",
-                modifier = Modifier.size(92.dp)
-            )
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "Rincón Amancay",
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Bold,
-                color = Wine,
-                fontFamily = FontFamily.Serif,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "¿Cómo quieres usar la aplicación?",
-                fontSize = 15.sp,
-                color = Muted,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(26.dp))
-            TarjetaModo(
-                titulo = "Modo comprador",
-                descripcion = "Encuentra productos de los emprendimientos Amancay.",
-                emoji = "🛍️"
-            ) { modo = "comprador" }
-            Spacer(Modifier.height(14.dp))
-            TarjetaModo(
-                titulo = "Modo emprendedora",
-                descripcion = "Administra tu catálogo, tus precios y tus ventas.",
-                emoji = "✿"
-            ) { modo = "emprendedora" }
-        }
+        ) { alCambiarModo(null) }
+        "emprendedora" -> ModoEmprendedoraConectada(
+            firebaseServices,
+            BuildConfig.WEB_CLIENT_ID,
+            escalaTexto,
+            alCambiarEscalaTexto
+        ) { alCambiarModo(null) }
+        else -> PantallaSeleccionModo(alCambiarModo)
     }
+}
+
+@Composable
+private fun PantallaSeleccionModo(alCambiarModo: (String?) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Cream)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(36.dp))
+        Image(
+            painter = painterResource(Fig.LOGO),
+            contentDescription = "Rincón Amancay",
+            modifier = Modifier.size(92.dp)
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "Rincón Amancay",
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Bold,
+            color = Wine,
+            fontFamily = FontFamily.Serif,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "¿Cómo quieres usar la aplicación?",
+            fontSize = 15.sp,
+            color = Muted,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(26.dp))
+        TarjetaModo(
+            titulo = "Modo comprador",
+            descripcion = "Encuentra productos de los emprendimientos Amancay.",
+            emoji = "🛍️"
+        ) { alCambiarModo("comprador") }
+        Spacer(Modifier.height(14.dp))
+        TarjetaModo(
+            titulo = "Modo emprendedora",
+            descripcion = "Administra tu catálogo, tus precios y tus ventas.",
+            emoji = "✿"
+        ) { alCambiarModo("emprendedora") }
     }
 }
 
