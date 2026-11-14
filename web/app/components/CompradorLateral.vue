@@ -63,6 +63,7 @@ async function irSeccion(id: string) {
 <style scoped>
 .lateral {
   position: sticky;
+  z-index: 2;
   top: 0;
   align-self: start;
   height: 100dvh;
