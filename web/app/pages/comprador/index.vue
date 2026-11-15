@@ -413,8 +413,12 @@ async function cargar(destino = pagina.value) {
         siguiente.value = r.cursorSiguiente !== null;
         pagina.value = destino;
         busqueda.value = '';
-        if (!tienda.value && destino === 1)
+        if (!tienda.value && destino === 1) {
+            tiendasCarrusel.value = filas.value.slice(0, 5);
+            indiceCarrusel.value = 0;
+            void cargarFotosCarrusel(tiendasCarrusel.value);
             void cargarDestacados(filas.value, actual);
+        }
     }
     catch (e) {
         if (actual === revision)
@@ -427,6 +431,39 @@ async function cargar(destino = pagina.value) {
 }
 
 // Navegación entre tiendas y productos
+
+// Carrusel: la diapositiva 0 es la portada y las siguientes, hasta 5 tiendas publicadas.
+const tiendasCarrusel = ref<FichaComprador[]>([]);
+const indiceCarrusel = ref(0);
+const totalCarrusel = computed(() => tiendasCarrusel.value.length + 1);
+const tiendaCarrusel = computed(() => tiendasCarrusel.value[indiceCarrusel.value - 1] ?? null);
+
+// Fotos de productos por tienda para la cinta animada de fondo.
+const fotosCarrusel = ref<Record<string, string[]>>({});
+const cintaCarrusel = computed(() => {
+    const fotos = tiendaCarrusel.value ? fotosCarrusel.value[tiendaCarrusel.value.id] ?? [] : [];
+    if (!fotos.length) return [];
+    const base: string[] = [];
+    while (base.length < 8) base.push(...fotos);
+    return [...base, ...base];
+});
+
+async function cargarFotosCarrusel(tiendas: FichaComprador[]) {
+    const pares = await Promise.all(tiendas.map(async (t) => {
+        try {
+            const r = await $catalogoPublico.listarProductos(t.id, null);
+            const fotos = r.elementos.map(p => p.imagenes?.[0]).filter((f): f is string => typeof f === 'string');
+            return [t.id, fotos.slice(0, 8)] as const;
+        } catch {
+            return [t.id, []] as const;
+        }
+    }));
+    fotosCarrusel.value = Object.fromEntries(pares);
+}
+
+function moverCarrusel(paso: number) {
+    indiceCarrusel.value = (indiceCarrusel.value + paso + totalCarrusel.value) % totalCarrusel.value;
+}
 
 function letraInicial(nombre: string) {
     return (nombre.trim()[0] ?? 'A').toUpperCase();
@@ -652,25 +689,73 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <section class="hero">
-          <img class="hero-flor" src="/amancay-flor-principal-v3.png" alt="" aria-hidden="true" />
-          <div class="hero-texto">
-            <p class="sobretitulo">EMPRENDIMIENTOS LOCALES</p>
-            <h2>Hecho cerca, elegido con cariño</h2>
-            <p>Productos con historia, manos locales y un impacto real.</p>
-            <a class="boton boton-mostaza" href="#destacados">Explorar productos →</a>
-          </div>
-          <p class="hero-frase">Lo local<br />también florece</p>
-          <div class="hero-arte" aria-hidden="true">
-            <img src="/logo-amancay.png" alt="" />
-          </div>
-          <ul class="hero-lista" aria-hidden="true">
-            <li>Personas</li>
-            <li>Productos</li>
-            <li>Territorios</li>
-            <li>Comunidad</li>
-          </ul>
-        </section>
+        <div class="carrusel" :class="{ claro: tiendaCarrusel }" aria-roledescription="carrusel" aria-label="Destacados">
+          <Transition name="carrusel" mode="out-in">
+            <section v-if="!tiendaCarrusel" key="banner" class="hero" aria-roledescription="diapositiva" :aria-label="`1 de ${totalCarrusel}`">
+              <img class="hero-flor" src="/amancay-flor-principal-v3.png" alt="" aria-hidden="true" />
+              <div class="hero-texto">
+                <p class="sobretitulo">EMPRENDIMIENTOS LOCALES</p>
+                <h2>Hecho cerca, elegido con cariño</h2>
+                <p>Productos con historia, manos locales y un impacto real.</p>
+                <a class="boton boton-mostaza" href="#destacados">Explorar productos →</a>
+              </div>
+              <p class="hero-frase">Lo local<br />también florece</p>
+              <div class="hero-arte" aria-hidden="true">
+                <img src="/logo-amancay.png" alt="" />
+              </div>
+              <ul class="hero-lista" aria-hidden="true">
+                <li>Personas</li>
+                <li>Productos</li>
+                <li>Territorios</li>
+                <li>Comunidad</li>
+              </ul>
+            </section>
+            <button
+              v-else
+              :key="tiendaCarrusel.id"
+              class="hero hero-tienda"
+              type="button"
+              aria-roledescription="diapositiva"
+              :aria-label="`${indiceCarrusel + 1} de ${totalCarrusel}: abrir la tienda ${tiendaCarrusel.datos.nombre}`"
+              @click="navegar(tiendaCarrusel)"
+            >
+              <span v-if="cintaCarrusel.length" class="carrusel-productos" aria-hidden="true">
+                <span class="carrusel-cinta">
+                  <span v-for="(foto, i) in cintaCarrusel" :key="i" class="carrusel-foto">
+                    <ImagenPublica :ruta="foto" alt="" ajuste="cover" :zoom="false" />
+                  </span>
+                </span>
+              </span>
+              <span class="hero-texto">
+                <span class="sobretitulo">EMPRENDIMIENTOS DESTACADOS</span>
+                <span v-if="tiendaCarrusel.datos.sectorId && sectores[tiendaCarrusel.datos.sectorId]" class="carrusel-sector">
+                  <span aria-hidden="true">📍</span>
+                  {{ sectores[tiendaCarrusel.datos.sectorId] }}
+                </span>
+                <span class="carrusel-nombre">{{ tiendaCarrusel.datos.nombre }}</span>
+              </span>
+              <span class="hero-arte carrusel-logo">
+                <ImagenPublica v-if="tiendaCarrusel.datos.logo" :ruta="tiendaCarrusel.datos.logo" :alt="tiendaCarrusel.datos.nombre" ajuste="contain" :zoom="false" />
+                <span v-else class="logo-inicial hero" aria-hidden="true">{{ letraInicial(tiendaCarrusel.datos.nombre) }}</span>
+              </span>
+            </button>
+          </Transition>
+          <template v-if="totalCarrusel > 1">
+            <button class="carrusel-flecha" type="button" aria-label="Diapositiva anterior" @click="moverCarrusel(-1)">←</button>
+            <button class="carrusel-flecha siguiente" type="button" aria-label="Diapositiva siguiente" @click="moverCarrusel(1)">→</button>
+            <div class="carrusel-puntos">
+              <button
+                v-for="i in totalCarrusel"
+                :key="i"
+                type="button"
+                :class="{ activo: i - 1 === indiceCarrusel }"
+                :aria-label="i === 1 ? 'Ver portada' : `Ver ${tiendasCarrusel[i - 2]?.datos.nombre}`"
+                :aria-current="i - 1 === indiceCarrusel ? 'true' : undefined"
+                @click="indiceCarrusel = i - 1"
+              ></button>
+            </div>
+          </template>
+        </div>
 
         <label class="buscador buscador-ancho">
           <span aria-hidden="true">⌕</span>
@@ -743,30 +828,6 @@ onBeforeUnmount(() => {
               </span>
               <b class="precio">{{ precio(d.producto.datos.precioBase) }}</b>
             </button>
-          </div>
-        </section>
-
-        <section aria-labelledby="tit-emprendimientos">
-          <div class="fila-titulo">
-            <h2 id="tit-emprendimientos" class="titulo-bloque">Emprendimientos destacados</h2>
-            <a class="enlace" href="#catalogo">Ver todas las tiendas →</a>
-          </div>
-          <div class="rejilla-tiendas">
-            <article v-for="f in filas.slice(0, 4)" :key="f.id" class="tarjeta-tienda">
-              <span class="tarjeta-tienda-logo grande">
-                <ImagenPublica v-if="f.datos.logo" :ruta="f.datos.logo" :alt="f.datos.nombre" ajuste="contain" />
-                <span v-else class="logo-inicial grande" aria-hidden="true">{{ letraInicial(f.datos.nombre) }}</span>
-              </span>
-              <div class="tarjeta-tienda-cuerpo">
-                <h3>{{ f.datos.nombre }}</h3>
-                <p>{{ f.datos.descripcion }}</p>
-                <span v-if="ubicacionTienda(f.datos)" class="chip">
-                  <span aria-hidden="true">📍</span>
-                  {{ ubicacionTienda(f.datos) }}
-                </span>
-              </div>
-              <button class="boton boton-secundario" type="button" @click="navegar(f)">Visitar tienda →</button>
-            </article>
           </div>
         </section>
 
@@ -1536,6 +1597,226 @@ h1 {
     margin-left: auto;
 }
 
+.hero-lista {
+    position: relative;
+    z-index: 2;
+    margin: 0;
+    padding: 0 0 0 0.4rem;
+    list-style: none;
+    font-size: 0.85rem;
+    line-height: 1.9;
+    color: rgba(255, 251, 242, 0.82);
+    flex: none;
+}
+
+.carrusel {
+    position: relative;
+    margin-bottom: 1.4rem;
+}
+
+.carrusel .hero {
+    width: 100%;
+    min-height: 250px;
+    margin-bottom: 0;
+    padding-inline: clamp(3.9rem, 6vw, 4.9rem);
+    padding-bottom: 2.6rem;
+}
+
+.hero-tienda {
+    --tam-nombre: clamp(2.2rem, 4.4vw, 3.4rem);
+    justify-content: space-between;
+    border: 0;
+    background: #f9ded0;
+    color: var(--amancay-tinta);
+    box-shadow: 0 14px 30px rgba(107, 30, 61, 0.14);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.hero-tienda .hero-texto {
+    max-width: none;
+    gap: 0.35rem;
+}
+
+.hero-tienda::before {
+    display: none;
+}
+
+.carrusel.claro .carrusel-puntos button::before {
+    background: rgba(107, 30, 61, 0.3);
+}
+
+.carrusel.claro .carrusel-puntos button.activo::before {
+    background: var(--amancay-bordo);
+}
+
+.carrusel-productos {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    border-radius: inherit;
+    opacity: 0.22;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+.carrusel-cinta {
+    display: flex;
+    width: max-content;
+    animation: carrusel-cinta 45s linear infinite;
+}
+
+.carrusel-foto {
+    flex: none;
+    width: 120px;
+    height: 120px;
+    margin-right: 1rem;
+    overflow: hidden;
+    border-radius: 18px;
+}
+
+.carrusel-foto :deep(.imagen-publica) {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 1;
+    border-radius: 0;
+    background: transparent;
+}
+
+@keyframes carrusel-cinta {
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .carrusel-cinta {
+        animation: none;
+    }
+}
+
+.hero-tienda .sobretitulo {
+    color: var(--amancay-bordo);
+}
+
+.hero-tienda:focus-visible {
+    outline: 3px solid var(--amancay-mostaza);
+    outline-offset: 4px;
+}
+
+.carrusel-sector {
+    font-size: calc(var(--tam-nombre) * 0.5);
+    line-height: 1.2;
+    opacity: 0.9;
+}
+
+.carrusel-nombre {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-weight: 400;
+    font-size: var(--tam-nombre);
+    line-height: 1.05;
+    color: var(--amancay-bordo);
+    overflow-wrap: anywhere;
+}
+
+.carrusel-flecha {
+    position: absolute;
+    z-index: 3;
+    top: 50%;
+    left: 0.85rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 1.5px solid rgba(255, 251, 242, 0.5);
+    border-radius: 50%;
+    background: var(--amancay-superficie);
+    color: var(--amancay-bordo);
+    font-size: 1.15rem;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(46, 27, 32, 0.25);
+    transform: translateY(-50%);
+}
+
+.carrusel-flecha.siguiente {
+    left: auto;
+    right: 0.85rem;
+}
+
+.carrusel-flecha:hover {
+    background: var(--amancay-naranja-fondo);
+}
+
+.carrusel-puntos {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    bottom: 0.9rem;
+    display: flex;
+    gap: 0.25rem;
+    transform: translateX(-50%);
+}
+
+.carrusel-puntos button {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
+.carrusel-puntos button::before {
+    content: '';
+    display: block;
+    width: 9px;
+    height: 9px;
+    margin: auto;
+    border-radius: 999px;
+    background: rgba(255, 251, 242, 0.45);
+    transition: width 0.2s ease, background 0.2s ease;
+}
+
+.carrusel-puntos button.activo::before {
+    width: 22px;
+    background: var(--amancay-mostaza);
+}
+
+.carrusel-enter-active,
+.carrusel-leave-active {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.carrusel-enter-from {
+    opacity: 0;
+    transform: translateX(12px);
+}
+
+.carrusel-leave-to {
+    opacity: 0;
+    transform: translateX(-12px);
+}
+
+.carrusel-logo {
+    overflow: hidden;
+}
+
+.carrusel-logo :deep(.imagen-publica) {
+    width: 104px;
+    height: 104px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: transparent;
+}
+
+.carrusel-logo .logo-inicial.hero {
+    width: 104px;
+    height: 104px;
+}
+
 .hero-arte {
     position: relative;
     z-index: 2;
@@ -1553,18 +1834,6 @@ h1 {
     width: 104px;
     height: 104px;
     object-fit: contain;
-}
-
-.hero-lista {
-    position: relative;
-    z-index: 2;
-    margin: 0;
-    padding: 0 0 0 0.4rem;
-    list-style: none;
-    font-size: 0.85rem;
-    line-height: 1.9;
-    color: rgba(255, 251, 242, 0.82);
-    flex: none;
 }
 
 /* Buscadores */
@@ -2738,7 +3007,7 @@ article.tarjeta-tienda:hover {
     }
 
     .hero-frase,
-    .hero-arte {
+    .hero:not(.hero-tienda) .hero-arte {
         display: none;
     }
 
@@ -2832,6 +3101,40 @@ article.tarjeta-tienda:hover {
 
     .hero-texto > p:not(.sobretitulo) {
         max-width: 34ch;
+    }
+
+    .carrusel .hero {
+        padding-inline: 3.4rem;
+    }
+
+    .hero-tienda {
+        --tam-nombre: clamp(1.9rem, 9vw, 2.4rem);
+        flex-direction: column-reverse;
+        align-items: flex-start;
+        gap: 0.9rem;
+    }
+
+    .carrusel-flecha {
+        left: 0.5rem;
+        width: 2.4rem;
+        height: 2.4rem;
+    }
+
+    .carrusel-flecha.siguiente {
+        right: 0.5rem;
+    }
+
+    .carrusel-logo.hero-arte {
+        width: 84px;
+        height: 84px;
+        box-shadow: 0 0 0 8px rgba(246, 193, 119, 0.22);
+    }
+
+    .carrusel-logo :deep(.imagen-publica),
+    .carrusel-logo .logo-inicial.hero {
+        width: 66px;
+        height: 66px;
+        font-size: 2rem;
     }
 
     .encabezado-fila h1 {

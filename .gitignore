@@ -42,3 +42,5 @@ emulator-data/
 
 # Copia local preservada mientras se resolvía la colisión de rutas en Windows
 /android/src-comprador-preservado/
+
+respaldos/
