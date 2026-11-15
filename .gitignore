@@ -26,6 +26,7 @@ secrets/
 
 # Android y sistema
 .gradle/
+android/app-combinada/.gradle-user-home/
 .kotlin/
 .idea/
 local.properties
