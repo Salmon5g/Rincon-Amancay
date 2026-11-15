@@ -227,6 +227,12 @@ fun DialogoDetalleProducto(
     alCerrar: () -> Unit,
     alEncargar: () -> Unit
 ) {
+    val varianteSeleccionada = androidx.compose.runtime.remember(producto.tiendaId, producto.id) {
+        androidx.compose.runtime.mutableStateOf<String?>(null)
+    }
+    val varianteActual = producto.variantes.firstOrNull { it.id == varianteSeleccionada.value }
+        ?: producto.variantes.firstOrNull()
+    val imagenActual = varianteActual?.imagenUrl ?: producto.imagenUrl
     AlertDialog(
         onDismissRequest = alCerrar,
         title = {
@@ -244,9 +250,9 @@ fun DialogoDetalleProducto(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (producto.imagenUrl != null) {
+                if (imagenActual != null) {
                     AsyncImage(
-                        model = producto.imagenUrl,
+                        model = imagenActual,
                         contentDescription = producto.nombre,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
@@ -311,25 +317,15 @@ fun DialogoDetalleProducto(
                         color = AmancayBordo
                     )
                     producto.variantes.forEach { variante ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                variante.opciones.values.joinToString(" · ").ifBlank { "Opción" },
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = AmancayTinta
-                            )
-                            Text(
-                                variante.precio?.let(::formatoPrecio) ?: "Consultar",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = AmancayBordo
-                            )
-                        }
+                        androidx.compose.material3.FilterChip(
+                            selected = variante.id == varianteActual?.id,
+                            onClick = { varianteSeleccionada.value = variante.id },
+                            label = {
+                                Text(variante.opciones.values.joinToString(" · ").ifBlank { "Opción" })
+                            }
+                        )
                     }
+                    Text(varianteActual?.precio?.let(::formatoPrecio) ?: "Consultar precio", color = AmancayBordo)
                 } else {
                     producto.precioBase?.let { precio ->
                         Text(

@@ -211,7 +211,7 @@ private fun PantallaAccesoComprador(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            if (creandoCuenta) "Crea tu cuenta compradora" else "Inicia sesión para comprar",
+            if (creandoCuenta) "Crea tu cuenta compradora" else "Inicia sesión",
             style = MaterialTheme.typography.headlineSmall,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.SemiBold,
@@ -223,7 +223,7 @@ private fun PantallaAccesoComprador(
             if (creandoCuenta)
                 "Regístrate con tu correo para enviar encargos y seguir a tus emprendimientos."
             else
-                "Con tu cuenta puedes enviar encargos y seguir a tus emprendimientos.",
+                "Usa el correo de tu cuenta compradora o emprendedora.",
             style = MaterialTheme.typography.bodyMedium,
             color = AmancayTintaSuave,
             textAlign = TextAlign.Center

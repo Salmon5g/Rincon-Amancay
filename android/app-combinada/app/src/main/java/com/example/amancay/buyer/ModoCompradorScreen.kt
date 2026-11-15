@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridView
@@ -27,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +49,8 @@ import com.example.amancay.data.ResultadoAccesoGoogle
 import com.example.amancay.data.SesionComprador
 import com.example.amancay.data.sesionDesdeUsuario
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -60,17 +64,28 @@ import kotlinx.coroutines.tasks.await
 fun ModoCompradorScreen(
     repositorio: CatalogoCompradorRepository,
     auth: FirebaseAuth,
+    firestore: FirebaseFirestore,
     webClientId: String,
-    alVolver: () -> Unit
+    alAbrirEspacioEmprendedora: () -> Unit
 ) {
     val productos by repositorio.productos.collectAsState()
     val cargando by repositorio.cargando.collectAsState()
     val error by repositorio.error.collectAsState()
+    val directorio by repositorio.directorio.collectAsState()
+    val tiposEmprendimiento by repositorio.tiposEmprendimiento.collectAsState()
+    val sectores by repositorio.sectores.collectAsState()
+    val modoNavegacion by repositorio.modoNavegacion.collectAsState()
+    var mostrarDirectorio by remember { mutableStateOf(false) }
+    var tiendaSeleccionada by remember { mutableStateOf<String?>(null) }
+    var omitioInvitacion by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val alcance = rememberCoroutineScope()
-    var sesion by remember { mutableStateOf<SesionComprador?>(null) }
+    var sesion by remember(auth) { mutableStateOf(auth.currentUser?.let(::sesionDesdeUsuario)) }
+    var uidSesion by remember(auth) { mutableStateOf(auth.currentUser?.uid) }
     var ingresando by remember { mutableStateOf(false) }
     var mensajeAcceso by remember { mutableStateOf<String?>(null) }
+    var errorRol by remember { mutableStateOf(false) }
+    var intentoRol by remember { mutableStateOf(0) }
     var pestana by remember { mutableStateOf(PestanaComprador.INICIO) }
     var busqueda by remember { mutableStateOf("") }
     var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
@@ -86,20 +101,33 @@ fun ModoCompradorScreen(
 
     DisposableEffect(auth) {
         val escucha = FirebaseAuth.AuthStateListener { estado ->
+            uidSesion = estado.currentUser?.uid
             sesion = estado.currentUser?.let(::sesionDesdeUsuario)
         }
         auth.addAuthStateListener(escucha)
         onDispose { auth.removeAuthStateListener(escucha) }
     }
 
-    // Atrás: de una pestaña secundaria vuelve a Inicio; desde Inicio sale del modo.
-    BackHandler {
-        pestana = if (pestana == PestanaComprador.INICIO) {
-            alVolver()
-            return@BackHandler
-        } else {
-            PestanaComprador.INICIO
+    val uid = uidSesion
+    LaunchedEffect(auth, firestore, uid, ingresando, intentoRol) {
+        errorRol = false
+        if (uid == null || ingresando) return@LaunchedEffect
+        try {
+            val acceso = firestore.collection("accesos").document(uid).get().await()
+            if (auth.currentUser?.uid == uid && acceso.getString("estado") == "activo" &&
+                "emprendedora" in (acceso.get("roles") as? List<*>).orEmpty()
+            ) {
+                alAbrirEspacioEmprendedora()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            errorRol = true
         }
+    }
+
+    BackHandler(enabled = pestana != PestanaComprador.INICIO) {
+        pestana = PestanaComprador.INICIO
     }
 
     val categorias = remember(productos) {
@@ -165,11 +193,42 @@ fun ModoCompradorScreen(
         }
     }
 
+    val exigeGoogle = modoNavegacion == "exigir" && auth.currentUser?.providerData.orEmpty().none { it.providerId == "google.com" }
+    val invitaGoogle = modoNavegacion == "invitar" && sesion == null && !omitioInvitacion
+    val catalogoRestringido = modoNavegacion == null || exigeGoogle || invitaGoogle
+    if (catalogoRestringido && pestana != PestanaComprador.CUENTA) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(if (modoNavegacion == null) "Cargando acceso al catálogo" else "Continúa con Google") },
+            text = {
+                Text(when {
+                    modoNavegacion == null -> error ?: "Estamos consultando la configuración de acceso."
+                    exigeGoogle -> mensajeAcceso ?: "La plataforma requiere iniciar sesión con Google."
+                    else -> mensajeAcceso ?: "Puedes ingresar con Google u omitir este paso."
+                })
+            },
+            confirmButton = {
+                if (modoNavegacion != null) TextButton(
+                    onClick = { alIngresarGoogle("", "") },
+                    enabled = !ingresando
+                ) { Text("Ingresar con Google") }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (invitaGoogle) omitioInvitacion = true else abrirAcceso() }) {
+                    Text(if (invitaGoogle) "Omitir" else "Usar correo")
+                }
+            }
+        )
+        return
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = AmancayFondo,
         topBar = {
-            BarraSuperiorAmancay(alVolver = alVolver) {
+            BarraSuperiorAmancay(
+                alVolver = if (pestana != PestanaComprador.INICIO) ({ pestana = PestanaComprador.INICIO }) else null
+            ) {
                 val sesionActual = sesion
                 if (sesionActual == null) {
                     BotonIniciarSesionAmancay(
@@ -207,7 +266,7 @@ fun ModoCompradorScreen(
             }
         },
         bottomBar = {
-            BarraInferiorComprador(actual = pestana) { pestana = it }
+            if (!catalogoRestringido) BarraInferiorComprador(actual = pestana) { pestana = it }
         }
     ) { inset ->
         when (pestana) {
@@ -224,6 +283,7 @@ fun ModoCompradorScreen(
                 alAbrirProducto = { productoSeleccionado = it },
                 proximaFeria = proximaFeria(listaFerias),
                 alVerTodo = { pestana = PestanaComprador.EXPLORAR },
+                alVerDirectorio = { mostrarDirectorio = true },
                 alVerFerias = { pestana = PestanaComprador.FERIAS },
                 modifier = Modifier
                     .fillMaxSize()
@@ -281,7 +341,41 @@ fun ModoCompradorScreen(
         }
     }
 
-    productoSeleccionado?.let { producto ->
+    if (errorRol) {
+        AlertDialog(
+            onDismissRequest = { errorRol = false },
+            title = { Text("No pudimos comprobar tu perfil") },
+            text = { Text("Comprueba tu conexión para acceder al espacio asociado a tu cuenta.") },
+            confirmButton = { TextButton(onClick = { intentoRol++ }) { Text("Reintentar") } },
+            dismissButton = { TextButton(onClick = { errorRol = false }) { Text("Cerrar") } }
+        )
+    }
+
+    if (mostrarDirectorio) {
+        DirectorioComprador(directorio, tiposEmprendimiento, sectores, cargando, error,
+            alCerrar = { mostrarDirectorio = false },
+            alAbrir = { tiendaSeleccionada = it; mostrarDirectorio = false })
+    }
+    directorio.firstOrNull { it.id == tiendaSeleccionada }?.let { tienda ->
+        if (productoSeleccionado == null) AlertDialog(
+            onDismissRequest = { tiendaSeleccionada = null },
+            title = { Text(tienda.nombre) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    val catalogo = productos.filter { it.tiendaId == tienda.id }
+                    if (catalogo.isEmpty()) Text("No hay productos públicos disponibles para mostrar.")
+                    catalogo.forEach { producto ->
+                        TextButton(onClick = { productoSeleccionado = producto }) {
+                            Text("${producto.nombre} · ${precioProducto(producto)}")
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { tiendaSeleccionada = null; mostrarDirectorio = true }) { Text("Volver al directorio") } }
+        )
+    }
+    productoSeleccionado?.let { seleccionado ->
+        val producto = productos.firstOrNull { it.id == seleccionado.id && it.tiendaId == seleccionado.tiendaId } ?: seleccionado
         DialogoDetalleProducto(
             producto = producto,
             alCerrar = { productoSeleccionado = null },
@@ -374,6 +468,7 @@ private fun PantallaInicio(
     alAbrirProducto: (ProductoCatalogoComprador) -> Unit,
     proximaFeria: FeriaComprador?,
     alVerTodo: () -> Unit,
+    alVerDirectorio: () -> Unit,
     alVerFerias: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -383,6 +478,11 @@ private fun PantallaInicio(
     ) {
         item { HeroBienvenida(alExplorar = alVerTodo) }
         item { BuscadorAmancay(valor = busqueda, alCambiar = alBuscar) }
+        item {
+            TextButton(onClick = alVerDirectorio) {
+                Text("Directorio de emprendimientos", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
+            }
+        }
         item {
             FilaCategorias(
                 categorias = categorias,
@@ -414,7 +514,7 @@ private fun PantallaInicio(
             else -> {
                 item {
                     Column {
-                        EncabezadoSeccion("Selección de hoy", alVerTodo = alVerTodo)
+                        EncabezadoSeccion("Productos destacados", alVerTodo = alVerTodo)
                         Spacer(Modifier.height(2.dp))
                     }
                 }

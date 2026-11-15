@@ -12,7 +12,8 @@ data class VarianteCatalogoComprador(
     val id: String,
     val opciones: Map<String, String>,
     val precio: Long?,
-    val estadoDisponibilidad: String
+    val estadoDisponibilidad: String,
+    val imagenUrl: String? = null
 )
 
 data class ProductoCatalogoComprador(
@@ -36,7 +37,13 @@ data class ProductoCatalogoComprador(
     val imagenUrl: String? = null
 )
 
+data class TiendaCatalogoComprador(val id: String, val nombre: String, val tipoId: String, val sectorId: String)
+
 interface CatalogoCompradorRepository {
+    val directorio: StateFlow<List<TiendaCatalogoComprador>>
+    val tiposEmprendimiento: StateFlow<Map<String, String>>
+    val sectores: StateFlow<Map<String, String>>
+    val modoNavegacion: StateFlow<String?>
     val productos: StateFlow<List<ProductoCatalogoComprador>>
     val cargando: StateFlow<Boolean>
     val error: StateFlow<String?>
@@ -53,9 +60,16 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     private val _error = MutableStateFlow<String?>(null)
     override val error: StateFlow<String?> = _error.asStateFlow()
 
-    private data class Tienda(val id: String, val nombre: String)
+    private val _directorio = MutableStateFlow<List<TiendaCatalogoComprador>>(emptyList())
+    override val directorio = _directorio.asStateFlow()
+    private val _tipos = MutableStateFlow<Map<String, String>>(emptyMap())
+    override val tiposEmprendimiento = _tipos.asStateFlow()
+    private val _sectores = MutableStateFlow<Map<String, String>>(emptyMap())
+    override val sectores = _sectores.asStateFlow()
+    private val _modo = MutableStateFlow<String?>(null)
+    override val modoNavegacion = _modo.asStateFlow()
 
-    private val tiendas = mutableMapOf<String, Tienda>()
+    private val tiendas = mutableMapOf<String, TiendaCatalogoComprador>()
     private val productosPorTienda = mutableMapOf<String, List<ProductoCatalogoComprador>>()
     private val variantesPorProducto = mutableMapOf<String, List<VarianteCatalogoComprador>>()
     private val suscripcionesProductos = mutableMapOf<String, ListenerRegistration>()
@@ -65,6 +79,20 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     private val suscripciones = mutableListOf<ListenerRegistration>()
 
     init {
+        suscripciones += db.document("configuracionAplicacion/navegacion")
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, exception ->
+                if (exception != null) informarError(exception)
+                else if (snapshot != null && !snapshot.metadata.isFromCache) {
+                    _modo.value = snapshot.getString("modo") ?: "permitir"
+                }
+            }
+        listOf("tiposEmprendimiento" to _tipos, "sectores" to _sectores).forEach { (coleccion, destino) ->
+            suscripciones += db.collection(coleccion).whereEqualTo("activo", true)
+                .addSnapshotListener { snapshot, exception ->
+                    if (exception != null) informarError(exception)
+                    else destino.value = snapshot?.documents.orEmpty().associate { it.id to (it.getString("nombre") ?: it.id) }
+                }
+        }
         suscripciones += db.collection("categorias")
             .whereEqualTo("activo", true)
             .addSnapshotListener { snapshot, exception ->
@@ -104,13 +132,16 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                 }
                 val documentos = snapshot?.documents.orEmpty()
                 val tiendasNuevas = documentos.associate { documento ->
-                    documento.id to Tienda(
+                    documento.id to TiendaCatalogoComprador(
                         id = documento.id,
-                        nombre = documento.getString("nombre")?.takeIf(String::isNotBlank) ?: documento.id
+                        nombre = documento.getString("nombre")?.takeIf(String::isNotBlank) ?: documento.id,
+                        tipoId = documento.getString("tipoEmprendimientoId").orEmpty(),
+                        sectorId = documento.getString("sectorId").orEmpty()
                     )
                 }
                 tiendas.clear()
                 tiendas.putAll(tiendasNuevas)
+                _directorio.value = tiendas.values.sortedBy { it.nombre.lowercase() }
 
                 val habilitadasParaCatalogo = documentos
                     .filter { it.getBoolean("mostrarPrecios") == true }
@@ -169,7 +200,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                     informarError(exception)
                     return@addSnapshotListener
                 }
-                variantesPorProducto[id] = snapshot?.documents.orEmpty().map { it.aVariante() }
+                variantesPorProducto[id] = snapshot?.documents.orEmpty().map { it.aVariante(producto) }
                 _error.value = null
                 reconstruirCatalogo()
             }
@@ -180,7 +211,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         variantesPorProducto.remove(id)
     }
 
-    private fun DocumentSnapshot.aProducto(tienda: Tienda) = ProductoCatalogoComprador(
+    private fun DocumentSnapshot.aProducto(tienda: TiendaCatalogoComprador) = ProductoCatalogoComprador(
         id = id,
         tiendaId = tienda.id,
         tiendaNombre = tienda.nombre,
@@ -200,11 +231,12 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         imagenUrl = urlImagenCatalogo(tienda.id, id, (get("imagenes") as? List<*>).orEmpty().filterIsInstance<String>())
     )
 
-    private fun DocumentSnapshot.aVariante() = VarianteCatalogoComprador(
+    private fun DocumentSnapshot.aVariante(producto: ProductoCatalogoComprador) = VarianteCatalogoComprador(
         id = id,
         opciones = mapaTexto("opciones"),
         precio = getLong("precio"),
-        estadoDisponibilidad = getString("estadoDisponibilidad") ?: "consultar"
+        estadoDisponibilidad = getString("estadoDisponibilidad") ?: "consultar",
+        imagenUrl = urlImagenCatalogo(producto.tiendaId, producto.id, listOfNotNull(getString("imagen")))
     )
 
     private fun DocumentSnapshot.mapaTexto(campo: String): Map<String, String> =

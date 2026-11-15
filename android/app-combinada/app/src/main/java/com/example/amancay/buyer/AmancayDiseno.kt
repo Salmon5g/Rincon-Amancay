@@ -60,21 +60,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.ui.Fig
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Sistema visual del modo comprador (paleta propia de `buyer/`): barra
@@ -323,35 +318,40 @@ fun ChipCategoriaAmancay(
 
 @Composable
 fun HeroBienvenida(alExplorar: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
+    Card(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = AmancayBordo)
     ) {
-        Column(Modifier.weight(1.2f)) {
-            Text(
-                "Hecho cerca,\nelegido con cariño.",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontSize = 22.sp,
-                    lineHeight = 27.sp
-                ),
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                color = AmancayTinta
-            )
+        Column(Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Hecho cerca, elegido con cariño",
+                    modifier = Modifier.weight(1.4f),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold,
+                    color = AmancayFondo
+                )
+                Image(
+                    painter = painterResource(com.example.amancay.R.drawable.flor_inicio_comprador),
+                    contentDescription = null,
+                    modifier = Modifier.weight(1f).height(108.dp)
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Descubre productos creados por emprendedoras de Puerto Montt.",
+                "Descubre productos y emprendimientos de nuestra comunidad.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = AmancayTintaSuave
+                color = AmancayFondo
             )
             Spacer(Modifier.height(14.dp))
             Button(
                 onClick = alExplorar,
-                shape = RoundedCornerShape(50.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AmancayBordo,
-                    contentColor = Color.White
+                    containerColor = AmancayMostaza,
+                    contentColor = AmancayBordoOscuro
                 )
             ) {
                 Text("Explorar productos", fontWeight = FontWeight.SemiBold)
@@ -362,98 +362,6 @@ fun HeroBienvenida(alExplorar: () -> Unit, modifier: Modifier = Modifier) {
                     modifier = Modifier.size(17.dp)
                 )
             }
-        }
-        Spacer(Modifier.width(6.dp))
-        IlustracionHero(
-            Modifier
-                .weight(0.8f)
-                .height(172.dp)
-                .padding(top = 2.dp)
-        )
-    }
-}
-
-/**
- * Decoración del hero dibujada con Canvas (sin assets binarios): forma
- * orgánica durazno con flor, panel de texto y silueta de montañas.
- */
-@Composable
-private fun IlustracionHero(modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
-        Canvas(Modifier.fillMaxSize()) {
-            val ancho = size.width
-            val alto = size.height
-
-            // Forma orgánica de fondo.
-            val burbuja = Path().apply {
-                moveTo(ancho * 0.40f, alto * 0.05f)
-                cubicTo(ancho * 0.86f, -alto * 0.05f, ancho * 1.08f, alto * 0.24f, ancho * 0.97f, alto * 0.54f)
-                cubicTo(ancho * 0.87f, alto * 0.82f, ancho * 0.48f, alto * 0.84f, ancho * 0.32f, alto * 0.60f)
-                cubicTo(ancho * 0.20f, alto * 0.42f, ancho * 0.20f, alto * 0.12f, ancho * 0.40f, alto * 0.05f)
-                close()
-            }
-            drawPath(burbuja, AmancayHeroDurazno)
-
-            // Flor de seis pétalos sobre la forma.
-            val centroX = ancho * 0.78f
-            val centroY = alto * 0.24f
-            val radio = ancho * 0.068f
-            repeat(6) { indice ->
-                val angulo = Math.PI / 3 * indice
-                drawCircle(
-                    color = AmancayMostaza,
-                    radius = radio,
-                    center = Offset(
-                        centroX + (cos(angulo) * radio * 1.7).toFloat(),
-                        centroY + (sin(angulo) * radio * 1.7).toFloat()
-                    )
-                )
-            }
-            drawCircle(AmancayBordo, radius = radio * 0.85f, center = Offset(centroX, centroY))
-
-            // Montañas al pie.
-            val montanas = Path().apply {
-                moveTo(0f, alto)
-                lineTo(0f, alto * 0.80f)
-                lineTo(ancho * 0.24f, alto * 0.56f)
-                lineTo(ancho * 0.44f, alto * 0.78f)
-                lineTo(ancho * 0.64f, alto * 0.52f)
-                lineTo(ancho * 0.84f, alto * 0.76f)
-                lineTo(ancho, alto * 0.64f)
-                lineTo(ancho, alto)
-                close()
-            }
-            drawPath(montanas, AmancayHeroVerde)
-
-            val montanasClaras = Path().apply {
-                moveTo(0f, alto)
-                lineTo(0f, alto * 0.90f)
-                lineTo(ancho * 0.30f, alto * 0.72f)
-                lineTo(ancho * 0.56f, alto * 0.90f)
-                lineTo(ancho * 0.80f, alto * 0.76f)
-                lineTo(ancho, alto * 0.88f)
-                lineTo(ancho, alto)
-                close()
-            }
-            drawPath(montanasClaras, AmancayHeroVerdeClaro)
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 2.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(AmancayHeroRosa)
-                .padding(horizontal = 10.dp, vertical = 8.dp)
-        ) {
-            Text(
-                "Productos locales\nHistorias reales",
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Serif,
-                fontStyle = FontStyle.Italic,
-                color = AmancayBordo,
-                textAlign = TextAlign.Center
-            )
         }
     }
 }

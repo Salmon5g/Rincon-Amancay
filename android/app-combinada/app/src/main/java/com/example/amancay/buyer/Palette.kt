@@ -1,20 +1,29 @@
 package com.example.amancay.buyer
 
 import androidx.compose.ui.graphics.Color
+import com.example.amancay.ui.theme.CardPink
+import com.example.amancay.ui.theme.Cream
+import com.example.amancay.ui.theme.CreamDark
+import com.example.amancay.ui.theme.Dark
+import com.example.amancay.ui.theme.Line
+import com.example.amancay.ui.theme.Muted
+import com.example.amancay.ui.theme.Peach
+import com.example.amancay.ui.theme.Wine
+import com.example.amancay.ui.theme.WineDark
 
-val AmancayAyudaFondo = Color(0xFFF4E8DE)
-val AmancayBordo = Color(0xFF7B2942)
-val AmancayBordoOscuro = Color(0xFF632137)
-val AmancayBordoSuave = Color(0xFFF4E2E6)
-val AmancayBorde = Color(0xFFE8D9CC)
-val AmancayFondo = Color(0xFFFAF5EE)
+val AmancayAyudaFondo = CreamDark
+val AmancayBordo = Wine
+val AmancayBordoOscuro = WineDark
+val AmancayBordoSuave = CardPink
+val AmancayBorde = Line
+val AmancayFondo = Cream
 val AmancayMostaza = Color(0xFFE1B34A)
 val AmancayMostazaSuave = Color(0xFFF8EFCF)
-val AmancayNaranjaFondo = Color(0xFFF4E8DE)
-val AmancayNaranjaIcono = Color(0xFFE7C9AE)
+val AmancayNaranjaFondo = CreamDark
+val AmancayNaranjaIcono = Peach
 val AmancaySuperficie = Color(0xFFFFFCF7)
-val AmancayTinta = Color(0xFF332822)
-val AmancayTintaSuave = Color(0xFF786B63)
+val AmancayTinta = Dark
+val AmancayTintaSuave = Muted
 val AmancayVerdeFondo = Color(0xFFE4F0E6)
 val AmancayVerdeTexto = Color(0xFF42664A)
 
@@ -31,8 +40,6 @@ val AmancayChipVerde = Color(0xFFE6F1E7)
 val AmancayChipLila = Color(0xFFEFEAF8)
 val AmancayChipAmarillo = Color(0xFFFBF2D8)
 
-/** Formas orgánicas y montañas del hero de Inicio. */
-val AmancayHeroDurazno = Color(0xFFF4D9C4)
-val AmancayHeroRosa = Color(0xFFF6E1E4)
+/** Tonos de la ilustración de ferias. */
 val AmancayHeroVerde = Color(0xFFC7DAC6)
 val AmancayHeroVerdeClaro = Color(0xFFDFEBDC)

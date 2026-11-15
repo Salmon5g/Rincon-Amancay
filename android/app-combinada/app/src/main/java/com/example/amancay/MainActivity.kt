@@ -5,9 +5,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import com.example.amancay.BuildConfig
-import com.example.amancay.ui.theme.Peach
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -121,7 +119,7 @@ fun AmancayApp() {
     DisposableEffect(catalogoComprador) {
         onDispose { catalogoComprador.cerrar() }
     }
-    var modo by remember { mutableStateOf<String?>(null) }
+    var espacioEmprendedora by remember { mutableStateOf(false) }
     val densidad = LocalDensity.current
     val cambiarEscalaTexto: (Float) -> Unit = { escala ->
         escalaTexto = escala
@@ -129,127 +127,40 @@ fun AmancayApp() {
     }
     CompositionLocalProvider(LocalDensity provides Density(densidad.density, densidad.fontScale * escalaTexto)) {
         ContenidoAmancay(
-            modo = modo,
+            espacioEmprendedora = espacioEmprendedora,
             firebaseServices = firebaseServices,
             catalogoComprador = catalogoComprador,
             escalaTexto = escalaTexto,
             alCambiarEscalaTexto = cambiarEscalaTexto,
-            alCambiarModo = { modo = it }
+            alCambiarEspacio = { espacioEmprendedora = it }
         )
     }
 }
 
 @Composable
 private fun ContenidoAmancay(
-    modo: String?,
+    espacioEmprendedora: Boolean,
     firebaseServices: FirebaseClientServices,
     catalogoComprador: CatalogoCompradorRepository,
     escalaTexto: Float,
     alCambiarEscalaTexto: (Float) -> Unit,
-    alCambiarModo: (String?) -> Unit
+    alCambiarEspacio: (Boolean) -> Unit
 ) {
-    when (modo) {
-        "comprador" -> ModoCompradorScreen(
-            repositorio = catalogoComprador,
-            auth = firebaseServices.auth,
-            webClientId = BuildConfig.WEB_CLIENT_ID
-        ) { alCambiarModo(null) }
-        "emprendedora" -> ModoEmprendedoraConectada(
+    if (espacioEmprendedora) {
+        ModoEmprendedoraConectada(
             firebaseServices,
             BuildConfig.WEB_CLIENT_ID,
             escalaTexto,
             alCambiarEscalaTexto
-        ) { alCambiarModo(null) }
-        else -> PantallaSeleccionModo(alCambiarModo)
-    }
-}
-
-@Composable
-private fun PantallaSeleccionModo(alCambiarModo: (String?) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Cream)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(36.dp))
-        Image(
-            painter = painterResource(Fig.LOGO),
-            contentDescription = "Rincón Amancay",
-            modifier = Modifier.size(92.dp)
+        ) { alCambiarEspacio(false) }
+    } else {
+        ModoCompradorScreen(
+            repositorio = catalogoComprador,
+            auth = firebaseServices.auth,
+            firestore = firebaseServices.firestore,
+            webClientId = BuildConfig.WEB_CLIENT_ID,
+            alAbrirEspacioEmprendedora = { alCambiarEspacio(true) }
         )
-        Spacer(Modifier.height(14.dp))
-        Text(
-            "Rincón Amancay",
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            color = Wine,
-            fontFamily = FontFamily.Serif,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "¿Cómo quieres usar la aplicación?",
-            fontSize = 15.sp,
-            color = Muted,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(26.dp))
-        TarjetaModo(
-            titulo = "Modo comprador",
-            descripcion = "Encuentra productos de los emprendimientos Amancay.",
-            emoji = "🛍️"
-        ) { alCambiarModo("comprador") }
-        Spacer(Modifier.height(14.dp))
-        TarjetaModo(
-            titulo = "Modo emprendedora",
-            descripcion = "Administra tu catálogo, tus precios y tus ventas.",
-            emoji = "✿"
-        ) { alCambiarModo("emprendedora") }
-    }
-}
-
-@Composable
-private fun TarjetaModo(
-    titulo: String,
-    descripcion: String,
-    emoji: String,
-    alEntrar: () -> Unit
-) {
-    Card(
-        onClick = alEntrar,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Line),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(56.dp).background(Peach, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(emoji, fontSize = 26.sp)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(titulo, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Dark)
-                Spacer(Modifier.height(4.dp))
-                Text(descripcion, fontSize = 13.sp, color = Muted, maxLines = 2)
-            }
-            Spacer(Modifier.width(10.dp))
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Wine.copy(alpha = 0.10f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("›", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Wine)
-            }
-        }
     }
 }
 
