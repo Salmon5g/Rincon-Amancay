@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ activo?: 'explorar' | 'ferias' }>(), { activo: 'explorar' })
+withDefaults(defineProps<{ activo?: 'explorar' | 'directorio' | 'ferias' }>(), { activo: 'explorar' })
 
 const ruta = useRoute()
 
@@ -39,6 +39,10 @@ async function irSeccion(id: string) {
         <span class="mi" aria-hidden="true">🏪</span>
         Tiendas
       </button>
+      <NuxtLink class="menu-enlace" :class="{ on: activo === 'directorio' }" to="/comprador/directorio">
+        <span class="mi" aria-hidden="true">👥</span>
+        Directorio
+      </NuxtLink>
       <NuxtLink class="menu-enlace" :class="{ on: activo === 'ferias' }" to="/comprador/ferias">
         <span class="mi" aria-hidden="true">🎪</span>
         Ferias

@@ -1,9 +1,9 @@
 import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore'
 import { getBlob, ref as storageRef } from 'firebase/storage'
-import type { DocumentData, DocumentSnapshot, QueryDocumentSnapshot } from 'firebase/firestore'
+import type { DocumentData, DocumentSnapshot, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
-import type { ContactoPublico, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { AsociacionPublica, ContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
 const MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024
@@ -98,6 +98,32 @@ function mapearVariante(documento: QueryDocumentSnapshot<DocumentData>): Variant
     stock: numero(datos.stock),
     estadoDisponibilidad: texto(datos.estadoDisponibilidad, 'consultar'),
     activa: datos.activa === true,
+  }
+}
+
+function mapearAsociacion(documento: QueryDocumentSnapshot<DocumentData>): AsociacionPublica {
+  const datos = documento.data()
+  const integrantes: IntegranteAsociacionPublica[] = Array.isArray(datos.integrantes)
+    ? datos.integrantes.flatMap((elemento): IntegranteAsociacionPublica[] => {
+      if (!elemento || typeof elemento !== 'object' || Array.isArray(elemento)) return []
+      const integrante = elemento as Record<string, unknown>
+      const tiendaId = texto(integrante.tiendaId)
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(tiendaId)) return []
+      return [{
+        tiendaId,
+        nombre: texto(integrante.nombre, tiendaId),
+        sectorId: texto(integrante.sectorId),
+        tipoEmprendimientoId: texto(integrante.tipoEmprendimientoId),
+        ...(typeof integrante.logoMiniatura === 'string' ? { logoMiniatura: integrante.logoMiniatura } : {}),
+      }]
+    })
+    : []
+  return {
+    id: documento.id,
+    nombre: texto(datos.nombre, documento.id),
+    descripcion: texto(datos.descripcion),
+    sectorId: texto(datos.sectorId),
+    integrantes,
   }
 }
 
@@ -221,6 +247,28 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
         ])
         const catalogos: CatalogosPublicos = { sectores, tiposEmprendimiento, categorias }
         return catalogos
+      })
+    },
+
+    async listarAsociacionesPublicas() {
+      return ejecutarConErrorNormalizado(async () => {
+        const asociaciones: AsociacionPublica[] = []
+        let cursor: string | null = null
+        let cantidad = 0
+        do {
+          const consulta: Query<DocumentData> = query(
+            collection(db, 'asociacionesPublicas'),
+            where('activo', '==', true),
+            orderBy(documentId()),
+            ...(cursor ? [startAfter(cursor)] : []),
+            limit(TAMANO_PAGINA),
+          )
+          const resultado: QuerySnapshot<DocumentData> = await getDocs(consulta)
+          asociaciones.push(...resultado.docs.map(mapearAsociacion))
+          cantidad = resultado.docs.length
+          cursor = resultado.docs.at(-1)?.id ?? null
+        } while (cantidad === TAMANO_PAGINA && cursor)
+        return asociaciones.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'))
       })
     },
 

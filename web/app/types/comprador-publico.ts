@@ -16,6 +16,22 @@ export interface TiendaPublica {
   contacto?: ContactoPublico;
 }
 
+export interface IntegranteAsociacionPublica {
+  tiendaId: string;
+  nombre: string;
+  sectorId: string;
+  tipoEmprendimientoId: string;
+  logoMiniatura?: string;
+}
+
+export interface AsociacionPublica {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  sectorId: string;
+  integrantes: IntegranteAsociacionPublica[];
+}
+
 export interface ContactoPublico {
   tipo: 'whatsapp' | 'correo' | 'web';
   valor: string;
