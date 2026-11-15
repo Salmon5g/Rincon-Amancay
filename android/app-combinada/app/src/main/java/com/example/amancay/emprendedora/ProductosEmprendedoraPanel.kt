@@ -832,28 +832,49 @@ private fun EditorProductoEmprendedora(
     }
 
     val invalidField = campos.firstOrNull { it.obligatorio && atributos[it.clave].isNullOrBlank() }
-    val invalidVariant = variantes.any { row ->
-        opciones.any { row.opciones[it].isNullOrBlank() } || (row.precio.toLongOrNull() ?: 0L) <= 0L ||
-            (manejaStock && !row.existente && row.stock.toIntOrNull() == null)
-    }
     val stockValue = stockInicial.toIntOrNull()
+    val errorDatos = when {
+        nombre.isBlank() -> "Ingresa el nombre del producto."
+        descripcion.isBlank() -> "Ingresa la descripción del producto."
+        categoriasDisponibles.none { it.id == categoriaId } -> "Selecciona una categoría."
+        else -> null
+    }
+    val combinaciones = variantes.map { variante ->
+        opciones.map { variante.opciones[it].orEmpty().trim().lowercase() }
+    }
+    val errorPreciosYStock = if (conVariantes) {
+        val incompleta = variantes.indexOfFirst { variante ->
+            opciones.any { variante.opciones[it].isNullOrBlank() } ||
+                (variante.precio.toLongOrNull() ?: 0L) <= 0L ||
+                (manejaStock && !variante.existente && (variante.stock.toIntOrNull() ?: -1) < 0)
+        }
+        when {
+            variantes.isEmpty() -> "Agrega al menos una variante."
+            incompleta >= 0 -> "Variante ${incompleta + 1}: completa sus opciones, ingresa un precio mayor que cero y, si corresponde, un stock de cero o más."
+            combinaciones.distinct().size != combinaciones.size -> "Cada variante debe tener una combinación de opciones distinta."
+            else -> null
+        }
+    } else when {
+        (precioBase.toLongOrNull() ?: 0L) <= 0L -> "Ingresa un precio entero mayor que cero."
+        manejaStock && original == null && (stockValue ?: -1) < 0 -> "Ingresa un stock inicial entero de cero o más."
+        else -> null
+    }
     fun guardarBorrador(publicar: Boolean = false) {
         error = when {
             tipo == null -> "Espera a que se carguen los tipos de producto."
-            categoriasDisponibles.none { it.id == categoriaId } -> "Selecciona una categoría."
-            nombre.isBlank() || (original == null && tipos.none { it.id == tipoId && it.activo }) -> "Completa el nombre y selecciona un tipo habilitado."
-            descripcion.isBlank() -> "Completa la descripción del producto."
+            errorDatos != null -> errorDatos
+            original == null && tipos.none { it.id == tipoId && it.activo } -> "Selecciona un tipo habilitado."
             invalidField != null -> "Completa el campo " + invalidField.etiqueta + "."
-            conVariantes && (variantes.isEmpty() || invalidVariant) -> "Completa las opciones, precios y stock inicial de cada variante."
-            !conVariantes && (precioBase.toLongOrNull() ?: 0L) <= 0L -> "Ingresa un precio válido."
-            !conVariantes && manejaStock && original == null && (stockValue == null || stockValue < 0) -> "Ingresa un stock inicial válido."
+            errorPreciosYStock != null -> errorPreciosYStock
             modalidad == "pieza_unica" && stockValue != 1 && original == null -> "Una pieza única comienza con stock 1."
             publicar && fotoLocal.fotoLista.not() && original?.imagenes.isNullOrEmpty() -> "Agrega una foto antes de publicar."
             publicar && !tiendaPublicada -> "Publica primero tu tienda desde Inicio."
             else -> null
         }
         if (error == null && tipo != null) {
-            val solicitudes = variantes.map { v -> VarianteProductoSolicitud(v.id, v.opciones, v.precio.toLong(), if (v.existente || !manejaStock) null else v.stock.toInt(), v.activa) }
+            val solicitudes = if (conVariantes) variantes.map { v ->
+                VarianteProductoSolicitud(v.id, v.opciones, v.precio.toLong(), if (v.existente || !manejaStock) null else v.stock.toInt(), v.activa)
+            } else emptyList()
             val solicitud = ProductoSolicitud(
                 id=original?.id, versionEsperada=original?.versionEsperada, operacionId=operacionId,
                 productoIdNuevo=productoIdNuevo, nombre=nombre.trim(), descripcion=descripcion.trim(),
@@ -890,7 +911,7 @@ private fun EditorProductoEmprendedora(
     } else if (paso == 2) {
         StepScaffold("Paso 2 de 5", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
             onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=::cancelarEditor,
-            nextEnabled=nombre.isNotBlank() && descripcion.isNotBlank() && categoriasDisponibles.any { it.id == categoriaId }, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            nextEnabled=errorDatos == null, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
             Column(Modifier.padding(16.dp)) {
             AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres")
@@ -906,6 +927,7 @@ private fun EditorProductoEmprendedora(
             Spacer(Modifier.height(14.dp))
             AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base", "Ej.: 6.990", keyboardType=KeyboardType.Number)
             Text("Si agregas variantes, el precio se define para cada una. Si no, completa aquí el precio del producto.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=6.dp))
+            errorDatos?.let { AvisoEmprendedora(it, true) }
             }
             }
             Spacer(Modifier.height(10.dp))
@@ -970,7 +992,7 @@ private fun EditorProductoEmprendedora(
     } else if (paso == 4) {
         StepScaffold("Paso 4 de 5", "Variantes", "Cada variante puede tener su propio precio, foto y stock.",
             onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=::cancelarEditor,
-            nextEnabled=if (conVariantes) variantes.isNotEmpty() && !invalidVariant else (precioBase.toLongOrNull() ?: 0L) > 0L && (!manejaStock || stockValue != null || original != null),
+            nextEnabled=errorPreciosYStock == null,
             pasoActual=4, showSaveExit=false, onExit=::guardarLocalYSalir) {
             Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp), verticalAlignment=Alignment.CenterVertically) {
@@ -1024,7 +1046,7 @@ private fun EditorProductoEmprendedora(
                 }
                 if (variantes.size < 20 && original == null) OutlineButton("＋ Agregar variante", { variantes=variantes + nuevaVariante(opciones) })
             }
-            error?.let { AvisoEmprendedora(it, true) }
+            (errorPreciosYStock ?: error)?.let { AvisoEmprendedora(it, true) }
             if (original != null && manejaStock) Text("El stock existente se modifica desde el catálogo para conservar el historial.", fontSize=13.sp, color=Muted)
         }
     } else if (paso == 5) {
