@@ -29,6 +29,10 @@ service cloud.firestore {
     function visiblePrices(tiendaId) {
       return get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data.mostrarPrecios == true;
     }
+    function publicProductConsulta(tiendaId, productoId) {
+      let product = get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)/productosConsulta/$(productoId)).data;
+      return publicStore(tiendaId) && !visiblePrices(tiendaId) && product.estadoPublicacion == 'publicado';
+    }
     match /usuarios/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
       allow update: if signedIn() && request.auth.uid == uid && active(uid)
@@ -61,6 +65,14 @@ service cloud.firestore {
       match /configuracion/general { allow get: if owner(tiendaId); }
       match /movimientosStock/{movimientoId} { allow read: if owner(tiendaId); }
       match /ventas/{ventaId} { allow read: if owner(tiendaId); }
+      match /consultas/{consultaId} {
+        allow get, list: if owner(tiendaId);
+        allow update: if owner(tiendaId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'leidaEn'])
+          && resource.data.estado == 'nueva'
+          && request.resource.data.estado == 'leida'
+          && request.resource.data.leidaEn == request.time;
+      }
       match /productos/{productoId} {
         allow read: if owner(tiendaId);
         // Selección del borrador: Storage se valida en el backend al publicar.
@@ -82,6 +94,20 @@ service cloud.firestore {
             && resource.data.activa == true;
         }
       }
+      // Vista pública separada sin importes para tiendas que ocultan sus precios.
+      match /productosConsulta/{productoId} {
+        allow read: if resource.data.estadoPublicacion == 'publicado'
+          && publicStore(tiendaId) && !visiblePrices(tiendaId)
+          && !resource.data.keys().hasAny(['precioBase']);
+        match /variantes/{varianteId} {
+          allow read: if publicProductConsulta(tiendaId, productoId)
+            && resource.data.activa == true
+            && !resource.data.keys().hasAny(['precio']);
+        }
+      }
+    }
+    match /asociacionesPublicas/{asociacionId} {
+      allow get, list: if resource.data.activo == true;
     }
     match /configuracionAplicacion/{configId} {
       allow get: if configId == 'navegacion';

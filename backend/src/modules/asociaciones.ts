@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentData, type Firestore } from 'firebase-admin/firestore';
 import { ErrorOperacion, version } from './publicacion.ts';
+import { sincronizarAsociacionPublica } from './proyecciones-asociaciones-publicas.ts';
 
 export const accionesAsociacion = [
   'listarAsociaciones',
@@ -297,7 +298,7 @@ export function crearAsociaciones(db: Firestore) {
     if (solicitud.accion === 'crearAsociacion') {
       const associationRef = db.doc(`asociaciones/${solicitud.id}`);
       const sectorRef = db.doc(`sectores/${solicitud.sectorId}`);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, association, sector] = await tx.getAll(actorRef, receiptRef, associationRef, sectorRef);
         exigir(esAdmin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) {
@@ -334,12 +335,14 @@ export function crearAsociaciones(db: Firestore) {
         });
         return resultado;
       });
+      await sincronizarAsociacionPublica(db, solicitud.id);
+      return resultado;
     }
 
     if (solicitud.accion === 'editarAsociacion') {
       const associationRef = db.doc(`asociaciones/${solicitud.asociacionId}`);
       const sectorRef = db.doc(`sectores/${solicitud.sectorId}`);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, association, sector] = await tx.getAll(actorRef, receiptRef, associationRef, sectorRef);
         exigir(esAdmin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) {
@@ -373,11 +376,13 @@ export function crearAsociaciones(db: Firestore) {
         tx.create(auditRef, { actorUid: identidad.uid, accion: solicitud.accion, documentoId: solicitud.asociacionId, antes: before, despues: after, creadoEn: now });
         return resultado;
       });
+      await sincronizarAsociacionPublica(db, solicitud.asociacionId);
+      return resultado;
     }
 
     if (solicitud.accion === 'cambiarEstadoAsociacion') {
       const associationRef = db.doc(`asociaciones/${solicitud.asociacionId}`);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, association] = await tx.getAll(actorRef, receiptRef, associationRef);
         exigir(esAdmin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) {
@@ -395,6 +400,8 @@ export function crearAsociaciones(db: Firestore) {
         tx.create(auditRef, { actorUid: identidad.uid, accion: solicitud.accion, documentoId: solicitud.asociacionId, antes: { activo: current.activo }, despues: { activo: solicitud.activo }, creadoEn: now });
         return resultado;
       });
+      await sincronizarAsociacionPublica(db, solicitud.asociacionId);
+      return resultado;
     }
 
     if (solicitud.accion === 'asignarEmprendedora') {
@@ -402,7 +409,7 @@ export function crearAsociaciones(db: Firestore) {
       const relationRef = associationRef.collection('integrantes').doc(solicitud.uidEmprendedora);
       const accessRef = db.doc(`accesos/${solicitud.uidEmprendedora}`);
       const profileRef = db.doc(`emprendedoras/${solicitud.uidEmprendedora}`);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, association, relation, access, profile] = await tx.getAll(actorRef, receiptRef, associationRef, relationRef, accessRef, profileRef);
         exigir(esAdmin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) {
@@ -440,11 +447,13 @@ export function crearAsociaciones(db: Firestore) {
         tx.create(auditRef, { actorUid: identidad.uid, accion: solicitud.accion, documentoId: `${solicitud.asociacionId}/${solicitud.uidEmprendedora}`, antes: relation.exists ? { estado: relation.data()?.estado } : null, despues: { estado: 'activa', tiendaId: a.tiendaId }, creadoEn: now });
         return result;
       });
+      await sincronizarAsociacionPublica(db, solicitud.asociacionId);
+      return resultado;
     }
 
     const associationRef = db.doc(`asociaciones/${solicitud.asociacionId}`);
     const relationRef = associationRef.collection('integrantes').doc(solicitud.uidEmprendedora);
-    return db.runTransaction(async tx => {
+    const resultado = await db.runTransaction(async tx => {
       const [actor, receipt, association, relation] = await tx.getAll(actorRef, receiptRef, associationRef, relationRef);
       exigir(esAdmin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
       if (receipt.exists) {
@@ -461,5 +470,7 @@ export function crearAsociaciones(db: Firestore) {
       tx.create(auditRef, { actorUid: identidad.uid, accion: solicitud.accion, documentoId: `${solicitud.asociacionId}/${solicitud.uidEmprendedora}`, antes: { estado: relation.data()?.estado }, despues: { estado: 'retirada' }, creadoEn: now });
       return result;
     });
+    await sincronizarAsociacionPublica(db, solicitud.asociacionId);
+    return resultado;
   };
 }

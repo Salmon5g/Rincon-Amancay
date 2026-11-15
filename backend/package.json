@@ -19,6 +19,8 @@
     "plan:desarrollo": "node scripts/plan-desarrollo.mjs",
     "admin:compartido": "node scripts/admin-compartido.ts",
     "catalogo:sincronizar-stock-publico": "node scripts/sincronizar-stock-publico.ts",
+    "asociaciones:sincronizar-publicas": "node --env-file=.env.compartido.local scripts/sincronizar-asociaciones-publicas.ts",
+    "catalogo:sincronizar-vistas-publicas": "node --env-file=.env.compartido.local scripts/sincronizar-vistas-publicas.ts",
     "start:compartido": "node src/server-compartido.ts",
     "start:compartido:local": "node --env-file=.env.compartido.local src/server-compartido.ts",
     "cuentas:recuperar": "node scripts/recuperar-cuenta.ts"

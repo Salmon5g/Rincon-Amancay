@@ -100,6 +100,16 @@ data class VentaRegistrada(
     val lugarTexto: String?
 )
 
+data class ConsultaComprador(
+    val id: String,
+    val nombre: String,
+    val correo: String,
+    val mensaje: String,
+    val producto: String?,
+    val fecha: Date,
+    val leida: Boolean
+)
+
 data class FeriaParaVenta(val id: String, val nombre: String, val direccion: String, val fechaInicio: Date?)
 
 data class VarianteProductoSolicitud(
@@ -141,10 +151,13 @@ class ProductosEmprendedoraRepository(
     val categorias: StateFlow<List<CategoriaEmprendedora>> = _categorias.asStateFlow()
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+    private val _consultas = MutableStateFlow<List<ConsultaComprador>>(emptyList())
+    val consultas: StateFlow<List<ConsultaComprador>> = _consultas.asStateFlow()
 
     private var productSubscription: ListenerRegistration? = null
     private var typeSubscription: ListenerRegistration? = null
     private var categorySubscription: ListenerRegistration? = null
+    private var inquirySubscription: ListenerRegistration? = null
     private val variantSubscriptions = mutableMapOf<String, ListenerRegistration>()
     private val variantsById = mutableMapOf<String, List<VarianteProductoEmprendedora>>()
     private val definitionsById = mutableMapOf<String, TipoProductoEmprendedora>()
@@ -164,6 +177,21 @@ class ProductosEmprendedoraRepository(
     }
 
     fun observar(tiendaId: String) {
+        inquirySubscription?.remove()
+        inquirySubscription = db.collection("tiendasPrivadas").document(tiendaId).collection("consultas")
+            .orderBy("creadaEn", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(200)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception != null) {
+                    informarError(exception)
+                    return@addSnapshotListener
+                }
+                _consultas.value = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    val fecha = doc.getTimestamp("creadaEn")?.toDate() ?: return@mapNotNull null
+                    ConsultaComprador(doc.id, doc.getString("nombre").orEmpty(), doc.getString("correo").orEmpty(),
+                        doc.getString("mensaje").orEmpty(), doc.getString("producto"), fecha, doc.getString("estado") != "nueva")
+                }
+            }
         productSubscription?.remove()
         productSubscription = db.collection("tiendasPrivadas").document(tiendaId).collection("productos")
             .addSnapshotListener { snapshot, exception ->
@@ -455,6 +483,11 @@ class ProductosEmprendedoraRepository(
             .getBoolean("historialVentasActivo") == true
     }
 
+    suspend fun marcarConsultaLeida(tiendaId: String, consultaId: String) = withContext(Dispatchers.IO) {
+        Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("consultas").document(consultaId)
+            .update(mapOf("estado" to "leida", "leidaEn" to com.google.firebase.firestore.FieldValue.serverTimestamp())))
+    }
+
     suspend fun listarVentas(tiendaId: String): List<VentaRegistrada> = withContext(Dispatchers.IO) {
         Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("ventas")
             .orderBy("fecha", com.google.firebase.firestore.Query.Direction.DESCENDING).get())
@@ -478,6 +511,7 @@ class ProductosEmprendedoraRepository(
     }
 
     fun cerrar() {
+        inquirySubscription?.remove()
         productSubscription?.remove()
         typeSubscription?.remove()
         categorySubscription?.remove()

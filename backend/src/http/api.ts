@@ -22,6 +22,7 @@ import type { AccionFeria, crearFerias } from '../modules/ferias.ts';
 import type { crearEdicionTiendaEmprendedora } from '../modules/tienda-emprendedora.ts';
 import { accionesVenta } from '../modules/ventas.ts';
 import type { AccionVenta, crearVentas } from '../modules/ventas.ts';
+import type { SolicitudConsultaPublica } from '../modules/consultas-comprador.ts';
 
 const acciones: Accion[] = ['publicarTienda', 'retirarTienda', 'publicarProducto', 'retirarProducto'];
 const status: Record<string, number> = {
@@ -77,16 +78,44 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
+  const enviosConsulta = new Map<string, number[]>();
   const server = createServer(async (req, res) => {
     try {
       const origin = req.headers.origin;
       if (origin && !origins.has(origin)) throw new ErrorHttp(403, 'origen-no-permitido', 'Origen no permitido.');
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: config.entorno, proyecto: config.proyecto });
+      if (req.url === '/api/v1/consultasPublicas' && guardarConsulta) {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
+        if (req.method !== 'POST') { res.setHeader('Allow', 'POST, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar POST.'); }
+        const ahora = Date.now();
+        const ip = req.socket.remoteAddress ?? 'desconocida';
+        const recientes = (enviosConsulta.get(ip) ?? []).filter(t => ahora - t < 10 * 60_000);
+        if (recientes.length >= 5) throw new ErrorHttp(429, 'limite-consultas', 'Espera unos minutos antes de enviar otra consulta.');
+        recientes.push(ahora); enviosConsulta.set(ip, recientes);
+        if (enviosConsulta.size > 1000) for (const [clave, tiempos] of enviosConsulta) if (!tiempos.some(t => ahora - t < 10 * 60_000)) enviosConsulta.delete(clave);
+        const input = await body(req);
+        const permitidos = ['tiendaId', 'operacionId', 'nombre', 'correo', 'mensaje', 'producto'];
+        if (Object.keys(input).some(k => !permitidos.includes(k)) ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(String(input.tiendaId ?? '')) ||
+            !/^[0-9a-fA-F-]{36}$/.test(String(input.operacionId ?? '')) ||
+            typeof input.nombre !== 'string' || input.nombre.trim().length < 2 || input.nombre.length > 100 ||
+            typeof input.correo !== 'string' || input.correo.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.correo) ||
+            typeof input.mensaje !== 'string' || input.mensaje.trim().length < 5 || input.mensaje.length > 2000 ||
+            (input.producto !== undefined && (typeof input.producto !== 'string' || input.producto.length > 160))) {
+          throw new ErrorHttp(400, 'datos-invalidos', 'Revisa los datos del formulario.');
+        }
+        const datos: SolicitudConsultaPublica = { tiendaId: input.tiendaId as string, operacionId: input.operacionId as string, nombre: input.nombre.trim(), correo: input.correo.trim(), mensaje: input.mensaje.trim(), ...(typeof input.producto === 'string' && input.producto.trim() ? { producto: input.producto.trim() } : {}) };
+        const result = await guardarConsulta(datos);
+        return json(res, 200, { datos: result });
+      }
       const action = req.url?.match(/^\/api\/v1\/(publicarTienda|retirarTienda|publicarProducto|retirarProducto)$/)?.[1] as Accion | undefined;
       const accionCuenta = ciclo && accionesCuentas.find(a => req.url === `/api/v1/${a}`) as AccionCuenta | undefined;
       const esAlta = req.url === '/api/v1/altaEmprendedora' && alta !== undefined;
@@ -159,6 +188,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
     } catch (error) {
       if (res.destroyed) return;
       if (error instanceof ErrorHttp) return json(res, error.status, { error: { code: error.code, mensaje: error.message } });
+      if (error instanceof ErrorOperacion) return json(res, status[error.code] ?? 400, { error: { code: error.code, mensaje: error.message } });
       if (error instanceof ErrorOperacion) return json(res, status[error.code] ?? 400, { error: { code: error.code, mensaje: error.message } });
       // No devolver stack, tokens, credenciales o mensajes internos del SDK.
       json(res, 500, { error: { code: 'error-interno', mensaje: 'No se pudo completar la operación.' } });

@@ -311,7 +311,7 @@ fun DialogoDetalleProducto(
                 HorizontalDivider(color = AmancayBorde)
                 if (producto.variantes.isNotEmpty()) {
                     Text(
-                        "Variantes y precios",
+                        "Variantes",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = AmancayBordo
@@ -327,14 +327,12 @@ fun DialogoDetalleProducto(
                     }
                     Text(varianteActual?.precio?.let(::formatoPrecio) ?: "Consultar precio", color = AmancayBordo)
                 } else {
-                    producto.precioBase?.let { precio ->
-                        Text(
-                            formatoPrecio(precio),
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = AmancayBordo
-                        )
-                    }
+                    Text(
+                        producto.precioBase?.let(::formatoPrecio) ?: "Consultar precio",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AmancayBordo
+                    )
                 }
             }
         },
@@ -348,7 +346,7 @@ fun DialogoDetalleProducto(
                     contentColor = Color.White
                 )
             ) {
-                Text("Encargar producto", fontWeight = FontWeight.SemiBold)
+                Text("Contactar a la emprendedora", fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {

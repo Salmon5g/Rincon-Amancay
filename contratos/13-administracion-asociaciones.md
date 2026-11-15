@@ -4,7 +4,9 @@
 
 Este contrato cubre el módulo administrativo de asociaciones de la Entrega 4: crear, editar y desactivar asociaciones, además de asignar y retirar emprendedoras. La relación no se guarda en el perfil de la persona: una emprendedora puede pertenecer a cero, una o varias asociaciones.
 
-La ficha pública de una asociación con sus integrantes y enlaces a tiendas (RF-ASO-03) queda fuera de este contrato y debe implementarse como lectura pública separada. Por ahora, la colección y sus relaciones se consultan desde el panel mediante la API autenticada.
+La ficha administrativa y las relaciones privadas siguen bajo la API autenticada. Para RF-ASO-03, `asociacionesPublicas/{asociacionId}` contiene solo nombre, descripción, sector, logo opcional y tiendas públicas activas. Los integrantes se proyectan como `tiendaId` y nombre público de tienda; nunca se copia el UID de la emprendedora. Firestore solo permite lectura anónima cuando `activo == true`.
+
+La app compradora usa la proyección para listar y filtrar asociaciones y abrir las tiendas públicas de sus integrantes. Los cambios administrativos y los cambios de publicación/edición de tienda vuelven a sincronizar las asociaciones relacionadas. Para asociaciones y tiendas existentes, el script `catalogo:sincronizar-vistas-publicas` ofrece simulación y aplicación explícita.
 
 ## Documentos
 
@@ -57,7 +59,8 @@ Los errores de versión (`conflicto`) requieren actualizar los datos antes de vo
 - Firestore Rules mantienen denegado el acceso directo a estas colecciones. La API usa Admin SDK y su identidad necesita permisos IAM para Firestore.
 - Los listados de esta primera versión están limitados a 200 asociaciones, integrantes y cuentas candidatas por solicitud; superar el límite devuelve error y requiere implementar paginación.
 - `logoUrl` es una referencia HTTPS. La carga y eliminación de archivos en Firebase Storage todavía no está implementada en este módulo.
-- No se crea una proyección pública ni se permiten lecturas anónimas de asociaciones en Firestore. Para RF-ASO-03 se deberá definir qué datos se publican, sus reglas y el enlace a las tiendas públicas.
+- Las mutaciones administrativas regeneran la proyección pública; publicar/retirar o editar una tienda actualiza los enlaces de sus asociaciones.
+- Para materializar el estado ya existente, `npm.cmd --prefix backend run catalogo:sincronizar-vistas-publicas -- --dry-run rincon-amancay` simula la creación de proyecciones de asociaciones y tiendas. Revisar el resumen antes de ejecutar con `--aplicar`.
 
 ## Evolución
 

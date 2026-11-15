@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, type Firestore, type DocumentData } from 'firebase-admin/firestore';
 import { ErrorOperacion, version } from './publicacion.ts';
+import { sincronizarAsociacionesDeTienda } from './proyecciones-asociaciones-publicas.ts';
 
 function exigir(ok: unknown, code: string, message: string): asserts ok {
   if (!ok) throw new ErrorOperacion(code, message);
@@ -78,7 +79,7 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
     const profileRef = db.doc(`emprendedoras/${identidad.uid}`);
     const publicRef = db.doc(`tiendasPublicas/${solicitud.tiendaId}`);
 
-    return db.runTransaction(async tx => {
+    const resultado = await db.runTransaction(async tx => {
       const [accessSnap, profileSnap, storeSnap, receiptSnap, sectorSnap, typeSnap, publicSnap] = await tx.getAll(
         accessRef, profileRef, storeRef, receiptRef,
         db.doc(`sectores/${solicitud.sectorId}`),
@@ -140,5 +141,7 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
       tx.create(receiptRef, { firma, resultado, realizadoPor: identidad.uid, creadoEn: now });
       return resultado;
     });
+    await sincronizarAsociacionesDeTienda(db, solicitud.tiendaId as string);
+    return resultado;
   };
 }

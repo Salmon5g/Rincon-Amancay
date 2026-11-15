@@ -1,5 +1,6 @@
 package com.example.amancay.buyer
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -43,6 +44,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.amancay.data.AutenticacionGoogleComprador
+import com.example.amancay.data.ApiConsultasComprador
+import com.example.amancay.data.TiendaCatalogoComprador
 import com.example.amancay.data.CatalogoCompradorRepository
 import com.example.amancay.data.ProductoCatalogoComprador
 import com.example.amancay.data.ResultadoAccesoGoogle
@@ -72,6 +75,7 @@ fun ModoCompradorScreen(
     val cargando by repositorio.cargando.collectAsState()
     val error by repositorio.error.collectAsState()
     val directorio by repositorio.directorio.collectAsState()
+    val asociaciones by repositorio.asociaciones.collectAsState()
     val tiposEmprendimiento by repositorio.tiposEmprendimiento.collectAsState()
     val sectores by repositorio.sectores.collectAsState()
     val modoNavegacion by repositorio.modoNavegacion.collectAsState()
@@ -91,8 +95,9 @@ fun ModoCompradorScreen(
     var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
     var productoSeleccionado by remember { mutableStateOf<ProductoCatalogoComprador?>(null) }
     var feriaSeleccionada by remember { mutableStateOf<FeriaComprador?>(null) }
-    var avisoEncargoSinSesion by remember { mutableStateOf(false) }
-    var encargoProximamenteDe by remember { mutableStateOf<String?>(null) }
+    var formularioContacto by remember { mutableStateOf<Pair<TiendaCatalogoComprador, String?>?>(null) }
+    var opcionesContacto by remember { mutableStateOf<Pair<TiendaCatalogoComprador, String?>?>(null) }
+    var avisoContacto by remember { mutableStateOf<String?>(null) }
 
     val ferias = rememberRepositorioFerias()
     val listaFerias by ferias.ferias.collectAsState()
@@ -153,6 +158,54 @@ fun ModoCompradorScreen(
     fun abrirAcceso() {
         mensajeAcceso = null
         pestana = PestanaComprador.CUENTA
+    }
+
+    fun abrirEnlace(uri: Uri) {
+        try {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+        } catch (_: Exception) {
+            avisoContacto = "No hay una aplicación disponible para abrir este medio de contacto."
+        }
+    }
+
+    fun abrirWhatsApp(tienda: TiendaCatalogoComprador, mensaje: String) {
+        val telefono = tienda.contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty().filter(Char::isDigit)
+        if (telefono.isBlank()) {
+            avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
+            return
+        }
+        val uri = Uri.parse("https://wa.me/$telefono?text=${Uri.encode(mensaje)}")
+        abrirEnlace(uri)
+    }
+
+    fun abrirFormularioContacto(tienda: TiendaCatalogoComprador, producto: String? = null) {
+        formularioContacto = tienda to producto
+    }
+
+    fun contactar(tienda: TiendaCatalogoComprador, producto: String? = null) {
+        when (tienda.formaContacto) {
+            "ambos" -> opcionesContacto = tienda to producto
+            "formulario" -> abrirFormularioContacto(tienda, producto)
+            "whatsapp" -> {
+                if (tienda.contacto?.tipo == "whatsapp") abrirWhatsApp(tienda, "Hola, me interesa ${producto ?: "conocer tu emprendimiento"}.")
+                else avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
+            }
+            else -> {
+                avisoContacto = "Esta tienda aún no configuró una vía de contacto disponible."
+            }
+        }
+    }
+
+    fun enviarFormularioContacto(tienda: TiendaCatalogoComprador, producto: String?, nombre: String, correo: String, mensaje: String) {
+        formularioContacto = null
+        alcance.launch {
+            try {
+                ApiConsultasComprador.enviar(tienda.id, producto, nombre, correo, mensaje)
+                avisoContacto = "Tu consulta se envió a la bandeja de la emprendedora."
+            } catch (e: Exception) {
+                avisoContacto = e.message ?: "No se pudo enviar la consulta. Inténtalo de nuevo."
+            }
+        }
     }
 
     fun alIngresarGoogle(correoIngresado: String, claveIngresada: String) {
@@ -352,7 +405,7 @@ fun ModoCompradorScreen(
     }
 
     if (mostrarDirectorio) {
-        DirectorioComprador(directorio, tiposEmprendimiento, sectores, cargando, error,
+        DirectorioComprador(directorio, asociaciones, tiposEmprendimiento, sectores, cargando, error,
             alCerrar = { mostrarDirectorio = false },
             alAbrir = { tiendaSeleccionada = it; mostrarDirectorio = false })
     }
@@ -363,6 +416,19 @@ fun ModoCompradorScreen(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     val catalogo = productos.filter { it.tiendaId == tienda.id }
+                    if (tienda.formaContacto != "ninguno") {
+                        Text("Contacto configurado: ${tienda.formaContacto}", color = AmancayTintaSuave)
+                        if ((tienda.formaContacto == "whatsapp" || tienda.formaContacto == "ambos") && tienda.contacto?.tipo == "whatsapp") {
+                            TextButton(onClick = { abrirWhatsApp(tienda, "Hola, me interesa conocer tu emprendimiento.") }) {
+                                Text("Contactar por WhatsApp", color = AmancayBordo)
+                            }
+                        }
+                        if (tienda.formaContacto == "formulario" || tienda.formaContacto == "ambos") {
+                            TextButton(onClick = { abrirFormularioContacto(tienda) }) {
+                                Text("Enviar consulta", color = AmancayBordo)
+                            }
+                        }
+                    }
                     if (catalogo.isEmpty()) Text("No hay productos públicos disponibles para mostrar.")
                     catalogo.forEach { producto ->
                         TextButton(onClick = { productoSeleccionado = producto }) {
@@ -381,72 +447,57 @@ fun ModoCompradorScreen(
             alCerrar = { productoSeleccionado = null },
             alEncargar = {
                 productoSeleccionado = null
-                if (sesion == null) {
-                    avisoEncargoSinSesion = true
-                } else {
-                    encargoProximamenteDe = producto.nombre
-                }
+                val tienda = directorio.firstOrNull { it.id == producto.tiendaId }
+                if (tienda == null) avisoContacto = "No encontramos los datos públicos de contacto de esta tienda."
+                else contactar(tienda, producto.nombre)
             }
+        )
+    }
+    formularioContacto?.let { (tienda, nombreProducto) ->
+        FormularioContactoComprador(
+            tienda = tienda,
+            producto = nombreProducto,
+            alCerrar = { formularioContacto = null },
+            alEnviar = { nombre, correo, mensaje ->
+                enviarFormularioContacto(tienda, nombreProducto, nombre, correo, mensaje)
+            }
+        )
+    }
+    opcionesContacto?.let { (tienda, nombreProducto) ->
+        AlertDialog(
+            onDismissRequest = { opcionesContacto = null },
+            title = { Text("Contactar a ${tienda.nombre}") },
+            text = { Text("Elige cómo quieres continuar.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    opcionesContacto = null
+                    if (tienda.contacto?.tipo == "whatsapp") abrirWhatsApp(tienda, "Hola, me interesa ${nombreProducto ?: "conocer tu emprendimiento"}.")
+                    else avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
+                }, enabled = tienda.contacto?.tipo == "whatsapp") { Text("WhatsApp") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        opcionesContacto = null
+                        abrirFormularioContacto(tienda, nombreProducto)
+                    }) { Text("Formulario") }
+                    TextButton(onClick = { opcionesContacto = null }) { Text("Cancelar") }
+                }
+            },
+            containerColor = AmancaySuperficie
+        )
+    }
+    avisoContacto?.let { mensaje ->
+        AlertDialog(
+            onDismissRequest = { avisoContacto = null },
+            title = { Text("Contacto") },
+            text = { Text(mensaje) },
+            confirmButton = { TextButton(onClick = { avisoContacto = null }) { Text("Entendido") } },
+            containerColor = AmancaySuperficie
         )
     }
     feriaSeleccionada?.let { feria ->
         DialogoDetalleFeria(feria) { feriaSeleccionada = null }
-    }
-    if (avisoEncargoSinSesion) {
-        AlertDialog(
-            onDismissRequest = { avisoEncargoSinSesion = false },
-            title = {
-                Text(
-                    "Inicia sesión para encargar",
-                    fontWeight = FontWeight.Bold,
-                    color = AmancayTinta
-                )
-            },
-            text = {
-                Text(
-                    "Con tu cuenta de compradora puedes enviar encargos a las emprendedoras y seguir el estado de tus pedidos.",
-                    color = AmancayTinta
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    avisoEncargoSinSesion = false
-                    pestana = PestanaComprador.CUENTA
-                }) {
-                    Text("Ir a Mi sesión", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { avisoEncargoSinSesion = false }) {
-                    Text("Cancelar", color = AmancayTintaSuave)
-                }
-            },
-            containerColor = AmancaySuperficie
-        )
-    }
-    encargoProximamenteDe?.let { nombreProducto ->
-        AlertDialog(
-            onDismissRequest = { encargoProximamenteDe = null },
-            title = {
-                Text(
-                    "Encargo muy pronto",
-                    fontWeight = FontWeight.Bold,
-                    color = AmancayTinta
-                )
-            },
-            text = {
-                Text(
-                    "Estamos preparando el formulario de encargos. Muy pronto podrás encargar «$nombreProducto» directamente desde la app.",
-                    color = AmancayTinta
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { encargoProximamenteDe = null }) {
-                    Text("Entendido", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            containerColor = AmancaySuperficie
-        )
     }
 }
 

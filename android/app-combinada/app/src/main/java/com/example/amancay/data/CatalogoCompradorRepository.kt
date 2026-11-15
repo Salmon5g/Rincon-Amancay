@@ -37,10 +37,31 @@ data class ProductoCatalogoComprador(
     val imagenUrl: String? = null
 )
 
-data class TiendaCatalogoComprador(val id: String, val nombre: String, val tipoId: String, val sectorId: String)
+data class ContactoCatalogoComprador(val tipo: String, val valor: String)
+
+data class TiendaCatalogoComprador(
+    val id: String,
+    val nombre: String,
+    val tipoId: String,
+    val sectorId: String,
+    val mostrarPrecios: Boolean = true,
+    val formaContacto: String = "formulario",
+    val contacto: ContactoCatalogoComprador? = null
+)
+
+data class IntegranteAsociacionCatalogo(val tiendaId: String, val nombre: String)
+
+data class AsociacionCatalogoComprador(
+    val id: String,
+    val nombre: String,
+    val descripcion: String,
+    val sectorId: String,
+    val integrantes: List<IntegranteAsociacionCatalogo>
+)
 
 interface CatalogoCompradorRepository {
     val directorio: StateFlow<List<TiendaCatalogoComprador>>
+    val asociaciones: StateFlow<List<AsociacionCatalogoComprador>>
     val tiposEmprendimiento: StateFlow<Map<String, String>>
     val sectores: StateFlow<Map<String, String>>
     val modoNavegacion: StateFlow<String?>
@@ -62,6 +83,8 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
 
     private val _directorio = MutableStateFlow<List<TiendaCatalogoComprador>>(emptyList())
     override val directorio = _directorio.asStateFlow()
+    private val _asociaciones = MutableStateFlow<List<AsociacionCatalogoComprador>>(emptyList())
+    override val asociaciones = _asociaciones.asStateFlow()
     private val _tipos = MutableStateFlow<Map<String, String>>(emptyMap())
     override val tiposEmprendimiento = _tipos.asStateFlow()
     private val _sectores = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -73,6 +96,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     private val productosPorTienda = mutableMapOf<String, List<ProductoCatalogoComprador>>()
     private val variantesPorProducto = mutableMapOf<String, List<VarianteCatalogoComprador>>()
     private val suscripcionesProductos = mutableMapOf<String, ListenerRegistration>()
+    private val coleccionProductosPorTienda = mutableMapOf<String, String>()
     private val suscripcionesVariantes = mutableMapOf<String, ListenerRegistration>()
     private val nombresCategorias = mutableMapOf<String, String>()
     private val nombresTiposProducto = mutableMapOf<String, String>()
@@ -121,6 +145,30 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                 reconstruirCatalogo()
             }
 
+        suscripciones += db.collection("asociacionesPublicas")
+            .whereEqualTo("activo", true)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception != null) {
+                    informarError(exception)
+                    return@addSnapshotListener
+                }
+                _asociaciones.value = snapshot?.documents.orEmpty().map { documento ->
+                    val integrantes = (documento.get("integrantes") as? List<*>).orEmpty().mapNotNull { item ->
+                        val datos = item as? Map<*, *> ?: return@mapNotNull null
+                        val tiendaId = datos["tiendaId"] as? String ?: return@mapNotNull null
+                        val nombre = datos["nombre"] as? String ?: tiendaId
+                        IntegranteAsociacionCatalogo(tiendaId, nombre)
+                    }
+                    AsociacionCatalogoComprador(
+                        id = documento.id,
+                        nombre = documento.getString("nombre") ?: documento.id,
+                        descripcion = documento.getString("descripcion").orEmpty(),
+                        sectorId = documento.getString("sectorId").orEmpty(),
+                        integrantes = integrantes
+                    )
+                }.sortedBy { it.nombre.lowercase() }
+            }
+
         suscripciones += db.collection("tiendasPublicas")
             .whereEqualTo("estadoPublicacion", "publicado")
             .whereEqualTo("habilitada", true)
@@ -136,25 +184,37 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                         id = documento.id,
                         nombre = documento.getString("nombre")?.takeIf(String::isNotBlank) ?: documento.id,
                         tipoId = documento.getString("tipoEmprendimientoId").orEmpty(),
-                        sectorId = documento.getString("sectorId").orEmpty()
+                        sectorId = documento.getString("sectorId").orEmpty(),
+                        mostrarPrecios = documento.getBoolean("mostrarPrecios") == true,
+                        formaContacto = documento.getString("formaContacto") ?: "formulario",
+                        contacto = (documento.get("contacto") as? Map<*, *>)?.let { contacto ->
+                            val tipo = contacto["tipo"] as? String
+                            val valor = contacto["valor"] as? String
+                            if (tipo != null && valor != null) ContactoCatalogoComprador(tipo, valor) else null
+                        }
                     )
                 }
                 tiendas.clear()
                 tiendas.putAll(tiendasNuevas)
                 _directorio.value = tiendas.values.sortedBy { it.nombre.lowercase() }
 
-                val habilitadasParaCatalogo = documentos
-                    .filter { it.getBoolean("mostrarPrecios") == true }
-                    .map { it.id }
-                    .toSet()
-                (suscripcionesProductos.keys - habilitadasParaCatalogo).forEach { id ->
+                val tiendasPublicadas = documentos.map { it.id }.toSet()
+                (suscripcionesProductos.keys - tiendasPublicadas).forEach { id ->
                     suscripcionesProductos.remove(id)?.remove()
+                    coleccionProductosPorTienda.remove(id)
                     productosPorTienda.remove(id).orEmpty().forEach { producto ->
                         quitarSuscripcionVariantes(clave(producto.tiendaId, producto.id))
                     }
                 }
-                habilitadasParaCatalogo.forEach { tiendaId ->
-                    if (suscripcionesProductos[tiendaId] == null) escucharProductos(tiendaId)
+                tiendasNuevas.values.forEach { tienda ->
+                    val coleccion = if (tienda.mostrarPrecios) "productos" else "productosConsulta"
+                    if (coleccionProductosPorTienda[tienda.id] != coleccion) {
+                        suscripcionesProductos.remove(tienda.id)?.remove()
+                        productosPorTienda.remove(tienda.id).orEmpty().forEach { producto ->
+                            quitarSuscripcionVariantes(clave(producto.tiendaId, producto.id))
+                        }
+                        escucharProductos(tienda.id, coleccion)
+                    }
                 }
                 _error.value = null
                 _cargando.value = false
@@ -162,10 +222,11 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
             }
     }
 
-    private fun escucharProductos(tiendaId: String) {
+    private fun escucharProductos(tiendaId: String, coleccion: String) {
+        coleccionProductosPorTienda[tiendaId] = coleccion
         suscripcionesProductos[tiendaId] = db.collection("tiendasPublicas")
             .document(tiendaId)
-            .collection("productos")
+            .collection(coleccion)
             .whereEqualTo("estadoPublicacion", "publicado")
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
@@ -189,9 +250,10 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     private fun escucharVariantes(producto: ProductoCatalogoComprador) {
         val id = clave(producto.tiendaId, producto.id)
         if (suscripcionesVariantes[id] != null) return
+        val coleccion = coleccionProductosPorTienda[producto.tiendaId] ?: "productos"
         suscripcionesVariantes[id] = db.collection("tiendasPublicas")
             .document(producto.tiendaId)
-            .collection("productos")
+            .collection(coleccion)
             .document(producto.id)
             .collection("variantes")
             .whereEqualTo("activa", true)
@@ -271,6 +333,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         suscripcionesVariantes.values.forEach(ListenerRegistration::remove)
         suscripciones.clear()
         suscripcionesProductos.clear()
+        coleccionProductosPorTienda.clear()
         suscripcionesVariantes.clear()
     }
 

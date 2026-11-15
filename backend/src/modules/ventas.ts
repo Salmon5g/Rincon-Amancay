@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore, QuerySnapshot } from 'firebase-admin/firestore';
 import { ErrorOperacion, estado } from './publicacion.ts';
+import { crearProductoSinPrecios, crearVarianteSinPrecio } from './vista-sin-precios.ts';
 
 function exigir(ok: unknown, code: string, message: string): asserts ok { if (!ok) throw new ErrorOperacion(code, message); }
 function id(v: unknown): v is string { return typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v); }
@@ -53,10 +54,11 @@ export function crearVentas(db: Firestore) {
     const feria = d.lugarTipo === 'feria' && id(d.feriaId) ? db.doc(`ferias/${d.feriaId}`) : undefined;
     const firma = createHash('sha256').update(JSON.stringify([identidad.uid,d.tiendaId,d.operacionId,d.productoId,d.varianteId ?? null,d.cantidad,d.lugarTipo,d.feriaId ?? null,d.lugarTexto ?? null,fecha.toISOString()])).digest('hex');
     const publicProduct = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`);
+    const publicProductConsulta = db.doc(`tiendasPublicas/${d.tiendaId}/productosConsulta/${d.productoId}`);
     const publicShop = db.doc(`tiendasPublicas/${d.tiendaId}`);
     const aprobacion = producto.collection('publicacion').doc('vigente');
     return db.runTransaction(async tx => {
-      const refs = [accesoRef, tienda, configuracion, producto, operacion, ...(variante ? [variante] : []), publicProduct, aprobacion, publicShop, ...(feria ? [feria] : [])];
+      const refs = [accesoRef, tienda, configuracion, producto, operacion, ...(variante ? [variante] : []), publicProduct, aprobacion, publicShop, publicProductConsulta, ...(feria ? [feria] : [])];
       const snapshots = await tx.getAll(...refs);
       const [acceso, shop, config, p, previous] = snapshots;
       exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && shop.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
@@ -93,13 +95,16 @@ export function crearVentas(db: Firestore) {
       let requiereRepublicar = false;
       let actualizacionCatalogo = 'sin_publicacion';
       let variantesPublicasActuales: QuerySnapshot | undefined;
+      let variantesConsultaActuales: QuerySnapshot | undefined;
       if (stockNuevo !== undefined) {
         const indiceProyeccion = variante ? 6 : 5;
         const pubSnap = snapshots[indiceProyeccion];
         const aprobacionData = snapshots[indiceProyeccion + 1].data();
         const tiendaPublica = snapshots[indiceProyeccion + 2];
         variantesPublicasActuales = await tx.get(publicProduct.collection('variantes').limit(101));
+        variantesConsultaActuales = await tx.get(publicProductConsulta.collection('variantes').limit(101));
         exigir(variantesPublicasActuales.size <= 100, 'limite-local', 'Demasiadas variantes públicas; no se registró la venta.');
+        exigir(variantesConsultaActuales.size <= 100, 'limite-local', 'Demasiadas variantes sin precio; no se registró la venta.');
         const sincronizar = data.disponible !== false
           && aprobacionData?.schema === 1
           && aprobacionData.cicloCatalogo === (shop.data()?.cicloCatalogo ?? 0)
@@ -146,9 +151,16 @@ export function crearVentas(db: Firestore) {
         if (variantesPublicasActuales) {
           const ids = new Set(proyeccionesVariantes.map(item => item.id));
           for (const item of variantesPublicasActuales.docs) if (!ids.has(item.id)) tx.delete(item.ref);
+          for (const item of variantesConsultaActuales!.docs) if (!ids.has(item.id)) tx.delete(item.ref);
           for (const item of proyeccionesVariantes) tx.set(publicProduct.collection('variantes').doc(item.id), {...item.data, actualizadoEn: now});
-          if (proyeccion) tx.set(publicProduct, {...proyeccion, actualizadoEn: now});
-          else if (data.disponible === false || actualizacionCatalogo !== 'sin_publicacion') tx.delete(publicProduct);
+          for (const item of proyeccionesVariantes) tx.set(publicProductConsulta.collection('variantes').doc(item.id), crearVarianteSinPrecio({...item.data, actualizadoEn: now}));
+          if (proyeccion) {
+            tx.set(publicProduct, {...proyeccion, actualizadoEn: now});
+            tx.set(publicProductConsulta, crearProductoSinPrecios({...proyeccion, actualizadoEn: now}));
+          } else if (data.disponible === false || actualizacionCatalogo !== 'sin_publicacion') {
+            tx.delete(publicProduct);
+            tx.delete(publicProductConsulta);
+          }
         }
       }
       if (historialRegistrado) {

@@ -14,10 +14,10 @@ Respuesta: accion y operacionId. Releer la ficha para obtener la nueva versión.
 
 | Acción | Resultado |
 |---|---|
-| publicarTienda | Valida propietaria activa y catálogos. Marca fuente publicada y reemplaza la ficha pública con campos permitidos, habilitada y mostrarPrecios derivados. |
-| retirarTienda | Marca fuente archivada y elimina ficha, productos y variantes públicos. Conserva las fuentes privadas. |
-| publicarProducto | Exige tienda publicada, imágenes autorizadas y datos válidos; publica una proyección explícita y variantes vigentes; elimina variantes públicas que ya no corresponden. |
-| retirarProducto | Marca fuente archivada y elimina producto/variantes públicos; conserva variantes privadas. |
+| publicarTienda | Valida propietaria activa y catálogos. Marca fuente publicada y reemplaza la ficha pública con campos permitidos, `formaContacto` y `mostrarPrecios` derivados. |
+| retirarTienda | Marca fuente archivada y elimina ficha, productos, variantes y vistas públicas sin precio. Conserva las fuentes privadas. |
+| publicarProducto | Exige tienda publicada, imágenes autorizadas y datos válidos; publica la ficha con precio y una proyección paralela sin importes; elimina variantes públicas que ya no corresponden. |
+| retirarProducto | Marca fuente archivada y elimina las dos proyecciones públicas y sus variantes; conserva variantes privadas. |
 
 Retirar no borra imágenes. Republicar tienda no republica productos automáticamente. Solo se gestionan las subcolecciones conocidas productos/variantes.
 
@@ -31,7 +31,10 @@ La transacción detecta cambios concurrentes en sus lecturas. versionEsperada se
 - Precio/stock en variantes si las hay; sin duplicación operativa en producto padre. Producto simple no conserva variantes privadas.
 - Campos públicos seleccionados explícitamente; atributos y opciones según tipo versionado. Los tipos de campo admitidos en este incremento son texto.
 - Se exige entre 1 y 5 referencias de imagen distintas. La API comprueba, decodifica y prepara WebP/miniaturas de Storage según el contrato 11. Las pruebas aisladas de negocio usan un sustituto; el servidor y la integración web usan el procesador real. Las copias se generan antes de confirmar Firestore; Storage no integra esa transacción.
-- Publicar productos requiere mostrarPrecios=true en configuración privada y ficha pública. Consultar precio requiere el siguiente incremento. Publicar tienda con false mantiene su catálogo bloqueado por las reglas actuales.
+- Los productos se pueden publicar con precios visibles u ocultos. Cuando `mostrarPrecios=false`, las reglas bloquean la ruta `productos` y permiten únicamente la vista paralela `productosConsulta`, que omite el precio base y los precios de variantes. La app muestra «Consultar precio».
+- `POST /api/v1/consultasPublicas` admite envíos anónimos para tiendas publicadas y habilitadas cuya `formaContacto` sea `formulario` o `ambos`. Recibe `tiendaId`, `operacionId` UUID, nombre (2–100), correo válido (máximo 254), mensaje (5–2000) y un nombre de producto opcional (máximo 160). No admite UID ni campos adicionales. La API limita cada IP a cinco envíos por diez minutos y persiste la consulta con Admin SDK en `tiendasPrivadas/{tiendaId}/consultas/{operacionId}`. La respuesta no expone identificadores ni otros datos privados.
+- La emprendedora autenticada puede leer su bandeja y cambiar únicamente `estado: nueva` a `leida` con `leidaEn` del servidor. El comprador no puede leer, editar ni borrar consultas. La app muestra nuevas y leídas en **Inicio → Bandeja de consultas**. Este endpoint requiere que la API esté disponible; no almacena envíos offline.
+- Las vistas sin precio se sincronizan junto con edición, disponibilidad, stock y ventas. Para los documentos públicos existentes, `npm.cmd --prefix backend run catalogo:sincronizar-vistas-publicas -- --dry-run rincon-amancay` simula la actualización. Solo después de revisar el resumen se puede ejecutar con `--aplicar`.
 - Máximo 100 documentos por subcolección consultada y 200 cambios públicos por operación; al excederlos falla sin cambios. Catálogos grandes requerirán retirada por indicador y limpieza paginada.
 - Las proyecciones públicas incluyen `manejaStock` y el saldo exacto de productos simples o de cada variante. Los ajustes de inventario y ventas actualizan ese saldo junto con la disponibilidad; las variantes agotadas con política `ocultar` se omiten. Si ninguna queda publicable, se rechaza publicar y debe solicitarse retirar explícitamente.
 - Las reglas no controlan al SDK Admin: la API mantiene las verificaciones del módulo. La desactivación coordinada está implementada según 09-desactivacion-cuentas.md; reactivación local en 10-ciclo-cuentas.md; otras operaciones administrativas siguen pendientes.

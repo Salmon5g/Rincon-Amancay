@@ -2,6 +2,7 @@ import { applicationDefault, deleteApp, initializeApp } from 'firebase-admin/app
 import { FieldPath, FieldValue, getFirestore, type QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { exigirEntornoCompartido } from '../src/config/compartido.ts';
+import { crearProductoSinPrecios, crearVarianteSinPrecio } from '../src/modules/vista-sin-precios.ts';
 
 const TAMANO_PAGINA = 50;
 const PROYECTO = exigirEntornoCompartido(process.env);
@@ -21,9 +22,10 @@ function esSaldo(valor: unknown): valor is number {
 
 async function sincronizarProducto(tiendaId: string, productoId: string): Promise<Resultado> {
   const publico = db.doc(`tiendasPublicas/${tiendaId}/productos/${productoId}`);
+  const publicoConsulta = db.doc(`tiendasPublicas/${tiendaId}/productosConsulta/${productoId}`);
   const privado = db.doc(`tiendasPrivadas/${tiendaId}/productos/${productoId}`);
   return db.runTransaction(async tx => {
-    const [fichaPublica, fichaPrivada] = await tx.getAll(publico, privado);
+    const [fichaPublica, fichaPrivada] = await tx.getAll(publico, privado, publicoConsulta);
     const p = fichaPublica.data();
     const d = fichaPrivada.data();
     if (!fichaPublica.exists || p?.estadoPublicacion !== 'publicado') return { estado: 'omitido', variantes: 0, razon: 'ficha pública no publicada' };
@@ -37,7 +39,10 @@ async function sincronizarProducto(tiendaId: string, productoId: string): Promis
       if (d.manejaStock && !esSaldo(d.stock)) return { estado: 'omitido', variantes: 0, razon: 'saldo simple inválido' };
       const stock = d.manejaStock ? d.stock : null;
       if (p.manejaStock === d.manejaStock && p.stock === stock) return { estado: 'al-dia', variantes: 0 };
-      if (aplicar) tx.update(publico, { manejaStock: d.manejaStock, stock, actualizadoEn: ahora });
+      if (aplicar) {
+        tx.update(publico, { manejaStock: d.manejaStock, stock, actualizadoEn: ahora });
+        tx.set(publicoConsulta, crearProductoSinPrecios({ ...p, manejaStock: d.manejaStock, stock, actualizadoEn: ahora }));
+      }
       return { estado: 'actualizado', variantes: 0 };
     }
 
@@ -53,7 +58,7 @@ async function sincronizarProducto(tiendaId: string, productoId: string): Promis
     if (variantesPrivadas.some(v => !v.exists || (d.manejaStock && !esSaldo(v.data()?.stock)))) {
       return { estado: 'omitido', variantes: 0, razon: 'falta el saldo privado de una variante pública' };
     }
-    const saldosPublicos = variantesPublicas.docs.map((v, indice) => d.manejaStock ? variantesPrivadas[indice].data()!.stock : null);
+      const saldosPublicos = variantesPublicas.docs.map((v, indice) => d.manejaStock ? variantesPrivadas[indice].data()!.stock : null);
     const alDia = p.manejaStock === d.manejaStock
       && variantesPublicas.docs.every((v, indice) => v.data().stock === saldosPublicos[indice]);
     if (alDia) return { estado: 'al-dia', variantes: variantesPublicas.size };
@@ -61,7 +66,11 @@ async function sincronizarProducto(tiendaId: string, productoId: string): Promis
       tx.update(publico, { manejaStock: d.manejaStock, actualizadoEn: ahora });
       variantesPublicas.docs.forEach((v, indice) => {
         tx.update(v.ref, { stock: saldosPublicos[indice], actualizadoEn: ahora });
+        tx.set(publicoConsulta.collection('variantes').doc(v.id), crearVarianteSinPrecio({
+          ...v.data(), stock: saldosPublicos[indice], actualizadoEn: ahora,
+        }));
       });
+      tx.set(publicoConsulta, crearProductoSinPrecios({ ...p, manejaStock: d.manejaStock, actualizadoEn: ahora }));
     }
     return { estado: 'actualizado', variantes: variantesPublicas.size };
   });

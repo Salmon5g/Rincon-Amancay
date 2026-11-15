@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
 import { ErrorOperacion, version, estado } from './publicacion.ts';
+import { crearProductoSinPrecios, crearVarianteSinPrecio } from './vista-sin-precios.ts';
 
 function exigir(ok: unknown, code: string, message: string): asserts ok {
   if (!ok) throw new ErrorOperacion(code, message);
@@ -26,10 +27,11 @@ export function crearStock(db: Firestore) {
     const product=store.collection('productos').doc(d.productoId as string);
     const target=d.varianteId ? product.collection('variantes').doc(d.varianteId as string) : product;
     const pub=db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`);
+    const pubConsulta=db.doc(`tiendasPublicas/${d.tiendaId}/productosConsulta/${d.productoId}`);
     const receipt=store.collection('operacionesStock').doc(d.operacionId as string);
     const history=store.collection('movimientosStock').doc(d.operacionId as string);
     return db.runTransaction(async tx=>{
-      const [access,shop,p,previous,current,publicProduct,movement,aprobacion,publicShop]=await tx.getAll(db.doc(`accesos/${identidad.uid}`),store,product,receipt,target,pub,history,product.collection('publicacion').doc('vigente'),db.doc(`tiendasPublicas/${d.tiendaId}`));
+      const [access,shop,p,previous,current,publicProduct,movement,aprobacion,publicShop,publicProductConsulta]=await tx.getAll(db.doc(`accesos/${identidad.uid}`),store,product,receipt,target,pub,history,product.collection('publicacion').doc('vigente'),db.doc(`tiendasPublicas/${d.tiendaId}`),pubConsulta);
       const a=access.data();
       exigir(a?.estado==='activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId===d.tiendaId && shop.data()?.propietarioUid===identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
       if(previous.exists) {
@@ -49,7 +51,9 @@ export function crearStock(db: Firestore) {
       exigir(Number.isSafeInteger(stockNuevo) && stockNuevo>=0,'conflicto','El ajuste dejaría stock negativo o fuera de rango.');
       if(data.modalidad==='pieza_unica') exigir(!data.tieneVariantes && stockNuevo<=1,'conflicto','Una pieza única solo admite cero o una unidad.');
       const publicVariants=await tx.get(pub.collection('variantes').limit(101));
+      const publicVariantsConsulta=await tx.get(pubConsulta.collection('variantes').limit(101));
       exigir(publicVariants.size<=100,'limite-local','Demasiadas variantes públicas; no se aplicó el ajuste.');
+      exigir(publicVariantsConsulta.size<=100,'limite-local','Demasiadas variantes sin precio; no se aplicó el ajuste.');
       const aprobada=aprobacion.data();
       const sincronizar=data.disponible!==false && aprobada?.schema===1 && aprobada.cicloCatalogo===(shop.data()?.cicloCatalogo??0) && shop.data()?.estadoPublicacion==='publicado' && publicShop.exists && data.estadoPublicacion==='publicado';
       const requiereRepublicar=data.disponible!==false && !sincronizar && (publicProduct.exists || !publicVariants.empty || data.estadoPublicacion==='publicado');
@@ -86,8 +90,16 @@ export function crearStock(db: Firestore) {
       tx.update(product,{actualizadoEn:now,...(!d.varianteId?{stock:stockNuevo}:{}),...(requiereRepublicar?{estadoPublicacion:'archivado'}:{})});
       const nuevas=new Set(publicarVariantes.map(v=>v.id));
       for(const variant of publicVariants.docs) if(!nuevas.has(variant.id))tx.delete(variant.ref);
+      for(const variant of publicVariantsConsulta.docs) if(!nuevas.has(variant.id))tx.delete(variant.ref);
       for(const variant of publicarVariantes)tx.set(pub.collection('variantes').doc(variant.id),{...variant.data,actualizadoEn:now});
-      if(proyeccion)tx.set(pub,{...proyeccion,actualizadoEn:now});else tx.delete(pub);
+      for(const variant of publicarVariantes)tx.set(pubConsulta.collection('variantes').doc(variant.id),crearVarianteSinPrecio({...variant.data,actualizadoEn:now}));
+      if(proyeccion) {
+        tx.set(pub,{...proyeccion,actualizadoEn:now});
+        tx.set(pubConsulta,crearProductoSinPrecios({...proyeccion,actualizadoEn:now}));
+      } else {
+        tx.delete(pub);
+        if(publicProductConsulta.exists)tx.delete(pubConsulta);
+      }
       const actualizacionCatalogo=sincronizar?(proyeccion?'actualizado':'oculto'):(requiereRepublicar?'requiere_republicar':'sin_publicacion');
       const resultado={operacionId:d.operacionId as string,stockAnterior,stockNuevo,requiereRepublicar,actualizacionCatalogo};
       tx.create(history,{productoId:d.productoId,...(d.varianteId?{varianteId:d.varianteId}:{}),cantidad:d.cantidad,motivo:d.motivo,...(d.nota?{nota:d.nota}:{}),stockAnterior,stockNuevo,realizadoPor:identidad.uid,creadoEn:now,retiradoDelCatalogo:publicProduct.exists && !proyeccion,actualizacionCatalogo});

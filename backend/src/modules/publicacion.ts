@@ -2,6 +2,8 @@ import type { ImagenPreparada } from './imagenes.ts';
 import { createHash } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { Firestore, DocumentData, DocumentReference, Transaction } from 'firebase-admin/firestore';
+import { sincronizarAsociacionesDeTienda } from './proyecciones-asociaciones-publicas.ts';
+import { crearProductoSinPrecios, crearVarianteSinPrecio } from './vista-sin-precios.ts';
 
 export type Accion = 'publicarTienda' | 'retirarTienda' | 'publicarProducto' | 'retirarProducto';
 export type Solicitud = { tiendaId: string; productoId?: string; operacionId: string; versionEsperada: string };
@@ -74,6 +76,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
     const publica = db.doc(`tiendasPublicas/${solicitud.tiendaId}`);
     const source = esProducto ? privada.collection('productos').doc(solicitud.productoId!) : privada;
     const target = esProducto ? publica.collection('productos').doc(solicitud.productoId!) : publica;
+    const targetConsulta = esProducto ? publica.collection('productosConsulta').doc(solicitud.productoId!) : null;
     const aprobacion = esProducto ? source.collection('publicacion').doc('vigente') : null;
     const imagenesPreparadas = new Map<string, boolean | ImagenPreparada>();
     const recibo = privada.collection('operacionesPublicacion').doc(solicitud.operacionId);
@@ -108,12 +111,20 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           borrar.push(...variants.map(v => v.ref), product.ref);
           exigir(borrar.length <= 199, 'limite-local', 'Retirada demasiado grande para este incremento; no se aplicó ningún cambio.');
         }
+        const productsConsulta = await hijos(tx, publica, 'productosConsulta');
+        for (const product of productsConsulta) {
+          const variants = await hijos(tx, product.ref, 'variantes');
+          borrar.push(...variants.map(v => v.ref), product.ref);
+          exigir(borrar.length <= 199, 'limite-local', 'Retirada demasiado grande para este incremento; no se aplicó ningún cambio.');
+        }
         borrar.push(publica);
       } else if (accion === 'retirarProducto') {
         const oldPublic=(await tx.get(target)).data();
         for(const path of [...(Array.isArray(oldPublic?.imagenes)?oldPublic!.imagenes:[]),...(Array.isArray(oldPublic?.miniaturas)?oldPublic!.miniaturas:[])])if(typeof path==='string')limpiar.add(path);
         borrar.push(aprobacion!);
         borrar.push(...(await hijos(tx, target, 'variantes')).map(v => v.ref), target);
+        const consulta = targetConsulta!;
+        borrar.push(...(await hijos(tx, consulta, 'variantes')).map(v => v.ref), consulta);
       } else {
         const config = (await tx.get(privada.collection('configuracion').doc('general'))).data();
         exigir(typeof config?.mostrarPrecios === 'boolean', 'datos-invalidos', 'Falta configuración de precios.');
@@ -122,6 +133,8 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const tipo = await tx.get(db.doc(`tiposEmprendimiento/${texto(store.tipoEmprendimientoId, 128)}`));
           exigir(sector.data()?.activo === true && tipo.data()?.activo === true, 'datos-invalidos', 'Sector o tipo inactivo.');
           const contacto = contactoPublico(store);
+          const formaContacto = config.formaContacto ?? 'formulario';
+          exigir(['whatsapp', 'formulario', 'ambos'].includes(String(formaContacto)), 'datos-invalidos', 'Falta una forma de contacto válida.');
           const logoRuta=store.logo;
           exigir(logoRuta===undefined || typeof logoRuta==='string','imagen-no-autorizada','La ruta de logo de la tienda es inválida.');
           let logo:ImagenPreparada|false|undefined;
@@ -136,13 +149,14 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             nombre: texto(store.nombre, 120), descripcion: texto(store.descripcion, 2000),
             sectorId: store.sectorId, tipoEmprendimientoId: store.tipoEmprendimientoId,
             ...(contacto ? { contacto } : {}),
+            formaContacto,
             ...(logo ? {logo:logo.imagen,logoMiniatura:logo.miniatura} : {}),
             estadoPublicacion: 'publicado', habilitada: true, mostrarPrecios: config.mostrarPrecios, actualizadoEn: now,
           } });
         } else {
           const publicStore = (await tx.get(publica)).data();
           exigir(store.estadoPublicacion === 'publicado' && publicStore?.estadoPublicacion === 'publicado' && publicStore.habilitada === true, 'tienda-no-publicada', 'Publicar primero la tienda.');
-          exigir(config.mostrarPrecios === true && publicStore.mostrarPrecios === true, 'pendiente', 'Catálogo sin precios requiere el siguiente incremento.');
+          exigir(config.mostrarPrecios === publicStore.mostrarPrecios, 'conflicto', 'La configuración de precios de la tienda cambió; vuelve a publicarla antes de publicar productos.');
           exigir(data.disponible === true && data.piezaUnicaVendida === false, 'no-publicable', 'Producto no disponible o pieza vendida.');
           exigir(data.moneda === 'CLP' && data.unidadVenta === 'unidad' && data.pasoCantidad === 1, 'datos-invalidos', 'Este incremento admite CLP y unidades enteras.');
           exigir(['regular', 'a_pedido', 'pieza_unica'].includes(data.modalidad) && typeof data.manejaStock === 'boolean' && typeof data.tieneVariantes === 'boolean', 'datos-invalidos', 'Modalidad o indicadores inválidos.');
@@ -175,6 +189,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const nuevasRutas=new Set([...imagenes,...miniaturas]);
           for(const path of [...(Array.isArray(oldPublic?.imagenes)?oldPublic!.imagenes:[]),...(Array.isArray(oldPublic?.miniaturas)?oldPublic!.miniaturas:[])])if(typeof path==='string' && !nuevasRutas.has(path))limpiar.add(path);
           const oldVariants = await hijos(tx, target, 'variantes');
+          const oldVariantsConsulta = await hijos(tx, targetConsulta!, 'variantes');
           for (const oldVariant of oldVariants) {
             const image = oldVariant.data().imagen;
             const thumbnail = oldVariant.data().miniatura;
@@ -182,6 +197,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             if (typeof thumbnail === 'string') limpiar.add(thumbnail);
           }
           borrar.push(...oldVariants.map(v => v.ref));
+          borrar.push(...oldVariantsConsulta.map(v => v.ref));
           const projection: DocumentData = {
             nombre: texto(data.nombre, 120), descripcion: texto(data.descripcion, 2000),
             tipoProductoId: data.tipoProductoId, versionTipoProducto: data.versionTipoProducto,
@@ -213,7 +229,9 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
               variantesAprobadas[variant.id]={opciones:options,precio:precio(v.precio),activa:true,...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{})};
               if(!availability) continue;
               states.push(availability);
-              escribir.push({ ref: target.collection('variantes').doc(variant.id), data: { opciones: options, precio: precio(v.precio), activa: true, stock:stockPublico, ...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{}), estadoDisponibilidad: availability, actualizadoEn: now } });
+              const variantePublica = { opciones: options, precio: precio(v.precio), activa: true, stock:stockPublico, ...(fotoVariante?{imagen:fotoVariante.imagen,miniatura:fotoVariante.miniatura}:{}), estadoDisponibilidad: availability, actualizadoEn: now };
+              escribir.push({ ref: target.collection('variantes').doc(variant.id), data: variantePublica });
+              escribir.push({ ref: targetConsulta!.collection('variantes').doc(variant.id), data: crearVarianteSinPrecio(variantePublica) });
             }
             exigir(states.length > 0, 'no-publicable', 'No hay variantes publicables.');
             projection.estadoDisponibilidad = states.includes('disponible') ? 'disponible' : states.includes('a_pedido') ? 'a_pedido' : 'agotado';
@@ -231,6 +249,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             politica:{modalidad:data.modalidad,manejaStock:data.manejaStock,alAgotarse:data.alAgotarse},
             producto:productoAprobado,variantes:variantesAprobadas,aprobadoEn:now}});
           escribir.push({ ref: target, data: projection });
+          escribir.push({ ref: targetConsulta!, data: crearProductoSinPrecios(projection) });
         }
       }
       exigir(borrar.length + escribir.length <= 200, 'limite-local', 'La operación supera el límite atómico de este incremento.');
@@ -243,6 +262,7 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
       return {resultado,limpieza:rutasLimpieza};
     });
     if(confirmado.limpieza?.length && limpiarImagenes)await limpiarImagenes(confirmado.limpieza);
+    if (!esProducto) await sincronizarAsociacionesDeTienda(db, solicitud.tiendaId);
     return confirmado.resultado;
   };
 }

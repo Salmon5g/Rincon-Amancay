@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.buyer.ModoCompradorScreen
 import com.example.amancay.emprendedora.ModoEmprendedoraConectada
+import com.example.amancay.emprendedora.BandejaConsultasScreen
 import com.example.amancay.data.AmancayRepository
 import com.example.amancay.data.DraftState
 import com.example.amancay.data.FirebaseClientServicesProvider
@@ -182,6 +183,7 @@ sealed interface Screen {
     data object Settings : Screen
     data object ConfiguracionCatalogo : Screen
     data object Ventas : Screen
+    data object Consultas : Screen
     data object Ferias : Screen
     data class FeriaDetalle(val invitacionId: String?) : Screen
     data object Camara : Screen
@@ -266,6 +268,7 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
             is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> Tab.PRODUCTOS
             is Screen.Sell, is Screen.Sale, is Screen.History, is Screen.Camara -> tab
             is Screen.Ventas -> Tab.INICIO
+            is Screen.Consultas -> Tab.INICIO
             is Screen.Settings -> Tab.MAS
             is Screen.ConfiguracionCatalogo -> Tab.MAS
             is Screen.Ferias -> Tab.INICIO
@@ -500,6 +503,7 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                     }
                 }
                 is Screen.Ventas -> AvisoEmprendedora("Las ventas conectadas están disponibles dentro de la sesión de emprendedora.", false)
+                is Screen.Consultas -> AvisoEmprendedora("La bandeja está disponible dentro de la sesión de emprendedora.", false)
             }
             }
         }
@@ -1055,6 +1059,9 @@ internal fun EmprendedoraAppConectada(
                                     }
                                     Spacer(Modifier.height(8.dp))
                                     OutlineButton("Registrar venta · Historial de encargos", { screen = Screen.Ventas })
+                                    Spacer(Modifier.height(8.dp))
+                                    val consultasNoLeidas = productosRepository.consultas.collectAsState().value.count { !it.leida }
+                                    OutlineButton(if (consultasNoLeidas > 0) "Bandeja de consultas · $consultasNoLeidas nuevas" else "Bandeja de consultas", { screen = Screen.Consultas })
                                 }
                             }
                         }
@@ -1303,6 +1310,17 @@ internal fun EmprendedoraAppConectada(
                         },
                         alReintentarCarga = { reintentoCargaVentas++ },
                         alVolver = { abrirHistorialVentas = false; screen = Screen.Home; tab = Tab.INICIO }
+                    )
+                    Screen.Consultas -> BandejaConsultasScreen(
+                        consultas = productosRepository.consultas.collectAsState().value,
+                        error = productosRepository.error.collectAsState().value,
+                        alMarcarLeida = { consulta ->
+                            scope.launch {
+                                runCatching { productosRepository.marcarConsultaLeida(sesion.tiendaId, consulta.id) }
+                                    .onFailure { errorProducto = "No pudimos actualizar esta consulta. Comprueba tu conexión e inténtalo de nuevo." }
+                            }
+                        },
+                        alVolver = { screen = Screen.Home; tab = Tab.INICIO }
                     )
                     is Screen.Preview -> PreviewCatalogScreen(
                         producto = productoDeVista,

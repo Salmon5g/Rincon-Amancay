@@ -22,7 +22,7 @@ Implementada en los emuladores; no desplegada. Authentication identifica a la pe
 }
 ```
 
-Todos los campos son obligatorios; no hay valores por defecto silenciosos. Los IDs admiten letras, números, guion y guion bajo, hasta 128 caracteres. nombreMostrar admite 100 caracteres, nombreTienda 120 y descripcion 2000; textos no vacíos. formaContacto: whatsapp, formulario o ambos. Las preferencias se guardan, pero no implementan todavía formularios, WhatsApp ni ventas.
+Todos los campos son obligatorios; no hay valores por defecto silenciosos. Los IDs admiten letras, números, guion y guion bajo, hasta 128 caracteres. nombreMostrar admite 100 caracteres, nombreTienda 120 y descripcion 2000; textos no vacíos. `formaContacto` admite `whatsapp`, `formulario` o `ambos`. Al publicar tienda, la API copia esta preferencia a la ficha pública; la app compradora ofrece el canal configurado. El formulario recopila nombre, correo y mensaje, y continúa al correo, WhatsApp o sitio web público configurado por la emprendedora.
 
 El endpoint no recibe contraseñas ni crea identidades de Authentication: exige que `uidDestino` ya exista. Desde Web Admin, la opción **Crear cuenta con contraseña inicial** crea primero la identidad mediante una aplicación secundaria de Firebase Authentication con persistencia en memoria, para mantener abierta la sesión administradora. Después llama esta operación con el UID recién creado. El modo local conecta esa app secundaria al emulador de Authentication. La otra opción, **Enviar invitación**, conserva el flujo de aceptación existente.
 

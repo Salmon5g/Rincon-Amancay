@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore, DocumentData, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { ErrorOperacion, version, estado } from './publicacion.ts';
+import { crearProductoSinPrecios, crearVarianteSinPrecio } from './vista-sin-precios.ts';
 
 export type AccionProducto = 'crearProducto' | 'editarProducto' | 'eliminarProducto' | 'asignarImagenVariante' | 'cambiarDisponibilidadProductos';
 function exigir(ok: unknown, code: string, message: string): asserts ok {
@@ -45,7 +46,9 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
       const firma = createHash('sha256').update(canon({uid:identidad.uid, tiendaId:d.tiendaId, disponible:d.disponible, items})).digest('hex');
       const referencias = items.flatMap((item: {productoId:string; versionEsperada:string}) => {
         const productoRef = tiendaRef.collection('productos').doc(item.productoId);
-        return [productoRef, productoRef.collection('publicacion').doc('vigente'), db.doc(`tiendasPublicas/${d.tiendaId}/productos/${item.productoId}`)];
+        const publico = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${item.productoId}`);
+        return [productoRef, productoRef.collection('publicacion').doc('vigente'), publico,
+          db.doc(`tiendasPublicas/${d.tiendaId}/productosConsulta/${item.productoId}`)];
       });
       return db.runTransaction(async tx => {
         const iniciales = await tx.getAll(accesoRef, tiendaRef, reciboRef, tiendaPublicaRef, ...referencias);
@@ -53,26 +56,34 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && tienda.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
         if (recibo.exists) { exigir(recibo.data()?.firma === firma, 'id-reutilizado', 'operacionId corresponde a otra solicitud.'); return recibo.data()!.resultado; }
         const consultas = await Promise.all(items.map(async (item: {productoId:string; versionEsperada:string}, index: number) => {
-          const base = 4 + index * 3;
-          const productoRef = referencias[index * 3] as FirebaseFirestore.DocumentReference;
-          const publicRef = referencias[index * 3 + 2] as FirebaseFirestore.DocumentReference;
+          const base = 4 + index * 4;
+          const productoRef = referencias[index * 4] as FirebaseFirestore.DocumentReference;
+          const publicRef = referencias[index * 4 + 2] as FirebaseFirestore.DocumentReference;
+          const publicRefConsulta = referencias[index * 4 + 3] as FirebaseFirestore.DocumentReference;
           const [variantes, variantesPublicas] = await Promise.all([
             tx.get(productoRef.collection('variantes').limit(21)),
             tx.get(publicRef.collection('variantes').limit(21))
           ]);
+          const variantesConsulta = await tx.get(publicRefConsulta.collection('variantes').limit(21));
           exigir(variantes.size <= 20 && variantesPublicas.size <= 20, 'limite-local', 'Cada producto admite hasta 20 variantes en este cambio.');
-          return {item, producto:iniciales[base], aprobacion:iniciales[base+1], proyeccion:iniciales[base+2], variantes, variantesPublicas, productoRef, publicRef};
+          exigir(variantesConsulta.size <= 20, 'limite-local', 'Cada producto admite hasta 20 variantes sin precio en este cambio.');
+          return {item, producto:iniciales[base], aprobacion:iniciales[base+1], proyeccion:iniciales[base+2], variantes, variantesPublicas, variantesConsulta, productoRef, publicRef, publicRefConsulta};
         }));
         const cambios: {productoId:string; disponible:boolean; actualizacionCatalogo:string}[] = [];
         const ahora = FieldValue.serverTimestamp();
+        let escriturasEstimadas = 0;
         for (const consulta of consultas) {
           const data = consulta.producto.data();
           exigir(data && data.estadoPublicacion !== 'eliminado', 'no-encontrado', 'Uno de los productos ya no está disponible.');
           exigir(version(data) === consulta.item.versionEsperada, 'conflicto', 'Uno de los productos cambió; actualiza el catálogo e inténtalo nuevamente.');
           tx.update(consulta.productoRef, {disponible:d.disponible, actualizadoEn:ahora});
+          escriturasEstimadas++;
           if (!d.disponible) {
-            for (const variante of consulta.variantesPublicas.docs) tx.delete(variante.ref);
-            if (consulta.proyeccion.exists) tx.delete(consulta.publicRef);
+            for (const variante of consulta.variantesPublicas.docs) { tx.delete(variante.ref); escriturasEstimadas++; }
+            for (const variante of consulta.variantesConsulta.docs) { tx.delete(variante.ref); escriturasEstimadas++; }
+            if (consulta.proyeccion.exists) { tx.delete(consulta.publicRef); escriturasEstimadas++; }
+            tx.delete(consulta.publicRefConsulta);
+            escriturasEstimadas++;
             cambios.push({productoId:consulta.item.productoId, disponible:false, actualizacionCatalogo:'oculto'});
             continue;
           }
@@ -111,11 +122,22 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
             proyeccion = base;
           }
           const idsPublicos = new Set(nuevasVariantes.map(v => v.id));
-          for (const variante of consulta.variantesPublicas.docs) if (!idsPublicos.has(variante.id)) tx.delete(variante.ref);
-          for (const variante of nuevasVariantes) tx.set(consulta.publicRef.collection('variantes').doc(variante.id), variante.data);
-          if (proyeccion) tx.set(consulta.publicRef, proyeccion); else tx.delete(consulta.publicRef);
+          for (const variante of consulta.variantesPublicas.docs) if (!idsPublicos.has(variante.id)) { tx.delete(variante.ref); escriturasEstimadas++; }
+          for (const variante of consulta.variantesConsulta.docs) if (!idsPublicos.has(variante.id)) { tx.delete(variante.ref); escriturasEstimadas++; }
+          for (const variante of nuevasVariantes) { tx.set(consulta.publicRef.collection('variantes').doc(variante.id), variante.data); escriturasEstimadas++; }
+          for (const variante of nuevasVariantes) { tx.set(consulta.publicRefConsulta.collection('variantes').doc(variante.id), crearVarianteSinPrecio(variante.data)); escriturasEstimadas++; }
+          if (proyeccion) {
+            tx.set(consulta.publicRef, proyeccion);
+            tx.set(consulta.publicRefConsulta, crearProductoSinPrecios(proyeccion));
+            escriturasEstimadas += 2;
+          } else {
+            tx.delete(consulta.publicRef);
+            tx.delete(consulta.publicRefConsulta);
+            escriturasEstimadas += 2;
+          }
           cambios.push({productoId:consulta.item.productoId, disponible:true, actualizacionCatalogo:proyeccion ? 'restaurado' : 'agotado_oculto'});
         }
+        exigir(escriturasEstimadas + 1 <= 500, 'limite-local', 'La operación supera las 500 escrituras atómicas; selecciona menos productos.');
         const resultado = {operacionId:d.operacionId, disponible:d.disponible, cantidad:cambios.length, cambios};
         tx.create(reciboRef, {firma,resultado,creadoEn:ahora});
         return resultado;
@@ -129,6 +151,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
       exigir(procesarImagen, 'pendiente', 'El procesamiento público de imágenes no está configurado.');
       const storeRef = db.doc(`tiendasPrivadas/${d.tiendaId}`), productRef = storeRef.collection('productos').doc(d.productoId), variantRef = productRef.collection('variantes').doc(d.varianteId);
       const publicProductRef = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`), publicVariantRef = publicProductRef.collection('variantes').doc(d.varianteId);
+      const publicProductConsultaRef = db.doc(`tiendasPublicas/${d.tiendaId}/productosConsulta/${d.productoId}`), publicVariantConsultaRef = publicProductConsultaRef.collection('variantes').doc(d.varianteId);
       const accessRef = db.doc(`accesos/${identidad.uid}`), receiptRef = storeRef.collection('operacionesProductos').doc(d.operacionId), approvalRef = productRef.collection('publicacion').doc('vigente');
       const publicStoreRef = db.doc(`tiendasPublicas/${d.tiendaId}`);
       const [access, store, product, variant, publicStore] = await Promise.all([accessRef.get(), storeRef.get(), productRef.get(), variantRef.get(), publicStoreRef.get()]);
@@ -141,7 +164,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
       if (productoPublicado) exigir(prepared && typeof prepared === 'object', 'imagen-no-autorizada', 'No se pudo preparar la imagen de la variante.');
       const firma = createHash('sha256').update(canon({uid:identidad.uid,tiendaId:d.tiendaId,productoId:d.productoId,varianteId:d.varianteId,imagen:imagePath})).digest('hex');
       const confirmado = await db.runTransaction(async tx => {
-        const [currentAccess, currentStore, currentProduct, currentVariant, receipt, approval, publicProduct, publicVariant, currentPublicStore] = await tx.getAll(accessRef,storeRef,productRef,variantRef,receiptRef,approvalRef,publicProductRef,publicVariantRef,publicStoreRef);
+        const [currentAccess, currentStore, currentProduct, currentVariant, receipt, approval, publicProduct, publicVariant, currentPublicStore, publicVariantConsulta] = await tx.getAll(accessRef,storeRef,productRef,variantRef,receiptRef,approvalRef,publicProductRef,publicVariantRef,publicStoreRef,publicVariantConsultaRef);
         exigir(currentAccess.data()?.estado === 'activo' && currentAccess.data()?.roles?.includes('emprendedora') && currentAccess.data()?.tiendaId === d.tiendaId && currentStore.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'La cuenta perdió acceso a la tienda.');
         if (receipt.exists) { exigir(receipt.data()?.firma === firma, 'id-reutilizado', 'operacionId corresponde a otra solicitud.'); return {resultado:receipt.data()!.resultado, limpieza:receipt.data()?.limpiezaImagenes as string[]|undefined}; }
         exigir(currentProduct.exists && currentVariant.exists && currentProduct.data()?.imagenes?.includes(imagePath), 'conflicto', 'El producto cambió; vuelve a cargarlo.');
@@ -159,6 +182,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
           tx.update(approvalRef, {variantes:approvedVariants});
         }
         if (publicVariant.exists && publicadaAhora) tx.set(publicVariantRef, {...publicVariant.data(), imagen:preparadaActual!.imagen, miniatura:preparadaActual!.miniatura, actualizadoEn:now});
+        if (publicVariantConsulta.exists && publicadaAhora) tx.set(publicVariantConsultaRef, crearVarianteSinPrecio({...publicVariantConsulta.data(), imagen:preparadaActual!.imagen, miniatura:preparadaActual!.miniatura, actualizadoEn:now}));
         const resultado = {accion, productoId:d.productoId, varianteId:d.varianteId, operacionId:d.operacionId};
         const limpieza = publicadaAhora ? [imagenPublicaAnterior,miniaturaAnterior].filter((value): value is string => typeof value === 'string' && value !== preparadaActual!.imagen && value !== preparadaActual!.miniatura) : [];
         tx.create(receiptRef, {firma,resultado,limpiezaImagenes:limpieza,creadoEn:now});
@@ -177,11 +201,12 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
       const storeRef = db.doc(`tiendasPrivadas/${d.tiendaId}`);
       const productRef = storeRef.collection('productos').doc(d.productoId);
       const publicRef = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`);
+      const publicRefConsulta = db.doc(`tiendasPublicas/${d.tiendaId}/productosConsulta/${d.productoId}`);
       const approvalRef = productRef.collection('publicacion').doc('vigente');
       const receiptRef = storeRef.collection('operacionesProductos').doc(d.operacionId);
       const confirmado = await db.runTransaction(async tx => {
-        const [access, store, product, receipt, publicProduct, approval] = await tx.getAll(
-          db.doc(`accesos/${identidad.uid}`), storeRef, productRef, receiptRef, publicRef, approvalRef
+        const [access, store, product, receipt, publicProduct, approval, publicProductConsulta] = await tx.getAll(
+          db.doc(`accesos/${identidad.uid}`), storeRef, productRef, receiptRef, publicRef, approvalRef, publicRefConsulta
         );
         const a = access.data();
         exigir(a?.estado === 'activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId === d.tiendaId && store.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere la propietaria activa de esta tienda.');
@@ -195,7 +220,9 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         exigir(version(data) === d.versionEsperada, 'conflicto', 'El producto cambió; vuelve a cargar la lista e inténtalo de nuevo.');
 
         const publicVariants = await tx.get(publicRef.collection('variantes').limit(21));
+        const publicVariantsConsulta = await tx.get(publicRefConsulta.collection('variantes').limit(21));
         exigir(publicVariants.size <= 20, 'limite-local', 'Este incremento admite hasta 20 variantes públicas por producto.');
+        exigir(publicVariantsConsulta.size <= 20, 'limite-local', 'Este incremento admite hasta 20 variantes públicas sin precio por producto.');
         const now = FieldValue.serverTimestamp();
         const result = {accion, productoId: d.productoId, operacionId: d.operacionId, estadoPublicacion: 'eliminado'};
         const projection = publicProduct.data();
@@ -214,10 +241,15 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         for (const variant of Object.values(approvedVariants ?? {})) {
           for (const value of [variant.imagen, variant.miniatura]) if (typeof value === 'string') paths.add(value);
         }
+        for (const variant of publicVariantsConsulta.docs) {
+          for (const value of [variant.get('imagen'), variant.get('miniatura')]) if (typeof value === 'string') paths.add(value);
+        }
 
         for (const variant of publicVariants.docs) tx.delete(variant.ref);
+        for (const variant of publicVariantsConsulta.docs) tx.delete(variant.ref);
         if (approval.exists) tx.delete(approvalRef);
         if (publicProduct.exists) tx.delete(publicRef);
+        if (publicProductConsulta.exists) tx.delete(publicRefConsulta);
         // Tombstone privado: desaparece de la aplicación, pero conserva ficha,
         // variantes, imágenes originales e historial de stock para trazabilidad.
         tx.update(productRef, {estadoPublicacion: 'eliminado', disponible: false, eliminadoEn: now, actualizadoEn: now});
@@ -258,6 +290,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
     const receiptRef = storeRef.collection('operacionesProductos').doc(d.operacionId);
     const publicStoreRef = db.doc(`tiendasPublicas/${d.tiendaId}`);
     const publicRef = publicStoreRef.collection('productos').doc(d.productoId);
+    const publicRefConsulta = publicStoreRef.collection('productosConsulta').doc(d.productoId);
     const approvalRef = ref.collection('publicacion').doc('vigente');
     return db.runTransaction(async tx => {
       const [access, store, source, receipt, type, definition, category, publicSource, publicStore] = await tx.getAll(
@@ -336,6 +369,7 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
       let variantesPublicas: {id: string; data: DocumentData}[] = [];
       let snapshotAprobado: DocumentData | null = null;
       let publicVariants: QueryDocumentSnapshot[] = [];
+      let publicVariantsConsulta: QueryDocumentSnapshot[] = [];
       if (sincronizarCatalogo) {
         const publicData = publicSource.data()!;
         const imagenesPublicas = Array.isArray(publicData.imagenes)
@@ -408,6 +442,9 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         const publicVariantSnapshot = await tx.get(publicRef.collection('variantes').limit(101));
         exigir(publicVariantSnapshot.size <= 100, 'limite-local', 'Demasiadas variantes públicas; no se aplicó la edición.');
         publicVariants = publicVariantSnapshot.docs;
+        const publicVariantConsultaSnapshot = await tx.get(publicRefConsulta.collection('variantes').limit(101));
+        exigir(publicVariantConsultaSnapshot.size <= 100, 'limite-local', 'Demasiadas variantes sin precio; no se aplicó la edición.');
+        publicVariantsConsulta = publicVariantConsultaSnapshot.docs;
       }
       if (crear) tx.create(ref,{...saved,imagenes:[],disponible:true,piezaUnicaVendida:false,estadoPublicacion:'borrador',creadoEn:now});
       else tx.update(ref,saved);
@@ -416,8 +453,15 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         const nuevasVariantes = new Set(variantesPublicas.map(v => v.id));
         for (const variante of publicVariants) if (!nuevasVariantes.has(variante.id)) tx.delete(variante.ref);
         for (const variante of variantesPublicas) tx.set(publicRef.collection('variantes').doc(variante.id), variante.data);
-        if (proyeccion) tx.set(publicRef, proyeccion);
-        else tx.delete(publicRef);
+        for (const variante of publicVariantsConsulta) if (!nuevasVariantes.has(variante.id)) tx.delete(variante.ref);
+        for (const variante of variantesPublicas) tx.set(publicRefConsulta.collection('variantes').doc(variante.id), crearVarianteSinPrecio(variante.data));
+        if (proyeccion) {
+          tx.set(publicRef, proyeccion);
+          tx.set(publicRefConsulta, crearProductoSinPrecios(proyeccion));
+        } else {
+          tx.delete(publicRef);
+          tx.delete(publicRefConsulta);
+        }
         tx.set(approvalRef, snapshotAprobado!);
       }
       const resultado = {

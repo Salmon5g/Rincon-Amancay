@@ -1,5 +1,11 @@
 # Arranque por equipo (emuladores locales)
 
+## Estado actual
+
+- 2026-11-15: avance Android comprador A01/A02/A05/A06/A07. El directorio lee asociaciones públicas e integrantes y permite filtrar por asociación además de tipo/sector; las proyecciones omiten UID y se actualizan al editar/publicar tiendas o administrar relaciones. El formulario A06 guarda consultas en la bandeja privada de la emprendedora. En `rincon-amancay` se publicó solo `firebase/firestore.rules` (release verificada con ruleset `10eafee1-ea23-4f0f-83ee-b5cce6cf40d6`) y se aplicó `catalogo:sincronizar-vistas-publicas`: 3 asociaciones, 2 tiendas, 10 productos y 8 variantes, sin fallos. La verificación de lectura confirmó las asociaciones sin UID y las 18 vistas de catálogo sin precios; actualmente ninguna tienda publicada oculta sus precios. La API local `rincon-amancay` quedó corriendo en `127.0.0.1:8080`; `/health` responde 200 y la ruta de consultas está registrada. Backend `typecheck` y Android `:app:assembleDebug` pasan. No se insertó una consulta de prueba. Pendiente recorrido manual y envío/lectura de consulta; para probar precios ocultos hace falta una tienda en esa configuración.
+
+La guía de arranque continúa abajo.
+
 Guía para ejecutar el proyecto con **emuladores locales y datos ficticios**. Primero todos hacen la **preparación común**; después cada equipo sigue su sección. Para probar Firebase y Supabase reales con la API local, sigue los pasos del [README principal](../README.md#prueba-local-integrada-con-firebase-y-supabase). Para el detalle de contratos, ver [integración de equipos](integracion-equipos.md) y los [contratos](../contratos/).
 
 > Esta guía configura fixtures aislados; sus emuladores y seeds no son el proyecto real. La API compartida puede ejecutarse localmente contra Firebase real y Supabase siguiendo el README. No ejecutes seeds ni pruebas demo contra ese entorno.
@@ -85,7 +91,7 @@ La web `/admin` incluye inicio de sesión, invitaciones, desactivación/reactiva
   - `consultarAcceso()` = `null` significa identidad **sin permisos**; no tratarla como administradora.
 - `invitarEmprendedora` recibe correo y datos de tienda según contrato 10; conservar su `invitacionId`. El panel genera un enlace a `/invitacion-emprendedora?invitacionId={id}` para compartir. La destinataria crea su contraseña o inicia sesión, verifica el correo y la web llama a `aceptarInvitacion`. En local, Authentication Emulator simula el envío y entrega del correo.
 - La edición administrativa de cuenta cambia solo `usuarios/{uid}.nombreMostrar`; la API exige una versión vigente y registra auditoría. Correo, contraseña y datos de tienda pertenecen a flujos separados.
-- Las asociaciones admiten cero, una o varias relaciones por emprendedora. El retiro conserva el historial y no desactiva su cuenta ni tienda. La lectura pública de asociaciones (RF-ASO-03) sigue pendiente.
+- Las asociaciones admiten cero, una o varias relaciones por emprendedora. El retiro conserva el historial y no desactiva su cuenta ni tienda. El comprador Android lista asociaciones, filtra tiendas por asociación y navega de asociación a integrantes y tiendas. Las reglas exponen solo `asociacionesPublicas`; la proyección no contiene UID.
 - Comprobar acceso `estado === 'activo'` y que `roles` incluya `administrador` antes de mostrar gestión. La API y las reglas siguen verificando los permisos; ocultar un botón no los sustituye.
 - Generar **un** `operacionId` por intención y **conservar el cuerpo completo** ante error o conexión perdida.
 - `altaEmprendedora` y `solicitudAlta` quedan para la prueba técnica rápida con la candidata existente; no usarlos como formulario final de alta ni reemplazo de invitaciones.
@@ -110,7 +116,7 @@ cd android/app-combinada
 .\gradlew.bat :app:assembleDebug --console=plain
 ```
 
-El modo comprador de la app unificada lee en tiempo real desde Firestore las tiendas habilitadas/publicadas y sus productos publicados. Configura el archivo local `android/app-combinada/app/google-services.json` para el ID `com.example.amancay`; Firebase debe tener publicadas las reglas de `firebase/firestore.rules`. Para aparecer en el comprador, la tienda debe tener `estadoPublicacion = publicado`, `habilitada = true` y `mostrarPrecios = true`; los productos deben tener `estadoPublicacion = publicado`. Esta lectura es pública y de solo lectura; no requiere iniciar sesión.
+El modo comprador de la app unificada lee en tiempo real desde Firestore las tiendas habilitadas/publicadas y sus productos publicados. Configura el archivo local `android/app-combinada/app/google-services.json` para el ID `com.example.amancay`; Firebase debe tener publicadas las reglas de `firebase/firestore.rules`. Para aparecer en el comprador, la tienda debe tener `estadoPublicacion = publicado` y `habilitada = true`; los productos deben tener `estadoPublicacion = publicado`. Con precios visibles, lee `productos`; con precios ocultos, lee `productosConsulta`, que no contiene importes y se presenta con «Consultar precio». Esta lectura es pública y de solo lectura; no requiere iniciar sesión.
 
 El modo emprendedora inicia sesión con correo/contraseña de Firebase, comprueba el rol activo y la tienda asignada, y lee la ficha y productos propios desde Firestore. Editar la tienda y los borradores de producto, publicar/retirar y ajustar stock usan la API autenticada. Para Firebase real desde Android, la API local debe correr en el computador y `local.properties` debe usar `amancay.api.baseUrl=http://10.0.2.2:8080/api/v1/`; sigue [la guía Android](android-emprendedora-firebase.md). Para datos ficticios, configura también `amancay.firebase.emulators=true` y el puerto API `8787` según la misma guía.
 
@@ -121,7 +127,7 @@ Para comprobar una actualización entre Android y comprador web, usa la [guía d
 
 ## 4. Alcance provisional y mantenimiento
 
-Está disponible el catálogo por unidad entera en CLP, con campos específicos de texto y hasta 20 variantes por producto. `mostrarPrecios=false` bloquea productos; ajustes de stock no registran ventas. Cambiar tipo/modalidad de productos existentes requiere una migración futura. Ver [contrato 07](../contratos/07-edicion-productos.md) y [contrato 11](../contratos/11-disponibilidad-e-imagenes.md). Tras terreno se revisarán estos límites de forma coordinada, no con campos diferentes en cada cliente.
+Está disponible el catálogo por unidad entera en CLP, con campos específicos de texto y hasta 20 variantes por producto. `mostrarPrecios=false` usa una proyección pública sin importes. Ajustes de stock no registran ventas. Cambiar tipo/modalidad de productos existentes requiere una migración futura. Ver [contrato 07](../contratos/07-edicion-productos.md) y [contrato 11](../contratos/11-disponibilidad-e-imagenes.md). Para datos previos a estas proyecciones, ejecutar primero en simulación `npm.cmd --prefix backend run catalogo:sincronizar-vistas-publicas -- --dry-run rincon-amancay`; la escritura requiere revisar el resumen y usar `--aplicar`.
 
 Mapa, QR, voz, asistente, ventas y nuevas funciones necesitan sus propios acuerdos e implementación; no forman parte de este arranque. No asumir que un campo del modelo implica una operación terminada.
 
