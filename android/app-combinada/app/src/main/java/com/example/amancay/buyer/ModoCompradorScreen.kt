@@ -3,6 +3,7 @@ package com.example.amancay.buyer
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +20,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -40,12 +45,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Storefront
 import com.example.amancay.data.AutenticacionGoogleComprador
 import com.example.amancay.data.ApiConsultasComprador
 import com.example.amancay.data.TiendaCatalogoComprador
+import com.example.amancay.data.VarianteCatalogoComprador
 import com.example.amancay.data.CatalogoCompradorRepository
 import com.example.amancay.data.ProductoCatalogoComprador
 import com.example.amancay.data.ResultadoAccesoGoogle
@@ -80,6 +90,7 @@ fun ModoCompradorScreen(
     val sectores by repositorio.sectores.collectAsState()
     val modoNavegacion by repositorio.modoNavegacion.collectAsState()
     var mostrarDirectorio by remember { mutableStateOf(false) }
+    var asociacionesPrimero by remember { mutableStateOf(false) }
     var tiendaSeleccionada by remember { mutableStateOf<String?>(null) }
     var omitioInvitacion by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -95,8 +106,7 @@ fun ModoCompradorScreen(
     var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
     var productoSeleccionado by remember { mutableStateOf<ProductoCatalogoComprador?>(null) }
     var feriaSeleccionada by remember { mutableStateOf<FeriaComprador?>(null) }
-    var formularioContacto by remember { mutableStateOf<Pair<TiendaCatalogoComprador, String?>?>(null) }
-    var opcionesContacto by remember { mutableStateOf<Pair<TiendaCatalogoComprador, String?>?>(null) }
+    var formularioContacto by remember { mutableStateOf<Triple<TiendaCatalogoComprador, String?, VarianteCatalogoComprador?>?>(null) }
     var avisoContacto by remember { mutableStateOf<String?>(null) }
 
     val ferias = rememberRepositorioFerias()
@@ -178,14 +188,14 @@ fun ModoCompradorScreen(
         abrirEnlace(uri)
     }
 
-    fun abrirFormularioContacto(tienda: TiendaCatalogoComprador, producto: String? = null) {
-        formularioContacto = tienda to producto
+    fun abrirFormularioContacto(tienda: TiendaCatalogoComprador, producto: String? = null, variante: VarianteCatalogoComprador? = null) {
+        formularioContacto = Triple(tienda, producto, variante)
     }
 
-    fun contactar(tienda: TiendaCatalogoComprador, producto: String? = null) {
+    fun contactar(tienda: TiendaCatalogoComprador, producto: String? = null, variante: VarianteCatalogoComprador? = null) {
         when (tienda.formaContacto) {
-            "ambos" -> opcionesContacto = tienda to producto
-            "formulario" -> abrirFormularioContacto(tienda, producto)
+            "ambos" -> abrirFormularioContacto(tienda, producto, variante)
+            "formulario" -> abrirFormularioContacto(tienda, producto, variante)
             "whatsapp" -> {
                 if (tienda.contacto?.tipo == "whatsapp") abrirWhatsApp(tienda, "Hola, me interesa ${producto ?: "conocer tu emprendimiento"}.")
                 else avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
@@ -336,7 +346,8 @@ fun ModoCompradorScreen(
                 alAbrirProducto = { productoSeleccionado = it },
                 proximaFeria = proximaFeria(listaFerias),
                 alVerTodo = { pestana = PestanaComprador.EXPLORAR },
-                alVerDirectorio = { mostrarDirectorio = true },
+                alVerDirectorio = { asociacionesPrimero = false; mostrarDirectorio = true },
+                alVerAsociaciones = { asociacionesPrimero = true; mostrarDirectorio = true },
                 alVerFerias = { pestana = PestanaComprador.FERIAS },
                 modifier = Modifier
                     .fillMaxSize()
@@ -405,7 +416,7 @@ fun ModoCompradorScreen(
     }
 
     if (mostrarDirectorio) {
-        DirectorioComprador(directorio, asociaciones, tiposEmprendimiento, sectores, cargando, error,
+        DirectorioComprador(directorio, asociaciones, tiposEmprendimiento, sectores, cargando, error, asociacionesPrimero,
             alCerrar = { mostrarDirectorio = false },
             alAbrir = { tiendaSeleccionada = it; mostrarDirectorio = false })
     }
@@ -445,46 +456,31 @@ fun ModoCompradorScreen(
         DialogoDetalleProducto(
             producto = producto,
             alCerrar = { productoSeleccionado = null },
-            alEncargar = {
+            alEncargar = { varianteElegida ->
                 productoSeleccionado = null
                 val tienda = directorio.firstOrNull { it.id == producto.tiendaId }
                 if (tienda == null) avisoContacto = "No encontramos los datos públicos de contacto de esta tienda."
-                else contactar(tienda, producto.nombre)
+                else contactar(tienda, producto.nombre, varianteElegida)
             }
         )
     }
-    formularioContacto?.let { (tienda, nombreProducto) ->
+    formularioContacto?.let { (tienda, nombreProducto, varianteElegida) ->
+        val fichaProducto = productos.firstOrNull { it.tiendaId == tienda.id && it.nombre == nombreProducto }
         FormularioContactoComprador(
             tienda = tienda,
             producto = nombreProducto,
+            fichaProducto = fichaProducto,
+            variante = varianteElegida,
+            correoSesion = sesion?.correo?.takeIf(String::isNotBlank),
+            nombreSesion = sesion?.nombre?.takeIf(String::isNotBlank),
             alCerrar = { formularioContacto = null },
+            alWhatsApp = {
+                formularioContacto = null
+                abrirWhatsApp(tienda, "Hola, me interesa ${nombreProducto ?: "conocer tu emprendimiento"}${varianteElegida?.opciones?.values?.joinToString(" · ")?.let { " ($it)" }.orEmpty()}.")
+            },
             alEnviar = { nombre, correo, mensaje ->
                 enviarFormularioContacto(tienda, nombreProducto, nombre, correo, mensaje)
             }
-        )
-    }
-    opcionesContacto?.let { (tienda, nombreProducto) ->
-        AlertDialog(
-            onDismissRequest = { opcionesContacto = null },
-            title = { Text("Contactar a ${tienda.nombre}") },
-            text = { Text("Elige cómo quieres continuar.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    opcionesContacto = null
-                    if (tienda.contacto?.tipo == "whatsapp") abrirWhatsApp(tienda, "Hola, me interesa ${nombreProducto ?: "conocer tu emprendimiento"}.")
-                    else avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
-                }, enabled = tienda.contacto?.tipo == "whatsapp") { Text("WhatsApp") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        opcionesContacto = null
-                        abrirFormularioContacto(tienda, nombreProducto)
-                    }) { Text("Formulario") }
-                    TextButton(onClick = { opcionesContacto = null }) { Text("Cancelar") }
-                }
-            },
-            containerColor = AmancaySuperficie
         )
     }
     avisoContacto?.let { mensaje ->
@@ -520,6 +516,7 @@ private fun PantallaInicio(
     proximaFeria: FeriaComprador?,
     alVerTodo: () -> Unit,
     alVerDirectorio: () -> Unit,
+    alVerAsociaciones: () -> Unit,
     alVerFerias: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -528,10 +525,35 @@ private fun PantallaInicio(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { HeroBienvenida(alExplorar = alVerTodo) }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Explora nuestra comunidad", style = MaterialTheme.typography.titleLarge, color = AmancayBordo, fontWeight = FontWeight.Bold)
+                Text("Conecta con emprendimientos y asociaciones locales.", color = AmancayTintaSuave)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Card(onClick = alVerDirectorio, modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = AmancayChipRosa)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                            Icon(Icons.Outlined.Storefront, contentDescription = null, tint = AmancayBordo, modifier = Modifier.size(28.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Emprendimientos", color = AmancayBordo, fontWeight = FontWeight.Bold)
+                            Text("Descubre productos únicos creados por nuestra comunidad.", color = AmancayTintaSuave, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Card(onClick = alVerAsociaciones, modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = AmancayChipDurazno)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                            Icon(Icons.Outlined.Groups, contentDescription = null, tint = AmancayBordo, modifier = Modifier.size(28.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Asociaciones", color = AmancayBordo, fontWeight = FontWeight.Bold)
+                            Text("Conoce sus organizaciones e integrantes.", color = AmancayTintaSuave, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
         item { BuscadorAmancay(valor = busqueda, alCambiar = alBuscar) }
         item {
-            TextButton(onClick = alVerDirectorio) {
-                Text("Directorio de emprendimientos", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Categorías populares", style = MaterialTheme.typography.titleLarge, color = AmancayBordo, fontWeight = FontWeight.Bold)
+                TextButton(onClick = alVerTodo) { Text("Ver todas →", color = AmancayBordo) }
             }
         }
         item {
@@ -541,6 +563,7 @@ private fun PantallaInicio(
                 alSeleccionar = alSeleccionarCategoria
             )
         }
+        item { TarjetaFraseComunidad() }
         if (error != null && productos.isEmpty()) {
             item { MensajeCatalogo(error) }
         }
@@ -585,6 +608,30 @@ private fun PantallaInicio(
             }
         }
         item { Spacer(Modifier.height(8.dp)) }
+    }
+}
+
+@Composable
+private fun TarjetaFraseComunidad() {
+    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = AmancayChipDurazno)) {
+        Row(Modifier.fillMaxWidth().height(92.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(com.example.amancay.R.drawable.flor_inicio_comprador),
+                contentDescription = null,
+                modifier = Modifier.size(66.dp),
+                contentScale = ContentScale.Fit
+            )
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Hecho con cariño, cerca de ti", color = AmancayBordo, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                Text("♡  NUESTRA COMUNIDAD FLORECE", color = AmancayBordo, style = MaterialTheme.typography.labelSmall)
+            }
+            Image(
+                painter = painterResource(com.example.amancay.R.drawable.flor_inicio_comprador),
+                contentDescription = null,
+                modifier = Modifier.size(52.dp),
+                contentScale = ContentScale.Fit
+            )
+        }
     }
 }
 

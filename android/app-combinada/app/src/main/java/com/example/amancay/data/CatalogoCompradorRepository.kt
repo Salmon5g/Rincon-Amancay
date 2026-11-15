@@ -89,7 +89,10 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     override val tiposEmprendimiento = _tipos.asStateFlow()
     private val _sectores = MutableStateFlow<Map<String, String>>(emptyMap())
     override val sectores = _sectores.asStateFlow()
-    private val _modo = MutableStateFlow<String?>(null)
+    // El comprador puede navegar el catálogo público aunque la política remota
+    // tarde en responder o no esté disponible. Si la lectura llega, el listener
+    // reemplaza este valor y aplica la política configurada por administración.
+    private val _modo = MutableStateFlow<String?>("permitir")
     override val modoNavegacion = _modo.asStateFlow()
 
     private val tiendas = mutableMapOf<String, TiendaCatalogoComprador>()

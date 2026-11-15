@@ -225,7 +225,7 @@ fun MensajeCatalogo(texto: String) {
 fun DialogoDetalleProducto(
     producto: ProductoCatalogoComprador,
     alCerrar: () -> Unit,
-    alEncargar: () -> Unit
+    alEncargar: (com.example.amancay.data.VarianteCatalogoComprador?) -> Unit
 ) {
     val varianteSeleccionada = androidx.compose.runtime.remember(producto.tiendaId, producto.id) {
         androidx.compose.runtime.mutableStateOf<String?>(null)
@@ -338,7 +338,7 @@ fun DialogoDetalleProducto(
         },
         confirmButton = {
             Button(
-                onClick = alEncargar,
+                onClick = { alEncargar(varianteActual) },
                 shape = RoundedCornerShape(50.dp),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
                 colors = ButtonDefaults.buttonColors(
