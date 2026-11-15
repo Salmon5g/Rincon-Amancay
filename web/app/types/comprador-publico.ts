@@ -14,6 +14,7 @@ export interface TiendaPublica {
   logo?: string;
   logoMiniatura?: string;
   contacto?: ContactoPublico;
+  canalesContacto?: CanalesContactoPublico;
 }
 
 export interface IntegranteAsociacionPublica {
@@ -35,6 +36,17 @@ export interface AsociacionPublica {
 export interface ContactoPublico {
   tipo: 'whatsapp' | 'correo' | 'web';
   valor: string;
+}
+
+export interface CanalesContactoPublico {
+  whatsapp?: {
+    habilitado: boolean;
+    numero: string;
+  };
+  formulario?: {
+    formularioId: string;
+    habilitado: boolean;
+  };
 }
 
 export interface ProductoPublico {

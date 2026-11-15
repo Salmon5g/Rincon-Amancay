@@ -3,7 +3,7 @@ import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, DocumentSnapshot, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
-import type { AsociacionPublica, ContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { AsociacionPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
 const MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024
@@ -38,10 +38,10 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
     const code = codigo === 'no-encontrado'
       ? 'no-encontrado'
       : codigo === 'permission-denied'
-      ? 'sin-permiso'
-      : ['unavailable', 'storage/retry-limit-exceeded', 'auth/network-request-failed'].includes(String(codigo))
-        ? 'sin-conexion'
-        : 'fallo-catalogo'
+        ? 'sin-permiso'
+        : ['unavailable', 'storage/retry-limit-exceeded', 'auth/network-request-failed'].includes(String(codigo))
+          ? 'sin-conexion'
+          : 'fallo-catalogo'
     const mensaje = error instanceof Error ? error.message : 'Falló una consulta del catálogo.'
     throw Object.assign(new Error(mensaje), { code })
   }
@@ -50,6 +50,19 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
 function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica {
   const datos = documento.data() ?? {}
   const contactoDatos = datos.contacto as Record<string, unknown> | undefined
+  const canalesDatos = datos.canalesContacto as Record<string, unknown> | undefined
+  const whatsappDatos = canalesDatos?.whatsapp as Record<string, unknown> | undefined
+  const formularioDatos = canalesDatos?.formulario as Record<string, unknown> | undefined
+  
+  const canalesContacto: CanalesContactoPublico = { 
+    whatsapp: {habilitado : whatsappDatos?.habilitado === true, numero: typeof whatsappDatos?.numero === 'string'
+      ? whatsappDatos.numero.trim(): '',
+    },
+    formulario: {
+      habilitado: formularioDatos?.habilitado === true,
+    },
+  }
+
   const contacto = contactoDatos && ['whatsapp', 'correo', 'web'].includes(String(contactoDatos.tipo)) && typeof contactoDatos.valor === 'string'
     ? { tipo: contactoDatos.tipo as ContactoPublico['tipo'], valor: contactoDatos.valor }
     : undefined
@@ -64,6 +77,7 @@ function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica 
     ...(typeof datos.logo === 'string' ? { logo: datos.logo } : {}),
     ...(typeof datos.logoMiniatura === 'string' ? { logoMiniatura: datos.logoMiniatura } : {}),
     ...(contacto ? { contacto } : {}),
+    ...(canalesDatos ? { canalesContacto }: {}),
   }
 }
 

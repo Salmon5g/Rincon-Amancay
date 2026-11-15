@@ -147,6 +147,7 @@ function fichaTienda(elemento: TiendaPublica): FichaComprador {
             sectorId: elemento.sectorId,
             mostrarPrecios: elemento.mostrarPrecios,
             contacto: elemento.contacto,
+            canalesContacto: elemento.canalesContacto,
             logo: elemento.logo,
         },
     };
@@ -219,6 +220,38 @@ const etiquetaTipo = computed(() => {
     return id ? tiposEmprendimiento.value[id] ?? '' : '';
 });
 const conteoProductos = computed(() => `${filas.value.length}${siguiente.value ? '+' : ''}`);
+
+const whatsappPublico = computed(() => {
+    const canales = tienda.value?.datos.canalesContacto;
+    if (canales){
+        if (!canales.whatsapp?.habilitado) return null;
+        const numero = (canales.whatsapp.numero || '').replace(/\D/g, '');
+        return /^[1-9]\d{7,14}$/.test(numero) ? `https://wa.me/${numero}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}` : null;
+    }
+
+    const contacto = tienda.value?.datos.contacto;
+    if (contacto.tipo !== 'whatsapp') return null;
+    const numero = contacto.valor.replace(/\D/g, '');
+    return /^[1-9]\d{7,14}$/.test(numero)? `https://wa.me/${numero}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}` : null;
+});
+
+const formularioPublico = computed(() => {
+    return tienda.value?.datos.canalesContacto?.formulario?.habilitado === true
+}); 
+
+const tieneContactoPublico = computed(() => {
+  return Boolean(whatsappPublico.value || formularioPublico.value);
+});
+
+const formularioContactoAbierto = ref(false);
+function abrirFormularioContacto() {
+    if (!formularioPublico.value || !tienda.value) return;
+    formularioContactoAbierto.value = true;
+}
+function cerrarFormularioContacto() {
+    formularioContactoAbierto.value = false;
+}
+
 const enlaceContacto = computed(() => {
     const contacto = tienda.value?.datos.contacto;
     if (!contacto) return null;
@@ -910,12 +943,11 @@ onBeforeUnmount(() => {
                 </span>
               </div>
               <div class="acciones-hero">
-                <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">
-                  {{ enlaceContacto.texto }} →
+                <a v-if="whatsappPublico" class="boton boton-primario" :href="whatsappPublico" target="_blank" rel="noopener noreferrer">
+                    Contactar por WhatsApp
                 </a>
-                <button class="boton boton-secundario" type="button" @click="compartirTienda">
-                  <span aria-hidden="true">↗</span>
-                  Compartir tienda
+                <button v-if="formularioPublico" class="boton boton-secundario" type="button" @click="abrirFormularioContacto">
+                  Enviar mensaje
                 </button>
               </div>
             </div>

@@ -54,6 +54,9 @@ const formularioTienda = ref({
   contactoTipo: 'whatsapp' as TipoContacto,
   contactoValor: '',
   mostrarContacto: false,
+  whatsappHabilitado: false,
+  whatsappNumero: '',
+  formularioHabilitado: false,
 })
 const edicionTiendaPendiente = ref<{ firma: string; operacionId: string } | null>(null)
 const logoSeleccionado = ref<File | null>(null)
@@ -219,6 +222,9 @@ async function abrirEdicionTienda() {
       contactoTipo: actualizada.tienda.contacto?.tipo ?? 'whatsapp',
       contactoValor: actualizada.tienda.contacto?.valor ?? '',
       mostrarContacto: actualizada.tienda.mostrarContacto,
+      whatsappHabilitado: actualizada.tienda.canalesContacto?.whatsapp?.habilitado ?? (actualizada.tienda.mostrarContacto && actualizada.tienda.contacto?.tipo === 'whatsapp'),
+      whatsappNumero: actualizada.tienda.canalesContacto?.whatsapp?.numero ?? (actualizada.tienda.contacto?.tipo === 'whatsapp' ? actualizada.tienda.contacto.valor: ''),
+      formularioHabilitado: actualizada.tienda.canalesContacto?.formulario?.habilitado ?? false,
     }
     catalogosTienda.value = await $catalogoPublico.listarCatalogosPublicos()
   } catch (fallo) {
@@ -277,6 +283,15 @@ async function guardarTienda() {
       ? { tipo: formularioTienda.value.contactoTipo, valor: formularioTienda.value.contactoValor.trim() }
       : null,
     mostrarContacto: formularioTienda.value.mostrarContacto,
+    canalesContacto: {
+    whatsapp: {
+    habilitado: formularioTienda.value.whatsappHabilitado,
+    numero: formularioTienda.value.whatsappNumero.trim(),
+  },
+  formulario: {
+    habilitado: formularioTienda.value.formularioHabilitado,
+  },
+},
   }
   if (!campos.nombre || campos.nombre.length > 120) {
     error.value = 'Escribe un nombre para tu tienda de hasta 120 caracteres.'
@@ -569,26 +584,24 @@ onMounted(async () => {
                 <section class="paso-edicion-tienda">
                   <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">1</span><div><h2>Información de la tienda</h2><p>Cuéntanos sobre tu emprendimiento.</p></div></header>
                   <div class="campos-ficha-tienda">
-                    <label class="campo-ficha-tienda">Nombre de la tienda
-                      <input v-model="formularioTienda.nombre" type="text" maxlength="120" autocomplete="organization" required :disabled="cargandoEdicionTienda || guardandoTienda" />
+                    <label class="interruptor-contacto-tienda">
+                      <input
+                        v-model="formularioTienda.whatsappHabilitado"type="checkbox":disabled="guardandoTienda"/>
+                        <span>
+                        <strong>Permitir contacto por WhatsApp</strong>
+                        </span>
+                        </label>
+                        <label v-if="formularioTienda.whatsappHabilitado"class="campo-ficha-tienda">
+                        Número de WhatsApp
+                        <input v-model="formularioTienda.whatsappNumero" type="tel" placeholder="+56 9 1234 5678" :disabled="guardandoTienda"/>
+                        </label>
+                        <label class="interruptor-contacto-tienda">
+                        <input v-model="formularioTienda.formularioHabilitado" type="checkbox" :disabled="guardandoTienda"/>
+                        <span>
+                        <strong>Permitir contacto mediante formulario</strong>
+                      </span>
                     </label>
-                    <label class="campo-ficha-tienda campo-descripcion-tienda">Descripción
-                      <textarea v-model="formularioTienda.descripcion" maxlength="2000" rows="3" placeholder="Cuenta qué haces y qué te inspira." :disabled="cargandoEdicionTienda || guardandoTienda"></textarea>
-                      <small>{{ formularioTienda.descripcion.length }} / 2.000 caracteres</small>
-                    </label>
-                    <label class="campo-ficha-tienda">Tipo de emprendimiento
-                      <select v-model="formularioTienda.tipoEmprendimientoId" required :disabled="cargandoEdicionTienda || guardandoTienda">
-                        <option value="" disabled>Selecciona una opción</option>
-                        <option v-for="opcion in tiposTienda" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
-                      </select>
-                    </label>
-                    <label class="campo-ficha-tienda">Sector
-                      <select v-model="formularioTienda.sectorId" required :disabled="cargandoEdicionTienda || guardandoTienda">
-                        <option value="" disabled>Selecciona una opción</option>
-                        <option v-for="opcion in sectoresTienda" :key="opcion.id" :value="opcion.id">{{ opcion.nombre }}</option>
-                      </select>
-                    </label>
-                  </div>
+                </div>
                 </section>
 
                 <section class="paso-edicion-tienda">
