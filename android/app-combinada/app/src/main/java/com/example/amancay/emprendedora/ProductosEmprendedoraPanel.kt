@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.amancay.data.ApiEmprendedoraException
+import com.example.amancay.data.CampoTipoProducto
 import com.example.amancay.data.CategoriaEmprendedora
 import com.example.amancay.data.ColaOfflineCatalogo
 import com.example.amancay.data.DraftState
@@ -104,6 +105,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.mutableIntStateOf
 import java.io.File
 import java.io.FileOutputStream
+import java.math.BigInteger
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -156,8 +159,164 @@ private data class BorradorAlta(
     val archivoId: String, val atributos: Map<String, String>, val variantes: List<VarianteBorrador>,
     val conVariantes: Boolean = false,
     val operacionId: String = "",
-    val productoIdNuevo: String = ""
+    val productoIdNuevo: String = "",
+    val firmaSolicitud: String = ""
 )
+
+private fun firmaSolicitudProducto(tiendaId: String, productoId: String, solicitud: ProductoSolicitud): String {
+    val estable = solicitud.copy(
+        atributos = solicitud.atributos.toSortedMap(),
+        variantes = solicitud.variantes.map { it.copy(opciones = it.opciones.toSortedMap()) }
+    )
+    val contenido = "$tiendaId|$productoId|$estable"
+    val hash = MessageDigest.getInstance("SHA-256").digest(contenido.toByteArray(Charsets.UTF_8))
+    return BigInteger(1, hash).toString(16).padStart(64, '0')
+}
+
+private data class IdentidadAltaProducto(
+    val productoId: String,
+    val operacionId: String,
+    val firma: String,
+    val avisoIntentoAnterior: Boolean = false
+)
+
+private fun identidadAltaInicial(borrador: BorradorAlta?): IdentidadAltaProducto {
+    val migrar = borrador?.let { it.operacionId.isNotBlank() && it.firmaSolicitud.isBlank() } == true
+    return IdentidadAltaProducto(
+        productoId = if (migrar) UUID.randomUUID().toString() else borrador?.productoIdNuevo?.takeIf(String::isNotBlank) ?: UUID.randomUUID().toString(),
+        operacionId = if (migrar) "" else borrador?.operacionId.orEmpty(),
+        firma = if (migrar) "" else borrador?.firmaSolicitud.orEmpty(),
+        avisoIntentoAnterior = migrar
+    )
+}
+
+private data class AltaPreparada(
+    val identidad: IdentidadAltaProducto,
+    val solicitud: ProductoSolicitud
+)
+
+private data class EntradaEditorProducto(
+    val original: ProductoEmprendedora?,
+    val tipo: TipoProductoEmprendedora?,
+    val tipos: List<TipoProductoEmprendedora>,
+    val tipoId: String,
+    val categoriaId: String,
+    val categorias: List<CategoriaEmprendedora>,
+    val nombre: String,
+    val descripcion: String,
+    val modalidad: String,
+    val manejaStock: Boolean,
+    val alAgotarse: String,
+    val precioBase: String,
+    val stockInicial: String,
+    val atributos: Map<String, String>,
+    val campos: List<CampoTipoProducto>,
+    val conVariantes: Boolean,
+    val opciones: List<String>,
+    val variantes: List<VarianteBorrador>,
+    val fotoLista: Boolean,
+    val tiendaPublicada: Boolean
+)
+
+private fun campoObligatorioFaltante(entrada: EntradaEditorProducto): CampoTipoProducto? =
+    entrada.campos.firstOrNull { it.obligatorio && entrada.atributos[it.clave].isNullOrBlank() }
+
+private fun errorDatosProducto(entrada: EntradaEditorProducto): String? = when {
+    entrada.nombre.isBlank() -> "Ingresa el nombre del producto."
+    entrada.descripcion.isBlank() -> "Ingresa la descripción del producto."
+    entrada.categorias.none { it.id == entrada.categoriaId } -> "Selecciona una categoría."
+    else -> null
+}
+
+private fun errorPrecioStockProducto(entrada: EntradaEditorProducto): String? {
+    val stock = entrada.stockInicial.toIntOrNull()
+    if (!entrada.conVariantes) {
+        return when {
+            (entrada.precioBase.toLongOrNull() ?: 0L) <= 0L -> "Ingresa un precio entero mayor que cero."
+            entrada.manejaStock && entrada.original == null && (stock ?: -1) < 0 -> "Ingresa un stock inicial entero de cero o más."
+            else -> null
+        }
+    }
+    var incompleta = -1
+    for (index in entrada.variantes.indices) {
+        val variante = entrada.variantes[index]
+        val opcionesIncompletas = entrada.opciones.any { variante.opciones[it].isNullOrBlank() }
+        val precioInvalido = (variante.precio.toLongOrNull() ?: 0L) <= 0L
+        val stockInvalido = entrada.manejaStock && !variante.existente && (variante.stock.toIntOrNull() ?: -1) < 0
+        if (opcionesIncompletas || precioInvalido || stockInvalido) {
+            incompleta = index
+            break
+        }
+    }
+    if (entrada.variantes.isEmpty()) return "Agrega al menos una variante."
+    if (incompleta >= 0) return "Variante ${incompleta + 1}: completa sus opciones, ingresa un precio mayor que cero y, si corresponde, un stock de cero o más."
+    val combinaciones = entrada.variantes.map { variante ->
+        entrada.opciones.map { variante.opciones[it].orEmpty().trim().lowercase() }
+    }
+    return if (combinaciones.distinct().size != combinaciones.size) "Cada variante debe tener una combinación de opciones distinta." else null
+}
+
+private fun validarEntradaEditorProducto(entrada: EntradaEditorProducto, publicar: Boolean): String? {
+    val tipo = entrada.tipo
+    val invalidField = campoObligatorioFaltante(entrada)
+    val stock = entrada.stockInicial.toIntOrNull()
+    return when {
+        tipo == null -> "Espera a que se carguen los tipos de producto."
+        errorDatosProducto(entrada) != null -> errorDatosProducto(entrada)
+        entrada.original == null && entrada.tipos.none { it.id == entrada.tipoId && it.activo } -> "Selecciona un tipo habilitado."
+        invalidField != null -> "Completa el campo ${invalidField.etiqueta}."
+        errorPrecioStockProducto(entrada) != null -> errorPrecioStockProducto(entrada)
+        entrada.modalidad == "pieza_unica" && stock != 1 && entrada.original == null -> "Una pieza única comienza con stock 1."
+        publicar && !entrada.fotoLista && entrada.original?.imagenes.isNullOrEmpty() -> "Agrega una foto antes de publicar."
+        publicar && !entrada.tiendaPublicada -> "Publica primero tu tienda desde Inicio."
+        else -> null
+    }
+}
+
+private fun crearSolicitudEditorProducto(entrada: EntradaEditorProducto, productoIdNuevo: String?): ProductoSolicitud {
+    val tipo = checkNotNull(entrada.tipo)
+    val stock = entrada.stockInicial.toIntOrNull()
+    val solicitudes = if (entrada.conVariantes) entrada.variantes.map { variante ->
+        VarianteProductoSolicitud(
+            variante.id,
+            variante.opciones,
+            variante.precio.toLong(),
+            if (variante.existente || !entrada.manejaStock) null else variante.stock.toInt(),
+            variante.activa
+        )
+    } else emptyList()
+    return ProductoSolicitud(
+        id = entrada.original?.id,
+        versionEsperada = entrada.original?.versionEsperada,
+        productoIdNuevo = productoIdNuevo,
+        nombre = entrada.nombre.trim(),
+        descripcion = entrada.descripcion.trim(),
+        tipo = tipo,
+        tieneVariantes = entrada.conVariantes,
+        categoriaId = entrada.categoriaId,
+        atributos = entrada.atributos.filterValues { it.isNotBlank() },
+        modalidad = entrada.modalidad,
+        manejaStock = entrada.manejaStock,
+        alAgotarse = entrada.alAgotarse,
+        precioBase = if (entrada.conVariantes) null else entrada.precioBase.toLong(),
+        stockInicial = if (!entrada.conVariantes && entrada.manejaStock && entrada.original == null) stock else null,
+        variantes = solicitudes
+    )
+}
+
+private fun prepararSolicitudAlta(
+    tiendaId: String,
+    identidadActual: IdentidadAltaProducto,
+    solicitud: ProductoSolicitud
+): AltaPreparada {
+    val firmaActual = firmaSolicitudProducto(tiendaId, identidadActual.productoId, solicitud)
+    val separar = identidadActual.firma.isNotBlank() && identidadActual.firma != firmaActual
+    val productoId = if (separar) UUID.randomUUID().toString() else identidadActual.productoId
+    val operacionId = if (separar || identidadActual.operacionId.isBlank()) UUID.randomUUID().toString() else identidadActual.operacionId
+    val firma = if (separar) firmaSolicitudProducto(tiendaId, productoId, solicitud) else firmaActual
+    val identidad = IdentidadAltaProducto(productoId, operacionId, firma, identidadActual.avisoIntentoAnterior || separar)
+    return AltaPreparada(identidad, solicitud.copy(productoIdNuevo = productoId, operacionId = operacionId))
+}
 
 private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? = runCatching {
     val raw = context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).getString(tiendaId, null) ?: return null
@@ -176,11 +335,11 @@ private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? 
                 fotoUri = v.optString("foto").takeIf(String::isNotBlank)?.let(Uri::parse), archivoId = v.optString("archivoId", UUID.randomUUID().toString()), fotoNueva = v.optBoolean("fotoNueva"))
         },
         json.optBoolean("conVariantes", variantesJson.length() > 0),
-        json.optString("operacionId"), json.optString("productoIdNuevo")
+        json.optString("operacionId"), json.optString("productoIdNuevo"), json.optString("firmaSolicitud")
     )
 }.getOrNull()
 
-private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: BorradorAlta) {
+private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: BorradorAlta, confirmar: Boolean = false) {
     val atributos = JSONObject().apply { borrador.atributos.forEach { (k, v) -> put(k, v) } }
     val variantes = JSONArray().apply { borrador.variantes.forEach { v ->
         put(JSONObject().apply {
@@ -196,8 +355,33 @@ private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: Bo
         put("archivoId", borrador.archivoId); put("atributos", atributos); put("variantes", variantes)
         put("conVariantes", borrador.conVariantes)
         put("operacionId", borrador.operacionId); put("productoIdNuevo", borrador.productoIdNuevo)
+        put("firmaSolicitud", borrador.firmaSolicitud)
     }
-    context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().putString(tiendaId, json.toString()).apply()
+    val editor = context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().putString(tiendaId, json.toString())
+    if (confirmar) editor.commit() else editor.apply()
+}
+
+private suspend fun cargarFotosVariantesPrivadas(
+    repository: ProductosEmprendedoraRepository,
+    tiendaId: String,
+    producto: ProductoEmprendedora,
+    variantes: List<VarianteBorrador>
+): List<VarianteBorrador> {
+    val resultado = variantes.toMutableList()
+    for (index in variantes.indices) {
+        val variante = variantes[index]
+        val imagen = variante.imagen ?: continue
+        if (variante.fotoBitmap != null || variante.fotoUri != null) continue
+        val indiceImagen = producto.imagenes.indexOf(imagen)
+        if (indiceImagen < 0) continue
+        val bitmap = try {
+            decodificarVistaPreviaProducto(repository.leerImagenPrivada(tiendaId, producto.id, indiceImagen))
+        } catch (_: Exception) {
+            null
+        }
+        if (bitmap != null) resultado[index] = variante.copy(fotoBitmap = bitmap)
+    }
+    return resultado
 }
 
 @Composable
@@ -775,16 +959,7 @@ private fun EditorProductoEmprendedora(
     }
     LaunchedEffect(tiendaId, original?.id, original?.imagenes, variantes.map { it.id to it.imagen }) {
         val producto = original ?: return@LaunchedEffect
-        variantes.forEachIndexed { index, row ->
-            if (row.imagen != null && row.fotoBitmap == null && row.fotoUri == null) {
-                val imageIndex = producto.imagenes.indexOf(row.imagen)
-                if (imageIndex >= 0) runCatching {
-                    decodificarVistaPreviaProducto(repository.leerImagenPrivada(tiendaId, producto.id, imageIndex))
-                }.getOrNull()?.let { bitmap ->
-                    variantes = variantes.mapIndexed { i, variant -> if (i == index) variant.copy(fotoBitmap = bitmap) else variant }
-                }
-            }
-        }
+        variantes = cargarFotosVariantesPrivadas(repository, tiendaId, producto, variantes)
     }
     LaunchedEffect(original?.tipoProductoId, original?.versionTipoProducto) {
         if (original != null) {
@@ -803,24 +978,24 @@ private fun EditorProductoEmprendedora(
         mutableStateOf(borradorGuardado?.conVariantes ?: original?.tieneVariantes ?: (tipos.firstOrNull { it.id == tipoId }?.opcionesVariante?.isNotEmpty() ?: false))
     }
     val categoriasDisponibles = categorias.filter { it.activo || it.id == original?.categoriaId }
-    val productoIdNuevo = remember(original?.id) {
-        if (original == null) borradorGuardado?.productoIdNuevo?.takeIf(String::isNotBlank) ?: UUID.randomUUID().toString() else null
+    var identidadAlta by remember(original?.id) { mutableStateOf(identidadAltaInicial(borradorGuardado)) }
+    val operacionIdEdicion = remember(original?.id, original?.versionEsperada, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) {
+        UUID.randomUUID().toString()
     }
-    val operacionId = remember(original?.id, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) {
-        borradorGuardado?.operacionId?.takeIf(String::isNotBlank) ?: UUID.randomUUID().toString()
-    }
+    val operacionId = if (original == null) identidadAlta.operacionId else operacionIdEdicion
+    var confirmarDescarte by rememberSaveable(original?.id) { mutableStateOf(false) }
     fun guardarLocalYSalir() {
         if (original == null) {
             guardarBorradorAlta(
                 context,
                 tiendaId,
-                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId, productoIdNuevo.orEmpty())
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma)
             )
             onCancel()
         } else onCancel()
     }
-    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, productoIdNuevo) {
-        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId, productoIdNuevo.orEmpty()))
+    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta) {
+        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma))
     }
 
     LaunchedEffect(tipoId, original?.id) {
@@ -831,75 +1006,60 @@ private fun EditorProductoEmprendedora(
         }
     }
 
-    val invalidField = campos.firstOrNull { it.obligatorio && atributos[it.clave].isNullOrBlank() }
-    val stockValue = stockInicial.toIntOrNull()
-    val errorDatos = when {
-        nombre.isBlank() -> "Ingresa el nombre del producto."
-        descripcion.isBlank() -> "Ingresa la descripción del producto."
-        categoriasDisponibles.none { it.id == categoriaId } -> "Selecciona una categoría."
-        else -> null
+    val onDiscardDraft: (() -> Unit)? = if (original == null && !enviando) ({ confirmarDescarte = true }) else null
+    if (confirmarDescarte && original == null) {
+        AlertDialog(
+            onDismissRequest = { confirmarDescarte = false },
+            title = { Text("¿Descartar este borrador?", color = Dark, fontWeight = FontWeight.Bold) },
+            text = { Text("Se borrarán los datos y las fotos guardadas en este teléfono. Si algún intento anterior alcanzó Firebase, ese producto seguirá en Mis productos.", color = Muted) },
+            confirmButton = {
+                TextButton(onClick = ::cancelarEditor) { Text("Descartar", color = Wine) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarDescarte = false }) { Text("Seguir editando", color = Muted) }
+            }
+        )
     }
-    val combinaciones = variantes.map { variante ->
-        opciones.map { variante.opciones[it].orEmpty().trim().lowercase() }
-    }
-    val errorPreciosYStock = if (conVariantes) {
-        val incompleta = variantes.indexOfFirst { variante ->
-            opciones.any { variante.opciones[it].isNullOrBlank() } ||
-                (variante.precio.toLongOrNull() ?: 0L) <= 0L ||
-                (manejaStock && !variante.existente && (variante.stock.toIntOrNull() ?: -1) < 0)
-        }
-        when {
-            variantes.isEmpty() -> "Agrega al menos una variante."
-            incompleta >= 0 -> "Variante ${incompleta + 1}: completa sus opciones, ingresa un precio mayor que cero y, si corresponde, un stock de cero o más."
-            combinaciones.distinct().size != combinaciones.size -> "Cada variante debe tener una combinación de opciones distinta."
-            else -> null
-        }
-    } else when {
-        (precioBase.toLongOrNull() ?: 0L) <= 0L -> "Ingresa un precio entero mayor que cero."
-        manejaStock && original == null && (stockValue ?: -1) < 0 -> "Ingresa un stock inicial entero de cero o más."
-        else -> null
-    }
+
+    val entradaEditor = EntradaEditorProducto(
+        original, tipo, tipos, tipoId, categoriaId, categoriasDisponibles, nombre, descripcion,
+        modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, campos,
+        conVariantes, opciones, variantes, fotoLocal.fotoLista, tiendaPublicada
+    )
+    val invalidField = campoObligatorioFaltante(entradaEditor)
+    val errorDatos = errorDatosProducto(entradaEditor)
+    val errorPreciosYStock = errorPrecioStockProducto(entradaEditor)
     fun guardarBorrador(publicar: Boolean = false) {
-        error = when {
-            tipo == null -> "Espera a que se carguen los tipos de producto."
-            errorDatos != null -> errorDatos
-            original == null && tipos.none { it.id == tipoId && it.activo } -> "Selecciona un tipo habilitado."
-            invalidField != null -> "Completa el campo " + invalidField.etiqueta + "."
-            errorPreciosYStock != null -> errorPreciosYStock
-            modalidad == "pieza_unica" && stockValue != 1 && original == null -> "Una pieza única comienza con stock 1."
-            publicar && fotoLocal.fotoLista.not() && original?.imagenes.isNullOrEmpty() -> "Agrega una foto antes de publicar."
-            publicar && !tiendaPublicada -> "Publica primero tu tienda desde Inicio."
-            else -> null
-        }
-        if (error == null && tipo != null) {
-            val solicitudes = if (conVariantes) variantes.map { v ->
-                VarianteProductoSolicitud(v.id, v.opciones, v.precio.toLong(), if (v.existente || !manejaStock) null else v.stock.toInt(), v.activa)
-            } else emptyList()
-            val solicitud = ProductoSolicitud(
-                id=original?.id, versionEsperada=original?.versionEsperada, operacionId=operacionId,
-                productoIdNuevo=productoIdNuevo, nombre=nombre.trim(), descripcion=descripcion.trim(),
-                tipo=tipo, tieneVariantes=conVariantes, categoriaId=categoriaId, atributos=atributos.filterValues { it.isNotBlank() },
-                modalidad=modalidad, manejaStock=manejaStock, alAgotarse=alAgotarse,
-                precioBase=if (conVariantes) null else precioBase.toLong(),
-                stockInicial=if (!conVariantes && manejaStock && original == null) stockValue else null,
-                variantes=solicitudes
+        val mensajeError = validarEntradaEditorProducto(entradaEditor, publicar)
+        error = mensajeError
+        if (mensajeError != null) return
+        val solicitud = crearSolicitudEditorProducto(entradaEditor, identidadAlta.productoId.takeIf { original == null })
+        val solicitudFinal = if (original == null) {
+            val preparada = prepararSolicitudAlta(tiendaId, identidadAlta, solicitud)
+            identidadAlta = preparada.identidad
+            guardarBorradorAlta(
+                context,
+                tiendaId,
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, preparada.identidad.operacionId, preparada.identidad.productoId, preparada.identidad.firma),
+                confirmar = true
             )
-            val imagen = if (fotoLocal.fotoLista && (fotoLocal.photoUri != null || fotoLocal.photoBitmap != null)) {
-                ImagenSeleccionadaProducto(fotoLocal.photoUri, fotoLocal.photoBitmap, archivoId)
+            preparada.solicitud
+        } else solicitud.copy(operacionId = operacionId)
+        val imagen = if (fotoLocal.fotoLista && (fotoLocal.photoUri != null || fotoLocal.photoBitmap != null)) {
+            ImagenSeleccionadaProducto(fotoLocal.photoUri, fotoLocal.photoBitmap, archivoId)
+        } else null
+        val fotosVariantes = variantes.mapNotNull { row ->
+            if (row.fotoNueva) {
+                row.fotoUri?.let { row.id to ImagenSeleccionadaProducto(it, row.fotoBitmap, row.archivoId) }
+                    ?: row.fotoBitmap?.let { bitmap -> row.id to ImagenSeleccionadaProducto(null, bitmap, row.archivoId) }
             } else null
-            val fotosVariantes = variantes.mapNotNull { row ->
-                if (row.fotoNueva) {
-                    row.fotoUri?.let { row.id to ImagenSeleccionadaProducto(it, row.fotoBitmap, row.archivoId) }
-                        ?: row.fotoBitmap?.let { bitmap -> row.id to ImagenSeleccionadaProducto(null, bitmap, row.archivoId) }
-                } else null
-            }.toMap()
-            onSave(solicitud, imagen, fotosVariantes, publicar)
-        }
+        }.toMap()
+        onSave(solicitudFinal, imagen, fotosVariantes, publicar)
     }
     if (paso == 1) {
         PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ abrirCamaraParaFoto() },
             onPickPhoto={ abrirGaleriaParaFoto() }, onNext={ paso=2 },
-            onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true,
+            onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true, onDiscardDraft=onDiscardDraft,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
             mensajeImagenExistente=when {
@@ -911,7 +1071,7 @@ private fun EditorProductoEmprendedora(
     } else if (paso == 2) {
         StepScaffold("Paso 2 de 5", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
             onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=::cancelarEditor,
-            nextEnabled=errorDatos == null, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            nextEnabled=errorDatos == null, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
             Column(Modifier.padding(16.dp)) {
             AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres")
@@ -937,7 +1097,7 @@ private fun EditorProductoEmprendedora(
         StepScaffold("Paso 3 de 5", "Tipo de producto",
             "Elige el tipo para mostrar los campos que necesitas.",
             onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=::cancelarEditor,
-            nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
             if (tiposDisponibles.isEmpty()) {
                 AvisoEmprendedora("No hay tipos de producto activos. Pide a administración que habilite uno para continuar.", true)
             }
@@ -993,7 +1153,7 @@ private fun EditorProductoEmprendedora(
         StepScaffold("Paso 4 de 5", "Variantes", "Cada variante puede tener su propio precio, foto y stock.",
             onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=::cancelarEditor,
             nextEnabled=errorPreciosYStock == null,
-            pasoActual=4, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            pasoActual=4, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
             Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp), verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=!conVariantes, enabled=original==null, onCheckedChange={ sinVariantes ->
@@ -1052,7 +1212,7 @@ private fun EditorProductoEmprendedora(
     } else if (paso == 5) {
         StepScaffold("Paso 5 de 5", "Disponibilidad", "Cuéntanos cómo quieres vender este producto.",
             onNext={ paso=6 }, onBack={ paso=4 }, onSaveExit=::cancelarEditor,
-            nextEnabled=!enviando, pasoActual=5, showSaveExit=false, onExit=::guardarLocalYSalir) {
+            nextEnabled=!enviando, pasoActual=5, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
             Text("Tipo de disponibilidad", color=Dark, fontWeight=FontWeight.Bold, fontSize=18.sp)
             Text("Selecciona cómo estará disponible este producto.", color=Muted, fontSize=14.sp)
             Spacer(Modifier.height(10.dp))
@@ -1088,9 +1248,13 @@ private fun EditorProductoEmprendedora(
         StepScaffold("Último paso", "Revisa tu producto", "Verifica que toda la información esté correcta antes de publicarlo.",
             onNext={ guardarBorrador(publicar = original == null && tiendaPublicada) }, onBack={ paso=5 }, onSaveExit={ guardarBorrador(false) },
             nextLabel=when { original != null -> "Guardar cambios"; tiendaPublicada -> "Publicar producto"; else -> "Guardar borrador" }, nextEnabled=!enviando,
-            pasoActual=5, showSaveExit=original==null, onExit=::guardarLocalYSalir) {
+            pasoActual=5, showSaveExit=original==null, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
                 Column(Modifier.padding(16.dp)) {
+                    if (identidadAlta.avisoIntentoAnterior) {
+                        AvisoEmprendedora("Al cambiar los datos después de un intento de guardado, se usará un producto nuevo para no mezclar solicitudes. Si el intento anterior llegó a Firebase, quedará como borrador separado en Mis productos.", false)
+                        Spacer(Modifier.height(10.dp))
+                    }
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         ProductImage(fallback=Fig.VASE_REVIEW, size=92.dp, uri=fotoLocal.photoUri, bitmap=fotoLocal.photoBitmap ?: imagenPrivada, hasPhoto=true)
                         Spacer(Modifier.size(14.dp))

@@ -79,6 +79,7 @@ fun StepScaffold(
     showSaveExit: Boolean = true,
     showBackButton: Boolean = true,
     onExit: () -> Unit = onSaveExit,
+    onDiscardDraft: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
@@ -103,6 +104,13 @@ fun StepScaffold(
                     PrimaryButton(nextLabel, onNext, modifier = Modifier.weight(1f), enabled = nextEnabled, fontSize = 14.sp)
                 }
             } else PrimaryButton(nextLabel, onNext, enabled = nextEnabled, fontSize = 16.sp)
+            if (onDiscardDraft != null) {
+                TextButton(onClick = onDiscardDraft) {
+                    Icon(Icons.Filled.Delete, contentDescription = null, tint = Wine, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Descartar borrador", color = Wine, fontSize = 13.sp)
+                }
+            }
             Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 9.sp, color = Wine, letterSpacing = 2.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
             Spacer(Modifier.height(8.dp))
         }
@@ -601,9 +609,10 @@ fun PhotoStep(
     showSaveExit: Boolean = true,
     imagenExistente: Boolean = false,
     imagenPrevia: Bitmap? = null,
-    mensajeImagenExistente: String? = null
+    mensajeImagenExistente: String? = null,
+    onDiscardDraft: (() -> Unit)? = null
 ) {
-    StepScaffold("Paso 1 de 5", "Agrega una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit) {
+    StepScaffold("Paso 1 de 5", "Agrega una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft) {
         Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
             if (lista) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
