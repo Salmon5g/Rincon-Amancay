@@ -231,62 +231,13 @@ const enlaceContacto = computed(() => {
     return null;
 });
 
-// Vista rápida de producto (modal tipo ficha)
-const productoRapido = ref<FichaComprador | null>(null);
-const tiendaRapida = ref<FichaComprador | null>(null);
-const variantesRapidas = ref<FichaComprador[]>([]);
-const seleccionRapida = ref('');
-const variantesCargando = ref(false);
-let revisionRapida = 0;
-let overflowRapido = '';
-
-const varianteRapida = computed(() => variantesRapidas.value.find(v => v.id === seleccionRapida.value));
 const stockProducto = computed(() => textoStockProducto(producto.value, variantes.value, cargando.value));
-const stockProductoRapido = computed(() => textoStockProducto(productoRapido.value, variantesRapidas.value, variantesCargando.value));
-const categoriaRapida = computed(() => {
-    const id = productoRapido.value?.datos.categoriaId;
-    return id ? categorias.value[id] ?? id : '';
-});
 const etiquetaModalidad = computed(() => {
-    const valor = productoRapido.value?.datos.modalidad;
+    const valor = producto.value?.datos.modalidad;
     if (valor === 'regular') return 'Regular';
     if (valor === 'por_encargo' || valor === 'a_pedido') return 'Por encargo';
     return valor ? valor.charAt(0).toUpperCase() + valor.slice(1) : '';
 });
-
-async function abrirRapido(producto: FichaComprador, tiendaFicha: FichaComprador) {
-    const actual = ++revisionRapida;
-    productoRapido.value = producto;
-    tiendaRapida.value = tiendaFicha;
-    variantesRapidas.value = [];
-    seleccionRapida.value = '';
-    variantesCargando.value = producto.datos.tieneVariantes === true;
-    if (import.meta.client) {
-        overflowRapido = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-    }
-    if (producto.datos.tieneVariantes) {
-        try {
-            const r = await $catalogoPublico.listarVariantes(tiendaFicha.id, producto.id);
-            if (actual !== revisionRapida) return;
-            variantesRapidas.value = r.map(fichaVariante);
-            seleccionRapida.value = variantesRapidas.value[0]?.id ?? '';
-        } catch {
-            if (actual === revisionRapida) variantesRapidas.value = [];
-        } finally {
-            if (actual === revisionRapida) variantesCargando.value = false;
-        }
-    }
-}
-
-function cerrarRapido() {
-    revisionRapida++;
-    productoRapido.value = null;
-    tiendaRapida.value = null;
-    variantesRapidas.value = [];
-    variantesCargando.value = false;
-    if (import.meta.client) document.body.style.overflow = overflowRapido;
-}
 
 // Ventana de contacto: solo muestra datos públicos de la tienda.
 const tiendaContacto = ref<FichaComprador | null>(null);
@@ -324,7 +275,7 @@ async function copiarContacto() {
     }
 }
 
-function nombreRapidoVariante(v: FichaComprador) {
+function nombreVariante(v: FichaComprador) {
     const partes = Object.entries(v.datos.opciones ?? {}).map(([k, val]) => `${k}: ${val}`);
     return partes.length ? partes.join(' · ') : v.id;
 }
@@ -349,10 +300,9 @@ function textoStockProducto(ficha: FichaComprador | null, listaVariantes: FichaC
     return `${total} ${total === 1 ? 'unidad disponible' : 'unidades disponibles'} en total`;
 }
 
-function alTeclearRapido(evento: KeyboardEvent) {
+function alTeclearEscape(evento: KeyboardEvent) {
     if (evento.key !== 'Escape') return;
     if (tiendaContacto.value) cerrarContacto();
-    else if (productoRapido.value) cerrarRapido();
 }
 
 // Formato de precios, disponibilidad y errores
@@ -614,7 +564,7 @@ async function compartirTienda() {
 // Ciclo de vida
 onMounted(() => {
     void cargarCatalogos();
-    window.addEventListener('keydown', alTeclearRapido);
+    window.addEventListener('keydown', alTeclearEscape);
 });
 onNuxtReady(() => {
     // En Hosting, Nuxt restaura la consulta de la URL tras hidratar la página estática.
@@ -625,18 +575,36 @@ onBeforeUnmount(() => {
     revision++;
     clearTimeout(avisoTimer);
     clearTimeout(temporizadorRuta);
-    window.removeEventListener('keydown', alTeclearRapido);
-    if (productoRapido.value && import.meta.client) document.body.style.overflow = overflowRapido;
+    window.removeEventListener('keydown', alTeclearEscape);
+    if (tiendaContacto.value && import.meta.client) document.body.style.overflow = overflowContacto;
 });
 </script>
 
 <template>
-  <div class="comprador" :class="tienda ? 'modo-tienda' : 'modo-explorar'">
+  <div class="comprador" :class="[tienda ? 'modo-tienda' : 'modo-explorar', producto ? 'modo-detalle' : '']">
     <!-- Explorar: barra lateral -->
     <CompradorLateral v-if="!tienda" activo="explorar" />
+    <Teleport to="body">
+      <div class="botanica-pie" :class="{ 'botanica-pie-detalle': !!producto, 'botanica-pie-tienda': !!tienda && !producto }" aria-hidden="true">
+        <svg class="botanica-olas" viewBox="0 0 1600 250" preserveAspectRatio="none">
+          <path fill="#f9ded0" d="M0 106C190 48 354 62 529 112s304 87 489 35 386-116 582-61v164H0z" />
+          <path fill="#f6c4b3" fill-opacity=".84" d="M0 150C187 94 365 118 542 163s309 57 479 7 390-103 579-46v126H0z" />
+          <path fill="#f2ad9e" fill-opacity=".64" d="M0 192C196 146 353 154 531 194s319 37 486-2 389-75 583-27v85H0z" />
+          <image :href="'/amancay-botanica-inferior.png'" x="1090" y="60" width="460" height="211" preserveAspectRatio="none" />
+          <image v-if="producto" :href="'/amancay-botanica-inferior.png'" x="50" y="180" width="300" height="70" preserveAspectRatio="none" transform="translate(400 0) scale(-1 1)" />
+          <image v-else-if="tienda" :href="'/amancay-botanica-inferior.png'" x="25" y="130" width="360" height="120" preserveAspectRatio="none" transform="translate(410 0) scale(-1 1)" />
+        </svg>
+      </div>
+      <div v-if="producto" class="detalle-ondas-superiores" aria-hidden="true">
+        <svg viewBox="0 0 1600 300" preserveAspectRatio="none">
+          <path fill="#f9ded0" fill-opacity=".58" d="M0 95C190 148 335 36 548 68s321 132 535 84 344-112 517-57v92c-183-36-331 78-523 81s-310-92-500-87S205 252 0 190z" />
+          <path fill="#f4c0b0" fill-opacity=".28" d="M0 145c212 41 327-54 529-34s323 96 517 68 364-93 554-48v89c-171-25-336 51-531 59s-355-60-540-52S171 277 0 236z" />
+        </svg>
+      </div>
+    </Teleport>
 
     <!-- Barra superior: tienda y producto -->
-    <header v-else class="barra-superior">
+    <header v-if="tienda" class="barra-superior">
       <button class="marca marca-boton" type="button" @click="navegar(null)">
         <img class="marca-icono" src="/logo-amancay.png" alt="" />
         <span class="marca-texto">
@@ -673,6 +641,7 @@ onBeforeUnmount(() => {
     <main class="contenido">
       <!-- Vista explorar -->
       <template v-if="!tienda">
+        <div class="escena-explorar">
         <header class="encabezado-fila">
           <div>
             <h1>Descubre productos hechos cerca</h1>
@@ -684,6 +653,7 @@ onBeforeUnmount(() => {
         </header>
 
         <section class="hero">
+          <img class="hero-flor" src="/amancay-flor-principal-v3.png" alt="" aria-hidden="true" />
           <div class="hero-texto">
             <p class="sobretitulo">EMPRENDIMIENTOS LOCALES</p>
             <h2>Hecho cerca, elegido con cariño</h2>
@@ -757,7 +727,7 @@ onBeforeUnmount(() => {
               type="button"
               @click="abrirDestacado(d)"
             >
-              <span class="foto" @click.stop="abrirRapido(d.producto, d.tienda)">
+              <span class="foto">
                 <ImagenPublica :ruta="d.producto.datos.imagenes?.[0]" :alt="d.producto.datos.nombre" ajuste="contain" :zoom="false" />
                 <span class="badge" :class="claseDisponibilidad(d.producto.datos.estadoDisponibilidad)">
                   {{ disponibilidad(d.producto.datos.estadoDisponibilidad) }}
@@ -833,6 +803,7 @@ onBeforeUnmount(() => {
             <button class="editar" :disabled="cargando || !siguiente" @click="avanzar">Siguiente →</button>
           </nav>
         </section>
+        </div>
       </template>
 
       <!-- Vista tienda y producto -->
@@ -851,6 +822,8 @@ onBeforeUnmount(() => {
         </nav>
 
         <section v-if="!producto" class="tienda-hero">
+          <div class="tienda-hero-halo" aria-hidden="true"></div>
+          <img class="tienda-flor-fondo" src="/amancay-flor-principal-v3.png" alt="" aria-hidden="true" />
           <div class="tienda-hero-info">
             <span class="tienda-logo">
               <ImagenPublica v-if="tienda.datos.logo" :ruta="tienda.datos.logo" :alt="tienda.datos.nombre" ajuste="contain" />
@@ -945,14 +918,14 @@ onBeforeUnmount(() => {
               <label class="ficha-label" for="variante">Elige una variante</label>
               <select id="variante" class="ficha-select" v-model="seleccion" :disabled="cargando || !variantes.length">
                 <option v-for="v in variantes" :key="v.id" :value="v.id">
-                  {{ nombreRapidoVariante(v) }} · {{ textoStock(v.datos.stock, producto.datos.manejaStock) }}
+                {{ nombreVariante(v) }} · {{ textoStock(v.datos.stock, producto.datos.manejaStock) }}
                 </option>
               </select>
               <section v-if="variantes.length" class="ficha-stock-variantes" aria-label="Stock por variante">
                 <h3>Stock por variante</h3>
                 <ul>
                   <li v-for="v in variantes" :key="v.id">
-                    <span>{{ nombreRapidoVariante(v) }}</span>
+                    <span>{{ nombreVariante(v) }}</span>
                     <b>{{ textoStock(v.datos.stock, producto.datos.manejaStock) }}</b>
                   </li>
                 </ul>
@@ -1020,7 +993,7 @@ onBeforeUnmount(() => {
                 :disabled="cargando"
                 @click="abrir(f)"
               >
-                <span class="foto" @click.stop="abrirRapido(f, tienda)">
+                <span class="foto">
                   <ImagenPublica :ruta="f.datos.imagenes?.[0]" :alt="f.datos.nombre" ajuste="contain" :zoom="false" />
                 </span>
                 <h3>{{ f.datos.nombre }}</h3>
@@ -1083,75 +1056,20 @@ onBeforeUnmount(() => {
       </template>
     </main>
 
-    <!-- Vista rápida de producto -->
-    <Teleport to="body">
-      <div
-        v-if="productoRapido && tiendaRapida"
-        class="rapido-fondo"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="productoRapido.datos.nombre"
-        @click.self="cerrarRapido"
-      >
-        <div class="rapido">
-          <button class="rapido-cerrar" type="button" aria-label="Cerrar" @click="cerrarRapido">✕</button>
-          <div class="rapido-scroll">
-            <h2 class="rapido-titulo">{{ productoRapido.datos.nombre }}</h2>
-            <div class="rapido-foto">
-              <ImagenPublica
-                :ruta="varianteRapida?.datos.imagen ?? productoRapido.datos.imagenes?.[0]"
-                :alt="productoRapido.datos.nombre"
-                ajuste="contain"
-                :zoom="false"
-              />
-            </div>
-            <p class="rapido-tienda">{{ tiendaRapida.datos.nombre }}</p>
-            <p v-if="categoriaRapida" class="rapido-linea">{{ categoriaRapida }}</p>
-            <p class="rapido-linea">{{ productoRapido.datos.descripcion }}</p>
-            <p v-if="productoRapido.datos.unidadVenta" class="rapido-linea">Venta: {{ productoRapido.datos.unidadVenta }}</p>
-            <p v-if="etiquetaModalidad" class="rapido-linea">Modalidad: {{ etiquetaModalidad }}</p>
-            <p class="rapido-linea"><b>{{ productoRapido.datos.tieneVariantes ? 'Stock total:' : 'Stock:' }}</b> {{ stockProductoRapido }}</p>
-            <span class="badge" :class="claseDisponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad)">
-              {{ disponibilidad(varianteRapida?.datos.estadoDisponibilidad ?? productoRapido.datos.estadoDisponibilidad) }}
-            </span>
-            <p v-if="variantesCargando" class="rapido-linea">Cargando variantes…</p>
-            <label v-else-if="variantesRapidas.length" for="variante-rapida">Variante</label>
-            <select v-if="variantesRapidas.length" id="variante-rapida" v-model="seleccionRapida" class="ficha-select">
-              <option v-for="v in variantesRapidas" :key="v.id" :value="v.id">{{ nombreRapidoVariante(v) }}</option>
-            </select>
-            <ul v-if="variantesRapidas.length" class="rapido-variantes">
-              <li v-for="v in variantesRapidas" :key="v.id">
-                <span>{{ nombreRapidoVariante(v) }}<small>{{ textoStock(v.datos.stock, productoRapido.datos.manejaStock) }}</small></span>
-                <b v-if="tiendaRapida.datos.mostrarPrecios !== false">{{ precio(v.datos.precio) }}</b>
-              </li>
-            </ul>
-            <p
-              v-else-if="productoRapido.datos.tieneVariantes === false && tiendaRapida.datos.mostrarPrecios !== false"
-              class="rapido-precio-unico"
-            >{{ precio(productoRapido.datos.precioBase) }}</p>
-            <div class="rapido-acciones">
-              <button class="boton boton-mostaza" type="button" @click="abrirContacto(tiendaRapida)">Contactar emprendedora</button>
-              <button class="boton boton-secundario" type="button" @click="cerrarRapido">Cerrar</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
     <!-- Ventana de contacto con la emprendedora -->
     <Teleport to="body">
       <div
         v-if="tiendaContacto"
-        class="rapido-fondo contacto-fondo"
+        class="modal-fondo contacto-fondo"
         role="dialog"
         aria-modal="true"
         aria-labelledby="contacto-titulo"
         @click.self="cerrarContacto"
       >
-        <div class="rapido contacto">
-          <button class="rapido-cerrar" type="button" aria-label="Cerrar" @click="cerrarContacto">✕</button>
-          <div class="rapido-scroll">
-            <h2 id="contacto-titulo" class="rapido-titulo">Contactar emprendedora</h2>
+        <div class="modal contacto">
+          <button class="modal-cerrar" type="button" aria-label="Cerrar" @click="cerrarContacto">✕</button>
+          <div class="modal-scroll">
+            <h2 id="contacto-titulo" class="modal-titulo">Contactar emprendedora</h2>
             <div class="dato-tienda">
               <span class="dato-icono" aria-hidden="true">🏪</span>
               <div>
@@ -1179,7 +1097,7 @@ onBeforeUnmount(() => {
             <p v-if="estadoCopia" class="contacto-copia" role="status">
               {{ estadoCopia === 'ok' ? 'Contacto copiado.' : 'No se pudo copiar. Selecciona el texto y cópialo manualmente.' }}
             </p>
-            <div class="rapido-acciones">
+            <div class="modal-acciones">
               <button
                 v-if="tiendaContacto.datos.contacto"
                 class="boton boton-mostaza"
@@ -1311,6 +1229,11 @@ select:focus-visible {
     border-bottom: 1.5px solid var(--amancay-borde);
 }
 
+.comprador.modo-detalle .barra-superior {
+    background: #fffbf2;
+    backdrop-filter: none;
+}
+
 .barra-nav {
     display: flex;
     align-items: center;
@@ -1379,13 +1302,65 @@ select:focus-visible {
 
 /* Contenido */
 .contenido {
+    position: relative;
+    isolation: isolate;
+    z-index: 1;
     width: 100%;
     min-width: 0;
     padding: 1.8rem clamp(1rem, 3vw, 2.5rem) 3.5rem;
     box-sizing: border-box;
 }
 
+:global(.botanica-pie) {
+    position: fixed;
+    z-index: 0;
+    left: 280px;
+    right: 0;
+    bottom: 0;
+    height: 300px;
+    pointer-events: none;
+}
+
+:global(.botanica-pie-detalle) {
+    left: 0;
+    height: 270px;
+}
+
+:global(.botanica-pie-tienda) {
+    left: 0;
+    height: 300px;
+}
+
+:global(.botanica-olas) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+:global(.detalle-ondas-superiores) {
+    position: fixed;
+    z-index: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 270px;
+    pointer-events: none;
+}
+
+:global(.detalle-ondas-superiores svg) {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.escena-explorar {
+    position: relative;
+}
+
 .encabezado-fila {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -1481,10 +1456,14 @@ h1 {
 /* Hero de explorar */
 .hero {
     position: relative;
-    overflow: hidden;
+    z-index: 1;
+    isolation: isolate;
+    overflow: visible;
+    clip-path: inset(-190px 0 0 round 26px);
     display: flex;
     align-items: center;
     gap: 1.5rem;
+    min-height: 224px;
     padding: clamp(1.5rem, 3vw, 2.4rem);
     border-radius: 26px;
     background: linear-gradient(135deg, var(--amancay-bordo) 0%, var(--amancay-bordo-oscuro) 100%);
@@ -1496,24 +1475,38 @@ h1 {
 .hero::before {
     content: '';
     position: absolute;
-    width: 300px;
-    height: 300px;
-    right: 0;
-    top: -110px;
+    z-index: 0;
+    width: 470px;
+    height: 370px;
+    right: 20px;
+    top: -175px;
     border-radius: 50%;
-    background: rgba(246, 193, 119, 0.14);
+    background: radial-gradient(ellipse, rgba(248, 227, 218, 0.46), rgba(246, 193, 119, 0.12) 58%, transparent 76%);
+    pointer-events: none;
+}
+
+.hero-flor {
+    position: absolute;
+    z-index: 0;
+    top: clamp(-140px, -5vw, -70px);
+    right: clamp(150px, 13vw, 260px);
+    width: clamp(360px, 26vw, 500px);
+    height: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 10px rgba(81, 17, 47, 0.14));
     pointer-events: none;
 }
 
 .hero-texto {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 0.45rem;
     flex: 1;
     min-width: 0;
+    max-width: 56%;
 }
 
 .hero-texto h2 {
@@ -1531,7 +1524,7 @@ h1 {
 
 .hero-frase {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     margin: 0;
     font-family: 'DM Serif Display', Georgia, serif;
     font-style: italic;
@@ -1540,11 +1533,12 @@ h1 {
     color: var(--amancay-naranja-fondo);
     text-align: center;
     flex: none;
+    margin-left: auto;
 }
 
 .hero-arte {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     flex: none;
     width: 132px;
     height: 132px;
@@ -1563,7 +1557,7 @@ h1 {
 
 .hero-lista {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     margin: 0;
     padding: 0 0 0 0.4rem;
     list-style: none;
@@ -1697,17 +1691,43 @@ h1 {
 
 /* Hero de tienda */
 .tienda-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
     display: flex;
     gap: 1.5rem;
     padding: clamp(1.2rem, 2.5vw, 1.8rem);
-    background: var(--amancay-superficie);
-    border: 1.5px solid var(--amancay-borde);
+    background: linear-gradient(105deg, rgba(255, 251, 242, 0.94), rgba(255, 246, 231, 0.82) 55%, rgba(255, 251, 242, 0.94));
+    border: 1.5px solid #f4c6b4;
     border-radius: 26px;
     box-shadow: 0 8px 24px rgba(107, 30, 61, 0.07);
     margin-bottom: 1.6rem;
 }
 
+.tienda-hero-halo {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    background: radial-gradient(ellipse 36% 112% at 64% 50%, rgba(246, 193, 119, 0.2) 0%, rgba(249, 222, 208, 0.46) 34%, rgba(249, 222, 208, 0.18) 58%, transparent 80%);
+    pointer-events: none;
+}
+
+.tienda-flor-fondo {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    right: 19%;
+    height: min(440px, 135%);
+    width: auto;
+    transform: translateY(-50%);
+    object-fit: contain;
+    filter: drop-shadow(0 12px 20px rgba(107, 30, 61, 0.18)) drop-shadow(0 0 24px rgba(246, 193, 119, 0.22));
+    pointer-events: none;
+}
+
 .tienda-hero-info {
+    position: relative;
+    z-index: 2;
     display: flex;
     gap: 1.4rem;
     flex: 1;
@@ -1757,6 +1777,7 @@ h1 {
 
 .tienda-hero-arte {
     position: relative;
+    z-index: 2;
     flex: none;
     width: min(32%, 300px);
     border-radius: 20px;
@@ -2209,6 +2230,8 @@ article.tarjeta-tienda:hover {
 
 /* Detalle de producto */
 .detalle {
+    position: relative;
+    isolation: isolate;
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
     gap: 1.75rem;
@@ -2216,6 +2239,8 @@ article.tarjeta-tienda:hover {
 }
 
 .galeria {
+    position: relative;
+    z-index: 1;
     display: grid;
     gap: 0.9rem;
     align-content: start;
@@ -2240,6 +2265,7 @@ article.tarjeta-tienda:hover {
 }
 
 .ficha {
+    z-index: 1;
     position: sticky;
     top: 90px;
     display: flex;
@@ -2453,8 +2479,8 @@ article.tarjeta-tienda:hover {
     min-width: min(100%, 160px);
 }
 
-/* Vista rápida modal */
-.rapido-fondo {
+/* Ventana de contacto */
+.modal-fondo {
     position: fixed;
     z-index: 10000;
     inset: 0;
@@ -2465,7 +2491,7 @@ article.tarjeta-tienda:hover {
     backdrop-filter: blur(3px);
 }
 
-.rapido {
+.modal {
     position: relative;
     width: min(440px, 100%);
     max-height: min(90vh, 820px);
@@ -2476,7 +2502,7 @@ article.tarjeta-tienda:hover {
     box-shadow: 0 24px 60px rgba(46, 27, 32, 0.35);
 }
 
-.rapido-cerrar {
+.modal-cerrar {
     position: absolute;
     top: 0.85rem;
     right: 0.85rem;
@@ -2492,11 +2518,11 @@ article.tarjeta-tienda:hover {
     cursor: pointer;
 }
 
-.rapido-cerrar:hover {
+.modal-cerrar:hover {
     background: var(--amancay-bordo-oscuro);
 }
 
-.rapido-scroll {
+.modal-scroll {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -2504,85 +2530,13 @@ article.tarjeta-tienda:hover {
     padding: 1.5rem 1.4rem 1.4rem;
 }
 
-.rapido-titulo {
+.modal-titulo {
     margin: 0 2rem 0.35rem 0;
     font-family: 'DM Serif Display', Georgia, serif;
     font-weight: 400;
     font-size: 1.65rem;
     line-height: 1.15;
     color: var(--amancay-tinta);
-}
-
-.rapido-foto {
-    width: 100%;
-    margin-bottom: 0.35rem;
-}
-
-.rapido-foto :deep(.imagen-publica) {
-    border-radius: 18px;
-    background: linear-gradient(160deg, var(--amancay-superficie-variante), var(--amancay-naranja-fondo));
-    max-width: calc(260px * 4 / 3);
-}
-
-.rapido-tienda {
-    margin: 0;
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: var(--amancay-bordo);
-}
-
-.rapido-linea {
-    margin: 0;
-    font-size: 0.92rem;
-    line-height: 1.5;
-    color: var(--amancay-tinta);
-}
-
-.rapido-variantes {
-    list-style: none;
-    margin: 0.35rem 0 0;
-    padding: 0;
-    width: 100%;
-    display: grid;
-    gap: 0.4rem;
-}
-
-.rapido-variantes li {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.65rem 0.85rem;
-    border-radius: 12px;
-    background: var(--amancay-fondo);
-    border: 1px solid var(--amancay-borde);
-    font-size: 0.9rem;
-    color: var(--amancay-tinta);
-}
-
-.rapido-variantes b {
-    color: var(--amancay-bordo);
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-weight: 400;
-    font-size: 1rem;
-    white-space: nowrap;
-}
-
-.rapido-variantes li > span {
-    display: grid;
-    gap: 0.2rem;
-}
-
-.rapido-variantes small {
-    color: var(--amancay-tinta-suave);
-    font-size: 0.78rem;
-}
-
-.rapido-precio-unico {
-    margin: 0.35rem 0 0;
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 1.35rem;
-    color: var(--amancay-bordo);
 }
 
 .contacto-fondo {
@@ -2620,7 +2574,7 @@ article.tarjeta-tienda:hover {
     color: var(--amancay-tinta);
 }
 
-.rapido-acciones {
+.modal-acciones {
     display: flex;
     flex-wrap: wrap;
     gap: 0.65rem;
@@ -2628,7 +2582,7 @@ article.tarjeta-tienda:hover {
     margin-top: 0.85rem;
 }
 
-.rapido-acciones .boton {
+.modal-acciones .boton {
     flex: 1 1 auto;
 }
 
@@ -2740,6 +2694,12 @@ article.tarjeta-tienda:hover {
     .hero {
         min-width: 0;
     }
+
+    .hero-flor {
+        top: -90px;
+        right: 70px;
+        width: 360px;
+    }
 }
 
 @media (max-width: 900px) {
@@ -2772,9 +2732,32 @@ article.tarjeta-tienda:hover {
         padding: 1.25rem 1rem 3rem;
     }
 
+    :global(.botanica-pie) {
+        left: 0;
+        height: 220px;
+    }
+
     .hero-frase,
     .hero-arte {
         display: none;
+    }
+
+    .hero-texto {
+        max-width: 64%;
+    }
+
+    .hero-flor {
+        top: -42px;
+        right: 0;
+        width: min(44vw, 340px);
+        opacity: 0.28;
+    }
+
+    .hero::before {
+        width: 360px;
+        height: 320px;
+        top: -100px;
+        right: -55px;
     }
 
     .tienda-hero {
@@ -2788,6 +2771,12 @@ article.tarjeta-tienda:hover {
     .tienda-hero-arte {
         width: 100%;
         min-height: 150px;
+    }
+
+    .tienda-flor-fondo {
+        right: -42px;
+        height: 330px;
+        opacity: 0.58;
     }
 
     .detalle {
@@ -2816,6 +2805,25 @@ article.tarjeta-tienda:hover {
 @media (max-width: 560px) {
     .hero {
         padding: 1.25rem;
+        clip-path: inset(-50px 0 0 round 26px);
+    }
+
+    .hero-texto {
+        max-width: 70%;
+    }
+
+    .hero-flor {
+        top: -36px;
+        right: 0;
+        width: min(58vw, 280px);
+        opacity: 0.24;
+    }
+
+    .hero::before {
+        width: 280px;
+        height: 260px;
+        top: -62px;
+        right: -80px;
     }
 
     .hero-texto h2 {
@@ -2840,6 +2848,12 @@ article.tarjeta-tienda:hover {
         height: 84px;
     }
 
+    .tienda-flor-fondo {
+        right: -66px;
+        height: 290px;
+        opacity: 0.44;
+    }
+
     .tarjeta-tienda {
         flex-wrap: wrap;
     }
@@ -2850,6 +2864,14 @@ article.tarjeta-tienda:hover {
 
     .detalle {
         min-width: 0;
+    }
+
+    :global(.botanica-pie) {
+        height: 160px;
+    }
+
+    :global(.detalle-ondas-superiores) {
+        height: 190px;
     }
 
     .tienda-hero-texto h1 {
