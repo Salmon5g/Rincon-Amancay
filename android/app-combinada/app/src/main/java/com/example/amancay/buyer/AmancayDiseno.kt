@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Checkroom
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.GridView
@@ -374,6 +375,7 @@ enum class PestanaComprador(val etiqueta: String) {
     INICIO("Inicio"),
     EXPLORAR("Explorar"),
     FERIAS("Ferias"),
+    RESPUESTAS("Respuestas"),
     CUENTA("Mi sesión")
 }
 
@@ -412,6 +414,7 @@ private fun iconoPestanaComprador(pestana: PestanaComprador): ImageVector = when
     PestanaComprador.INICIO -> Icons.Outlined.Home
     PestanaComprador.EXPLORAR -> Icons.Outlined.Search
     PestanaComprador.FERIAS -> Icons.Outlined.Event
+    PestanaComprador.RESPUESTAS -> Icons.Outlined.ChatBubbleOutline
     PestanaComprador.CUENTA -> Icons.Outlined.Person
 }
 

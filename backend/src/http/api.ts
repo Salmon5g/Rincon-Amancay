@@ -78,7 +78,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -89,6 +89,11 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (origin && !origins.has(origin)) throw new ErrorHttp(403, 'origen-no-permitido', 'Origen no permitido.');
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: config.entorno, proyecto: config.proyecto });
+      const rutaRespuesta = req.url?.match(/^\/api\/v1\/consultasPublicas\/([a-zA-Z0-9_-]{1,128})\/([0-9a-fA-F-]{36})$/);
+      if (req.method === 'GET' && rutaRespuesta && leerRespuestaConsulta) {
+        const resultado = await leerRespuestaConsulta(rutaRespuesta[1], rutaRespuesta[2]);
+        return json(res, 200, { datos: resultado });
+      }
       if (req.url === '/api/v1/consultasPublicas' && guardarConsulta) {
         if (req.method === 'OPTIONS') {
           res.writeHead(204, { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' });
@@ -127,6 +132,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const accionAdministracion = administracion ? accionesAdministracion.find(a => req.url === `/api/v1/${a}`) as AccionAdministracion | undefined : undefined;
       const accionFeria = ferias ? accionesFeria.find(a => req.url === `/api/v1/${a}`) as AccionFeria | undefined : undefined;
       const esEdicionTiendaEmprendedora = req.url === '/api/v1/editarTiendaEmprendedora' && editarTiendaEmprendedora !== undefined;
+      const esRespuestaConsulta = req.url === '/api/v1/responderConsulta' && responderConsulta !== undefined;
       const accionVenta = ventas ? accionesVenta.find(a => req.url === `/api/v1/${a}`) as AccionVenta | undefined : undefined;
       const subidaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes$/);
       const lecturaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes\/([0-4])$/);
@@ -136,7 +142,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esLecturaImagen=Boolean(lecturaImagen && imagenes?.leer);
       const esSubidaLogo=Boolean(subidaLogo && imagenes?.subirTienda);
       const esSubidaLogoAsociacion=Boolean(subidaLogoAsociacion && imagenes?.subirLogoAsociacion);
-      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !esRespuestaConsulta && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id, X-Reemplazar-Indice', 'Cache-Control': 'no-store' });
         return res.end();
@@ -181,6 +187,16 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         return json(res,200,{datos:{ruta}});
       }
       const input = await body(req);
+      if (esRespuestaConsulta) {
+        if (Object.keys(input).some(k => !['tiendaId', 'consultaId', 'respuesta'].includes(k)) ||
+            typeof input.tiendaId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.tiendaId) ||
+            typeof input.consultaId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(input.consultaId) ||
+            typeof input.respuesta !== 'string' || input.respuesta.trim().length < 1 || input.respuesta.length > 2000) {
+          throw new ErrorHttp(400, 'datos-invalidos', 'Revisa el texto de la respuesta.');
+        }
+        const result = await responderConsulta!(uid, { tiendaId: input.tiendaId, consultaId: input.consultaId, respuesta: input.respuesta });
+        return json(res, 200, { datos: result });
+      }
       const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : accionAsociacion ? await asociaciones!(accionAsociacion,{uid},input) : accionAdministracion ? await administracion!(accionAdministracion,{uid},input) : accionFeria ? await ferias!(accionFeria,{uid},input) : esEdicionTiendaEmprendedora ? await editarTiendaEmprendedora!({uid},input) : esAlta ? await alta!({uid}, input)
         : esDesactivacion ? await desactivar!({uid}, input)
         : accionVenta ? await ventas!(accionVenta, {uid}, input)

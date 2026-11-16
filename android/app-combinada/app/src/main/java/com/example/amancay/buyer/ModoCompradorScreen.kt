@@ -108,6 +108,9 @@ fun ModoCompradorScreen(
     var feriaSeleccionada by remember { mutableStateOf<FeriaComprador?>(null) }
     var formularioContacto by remember { mutableStateOf<Triple<TiendaCatalogoComprador, String?, VarianteCatalogoComprador?>?>(null) }
     var avisoContacto by remember { mutableStateOf<String?>(null) }
+    var misConsultas by remember { mutableStateOf(leerConsultasGuardadas(context)) }
+    var cargandoRespuestas by remember { mutableStateOf(false) }
+    var errorRespuestas by remember { mutableStateOf<String?>(null) }
 
     val ferias = rememberRepositorioFerias()
     val listaFerias by ferias.ferias.collectAsState()
@@ -210,7 +213,9 @@ fun ModoCompradorScreen(
         formularioContacto = null
         alcance.launch {
             try {
-                ApiConsultasComprador.enviar(tienda.id, producto, nombre, correo, mensaje)
+                val operacionId = ApiConsultasComprador.enviar(tienda.id, producto, nombre, correo, mensaje)
+                misConsultas = (listOf(ConsultaSeguida(tienda.id, tienda.nombre, operacionId, correo, producto, mensaje)) + misConsultas).distinctBy { it.operacionId }
+                guardarConsultas(context, misConsultas)
                 avisoContacto = "Tu consulta se envió a la bandeja de la emprendedora."
             } catch (e: Exception) {
                 avisoContacto = e.message ?: "No se pudo enviar la consulta. Inténtalo de nuevo."
@@ -381,6 +386,29 @@ fun ModoCompradorScreen(
                     .fillMaxSize()
                     .padding(inset)
                     .padding(horizontal = 16.dp)
+            )
+
+            PestanaComprador.RESPUESTAS -> RespuestasCompradorScreen(
+                consultas = misConsultas,
+                cargando = cargandoRespuestas,
+                error = errorRespuestas,
+                alActualizar = {
+                    alcance.launch {
+                        cargandoRespuestas = true
+                        errorRespuestas = null
+                        try {
+                            misConsultas = misConsultas.map { consulta ->
+                                val nuevaRespuesta = ApiConsultasComprador.leerRespuesta(consulta.tiendaId, consulta.operacionId)
+                                consulta.copy(respuesta = nuevaRespuesta ?: consulta.respuesta)
+                            }
+                            guardarConsultas(context, misConsultas)
+                        } catch (e: Exception) {
+                            errorRespuestas = e.message ?: "No se pudieron actualizar tus respuestas."
+                        } finally {
+                            cargandoRespuestas = false
+                        }
+                    }
+                },
             )
 
             PestanaComprador.CUENTA -> PantallaCuentaComprador(

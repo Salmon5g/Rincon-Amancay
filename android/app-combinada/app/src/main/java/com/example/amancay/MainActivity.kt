@@ -979,10 +979,11 @@ internal fun EmprendedoraAppConectada(
     }
 
     val productoDeVista = productos.firstOrNull { it.id == productoVista }?.let(::productoLegado)
+    val nuevasConsultas = productosRepository.consultas.collectAsState().value.count { it.estado == "nueva" }
 
     Scaffold(
         containerColor = Cream,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -1090,8 +1091,6 @@ internal fun EmprendedoraAppConectada(
                                     Spacer(Modifier.height(8.dp))
                                     OutlineButton("Registrar venta · Historial de encargos", { screen = Screen.Ventas })
                                     Spacer(Modifier.height(8.dp))
-                                    val consultasNoLeidas = productosRepository.consultas.collectAsState().value.count { !it.leida }
-                                    OutlineButton(if (consultasNoLeidas > 0) "Bandeja de consultas · $consultasNoLeidas nuevas" else "Bandeja de consultas", { screen = Screen.Consultas })
                                 }
                             }
                         }
@@ -1367,6 +1366,12 @@ internal fun EmprendedoraAppConectada(
                             scope.launch {
                                 runCatching { productosRepository.marcarConsultaLeida(sesion.tiendaId, consulta.id) }
                                     .onFailure { errorProducto = "No pudimos actualizar esta consulta. Comprueba tu conexión e inténtalo de nuevo." }
+                            }
+                        },
+                        alResponder = { consulta, respuesta ->
+                            scope.launch {
+                                runCatching { productosRepository.responderConsulta(sesion.tiendaId, consulta.id, respuesta) }
+                                    .onFailure { errorProducto = it.message ?: "No se pudo enviar la respuesta." }
                             }
                         },
                         alVolver = { screen = Screen.Home; tab = Tab.INICIO }
