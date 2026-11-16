@@ -838,7 +838,7 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="seccion === 'agregar'">
-          <EmprendedoraProductoEditor :cuenta="cuenta" :producto-id="productoEnEdicion" @cancelar="irA('productos')" @guardado="guardarProductoTerminado" />
+          <EmprendedoraProductoEditor :key="productoEnEdicion ?? 'nuevo'" :cuenta="cuenta" :producto-id="productoEnEdicion" @cancelar="irA('productos')" @guardado="guardarProductoTerminado" />
         </template>
 
         <template v-else-if="seccion === 'ventas'">
