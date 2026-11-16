@@ -45,6 +45,38 @@ function contactoPublico(store: DocumentData): { tipo: string; valor: string } |
   }
   return { tipo, valor };
 }
+function canalesContactoPublicos(store: DocumentData, formaContacto: string, tiendaId: string, contacto: { tipo: string; valor: string } | undefined): DocumentData {
+  const configurados = store.canalesContacto as {
+    whatsapp?: { habilitado?: unknown; numero?: unknown };
+    formulario?: { habilitado?: unknown; formularioId?: unknown };
+    correo?: { habilitado?: unknown; direccion?: unknown };
+  } | undefined;
+  if (configurados && typeof configurados.whatsapp?.habilitado === 'boolean' && typeof configurados.formulario?.habilitado === 'boolean') {
+    const habilitadoWhatsapp = configurados.whatsapp.habilitado === true;
+    const numero = typeof configurados.whatsapp.numero === 'string' ? configurados.whatsapp.numero.trim() : '';
+    const habilitadoCorreo = configurados.correo?.habilitado === true;
+    const direccion = typeof configurados.correo?.direccion === 'string' ? configurados.correo.direccion.trim() : '';
+    exigir(!habilitadoWhatsapp || /^\+?[0-9][0-9\s()-]{6,22}$/.test(numero), 'datos-invalidos', 'Agrega un número válido antes de publicar WhatsApp.');
+    exigir(!habilitadoCorreo || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(direccion), 'datos-invalidos', 'Agrega un correo válido antes de publicar este canal.');
+    return {
+      whatsapp: { habilitado: habilitadoWhatsapp, numero: habilitadoWhatsapp ? numero : '' },
+      formulario: {
+        habilitado: configurados.formulario.habilitado === true,
+        formularioId: typeof configurados.formulario.formularioId === 'string' && configurados.formulario.formularioId.trim()
+          ? configurados.formulario.formularioId.trim()
+          : `contacto-${tiendaId}`,
+      },
+      correo: { habilitado: habilitadoCorreo, direccion: habilitadoCorreo ? direccion : '' },
+    };
+  }
+  const whatsappHabilitado = ['whatsapp', 'ambos'].includes(formaContacto) && contacto?.tipo === 'whatsapp';
+  const correoHabilitado = contacto?.tipo === 'correo';
+  return {
+    whatsapp: { habilitado: whatsappHabilitado, numero: whatsappHabilitado ? contacto!.valor : '' },
+    formulario: { habilitado: ['formulario', 'ambos'].includes(formaContacto), formularioId: `contacto-${tiendaId}` },
+    correo: { habilitado: correoHabilitado, direccion: correoHabilitado ? contacto!.valor : '' },
+  };
+}
 function precio(value: unknown) {
   exigir(Number.isSafeInteger(value) && Number(value) >= 0, 'datos-invalidos', 'Precio CLP entero no negativo requerido.');
   return value;
@@ -135,6 +167,10 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const contacto = contactoPublico(store);
           const formaContacto = config.formaContacto ?? 'formulario';
           exigir(['whatsapp', 'formulario', 'ambos'].includes(String(formaContacto)), 'datos-invalidos', 'Falta una forma de contacto válida.');
+          const canales = canalesContactoPublicos(store, String(formaContacto), solicitud.tiendaId, contacto);
+          const formaContactoPublica = canales.formulario.habilitado
+            ? canales.whatsapp.habilitado ? 'ambos' : 'formulario'
+            : canales.whatsapp.habilitado ? 'whatsapp' : 'ninguno';
           const logoRuta=store.logo;
           exigir(logoRuta===undefined || typeof logoRuta==='string','imagen-no-autorizada','La ruta de logo de la tienda es inválida.');
           let logo:ImagenPreparada|false|undefined;
@@ -149,7 +185,8 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             nombre: texto(store.nombre, 120), descripcion: texto(store.descripcion, 2000),
             sectorId: store.sectorId, tipoEmprendimientoId: store.tipoEmprendimientoId,
             ...(contacto ? { contacto } : {}),
-            formaContacto,
+            formaContacto: formaContactoPublica,
+            canalesContacto: canales,
             ...(logo ? {logo:logo.imagen,logoMiniatura:logo.miniatura} : {}),
             estadoPublicacion: 'publicado', habilitada: true, mostrarPrecios: config.mostrarPrecios, actualizadoEn: now,
           } });

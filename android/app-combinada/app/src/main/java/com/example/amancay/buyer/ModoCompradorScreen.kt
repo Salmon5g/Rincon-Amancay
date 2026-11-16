@@ -179,7 +179,7 @@ fun ModoCompradorScreen(
     }
 
     fun abrirWhatsApp(tienda: TiendaCatalogoComprador, mensaje: String) {
-        val telefono = tienda.contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty().filter(Char::isDigit)
+        val telefono = (tienda.whatsappNumero.ifBlank { tienda.contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty() }).filter(Char::isDigit)
         if (telefono.isBlank()) {
             avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
             return
@@ -192,17 +192,25 @@ fun ModoCompradorScreen(
         formularioContacto = Triple(tienda, producto, variante)
     }
 
+    fun abrirCorreo(tienda: TiendaCatalogoComprador, producto: String?) {
+        val direccion = tienda.correoDireccion.ifBlank { tienda.contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty() }
+        if (direccion.isBlank()) {
+            avisoContacto = "Esta tienda no tiene un correo público configurado."
+            return
+        }
+        val asunto = producto?.let { "Consulta sobre $it" } ?: "Consulta sobre tu tienda"
+        val enlace = Uri.fromParts("mailto", direccion, null).buildUpon()
+            .appendQueryParameter("subject", asunto)
+            .build()
+        abrirEnlace(enlace)
+        formularioContacto = null
+    }
+
     fun contactar(tienda: TiendaCatalogoComprador, producto: String? = null, variante: VarianteCatalogoComprador? = null) {
-        when (tienda.formaContacto) {
-            "ambos" -> abrirFormularioContacto(tienda, producto, variante)
-            "formulario" -> abrirFormularioContacto(tienda, producto, variante)
-            "whatsapp" -> {
-                if (tienda.contacto?.tipo == "whatsapp") abrirWhatsApp(tienda, "Hola, me interesa ${producto ?: "conocer tu emprendimiento"}.")
-                else avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
-            }
-            else -> {
-                avisoContacto = "Esta tienda aún no configuró una vía de contacto disponible."
-            }
+        if (tienda.whatsappHabilitado || tienda.formularioHabilitado || tienda.correoHabilitado) {
+            abrirFormularioContacto(tienda, producto, variante)
+        } else {
+            avisoContacto = "Esta tienda aún no configuró una vía de contacto disponible."
         }
     }
 
@@ -478,6 +486,7 @@ fun ModoCompradorScreen(
                 formularioContacto = null
                 abrirWhatsApp(tienda, "Hola, me interesa ${nombreProducto ?: "conocer tu emprendimiento"}${varianteElegida?.opciones?.values?.joinToString(" · ")?.let { " ($it)" }.orEmpty()}.")
             },
+            alCorreo = { abrirCorreo(tienda, nombreProducto) },
             alEnviar = { nombre, correo, mensaje ->
                 enviarFormularioContacto(tienda, nombreProducto, nombre, correo, mensaje)
             }

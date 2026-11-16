@@ -21,6 +21,7 @@ export interface CatalogoPublicoRepository {
   listarProductos(tiendaId: string, cursor?: string | null): Promise<PaginaRepositorio<ProductoPublico>>
   leerTienda(tiendaId: string): Promise<TiendaPublica>
   leerProducto(tiendaId: string, productoId: string): Promise<ProductoPublico>
+  observarProducto(tiendaId: string, productoId: string, alCambiar: (producto: ProductoPublico | null) => void, alFallar?: (error: Error) => void): () => void
   listarVariantes(tiendaId: string, productoId: string): Promise<VariantePublica[]>
   listarCatalogosPublicos(): Promise<CatalogosPublicos>
   listarAsociacionesPublicas(): Promise<AsociacionPublica[]>

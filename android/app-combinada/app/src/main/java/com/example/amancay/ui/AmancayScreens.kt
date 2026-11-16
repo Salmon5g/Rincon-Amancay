@@ -618,7 +618,9 @@ fun PhotoStep(
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     ProductImage(
                         fallback = Fig.VASE_BIG, size = 170.dp,
-                        uri = draft.photoUri, bitmap = draft.photoBitmap ?: imagenPrevia, hasPhoto = draft.fotoLista || imagenExistente
+                        uri = draft.photoUri,
+                        bitmap = if (draft.fotoLista) draft.photoBitmap else imagenPrevia,
+                        hasPhoto = draft.fotoLista || imagenExistente
                     )
                     Spacer(Modifier.height(10.dp))
                     Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {

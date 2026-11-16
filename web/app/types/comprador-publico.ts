@@ -47,6 +47,10 @@ export interface CanalesContactoPublico {
     formularioId: string;
     habilitado: boolean;
   };
+  correo?: {
+    habilitado: boolean;
+    direccion: string;
+  };
 }
 
 export interface ProductoPublico {
@@ -88,6 +92,7 @@ export interface FichaComprador {
     categoriaId?: string;
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;
+    canalesContacto?: CanalesContactoPublico;
     logo?: string;
     imagen?: string;
     imagenes?: string[];

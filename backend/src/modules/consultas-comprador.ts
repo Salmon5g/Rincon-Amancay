@@ -19,8 +19,12 @@ export function crearConsultasComprador(db: Firestore) {
       const [tienda, privada, existente] = await Promise.all([
         tx.get(tiendaRef), tx.get(tiendaPrivadaRef), tx.get(consultaRef),
       ]);
+      const canales = tienda.data()?.canalesContacto as { formulario?: { habilitado?: unknown } } | undefined;
+      const recibeFormulario = typeof canales?.formulario?.habilitado === 'boolean'
+        ? canales.formulario.habilitado
+        : ['formulario', 'ambos'].includes(String(tienda.data()?.formaContacto ?? 'formulario'));
       if (!tienda.exists || !privada.exists || tienda.get('estadoPublicacion') !== 'publicado' ||
-          tienda.get('habilitada') !== true || !['formulario', 'ambos'].includes(tienda.get('formaContacto') ?? 'formulario')) {
+          tienda.get('habilitada') !== true || !recibeFormulario) {
         throw new ErrorOperacion('no-disponible', 'La tienda no recibe consultas por formulario.');
       }
       if (existente.exists) return { recibida: true };

@@ -14,6 +14,14 @@ import java.util.UUID
 
 data class ContactoEmprendedora(val tipo: String, val valor: String)
 
+data class CanalesContactoTienda(
+    val whatsappHabilitado: Boolean = false,
+    val whatsappNumero: String = "",
+    val formularioHabilitado: Boolean = false,
+    val correoHabilitado: Boolean = false,
+    val correoDireccion: String = ""
+)
+
 data class CuentaEmprendedora(
     val uid: String,
     val tiendaId: String,
@@ -31,7 +39,8 @@ data class TiendaEmprendedora(
     val estadoPublicacion: String,
     val versionEsperada: String,
     val logo: String? = null,
-    val direccion: String = ""
+    val direccion: String = "",
+    val canalesContacto: CanalesContactoTienda = CanalesContactoTienda()
 )
 
 data class OpcionCatalogoEmprendedora(val id: String, val nombre: String)
@@ -120,6 +129,7 @@ class CuentaEmprendedoraRepository(
 
     suspend fun guardarTienda(cuenta: CuentaEmprendedora, propuesta: TiendaEmprendedora) = withContext(Dispatchers.IO) {
         val contacto = propuesta.contacto?.let { mapOf("tipo" to it.tipo, "valor" to it.valor) }
+        val canales = propuesta.canalesContacto
         api.llamar(
             "editarTiendaEmprendedora",
             mapOf(
@@ -127,7 +137,9 @@ class CuentaEmprendedoraRepository(
                 "operacionId" to operationId(
                     "editarTienda", cuenta.tiendaId, propuesta.versionEsperada, propuesta.nombre,
                     propuesta.descripcion, propuesta.direccion, propuesta.tipoEmprendimientoId, propuesta.sectorId,
-                    propuesta.contacto?.tipo.orEmpty(), propuesta.contacto?.valor.orEmpty(), propuesta.mostrarContacto.toString()
+                    propuesta.contacto?.tipo.orEmpty(), propuesta.contacto?.valor.orEmpty(), propuesta.mostrarContacto.toString(),
+                    canales.whatsappHabilitado.toString(), canales.whatsappNumero,
+                    canales.formularioHabilitado.toString(), canales.correoHabilitado.toString(), canales.correoDireccion
                 ),
                 "versionEsperada" to propuesta.versionEsperada,
                 "nombre" to propuesta.nombre,
@@ -136,7 +148,12 @@ class CuentaEmprendedoraRepository(
                 "sectorId" to propuesta.sectorId,
                 "direccion" to propuesta.direccion,
                 "contacto" to contacto,
-                "mostrarContacto" to propuesta.mostrarContacto
+                "mostrarContacto" to propuesta.mostrarContacto,
+                "canalesContacto" to mapOf(
+                    "whatsapp" to mapOf("habilitado" to canales.whatsappHabilitado, "numero" to canales.whatsappNumero),
+                    "formulario" to mapOf("habilitado" to canales.formularioHabilitado),
+                    "correo" to mapOf("habilitado" to canales.correoHabilitado, "direccion" to canales.correoDireccion)
+                )
             )
         )
         val fresh = Tasks.await(db.collection("tiendasPrivadas").document(cuenta.tiendaId).get())
@@ -196,6 +213,29 @@ class CuentaEmprendedoraRepository(
             val valor = contactoMap["valor"] as? String
             if (tipo == null || valor == null) null else ContactoEmprendedora(tipo, valor)
         }
+        val canalesMap = data["canalesContacto"] as? Map<*, *>
+        val whatsappMap = canalesMap?.get("whatsapp") as? Map<*, *>
+        val formularioMap = canalesMap?.get("formulario") as? Map<*, *>
+        val correoMap = canalesMap?.get("correo") as? Map<*, *>
+        val canalesContacto = if (canalesMap != null) {
+            CanalesContactoTienda(
+                whatsappHabilitado = whatsappMap?.get("habilitado") == true,
+                whatsappNumero = whatsappMap?.get("numero") as? String ?: "",
+                formularioHabilitado = formularioMap?.get("habilitado") == true,
+                correoHabilitado = correoMap?.get("habilitado") as? Boolean
+                    ?: (data["mostrarContacto"] == true && contacto?.tipo == "correo"),
+                correoDireccion = correoMap?.get("direccion") as? String
+                    ?: contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty()
+            )
+        } else {
+            CanalesContactoTienda(
+                whatsappHabilitado = data["mostrarContacto"] == true && contacto?.tipo == "whatsapp",
+                whatsappNumero = contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty(),
+                formularioHabilitado = true,
+                correoHabilitado = data["mostrarContacto"] == true && contacto?.tipo == "correo",
+                correoDireccion = contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty()
+            )
+        }
         return TiendaEmprendedora(
             nombre = data["nombre"] as? String ?: "",
             descripcion = data["descripcion"] as? String ?: "",
@@ -206,7 +246,8 @@ class CuentaEmprendedoraRepository(
             estadoPublicacion = data["estadoPublicacion"] as? String ?: "borrador",
             versionEsperada = "${actualizadoEn.seconds}:${actualizadoEn.nanoseconds}",
             logo = data["logo"] as? String,
-            direccion = data["direccion"] as? String ?: ""
+            direccion = data["direccion"] as? String ?: "",
+            canalesContacto = canalesContacto
         )
     }
 

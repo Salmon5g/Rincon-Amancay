@@ -46,7 +46,12 @@ data class TiendaCatalogoComprador(
     val sectorId: String,
     val mostrarPrecios: Boolean = true,
     val formaContacto: String = "formulario",
-    val contacto: ContactoCatalogoComprador? = null
+    val contacto: ContactoCatalogoComprador? = null,
+    val whatsappHabilitado: Boolean = false,
+    val whatsappNumero: String = "",
+    val formularioHabilitado: Boolean = true,
+    val correoHabilitado: Boolean = false,
+    val correoDireccion: String = ""
 )
 
 data class IntegranteAsociacionCatalogo(val tiendaId: String, val nombre: String)
@@ -183,18 +188,33 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                 }
                 val documentos = snapshot?.documents.orEmpty()
                 val tiendasNuevas = documentos.associate { documento ->
+                    val contacto = (documento.get("contacto") as? Map<*, *>)?.let { datos ->
+                        val tipo = datos["tipo"] as? String
+                        val valor = datos["valor"] as? String
+                        if (tipo != null && valor != null) ContactoCatalogoComprador(tipo, valor) else null
+                    }
+                    val canales = documento.get("canalesContacto") as? Map<*, *>
+                    val whatsapp = canales?.get("whatsapp") as? Map<*, *>
+                    val formulario = canales?.get("formulario") as? Map<*, *>
+                    val correo = canales?.get("correo") as? Map<*, *>
+                    val formaContacto = documento.getString("formaContacto") ?: "formulario"
                     documento.id to TiendaCatalogoComprador(
                         id = documento.id,
                         nombre = documento.getString("nombre")?.takeIf(String::isNotBlank) ?: documento.id,
                         tipoId = documento.getString("tipoEmprendimientoId").orEmpty(),
                         sectorId = documento.getString("sectorId").orEmpty(),
                         mostrarPrecios = documento.getBoolean("mostrarPrecios") == true,
-                        formaContacto = documento.getString("formaContacto") ?: "formulario",
-                        contacto = (documento.get("contacto") as? Map<*, *>)?.let { contacto ->
-                            val tipo = contacto["tipo"] as? String
-                            val valor = contacto["valor"] as? String
-                            if (tipo != null && valor != null) ContactoCatalogoComprador(tipo, valor) else null
-                        }
+                        formaContacto = formaContacto,
+                        contacto = contacto,
+                        whatsappHabilitado = whatsapp?.get("habilitado") as? Boolean
+                            ?: (formaContacto in listOf("whatsapp", "ambos") && contacto?.tipo == "whatsapp"),
+                        whatsappNumero = (whatsapp?.get("numero") as? String)
+                            ?: contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty(),
+                        formularioHabilitado = formulario?.get("habilitado") as? Boolean
+                            ?: (formaContacto in listOf("formulario", "ambos")),
+                        correoHabilitado = correo?.get("habilitado") as? Boolean ?: contacto?.tipo == "correo",
+                        correoDireccion = (correo?.get("direccion") as? String)
+                            ?: contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty()
                     )
                 }
                 tiendas.clear()
