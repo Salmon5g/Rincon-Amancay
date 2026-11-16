@@ -4,10 +4,20 @@ import { sendPasswordResetEmail } from 'firebase/auth'
 import '~/assets/amancay-tokens.css'
 import { cargarCuentaEmprendedora, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
 
-type Seccion = 'inicio' | 'productos' | 'agregar' | 'mas'
+type Seccion = 'inicio' | 'productos' | 'agregar' | 'ventas' | 'mas'
 type Filtro = 'todos' | 'publicado' | 'borrador' | 'archivado'
 type TipoContacto = 'whatsapp' | 'correo' | 'web'
 type ElementoCatalogo = { id: string; nombre: string }
+type OperacionVentaPendiente = {
+  firma: string
+  id: string
+  fecha: string
+  tiendaId: string
+  productoId: string
+  varianteId: string | null
+  cantidad: number
+  lugarTexto: string
+}
 
 useHead({
   title: 'Mi espacio emprendedora — Rincón Amancay',
@@ -21,6 +31,7 @@ const secciones: { id: Seccion; nombre: string; icono: string }[] = [
   { id: 'inicio', nombre: 'Inicio', icono: '⌂' },
   { id: 'productos', nombre: 'Productos', icono: '▦' },
   { id: 'agregar', nombre: 'Agregar', icono: '+' },
+  { id: 'ventas', nombre: 'Ventas', icono: '↗' },
   { id: 'mas', nombre: 'Más', icono: '•••' },
 ]
 const cuenta = ref<Awaited<ReturnType<typeof cargarCuentaEmprendedora>> | null>(null)
@@ -35,13 +46,14 @@ const error = ref('')
 const aviso = ref('')
 const ruta = useRoute()
 const router = useRouter()
-const vistasValidas = new Set<Seccion>(['inicio', 'productos', 'agregar', 'mas'])
+const vistasValidas = new Set<Seccion>(['inicio', 'productos', 'agregar', 'ventas', 'mas'])
 const vistaEnUrl = typeof ruta.query.vista === 'string' && vistasValidas.has(ruta.query.vista as Seccion)
   ? ruta.query.vista as Seccion
   : 'inicio'
 const seccion = ref<Seccion>(vistaEnUrl)
 const filtro = ref<Filtro>('todos')
 const fecha = ref('')
+const productoEnEdicion = ref<string | null>(null)
 const editandoTienda = ref(false)
 const cargandoEdicionTienda = ref(false)
 const guardandoTienda = ref(false)
@@ -64,6 +76,12 @@ const logoSeleccionado = ref<File | null>(null)
 const logoArchivoId = ref('')
 const logoVistaPrevia = ref('')
 const logoInput = ref<HTMLInputElement | null>(null)
+const productoVentaId = ref('')
+const varianteVentaId = ref('')
+const cantidadVenta = ref('1')
+const lugarVenta = ref('Tienda en línea')
+const guardandoVenta = ref(false)
+const operacionVentaPendiente = ref<OperacionVentaPendiente | null>(null)
 
 const { $catalogoPublico } = useNuxtApp()
 
@@ -83,6 +101,33 @@ const productosFiltrados = computed(() => {
   const productos = cuenta.value?.productos ?? []
   return filtro.value === 'todos' ? productos : productos.filter((producto) => producto.estado === filtro.value)
 })
+const productoVenta = computed(() => cuenta.value?.productos.find((producto) => producto.id === productoVentaId.value) ?? null)
+const variantesVendibles = computed(() => {
+  const producto = productoVenta.value
+  if (!producto?.tieneVariantes) return []
+  return producto.variantes.filter((variante) => (variante.activa && (!producto.manejaStock || (variante.stock ?? 0) > 0))
+    || (operacionVentaPendiente.value?.productoId === producto.id && operacionVentaPendiente.value.varianteId === variante.id))
+})
+const varianteVenta = computed(() => variantesVendibles.value.find((variante) => variante.id === varianteVentaId.value) ?? null)
+const productosVendibles = computed(() => (cuenta.value?.productos ?? []).filter((producto) => {
+  if (cuenta.value?.tienda.estadoPublicacion !== 'publicado') return false
+  if (producto.estado !== 'publicado' || !producto.disponible || producto.piezaUnicaVendida) return false
+  if (producto.tieneVariantes) return producto.variantes.some((variante) => variante.activa && (!producto.manejaStock || (variante.stock ?? 0) > 0))
+  return !producto.manejaStock || (producto.stock ?? 0) > 0
+}))
+const productosFormularioVenta = computed(() => {
+  const disponibles = [...productosVendibles.value]
+  const pendienteId = operacionVentaPendiente.value?.productoId
+  const pendiente = pendienteId ? cuenta.value?.productos.find((producto) => producto.id === pendienteId) : null
+  if (pendiente && !disponibles.some((producto) => producto.id === pendiente.id)) disponibles.unshift(pendiente)
+  return disponibles
+})
+const precioVenta = computed(() => productoVenta.value?.tieneVariantes
+  ? varianteVenta.value?.precio ?? null
+  : productoVenta.value?.precioBase ?? null)
+const stockVenta = computed(() => productoVenta.value?.tieneVariantes
+  ? varianteVenta.value?.stock ?? null
+  : productoVenta.value?.stock ?? null)
 const sectoresTienda = computed(() => {
   const opciones = catalogosTienda.value?.sectores ?? []
   const actual = cuenta.value?.tienda.sectorId
@@ -151,8 +196,10 @@ async function ingresar() {
     servicio = cliente()
     const resultado = await servicio.iniciarSesion(correo.value.trim(), contrasena.value)
     cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, resultado.user.uid)
+    restaurarVentaPendiente()
+    if (operacionVentaPendiente.value) seccion.value = 'ventas'
     contrasena.value = ''
-    seccion.value = 'inicio'
+    if (!operacionVentaPendiente.value) seccion.value = 'inicio'
   } catch (fallo) {
     if (servicio) {
       try { await servicio.cerrarSesion() } catch {}
@@ -386,6 +433,10 @@ async function cerrarSesion() {
   cuenta.value = null
   contrasena.value = ''
   seccion.value = 'inicio'
+  productoEnEdicion.value = null
+  productoVentaId.value = ''
+  varianteVentaId.value = ''
+  operacionVentaPendiente.value = null
   aviso.value = ''
   error.value = ''
 }
@@ -393,8 +444,197 @@ async function cerrarSesion() {
 function irA(destino: Seccion) {
   seccion.value = destino
   filtro.value = 'todos'
+  if (destino !== 'agregar') productoEnEdicion.value = null
   aviso.value = ''
   error.value = ''
+}
+
+function abrirNuevoProducto() {
+  productoEnEdicion.value = null
+  irA('agregar')
+}
+
+function editarProducto(productoId: string) {
+  productoEnEdicion.value = productoId
+  irA('agregar')
+}
+
+function abrirVenta(productoId = '') {
+  if (operacionVentaPendiente.value) {
+    irA('ventas')
+    return
+  }
+  productoVentaId.value = productoId
+  varianteVentaId.value = ''
+  cantidadVenta.value = '1'
+  lugarVenta.value = 'Tienda en línea'
+  irA('ventas')
+}
+
+watch(productoVentaId, (id) => {
+  if (operacionVentaPendiente.value) return
+  const producto = cuenta.value?.productos.find((item) => item.id === id)
+  varianteVentaId.value = producto?.tieneVariantes
+    ? producto.variantes.find((item) => item.activa && (!producto.manejaStock || (item.stock ?? 0) > 0))?.id ?? ''
+    : ''
+  cantidadVenta.value = '1'
+})
+
+watch(varianteVentaId, () => {
+  if (operacionVentaPendiente.value) return
+  cantidadVenta.value = '1'
+})
+
+function claveVentaPendiente(uid: string, tiendaId: string) {
+  return `amancay:venta-web:${uid}:${tiendaId}`
+}
+
+function guardarVentaPendiente(pendiente: OperacionVentaPendiente | null) {
+  if (!import.meta.client || !cuenta.value) return
+  const clave = claveVentaPendiente(cuenta.value.uid, cuenta.value.tienda.id)
+  try {
+    if (pendiente) localStorage.setItem(clave, JSON.stringify(pendiente))
+    else localStorage.removeItem(clave)
+  } catch {}
+}
+
+function restaurarVentaPendiente() {
+  if (!import.meta.client || !cuenta.value) return
+  const clave = claveVentaPendiente(cuenta.value.uid, cuenta.value.tienda.id)
+  try {
+    const guardada = localStorage.getItem(clave)
+    if (!guardada) return
+    const datos = JSON.parse(guardada) as Partial<OperacionVentaPendiente>
+    const esValida = typeof datos.id === 'string' && typeof datos.firma === 'string'
+      && typeof datos.fecha === 'string' && Number.isFinite(Date.parse(datos.fecha))
+      && datos.tiendaId === cuenta.value.tienda.id && typeof datos.productoId === 'string'
+      && (datos.varianteId === null || typeof datos.varianteId === 'string')
+      && Number.isSafeInteger(datos.cantidad) && Number(datos.cantidad) > 0 && Number(datos.cantidad) <= 10000
+      && typeof datos.lugarTexto === 'string'
+    if (!esValida) {
+      localStorage.removeItem(clave)
+      return
+    }
+    operacionVentaPendiente.value = datos as OperacionVentaPendiente
+    productoVentaId.value = datos.productoId!
+    varianteVentaId.value = datos.varianteId ?? ''
+    cantidadVenta.value = String(datos.cantidad)
+    lugarVenta.value = datos.lugarTexto!
+    error.value = 'Hay una venta cuyo resultado no se confirmó. Reintenta con el mismo botón para consultar el resultado sin registrarla dos veces.'
+  } catch {
+    localStorage.removeItem(clave)
+  }
+}
+
+async function guardarProductoTerminado(resultado: { productoId: string; publicado: boolean }) {
+  error.value = ''
+  let actualizada = false
+  if (cuenta.value) {
+    try {
+      cuenta.value = await cargarCuentaEmprendedora(cliente().firebase, cuenta.value.uid)
+      actualizada = true
+    } catch {}
+  }
+  productoEnEdicion.value = null
+  seccion.value = 'productos'
+  aviso.value = actualizada
+    ? (resultado.publicado ? 'El producto se guardó y se publicó en el catálogo de tu tienda.' : 'El producto se guardó como borrador.')
+    : 'El producto se guardó. No pudimos actualizar la lista; recarga la página para ver el cambio.'
+}
+
+async function registrarVentaWeb() {
+  if (!cuenta.value) return
+  error.value = ''
+  aviso.value = ''
+  let pendiente = operacionVentaPendiente.value
+  if (!pendiente) {
+    if (!productoVenta.value) return
+    const cantidad = Number(cantidadVenta.value)
+    if (!Number.isSafeInteger(cantidad) || cantidad < 1 || cantidad > 10000) {
+      error.value = 'La cantidad debe ser un número entero entre 1 y 10.000.'
+      return
+    }
+    const producto = productoVenta.value
+    const variante = producto.tieneVariantes ? varianteVenta.value : null
+    if (producto.tieneVariantes && !variante) {
+      error.value = 'Selecciona una variante disponible.'
+      return
+    }
+    if (producto.manejaStock && (stockVenta.value === null || cantidad > stockVenta.value)) {
+      error.value = 'La cantidad supera el stock disponible. Actualiza la página y vuelve a intentarlo.'
+      return
+    }
+    if (producto.modalidad === 'pieza_unica' && cantidad !== 1) {
+      error.value = 'Una pieza única se registra de una en una.'
+      return
+    }
+    const lugarTexto = lugarVenta.value.trim()
+    if (!lugarTexto || lugarTexto.length > 200) {
+      error.value = 'Escribe el lugar de la venta (hasta 200 caracteres).'
+      return
+    }
+    pendiente = {
+      firma: JSON.stringify([cuenta.value.tienda.id, producto.id, variante?.id ?? null, cantidad, lugarTexto]),
+      id: crypto.randomUUID(),
+      fecha: new Date().toISOString(),
+      tiendaId: cuenta.value.tienda.id,
+      productoId: producto.id,
+      varianteId: variante?.id ?? null,
+      cantidad,
+      lugarTexto,
+    }
+    operacionVentaPendiente.value = pendiente
+    guardarVentaPendiente(pendiente)
+  }
+  guardandoVenta.value = true
+  try {
+    const resultado = await cliente().llamar('registrarVenta', {
+      tiendaId: pendiente.tiendaId,
+      productoId: pendiente.productoId,
+      ...(pendiente.varianteId ? { varianteId: pendiente.varianteId } : {}),
+      cantidad: pendiente.cantidad,
+      operacionId: pendiente.id,
+      lugarTipo: 'otro',
+      lugarTexto: pendiente.lugarTexto,
+      fecha: pendiente.fecha,
+    })
+    operacionVentaPendiente.value = null
+    guardarVentaPendiente(null)
+    const producto = cuenta.value.productos.find((item) => item.id === pendiente!.productoId)
+    const actualizacion = resultado.actualizacionCatalogo
+    const detalleCatalogo = actualizacion === 'actualizado'
+      ? 'El catálogo público ya muestra el stock actualizado.'
+      : actualizacion === 'oculto'
+        ? 'El producto se retiró u ocultó del catálogo público según su disponibilidad.'
+        : actualizacion === 'requiere_republicar'
+          ? 'El stock se guardó, pero el catálogo público requiere volver a publicar el producto.'
+          : producto?.manejaStock
+            ? 'El stock se guardó; no había una publicación pública vigente para sincronizar.'
+            : 'Este producto no controla stock, así que el catálogo no cambió.'
+    aviso.value = resultado.historialRegistrado === true
+      ? `Venta registrada. ${detalleCatalogo}`
+      : `Stock actualizado; el historial de ventas está desactivado. ${detalleCatalogo}`
+    try {
+      cuenta.value = await cargarCuentaEmprendedora(cliente().firebase, cuenta.value.uid)
+      productoVentaId.value = ''
+      varianteVentaId.value = ''
+      cantidadVenta.value = '1'
+    } catch {
+      aviso.value += ' Recarga la página para actualizar la lista de stock.'
+    }
+  } catch (fallo) {
+    error.value = mensajeDeError(fallo)
+    const resultadoIncierto = typeof fallo === 'object' && fallo !== null && 'resultadoIncierto' in fallo
+      && (fallo as { resultadoIncierto?: unknown }).resultadoIncierto === true
+    if (!resultadoIncierto) {
+      operacionVentaPendiente.value = null
+      guardarVentaPendiente(null)
+    } else {
+      error.value += ' No cambies los datos; reintenta la misma operación.'
+    }
+  } finally {
+    guardandoVenta.value = false
+  }
 }
 
 watch(seccion, (vista) => {
@@ -417,8 +657,30 @@ function precioBonito(precio: number | null) {
 
 function stockBonito(producto: ProductoEmprendedoraWeb) {
   if (!producto.manejaStock) return producto.modalidad === 'a_pedido' ? 'Por encargo' : 'Sin control de stock'
-  if (producto.stock === null) return 'Stock por variante'
+  if (producto.tieneVariantes) {
+    const total = producto.variantes.filter((variante) => variante.activa).reduce((suma, variante) => suma + (variante.stock ?? 0), 0)
+    return `${total} ${total === 1 ? 'unidad' : 'unidades'} en variantes`
+  }
+  if (producto.stock === null) return 'Stock no disponible'
   return producto.stock + (producto.stock === 1 ? ' unidad' : ' unidades')
+}
+
+function precioProductoBonito(producto: ProductoEmprendedoraWeb) {
+  if (!producto.tieneVariantes) return precioBonito(producto.precioBase)
+  const precios = producto.variantes.filter((variante) => variante.activa).map((variante) => variante.precio)
+  if (!precios.length) return 'Sin variantes activas'
+  const minimo = Math.min(...precios)
+  const maximo = Math.max(...precios)
+  return minimo === maximo ? precioBonito(minimo) : `Desde ${precioBonito(minimo)}`
+}
+
+function varianteBonita(variante: ProductoEmprendedoraWeb['variantes'][number]) {
+  return Object.values(variante.opciones).join(' · ') || variante.id
+}
+
+function opcionVarianteVenta(variante: ProductoEmprendedoraWeb['variantes'][number]) {
+  const stock = productoVenta.value?.manejaStock ? ` · ${variante.stock ?? 0} disponibles` : ''
+  return `${varianteBonita(variante)} · ${precioBonito(variante.precio)}${stock}`
 }
 
 function estadoBonito(estado: ProductoEmprendedoraWeb['estado']) {
@@ -431,6 +693,7 @@ onMounted(async () => {
   fecha.value = new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
   try {
     await revisarSesion()
+    restaurarVentaPendiente()
   } catch (fallo) {
     error.value = mensajeDeError(fallo)
   } finally {
@@ -449,7 +712,7 @@ onMounted(async () => {
       <div class="etiqueta-lateral">ESPACIO EMPRENDEDORA</div>
       <nav class="menu-lateral" aria-label="Navegación emprendedora">
         <template v-if="cuenta">
-          <button v-for="item in secciones" :key="item.id" class="opcion-menu" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" type="button" @click="irA(item.id)">
+          <button v-for="item in secciones" :key="item.id" class="opcion-menu" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" type="button" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)">
             <span class="icono-menu" aria-hidden="true">{{ item.icono }}</span>{{ item.nombre }}
             <span v-if="item.id === 'productos' && borradores" class="contador-menu">{{ borradores }}</span>
           </button>
@@ -509,10 +772,11 @@ onMounted(async () => {
         <div v-if="!(seccion === 'mas' && editandoTienda)" class="cabecera-panel">
           <div>
             <span class="sobre-titulo">HOLA, {{ nombrePersona().toUpperCase() }}</span>
-            <h1>{{ seccion === 'inicio' ? 'Tu tienda, paso a paso' : seccion === 'productos' ? 'Mis productos' : seccion === 'agregar' ? 'Un nuevo producto' : 'Tu espacio' }}</h1>
+            <h1>{{ seccion === 'inicio' ? 'Tu tienda, paso a paso' : seccion === 'productos' ? 'Mis productos' : seccion === 'agregar' ? (productoEnEdicion ? 'Editar producto' : 'Un nuevo producto') : seccion === 'ventas' ? 'Registrar una venta' : 'Tu espacio' }}</h1>
             <p v-if="seccion === 'inicio'">Administra tus productos y revisa cómo va tu tienda.</p>
             <p v-else-if="seccion === 'productos'">Revisa el estado de los productos de tu tienda.</p>
-            <p v-else-if="seccion === 'agregar'">Prepara una nueva pieza para compartir con tus clientes.</p>
+            <p v-else-if="seccion === 'agregar'">{{ productoEnEdicion ? 'Actualiza la ficha y refleja los cambios en tu catálogo.' : 'Prepara una nueva pieza para compartir con tus clientes.' }}</p>
+            <p v-else-if="seccion === 'ventas'">Registra una venta y actualiza el stock de la variante correspondiente.</p>
             <p v-else>Tu cuenta y los datos principales de tu emprendimiento.</p>
           </div>
           <span v-if="fecha" class="fecha-hoy">{{ fecha }}</span>
@@ -521,7 +785,7 @@ onMounted(async () => {
         <template v-if="seccion === 'inicio'">
           <div class="tarjeta-accion">
             <div><span class="sobre-titulo claro">UN PASO A LA VEZ</span><h2>¿Qué quieres hacer hoy?</h2><p>Elige una acción. Te acompañamos en cada paso.</p></div>
-            <button class="boton-blanco" type="button" @click="irA('agregar')"><span aria-hidden="true">＋</span> Agregar producto</button>
+            <button class="boton-blanco" type="button" @click="abrirNuevoProducto"><span aria-hidden="true">＋</span> Agregar producto</button>
             <span class="flor-tarjeta" aria-hidden="true">✿</span>
           </div>
           <button class="tarjeta-resumen" type="button" @click="irA('productos')">
@@ -544,7 +808,7 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="seccion === 'productos'">
-          <div class="encabezado-seccion"><div><span class="sobre-titulo">MI CATÁLOGO</span><h2>Productos de {{ cuenta.tienda.nombre || 'mi tienda' }}</h2></div><button class="boton-vino compacto" type="button" @click="irA('agregar')">＋ Agregar</button></div>
+          <div class="encabezado-seccion"><div><span class="sobre-titulo">MI CATÁLOGO</span><h2>Productos de {{ cuenta.tienda.nombre || 'mi tienda' }}</h2></div><button class="boton-vino compacto" type="button" @click="abrirNuevoProducto">＋ Agregar</button></div>
           <div class="filtros-productos" role="group" aria-label="Filtrar productos">
             <button type="button" :class="{ activo: filtro === 'todos' }" @click="filtro = 'todos'">Todos · {{ cuenta.productos.length }}</button>
             <button type="button" :class="{ activo: filtro === 'publicado' }" @click="filtro = 'publicado'">Publicados · {{ publicados }}</button>
@@ -558,28 +822,65 @@ onMounted(async () => {
                 <span v-else aria-hidden="true">{{ producto.nombre.trim().charAt(0).toUpperCase() || '✿' }}</span>
               </div>
               <div class="datos-producto"><strong>{{ producto.nombre || 'Producto sin nombre' }}</strong><p>{{ producto.descripcion || 'Sin descripción' }}</p>
-                <div class="metadatos-producto"><span>{{ precioBonito(producto.precioBase) }}</span><span>·</span><span>{{ stockBonito(producto) }}</span></div>
+                <div class="metadatos-producto"><span>{{ precioProductoBonito(producto) }}</span><span>·</span><span>{{ stockBonito(producto) }}</span></div>
               </div>
               <span class="estado-producto" :class="producto.estado">{{ estadoBonito(producto.estado) }}</span>
+              <div class="acciones-producto">
+                <button class="boton-secundario" type="button" @click="editarProducto(producto.id)">Editar</button>
+                <button v-if="productosVendibles.some((item) => item.id === producto.id)" class="boton-vino" type="button" @click="abrirVenta(producto.id)">Registrar venta</button>
+              </div>
             </article>
           </div>
           <div v-else class="vacio-productos"><span aria-hidden="true">✿</span><h3>{{ filtro === 'todos' ? 'Todavía no hay productos' : 'No hay productos en esta lista' }}</h3>
             <p>{{ filtro === 'todos' ? 'Cuando agregues tus productos, aparecerán aquí para que puedas revisar su estado.' : 'Prueba con otro filtro para ver tus productos.' }}</p>
-            <button v-if="filtro === 'todos'" class="boton-vino" type="button" @click="irA('agregar')">＋ Agregar producto</button>
+            <button v-if="filtro === 'todos'" class="boton-vino" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
           </div>
         </template>
 
         <template v-else-if="seccion === 'agregar'">
-          <section class="tarjeta-agregar"><div class="icono-agregar"><img src="/logo-amancay.png" alt="" /></div><span class="sobre-titulo">NUEVA CREACIÓN</span>
-            <h2>Tu próximo producto empieza con una idea.</h2>
-            <p>En la app emprendedora puedes agregar fotos, completar los detalles y preparar variantes antes de publicar.</p>
-            <div class="pasos-agregar">
-              <div><span>01</span><strong>Cuenta qué haces</strong><small>Nombre, categoría y detalles</small></div>
-              <div><span>02</span><strong>Agrega una imagen</strong><small>Una foto ayuda a mostrar tu trabajo</small></div>
-              <div><span>03</span><strong>Revisa y publica</strong><small>Precios, stock y visibilidad</small></div>
+          <EmprendedoraProductoEditor :cuenta="cuenta" :producto-id="productoEnEdicion" @cancelar="irA('productos')" @guardado="guardarProductoTerminado" />
+        </template>
+
+        <template v-else-if="seccion === 'ventas'">
+          <section class="tarjeta-ventas-web">
+            <header><span class="sobre-titulo">VENTA DE MI CATÁLOGO</span><h2>¿Qué producto vendiste?</h2><p>El stock se descuenta del producto o la variante seleccionada y se sincroniza con la tienda pública.</p></header>
+            <form v-if="productosFormularioVenta.length || operacionVentaPendiente" class="formulario-venta-web" @submit.prevent="registrarVentaWeb">
+              <label class="campo-venta-web">Producto
+                <select v-model="productoVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
+                  <option value="" disabled>Selecciona un producto</option>
+                  <option v-for="producto in productosFormularioVenta" :key="producto.id" :value="producto.id">{{ producto.nombre }} · {{ precioProductoBonito(producto) }}</option>
+                  <option v-if="operacionVentaPendiente && !productosFormularioVenta.some((producto) => producto.id === operacionVentaPendiente?.productoId)" :value="operacionVentaPendiente.productoId">Venta pendiente por confirmar</option>
+                </select>
+              </label>
+              <label v-if="productoVenta?.tieneVariantes" class="campo-venta-web">Variante
+                <select v-model="varianteVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
+                  <option value="" disabled>Selecciona una variante disponible</option>
+                  <option v-for="variante in variantesVendibles" :key="variante.id" :value="variante.id">{{ opcionVarianteVenta(variante) }}</option>
+                </select>
+              </label>
+              <div v-if="productoVenta" class="resumen-venta-web">
+                <span>Precio unitario <strong>{{ precioVenta === null ? '—' : precioBonito(precioVenta) }}</strong></span>
+                <span v-if="productoVenta.manejaStock">Stock disponible <strong>{{ stockVenta ?? 0 }}</strong></span>
+              </div>
+              <div class="campos-venta-web">
+                <label class="campo-venta-web">Cantidad
+                  <input v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
+                </label>
+                <label class="campo-venta-web">Lugar de la venta
+                  <input v-model="lugarVenta" type="text" maxlength="200" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
+                  <small>Se guarda en el historial si está activado en tu tienda.</small>
+                </label>
+              </div>
+              <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
+              <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
+              <button class="boton-vino boton-registro-venta" type="submit" :disabled="guardandoVenta">
+                {{ guardandoVenta ? 'Guardando venta…' : operacionVentaPendiente ? 'Reintentar la misma venta' : 'Registrar venta' }}
+              </button>
+            </form>
+            <div v-else class="sin-productos-venta">
+              <p>No hay productos publicados y disponibles para vender. Publica un producto o revisa su disponibilidad en el catálogo.</p>
+              <button class="boton-vino" type="button" @click="irA('productos')">Revisar mis productos</button>
             </div>
-            <div class="nota-web"><span aria-hidden="true">i</span><p>Por ahora, la creación y edición de productos se realiza desde la app Android. Esta página muestra tu cuenta y catálogo.</p></div>
-            <button class="boton-vino" type="button" @click="irA('productos')">Volver a mis productos</button>
           </section>
         </template>
 
@@ -721,7 +1022,7 @@ onMounted(async () => {
       </section>
 
       <nav v-if="cuenta" class="navegacion-movil" aria-label="Navegación emprendedora">
-        <button v-for="item in secciones" :key="item.id" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
+        <button v-for="item in secciones" :key="item.id" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
       </nav>
     </main>
   </div>
@@ -1045,4 +1346,7 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
   .portada-vista-previa{min-height:140px;padding:19px}.portada-vista-previa span{font-size:22px}.portada-vista-previa i{left:19px;bottom:18px}
   .cuerpo-vista-previa{gap:11px;padding:15px}.logo-vista-previa{flex-basis:66px;height:66px}.texto-vista-previa h3{font-size:20px}.texto-vista-previa p{font-size:11px}.sector-vista-previa{font-size:10px}
   .barra-acciones-editor{gap:8px;margin-top:14px;padding:10px 0 calc(10px + env(safe-area-inset-bottom))}.boton-cancelar-editor,.boton-guardar-editor{min-width:0;min-height:47px;flex:1;font-size:12px}.boton-guardar-editor{flex:1.25}
+.acciones-producto{display:flex;align-items:center;gap:8px;margin-left:auto}.acciones-producto .boton-vino,.acciones-producto .boton-secundario{min-height:38px;padding:0 12px;font-size:10px}
+.tarjeta-ventas-web{display:grid;gap:20px;max-width:760px;padding:clamp(18px,3vw,30px);border:1px solid var(--borde);border-radius:24px;background:var(--amancay-superficie);box-shadow:0 12px 36px rgba(46,27,32,.05)}.tarjeta-ventas-web>header h2{margin:7px 0;color:var(--texto);font:400 clamp(27px,3vw,36px)/1.12 'DM Serif Display',Georgia,serif}.tarjeta-ventas-web>header p{max-width:600px;margin:0;color:var(--suave);font-size:12px;line-height:1.65}.formulario-venta-web{display:grid;gap:17px}.campo-venta-web{display:grid;gap:7px;color:var(--texto);font-size:12px;font-weight:700}.campo-venta-web select,.campo-venta-web input{width:100%;min-height:48px;padding:11px 13px;border:1px solid var(--borde);border-radius:13px;background:#fffdf9;color:var(--texto);font:500 13px 'Plus Jakarta Sans',sans-serif;outline:none}.campo-venta-web select:focus,.campo-venta-web input:focus{border-color:var(--vino);box-shadow:0 0 0 3px rgba(107,30,61,.1)}.campo-venta-web small{color:var(--suave);font-size:10px;font-weight:400;line-height:1.5}.resumen-venta-web{display:flex;flex-wrap:wrap;gap:9px 20px;padding:14px 16px;border-radius:14px;background:var(--crema);color:var(--suave);font-size:11px}.resumen-venta-web span{display:flex;align-items:center;gap:8px}.resumen-venta-web strong{color:var(--vino);font-size:13px}.campos-venta-web{display:grid;grid-template-columns:minmax(110px,.65fr) minmax(0,1fr);gap:14px}.boton-registro-venta{min-height:50px}.boton-registro-venta:disabled{opacity:.62;cursor:wait}.sin-productos-venta{display:grid;justify-items:start;gap:13px;padding:17px;border-radius:15px;background:var(--crema)}.sin-productos-venta p{margin:0;color:var(--suave);font-size:12px;line-height:1.65}
+@media(max-width:740px){.acciones-producto{width:100%;margin-left:0}.tarjeta-ventas-web{gap:16px;padding:17px;border-radius:20px}.tarjeta-ventas-web>header h2{font-size:28px}.campos-venta-web{grid-template-columns:1fr}.resumen-venta-web{gap:9px 14px;padding:12px;font-size:10px}.resumen-venta-web span{justify-content:space-between;flex:1 1 100%}.navegacion-movil{grid-template-columns:repeat(5,1fr)}}
 }</style>
