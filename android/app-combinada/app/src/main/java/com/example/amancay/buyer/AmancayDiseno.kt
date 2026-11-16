@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.outlined.Search
@@ -39,6 +40,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -89,6 +92,8 @@ import com.example.amancay.ui.Fig
 @Composable
 fun BarraSuperiorAmancay(
     alVolver: (() -> Unit)? = null,
+    respuestasNuevas: Int = 0,
+    alVerRespuestas: (() -> Unit)? = null,
     contenidoSesion: (@Composable RowScope.() -> Unit)? = null
 ) {
     TopAppBar(
@@ -125,6 +130,21 @@ fun BarraSuperiorAmancay(
             }
         },
         actions = {
+            if (alVerRespuestas != null) {
+                BadgedBox(badge = {
+                    if (respuestasNuevas > 0) Badge(containerColor = AmancayNaranjaIcono) {
+                        Text(if (respuestasNuevas > 99) "99+" else respuestasNuevas.toString())
+                    }
+                }) {
+                    IconButton(onClick = alVerRespuestas) {
+                        Icon(
+                            Icons.Outlined.Notifications,
+                            contentDescription = if (respuestasNuevas > 0) "Ver $respuestasNuevas respuestas nuevas" else "Ver mis respuestas",
+                            tint = AmancayBordo
+                        )
+                    }
+                }
+            }
             if (contenidoSesion != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, content = contenidoSesion)
                 Spacer(Modifier.width(10.dp))

@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,7 +34,8 @@ data class ConsultaSeguida(
     val correo: String,
     val producto: String?,
     val mensaje: String,
-    val respuesta: String? = null
+    val respuesta: String? = null,
+    val respuestaVista: Boolean = false
 )
 
 internal fun leerConsultasGuardadas(context: Context): List<ConsultaSeguida> = runCatching {
@@ -41,7 +43,7 @@ internal fun leerConsultasGuardadas(context: Context): List<ConsultaSeguida> = r
     (0 until json.length()).mapNotNull { i ->
         val item = json.optJSONObject(i) ?: return@mapNotNull null
         ConsultaSeguida(item.getString("tiendaId"), item.getString("tienda"), item.getString("id"), item.getString("correo"),
-            item.optString("producto").takeIf(String::isNotBlank), item.getString("mensaje"), item.optString("respuesta").takeIf(String::isNotBlank))
+            item.optString("producto").takeIf(String::isNotBlank), item.getString("mensaje"), item.optString("respuesta").takeIf(String::isNotBlank), item.optBoolean("respuestaVista"))
     }
 }.getOrDefault(emptyList())
 
@@ -50,7 +52,7 @@ internal fun guardarConsultas(context: Context, consultas: List<ConsultaSeguida>
         consultas.forEach { item -> put(JSONObject().apply {
             put("tiendaId", item.tiendaId); put("tienda", item.tienda); put("id", item.operacionId)
             put("correo", item.correo); put("producto", item.producto ?: ""); put("mensaje", item.mensaje)
-            put("respuesta", item.respuesta ?: "")
+            put("respuesta", item.respuesta ?: ""); put("respuestaVista", item.respuestaVista)
         }) }
     }
     context.getSharedPreferences("consultas_comprador", Context.MODE_PRIVATE).edit().putString("consultas", json.toString()).apply()
@@ -61,8 +63,11 @@ internal fun RespuestasCompradorScreen(
     consultas: List<ConsultaSeguida>,
     cargando: Boolean,
     error: String?,
-    alActualizar: () -> Unit
+    alActualizar: () -> Unit,
+    alMarcarVistas: () -> Unit
 ) {
+    val sinLeer = consultas.count { it.respuesta != null && !it.respuestaVista }
+    LaunchedEffect(sinLeer) { if (sinLeer > 0) alMarcarVistas() }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
         Text("Mis consultas", style = MaterialTheme.typography.headlineLarge, color = AmancayBordo, fontWeight = FontWeight.Bold)
         Text("Aquí podrás leer las respuestas de las emprendedoras.", color = AmancayTintaSuave)
