@@ -128,6 +128,11 @@ internal fun DirectorioComprador(
                                 }
                                 Text("Integrantes", style = MaterialTheme.typography.headlineSmall, color = AmancayBordo, fontWeight = FontWeight.Bold)
                                 Text("Conoce sus productos y entra a sus tiendas.", color = AmancayTintaSuave)
+                                com.example.amancay.ui.BotonCodigoQr(
+                                    "Código QR de la asociación",
+                                    asociacionActual.nombre,
+                                    com.example.amancay.ui.EnlacesPublicos.asociacion(asociacionActual.id)
+                                )
                             }
                         }
                     }
