@@ -1,4 +1,4 @@
-import { collection, doc, getDocFromServer, getDocsFromServer, query, where } from 'firebase/firestore'
+import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit, orderBy, query, where } from 'firebase/firestore'
 import type { Timestamp } from 'firebase/firestore'
 import { versionDocumento } from '~/lib/cliente-base'
 import type { ServiciosCliente } from '~/lib/cliente-base'
@@ -8,16 +8,57 @@ export type ProductoEmprendedoraWeb = {
   nombre: string
   descripcion: string
   estado: 'publicado' | 'borrador' | 'archivado'
+  versionEsperada: string
+  tipoProductoId: string
+  versionTipoProducto: number
+  categoriaId: string
+  atributosEspecificos: Record<string, string>
+  tieneVariantes: boolean
   precioBase: number | null
   stock: number | null
   manejaStock: boolean
   modalidad: string
+  alAgotarse: string
+  disponible: boolean
+  piezaUnicaVendida: boolean
+  imagenes: string[]
+  variantes: VarianteEmprendedoraWeb[]
   imagenPublica?: string
+}
+
+export type VarianteEmprendedoraWeb = {
+  id: string
+  opciones: Record<string, string>
+  precio: number
+  stock: number | null
+  activa: boolean
+}
+
+export type CampoTipoProductoEmprendedora = {
+  clave: string
+  etiqueta: string
+  tipo: 'texto'
+  obligatorio: boolean
+}
+
+export type TipoProductoEmprendedoraWeb = {
+  id: string
+  nombre: string
+  activo: boolean
+  versionActual: number
+  version: number
+  campos: CampoTipoProductoEmprendedora[]
+  opcionesVariante: string[]
 }
 
 export type ContactoEmprendedoraWeb = {
   tipo: 'whatsapp' | 'correo' | 'web'
   valor: string
+}
+
+export type CanalesContactoEmprendedoraWeb = {
+  whatsapp: { habilitado: boolean; numero: string }
+  formulario: { habilitado: boolean; formularioId?: string }
 }
 
 export type CuentaEmprendedoraWeb = {
@@ -32,6 +73,7 @@ export type CuentaEmprendedoraWeb = {
     sectorId: string
     mostrarPrecios: boolean
     contacto: ContactoEmprendedoraWeb | null
+    canalesContacto?: CanalesContactoEmprendedoraWeb
     mostrarContacto: boolean
     versionEsperada: string
     estadoPublicacion: string
@@ -50,6 +92,15 @@ function numero(valor: unknown): number | null {
   return typeof valor === 'number' && Number.isFinite(valor) ? valor : null
 }
 
+function mapaDeTextos(valor: unknown): Record<string, string> {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return {}
+  return Object.fromEntries(Object.entries(valor).filter((par): par is [string, string] => typeof par[1] === 'string'))
+}
+
+function listaDeTextos(valor: unknown): string[] {
+  return Array.isArray(valor) ? valor.filter((elemento): elemento is string => typeof elemento === 'string') : []
+}
+
 function contactoEmprendedora(valor: unknown): ContactoEmprendedoraWeb | null {
   if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null
   const datos = valor as Record<string, unknown>
@@ -57,10 +108,74 @@ function contactoEmprendedora(valor: unknown): ContactoEmprendedoraWeb | null {
   return { tipo: datos.tipo as ContactoEmprendedoraWeb['tipo'], valor: datos.valor }
 }
 
+function canalesContactoEmprendedora(valor: unknown): CanalesContactoEmprendedoraWeb | undefined {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return undefined
+  const datos = valor as Record<string, unknown>
+  const whatsapp = datos.whatsapp && typeof datos.whatsapp === 'object' && !Array.isArray(datos.whatsapp)
+    ? datos.whatsapp as Record<string, unknown>
+    : {}
+  const formulario = datos.formulario && typeof datos.formulario === 'object' && !Array.isArray(datos.formulario)
+    ? datos.formulario as Record<string, unknown>
+    : {}
+  return {
+    whatsapp: { habilitado: whatsapp.habilitado === true, numero: texto(whatsapp.numero).trim() },
+    formulario: {
+      habilitado: formulario.habilitado === true,
+      ...(typeof formulario.formularioId === 'string' ? { formularioId: formulario.formularioId } : {}),
+    },
+  }
+}
+
 function versionTienda(valor: unknown): string {
   if (!valor || typeof valor !== 'object' || !('seconds' in valor) || !('nanoseconds' in valor)) return ''
   const timestamp = valor as Timestamp
   return versionDocumento(timestamp)
+}
+
+function versionProducto(valor: unknown): string {
+  if (!valor || typeof valor !== 'object' || !('seconds' in valor) || !('nanoseconds' in valor)) return ''
+  return versionDocumento(valor as Timestamp)
+}
+
+function mapearTipoProducto(id: string, nombre: string, activo: boolean, versionActual: number, definicion: Record<string, unknown>): TipoProductoEmprendedoraWeb {
+  const campos = Array.isArray(definicion.campos) ? definicion.campos.filter((campo): campo is CampoTipoProductoEmprendedora =>
+    !!campo && typeof campo === 'object' && typeof (campo as Record<string, unknown>).clave === 'string'
+    && typeof (campo as Record<string, unknown>).etiqueta === 'string'
+    && (campo as Record<string, unknown>).tipo === 'texto'
+    && typeof (campo as Record<string, unknown>).obligatorio === 'boolean') : []
+  const opcionesVariante = Array.isArray(definicion.opcionesVariante)
+    ? definicion.opcionesVariante.filter((opcion): opcion is string => typeof opcion === 'string') : []
+  return { id, nombre, activo, versionActual, version: versionActual, campos, opcionesVariante }
+}
+
+export async function listarTiposProductoEmprendedora(firebase: ServiciosCliente): Promise<TipoProductoEmprendedoraWeb[]> {
+  const resultado = await getDocsFromServer(query(
+    collection(firebase.db, 'tiposProducto'),
+    where('activo', '==', true),
+    orderBy(documentId()),
+    limit(200),
+  ))
+  return Promise.all(resultado.docs.map(async (snapshot) => {
+    const datos = snapshot.data()
+    const versionActual = Number(datos.versionActual)
+    if (!Number.isSafeInteger(versionActual) || versionActual < 1) {
+      throw new Error(`El tipo de producto “${texto(datos.nombre, snapshot.id)}” no tiene una versión válida.`)
+    }
+    const definicion = await getDocFromServer(doc(firebase.db, 'tiposProducto', snapshot.id, 'versiones', String(versionActual)))
+    if (!definicion.exists()) throw new Error(`No se encontró la definición vigente de “${texto(datos.nombre, snapshot.id)}”.`)
+    return mapearTipoProducto(snapshot.id, texto(datos.nombre, snapshot.id), datos.activo === true, versionActual, definicion.data())
+  }))
+}
+
+export async function leerTipoProductoEmprendedora(firebase: ServiciosCliente, id: string, version: number): Promise<TipoProductoEmprendedoraWeb> {
+  const referencia = doc(firebase.db, 'tiposProducto', id)
+  const [tipo, definicion] = await Promise.all([
+    getDocFromServer(referencia),
+    getDocFromServer(doc(firebase.db, 'tiposProducto', id, 'versiones', String(version))),
+  ])
+  if (!tipo.exists() || !definicion.exists()) throw new Error('No se encontró la definición de este producto. Actualiza la página e inténtalo de nuevo.')
+  const datos = tipo.data()
+  return mapearTipoProducto(id, texto(datos.nombre, id), datos.activo === true, version, definicion.data())
 }
 
 export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: string): Promise<CuentaEmprendedoraWeb> {
@@ -93,6 +208,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   const mostrarPrecios = configuracionDoc.exists() ? configuracionDoc.data().mostrarPrecios !== false : true
   if (tienda.propietarioUid !== uid) throw new Error('La tienda asignada no pertenece a esta cuenta.')
   const contacto = contactoEmprendedora(tienda.contacto)
+  const canalesContacto = canalesContactoEmprendedora(tienda.canalesContacto)
   let logoPublico: string | null = null
   if (tienda.estadoPublicacion === 'publicado') {
     try {
@@ -104,23 +220,47 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
     } catch {}
   }
 
-  const baseProductos = productosDocs.docs
-    .map((productoDoc): ProductoEmprendedoraWeb | null => {
+  const baseProductos = (await Promise.all(productosDocs.docs.map(async (productoDoc): Promise<ProductoEmprendedoraWeb | null> => {
       const datos = productoDoc.data()
       const original = texto(datos.estadoPublicacion, 'borrador')
       if (original === 'eliminado') return null
       const estado = original === 'publicado' ? 'publicado' : original === 'archivado' ? 'archivado' : 'borrador'
+      const tieneVariantes = datos.tieneVariantes === true
+      const variantesSnapshot = tieneVariantes
+        ? await getDocsFromServer(collection(db, 'tiendasPrivadas', tiendaId, 'productos', productoDoc.id, 'variantes'))
+        : null
+      const variantes = variantesSnapshot?.docs.map((varianteDoc): VarianteEmprendedoraWeb => {
+        const variante = varianteDoc.data()
+        return {
+          id: varianteDoc.id,
+          opciones: mapaDeTextos(variante.opciones),
+          precio: numero(variante.precio) ?? 0,
+          stock: numero(variante.stock),
+          activa: variante.activa !== false,
+        }
+      }) ?? []
       return {
         id: productoDoc.id,
         nombre: texto(datos.nombre, 'Producto sin nombre'),
         descripcion: texto(datos.descripcion),
         estado,
+        versionEsperada: versionProducto(datos.actualizadoEn),
+        tipoProductoId: texto(datos.tipoProductoId),
+        versionTipoProducto: Number.isSafeInteger(datos.versionTipoProducto) ? Number(datos.versionTipoProducto) : 1,
+        categoriaId: texto(datos.categoriaId),
+        atributosEspecificos: mapaDeTextos(datos.atributosEspecificos),
+        tieneVariantes,
         precioBase: numero(datos.precioBase),
         stock: numero(datos.stock),
         manejaStock: datos.manejaStock === true,
         modalidad: texto(datos.modalidad),
+        alAgotarse: texto(datos.alAgotarse, 'mostrar_agotado'),
+        disponible: datos.disponible !== false,
+        piezaUnicaVendida: datos.piezaUnicaVendida === true,
+        imagenes: listaDeTextos(datos.imagenes),
+        variantes,
       }
-    })
+    })))
     .filter((producto): producto is ProductoEmprendedoraWeb => producto !== null)
 
   const imagenesPublicas = new Map<string, string>()
@@ -158,6 +298,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       sectorId: texto(tienda.sectorId),
       mostrarPrecios,
       contacto,
+      ...(canalesContacto ? { canalesContacto } : {}),
       mostrarContacto: tienda.mostrarContacto === true,
       versionEsperada: versionTienda(tienda.actualizadoEn),
       estadoPublicacion: texto(tienda.estadoPublicacion, 'borrador'),

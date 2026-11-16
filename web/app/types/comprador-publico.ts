@@ -101,6 +101,7 @@ export interface FichaComprador {
     categoriaId?: string;
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;
+    canalesContacto?: CanalesContactoPublico;
     logo?: string;
     imagen?: string;
     imagenes?: string[];

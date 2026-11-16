@@ -173,6 +173,15 @@ function fichaProducto(elemento: ProductoPublico): FichaComprador {
     };
 }
 
+function valorContactoVisible(ficha: FichaComprador | null): string {
+    const contacto = ficha?.datos.contacto;
+    if (!contacto) return '';
+    const whatsapp = ficha.datos.canalesContacto?.whatsapp;
+    return contacto.tipo === 'whatsapp' && whatsapp?.habilitado && whatsapp.numero.trim()
+        ? whatsapp.numero
+        : contacto.valor;
+}
+
 function fichaVariante(elemento: VariantePublica): FichaComprador {
     const nombre = Object.values(elemento.opciones)[0] || elemento.id;
     return {
@@ -256,8 +265,9 @@ const enlaceContacto = computed(() => {
     const contacto = tienda.value?.datos.contacto;
     if (!contacto) return null;
     if (contacto.tipo === 'whatsapp') {
-        const telefono = contacto.valor.replace(/\D/g, '');
-        return telefono ? { href: `https://wa.me/${telefono}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}`, texto: 'Contactar por WhatsApp' } : null;
+        return whatsappPublico.value
+            ? { href: whatsappPublico.value, texto: 'Contactar por WhatsApp' }
+            : null;
     }
     if (contacto.tipo === 'correo') return { href: `mailto:${contacto.valor}`, texto: 'Contactar por correo' };
     if (contacto.tipo === 'web' && contacto.valor.startsWith('https://')) return { href: contacto.valor, texto: 'Visitar sitio de la tienda' };
@@ -298,7 +308,7 @@ function cerrarContacto() {
 }
 
 async function copiarContacto() {
-    const valor = tiendaContacto.value?.datos.contacto?.valor;
+    const valor = valorContactoVisible(tiendaContacto.value);
     if (!valor) return;
     try {
         await navigator.clipboard.writeText(valor);
@@ -1137,8 +1147,8 @@ onBeforeUnmount(() => {
                   :href="enlaceContacto.href"
                   target="_blank"
                   rel="noopener noreferrer"
-                >{{ tienda.datos.contacto.valor }}</a>
-                <p v-else>{{ tienda.datos.contacto.valor }}</p>
+                >{{ valorContactoVisible(tienda) }}</a>
+                <p v-else>{{ valorContactoVisible(tienda) }}</p>
               </div>
             </div>
             <div class="sobre-nosotras">
@@ -1182,7 +1192,7 @@ onBeforeUnmount(() => {
               <span class="dato-icono" aria-hidden="true">☎</span>
               <div>
                 <b>{{ tiposContacto[tiendaContacto.datos.contacto.tipo] ?? 'Contacto' }}</b>
-                <p class="contacto-valor">{{ tiendaContacto.datos.contacto.valor }}</p>
+                <p class="contacto-valor">{{ valorContactoVisible(tiendaContacto) }}</p>
               </div>
             </div>
             <p v-else class="contacto-aviso" role="status">
