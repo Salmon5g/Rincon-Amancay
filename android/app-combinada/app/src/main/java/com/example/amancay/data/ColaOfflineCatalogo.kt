@@ -18,7 +18,7 @@ object ColaOfflineCatalogo {
     private const val EDIT_KEY = "ediciones"
     private val mutex = Mutex()
 
-    private fun esConflictoDeVersion(error: ApiEmprendedoraException?): Boolean {
+    fun esConflictoDeVersion(error: ApiEmprendedoraException?): Boolean {
         if (error?.codigo != "conflicto") return false
         val mensaje = error.message.orEmpty().lowercase()
         return listOf(

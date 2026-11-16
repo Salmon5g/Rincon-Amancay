@@ -468,6 +468,11 @@ fun ModoCompradorScreen(
                             }
                         }
                     }
+                    com.example.amancay.ui.BotonCodigoQr(
+                        "Código QR de la tienda",
+                        tienda.nombre,
+                        com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
+                    )
                     if (catalogo.isEmpty()) Text("No hay productos públicos disponibles para mostrar.")
                     catalogo.forEach { producto ->
                         TextButton(onClick = { productoSeleccionado = producto }) {

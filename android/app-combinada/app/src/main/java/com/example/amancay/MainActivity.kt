@@ -421,7 +421,7 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                     PreviewCatalogScreen(
                         producto = p,
                         onShare = {
-                            clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
+                            clipboard.setText(AnnotatedString(EnlacesPublicos.inicio()))
                             repositorio.marcarEnlaceCompartido()
                             scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
                         },
@@ -1383,8 +1383,9 @@ internal fun EmprendedoraAppConectada(
                         privateImageError = errorFotoVista,
                         onRetryPrivateImage = { reintentoFotoVista++ },
                         esVistaPrivada = productoDeVista?.esBorrador == true,
+                        link = EnlacesPublicos.tienda(sesion.tiendaId),
                         onShare = {
-                            clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
+                            clipboard.setText(AnnotatedString(EnlacesPublicos.tienda(sesion.tiendaId)))
                             linkCompartido = true
                             scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
                         },

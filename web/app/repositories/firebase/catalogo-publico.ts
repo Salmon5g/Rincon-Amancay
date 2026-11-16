@@ -3,7 +3,7 @@ import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, DocumentSnapshot, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
-import type { AsociacionPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { AsociacionPublica, FeriaPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
 const MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024
@@ -44,6 +44,27 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
           : 'fallo-catalogo'
     const mensaje = error instanceof Error ? error.message : 'Falló una consulta del catálogo.'
     throw Object.assign(new Error(mensaje), { code })
+  }
+}
+
+function fecha(valor: unknown): Date | null {
+  return valor && typeof (valor as { toDate?: unknown }).toDate === 'function' ? (valor as { toDate(): Date }).toDate() : null
+}
+
+function mapearFeria(documento: DocumentSnapshot<DocumentData>): FeriaPublica {
+  const datos = documento.data() ?? {}
+  const imagenUrl = texto(datos.imagenUrl)
+  return {
+    id: documento.id,
+    nombre: texto(datos.nombre, 'Feria'),
+    descripcion: texto(datos.descripcion),
+    organizador: texto(datos.organizador),
+    direccion: texto(datos.direccion),
+    fechaInicio: fecha(datos.fechaInicio),
+    fechaFin: fecha(datos.fechaFin),
+    imagenUrl: imagenUrl.startsWith('https://') ? imagenUrl : '',
+    latitud: numero(datos.latitud),
+    longitud: numero(datos.longitud),
   }
 }
 
@@ -296,6 +317,24 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
           cursor = resultado.docs.at(-1)?.id ?? null
         } while (cantidad === TAMANO_PAGINA && cursor)
         return asociaciones.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'))
+      })
+    },
+
+    async listarFeriasPublicas() {
+      return ejecutarConErrorNormalizado(async () => {
+        const resultado = await getDocs(query(collection(db, 'ferias'), where('estado', '==', 'publicada'), limit(100)))
+        return resultado.docs.map(mapearFeria)
+          .sort((a, b) => (a.fechaInicio?.getTime() ?? Infinity) - (b.fechaInicio?.getTime() ?? Infinity))
+      })
+    },
+
+    async leerFeria(feriaId) {
+      return ejecutarConErrorNormalizado(async () => {
+        const documento = await getDoc(doc(db, 'ferias', validarId(feriaId)))
+        if (!documento.exists() || documento.data().estado !== 'publicada') {
+          throw Object.assign(new Error('La feria solicitada ya no está disponible.'), { code: 'no-encontrado' })
+        }
+        return mapearFeria(documento)
       })
     },
 
