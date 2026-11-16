@@ -249,6 +249,11 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
                 if (feria.direccion.isNotBlank()) Text(feria.direccion, color = AmancayTinta)
                 if (feria.organizador.isNotBlank()) Text("Organiza: ${feria.organizador}", color = AmancayTintaSuave)
                 if (feria.descripcion.isNotBlank()) Text(feria.descripcion, color = AmancayTinta)
+                com.example.amancay.ui.BotonCodigoQr(
+                    "Código QR de la feria",
+                    feria.nombre,
+                    com.example.amancay.ui.EnlacesPublicos.feria(feria.id)
+                )
             }
         },
         confirmButton = {

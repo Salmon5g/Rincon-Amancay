@@ -107,7 +107,9 @@ data class ConsultaComprador(
     val mensaje: String,
     val producto: String?,
     val fecha: Date,
-    val leida: Boolean
+    val estado: String,
+    val respuesta: String? = null,
+    val respondidaEn: Date? = null
 )
 
 data class FeriaParaVenta(val id: String, val nombre: String, val direccion: String, val fechaInicio: Date?)
@@ -189,7 +191,8 @@ class ProductosEmprendedoraRepository(
                 _consultas.value = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     val fecha = doc.getTimestamp("creadaEn")?.toDate() ?: return@mapNotNull null
                     ConsultaComprador(doc.id, doc.getString("nombre").orEmpty(), doc.getString("correo").orEmpty(),
-                        doc.getString("mensaje").orEmpty(), doc.getString("producto"), fecha, doc.getString("estado") != "nueva")
+                        doc.getString("mensaje").orEmpty(), doc.getString("producto"), fecha,
+                        doc.getString("estado") ?: "nueva", doc.getString("respuesta"), doc.getTimestamp("respondidaEn")?.toDate())
                 }
             }
         productSubscription?.remove()
@@ -499,6 +502,12 @@ class ProductosEmprendedoraRepository(
     suspend fun marcarConsultaLeida(tiendaId: String, consultaId: String) = withContext(Dispatchers.IO) {
         Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("consultas").document(consultaId)
             .update(mapOf("estado" to "leida", "leidaEn" to com.google.firebase.firestore.FieldValue.serverTimestamp())))
+    }
+
+    suspend fun responderConsulta(tiendaId: String, consultaId: String, respuesta: String) = withContext(Dispatchers.IO) {
+        val texto = respuesta.trim()
+        require(texto.length in 1..2000) { "La respuesta debe tener entre 1 y 2000 caracteres." }
+        api.llamar("responderConsulta", mapOf("tiendaId" to tiendaId, "consultaId" to consultaId, "respuesta" to texto))
     }
 
     suspend fun listarVentas(tiendaId: String): List<VentaRegistrada> = withContext(Dispatchers.IO) {

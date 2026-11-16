@@ -49,23 +49,32 @@ function validarContacto(value: unknown): { tipo: 'whatsapp' | 'correo' | 'web';
 type CanalesContacto = {
   whatsapp: { habilitado: boolean; numero: string };
   formulario: { habilitado: boolean };
+  correo: { habilitado: boolean; direccion: string };
 };
 
-function validarCanalesContacto(value: unknown): CanalesContacto {
-  const data = objeto(value);
-  campos(data, ['whatsapp', 'formulario']);
-  const whatsapp = objeto(data.whatsapp);
+function validarCanalesContacto(value: unknown): CanalesContacto | undefined {
+  if (value === undefined) return undefined;
+  const canales = objeto(value);
+  exigir(Object.keys(canales).every(clave => ['whatsapp', 'formulario', 'correo'].includes(clave)) && Object.hasOwn(canales, 'whatsapp') && Object.hasOwn(canales, 'formulario'), 'datos-invalidos', 'Canales de contacto inválidos.');
+  const whatsapp = objeto(canales.whatsapp);
+  const formulario = objeto(canales.formulario);
+  const correo = canales.correo === undefined ? { habilitado: false, direccion: '' } : objeto(canales.correo);
   campos(whatsapp, ['habilitado', 'numero']);
-  const formulario = objeto(data.formulario);
-  campos(formulario, ['habilitado']);
-  exigir(typeof whatsapp.habilitado === 'boolean', 'datos-invalidos', 'Indica si WhatsApp está habilitado.');
-  exigir(typeof whatsapp.numero === 'string' && whatsapp.numero.length <= 32, 'datos-invalidos', 'Número de WhatsApp inválido.');
+  exigir(Object.keys(formulario).every(clave => clave === 'habilitado') && Object.hasOwn(formulario, 'habilitado'), 'datos-invalidos', 'Preferencia del formulario inválida.');
+  campos(correo, ['habilitado', 'direccion']);
+  exigir(typeof whatsapp.habilitado === 'boolean' && typeof whatsapp.numero === 'string' && whatsapp.numero.length <= 32, 'datos-invalidos', 'Preferencia de WhatsApp inválida.');
+  exigir(typeof formulario.habilitado === 'boolean', 'datos-invalidos', 'Preferencia del formulario inválida.');
+  exigir(typeof correo.habilitado === 'boolean' && typeof correo.direccion === 'string' && correo.direccion.length <= 254, 'datos-invalidos', 'Preferencia de correo inválida.');
   const numero = whatsapp.numero.trim();
-  exigir(!whatsapp.habilitado || /^\+?[0-9][0-9\s()-]{6,22}$/.test(numero), 'datos-invalidos', 'WhatsApp debe incluir un número válido con código de país.');
-  exigir(typeof formulario.habilitado === 'boolean', 'datos-invalidos', 'Indica si el formulario de contacto está habilitado.');
+  const direccion = correo.direccion.trim();
+  if (numero) exigir(/^\+?[0-9][0-9\s()-]{6,22}$/.test(numero), 'datos-invalidos', 'WhatsApp debe incluir un número válido con código de país.');
+  if (direccion) exigir(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(direccion), 'datos-invalidos', 'Correo de contacto inválido.');
+  exigir(!whatsapp.habilitado || Boolean(numero), 'datos-invalidos', 'Agrega un número válido antes de habilitar WhatsApp.');
+  exigir(!correo.habilitado || Boolean(direccion), 'datos-invalidos', 'Agrega un correo válido antes de habilitar este canal.');
   return {
     whatsapp: { habilitado: whatsapp.habilitado, numero },
     formulario: { habilitado: formulario.habilitado },
+    correo: { habilitado: correo.habilitado, direccion },
   };
 }
 
@@ -79,8 +88,8 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
   return async (identidad: { uid: string }, input: unknown) => {
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Sesión requerida.');
     const solicitud = objeto(input);
-    // 'direccion' es un campo opcional de la ficha (lo usa la app combinada): los clientes
-    // que aún no lo envían siguen siendo válidos y no modifican la dirección guardada.
+    // 'direccion' y 'canalesContacto' son opcionales para conservar compatibilidad con clientes
+    // que no los envían; si faltan, no modifican los valores guardados.
     const CAMPOS_EDICION = ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto', 'canalesContacto'];
     exigir(Object.keys(solicitud).every(clave => clave === 'direccion' || CAMPOS_EDICION.includes(clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
     exigir(CAMPOS_EDICION.filter(clave => clave !== 'canalesContacto').every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
@@ -95,8 +104,8 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
     exigir(typeof solicitud.mostrarContacto === 'boolean', 'datos-invalidos', 'Indica si el contacto se muestra públicamente.');
     exigir(!solicitud.mostrarContacto || contacto !== null, 'datos-invalidos', 'Completa un contacto antes de mostrarlo públicamente.');
     const solicitudNormalizada: Record<string, unknown> = { tiendaId: solicitud.tiendaId, operacionId: solicitud.operacionId, versionEsperada: solicitud.versionEsperada, nombre, descripcion, tipoEmprendimientoId: solicitud.tipoEmprendimientoId, sectorId: solicitud.sectorId, contacto, mostrarContacto: solicitud.mostrarContacto };
-    if (llevaDireccion) solicitudNormalizada.direccion = direccion;
     if (canalesContacto) solicitudNormalizada.canalesContacto = canalesContacto;
+    if (llevaDireccion) solicitudNormalizada.direccion = direccion;
     const firma = createHash('sha256').update(canon({ uid: identidad.uid, solicitud: solicitudNormalizada })).digest('hex');
     const storeRef = db.doc(`tiendasPrivadas/${solicitud.tiendaId}`);
     const receiptRef = storeRef.collection('operacionesEdicion').doc(solicitud.operacionId as string);
@@ -139,20 +148,40 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
         mostrarContacto: solicitud.mostrarContacto,
         actualizadoEn: now,
       };
-      const canalesActuales = store?.canalesContacto && typeof store.canalesContacto === 'object' && !Array.isArray(store.canalesContacto)
-        ? store.canalesContacto as Record<string, unknown>
-        : {};
-      const formularioActual = canalesActuales.formulario && typeof canalesActuales.formulario === 'object' && !Array.isArray(canalesActuales.formulario)
-        ? canalesActuales.formulario as Record<string, unknown>
-        : {};
-      const canalesContactoPersistidos = canalesContacto ? {
-        ...canalesContacto,
-        formulario: {
-          ...(typeof formularioActual.formularioId === 'string' ? { formularioId: formularioActual.formularioId } : {}),
-          habilitado: canalesContacto.formulario.habilitado,
-        },
-      } : undefined;
-      if (canalesContactoPersistidos) fields.canalesContacto = canalesContactoPersistidos;
+      let canalesContactoPublicos: DocumentData | undefined;
+      let formaContactoPublica: string | undefined;
+      if (canalesContacto) {
+        const anterior = store!.canalesContacto as { formulario?: { formularioId?: unknown } } | undefined;
+        const formularioId = typeof anterior?.formulario?.formularioId === 'string' && anterior.formulario.formularioId.trim()
+          ? anterior.formulario.formularioId
+          : `contacto-${solicitud.tiendaId}`;
+        const canalesSolicitados = solicitud.canalesContacto as Record<string, unknown>;
+        const anteriorCompleto = store!.canalesContacto as {
+          correo?: { habilitado?: unknown; direccion?: unknown };
+        } | undefined;
+        const contactoAnterior = store!.contacto as { tipo?: unknown; valor?: unknown } | undefined;
+        const correoAnterior = typeof anteriorCompleto?.correo?.habilitado === 'boolean'
+          ? {
+              habilitado: anteriorCompleto.correo.habilitado,
+              direccion: typeof anteriorCompleto.correo.direccion === 'string' ? anteriorCompleto.correo.direccion : '',
+            }
+          : {
+              habilitado: store!.mostrarContacto === true && contactoAnterior?.tipo === 'correo' && typeof contactoAnterior.valor === 'string',
+              direccion: typeof contactoAnterior?.valor === 'string' && contactoAnterior.tipo === 'correo' ? contactoAnterior.valor : '',
+            };
+        const correo = Object.hasOwn(canalesSolicitados, 'correo') ? canalesContacto.correo : correoAnterior;
+        const canalesActualizados = { ...canalesContacto, correo };
+        const canalesPrivados = { ...canalesActualizados, formulario: { ...canalesActualizados.formulario, formularioId } };
+        fields.canalesContacto = canalesPrivados;
+        canalesContactoPublicos = {
+          whatsapp: { ...canalesActualizados.whatsapp, numero: canalesActualizados.whatsapp.habilitado ? canalesActualizados.whatsapp.numero : '' },
+          formulario: { ...canalesPrivados.formulario },
+          correo: { ...canalesActualizados.correo, direccion: canalesActualizados.correo.habilitado ? canalesActualizados.correo.direccion : '' },
+        };
+        formaContactoPublica = canalesActualizados.formulario.habilitado
+          ? canalesActualizados.whatsapp.habilitado ? 'ambos' : 'formulario'
+          : canalesActualizados.whatsapp.habilitado ? 'whatsapp' : 'ninguno';
+      }
       if (contacto) fields.contacto = contacto;
       else fields.contacto = FieldValue.delete();
       if (llevaDireccion) {
@@ -170,14 +199,8 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
           actualizadoEn: now,
           contacto: solicitud.mostrarContacto ? contacto : FieldValue.delete(),
         };
-        if (canalesContactoPersistidos) {
-          publicFields.canalesContacto = {
-            ...canalesContactoPersistidos,
-            whatsapp: canalesContactoPersistidos.whatsapp.habilitado
-              ? canalesContactoPersistidos.whatsapp
-              : { habilitado: false, numero: '' },
-          };
-        }
+        if (canalesContactoPublicos) publicFields.canalesContacto = canalesContactoPublicos;
+        if (formaContactoPublica) publicFields.formaContacto = formaContactoPublica;
         if (llevaDireccion) {
           if (direccion) publicFields.direccion = direccion;
           else publicFields.direccion = FieldValue.delete();

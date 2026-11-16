@@ -1,9 +1,9 @@
-import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore'
+import { collection, doc, documentId, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, where } from 'firebase/firestore'
 import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, DocumentSnapshot, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
-import type { AsociacionPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { AsociacionPublica, FeriaPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
 const MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024
@@ -47,26 +47,57 @@ async function ejecutarConErrorNormalizado<T>(operacion: () => Promise<T>): Prom
   }
 }
 
+function fecha(valor: unknown): Date | null {
+  return valor && typeof (valor as { toDate?: unknown }).toDate === 'function' ? (valor as { toDate(): Date }).toDate() : null
+}
+
+function mapearFeria(documento: DocumentSnapshot<DocumentData>): FeriaPublica {
+  const datos = documento.data() ?? {}
+  const imagenUrl = texto(datos.imagenUrl)
+  return {
+    id: documento.id,
+    nombre: texto(datos.nombre, 'Feria'),
+    descripcion: texto(datos.descripcion),
+    organizador: texto(datos.organizador),
+    direccion: texto(datos.direccion),
+    fechaInicio: fecha(datos.fechaInicio),
+    fechaFin: fecha(datos.fechaFin),
+    imagenUrl: imagenUrl.startsWith('https://') ? imagenUrl : '',
+    latitud: numero(datos.latitud),
+    longitud: numero(datos.longitud),
+  }
+}
+
 function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica {
   const datos = documento.data() ?? {}
   const contactoDatos = datos.contacto as Record<string, unknown> | undefined
   const canalesDatos = datos.canalesContacto as Record<string, unknown> | undefined
   const whatsappDatos = canalesDatos?.whatsapp as Record<string, unknown> | undefined
   const formularioDatos = canalesDatos?.formulario as Record<string, unknown> | undefined
+  const correoDatos = canalesDatos?.correo as Record<string, unknown> | undefined
   
-  const canalesContacto: CanalesContactoPublico = { 
-    whatsapp: {habilitado : whatsappDatos?.habilitado === true, numero: typeof whatsappDatos?.numero === 'string'
-      ? whatsappDatos.numero.trim(): '',
-    },
-    formulario: {
-      formularioId: texto(formularioDatos?.formularioId).trim(),
-      habilitado: formularioDatos?.habilitado === true,
-    },
-  }
-
   const contacto = contactoDatos && ['whatsapp', 'correo', 'web'].includes(String(contactoDatos.tipo)) && typeof contactoDatos.valor === 'string'
     ? { tipo: contactoDatos.tipo as ContactoPublico['tipo'], valor: contactoDatos.valor }
     : undefined
+  const formaContactoDeclarada = typeof datos.formaContacto === 'string' && datos.formaContacto.trim() !== ''
+  const formaContacto = formaContactoDeclarada ? texto(datos.formaContacto, 'formulario') : 'formulario'
+  const contactoEsWhatsapp = contacto?.tipo === 'whatsapp'
+  const whatsappHabilitado = ['whatsapp', 'ambos'].includes(formaContacto)
+    || (!formaContactoDeclarada && datos.mostrarContacto === true && contactoEsWhatsapp)
+  const canalesContacto: CanalesContactoPublico = {
+    whatsapp: {
+      habilitado: whatsappDatos ? whatsappDatos.habilitado === true : whatsappHabilitado && contactoEsWhatsapp,
+      numero: typeof whatsappDatos?.numero === 'string' ? whatsappDatos.numero.trim() : contactoEsWhatsapp ? contacto.valor : '',
+    },
+    formulario: {
+      formularioId: texto(formularioDatos?.formularioId).trim() || documento.id,
+      habilitado: formularioDatos ? formularioDatos.habilitado === true : ['formulario', 'ambos'].includes(formaContacto),
+    },
+    correo: {
+      habilitado: correoDatos ? correoDatos.habilitado === true : contacto?.tipo === 'correo',
+      direccion: typeof correoDatos?.direccion === 'string' ? correoDatos.direccion.trim() : contacto?.tipo === 'correo' ? contacto.valor : '',
+    },
+  }
   return {
     id: documento.id,
     nombre: texto(datos.nombre, documento.id),
@@ -78,7 +109,7 @@ function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica 
     ...(typeof datos.logo === 'string' ? { logo: datos.logo } : {}),
     ...(typeof datos.logoMiniatura === 'string' ? { logoMiniatura: datos.logoMiniatura } : {}),
     ...(contacto ? { contacto } : {}),
-    ...(canalesDatos ? { canalesContacto }: {}),
+    canalesContacto,
   }
 }
 
@@ -243,6 +274,30 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
       })
     },
 
+    observarProducto(tiendaId, productoId, alCambiar, alFallar) {
+      let activo = true
+      let detener = () => {}
+      void coleccionPublicaProductos(validarId(tiendaId)).then((coleccion) => {
+        if (!activo) return
+        detener = onSnapshot(doc(db, 'tiendasPublicas', validarId(tiendaId), coleccion, validarId(productoId)), (documento) => {
+          if (!activo) return
+          if (!documento.exists() || documento.data().estadoPublicacion !== 'publicado') {
+            alCambiar(null)
+            return
+          }
+          alCambiar(mapearProducto(documento))
+        }, (error) => {
+          if (activo) alFallar?.(error instanceof Error ? error : new Error('No se pudo actualizar el producto en tiempo real.'))
+        })
+      }).catch((error: unknown) => {
+        if (activo) alFallar?.(error instanceof Error ? error : new Error('No se pudo observar el producto.'))
+      })
+      return () => {
+        activo = false
+        detener()
+      }
+    },
+
     async listarVariantes(tiendaId, productoId) {
       return ejecutarConErrorNormalizado(async () => {
         const tienda = validarId(tiendaId)
@@ -296,6 +351,24 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
           cursor = resultado.docs.at(-1)?.id ?? null
         } while (cantidad === TAMANO_PAGINA && cursor)
         return asociaciones.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'))
+      })
+    },
+
+    async listarFeriasPublicas() {
+      return ejecutarConErrorNormalizado(async () => {
+        const resultado = await getDocs(query(collection(db, 'ferias'), where('estado', '==', 'publicada'), limit(100)))
+        return resultado.docs.map(mapearFeria)
+          .sort((a, b) => (a.fechaInicio?.getTime() ?? Infinity) - (b.fechaInicio?.getTime() ?? Infinity))
+      })
+    },
+
+    async leerFeria(feriaId) {
+      return ejecutarConErrorNormalizado(async () => {
+        const documento = await getDoc(doc(db, 'ferias', validarId(feriaId)))
+        if (!documento.exists() || documento.data().estado !== 'publicada') {
+          throw Object.assign(new Error('La feria solicitada ya no está disponible.'), { code: 'no-encontrado' })
+        }
+        return mapearFeria(documento)
       })
     },
 

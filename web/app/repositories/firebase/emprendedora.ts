@@ -1,4 +1,4 @@
-import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit, orderBy, query, where } from 'firebase/firestore'
+import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import type { Timestamp } from 'firebase/firestore'
 import { versionDocumento } from '~/lib/cliente-base'
 import type { ServiciosCliente } from '~/lib/cliente-base'
@@ -58,7 +58,8 @@ export type ContactoEmprendedoraWeb = {
 
 export type CanalesContactoEmprendedoraWeb = {
   whatsapp: { habilitado: boolean; numero: string }
-  formulario: { habilitado: boolean; formularioId?: string }
+  formulario: { formularioId: string; habilitado: boolean }
+  correo: { habilitado: boolean; direccion: string }
 }
 
 export type CuentaEmprendedoraWeb = {
@@ -106,24 +107,6 @@ function contactoEmprendedora(valor: unknown): ContactoEmprendedoraWeb | null {
   const datos = valor as Record<string, unknown>
   if (!['whatsapp', 'correo', 'web'].includes(String(datos.tipo)) || typeof datos.valor !== 'string' || !datos.valor.trim()) return null
   return { tipo: datos.tipo as ContactoEmprendedoraWeb['tipo'], valor: datos.valor }
-}
-
-function canalesContactoEmprendedora(valor: unknown): CanalesContactoEmprendedoraWeb | undefined {
-  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return undefined
-  const datos = valor as Record<string, unknown>
-  const whatsapp = datos.whatsapp && typeof datos.whatsapp === 'object' && !Array.isArray(datos.whatsapp)
-    ? datos.whatsapp as Record<string, unknown>
-    : {}
-  const formulario = datos.formulario && typeof datos.formulario === 'object' && !Array.isArray(datos.formulario)
-    ? datos.formulario as Record<string, unknown>
-    : {}
-  return {
-    whatsapp: { habilitado: whatsapp.habilitado === true, numero: texto(whatsapp.numero).trim() },
-    formulario: {
-      habilitado: formulario.habilitado === true,
-      ...(typeof formulario.formularioId === 'string' ? { formularioId: formulario.formularioId } : {}),
-    },
-  }
 }
 
 function versionTienda(valor: unknown): string {
@@ -205,10 +188,52 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   ])
   if (!tiendaDoc.exists()) throw new Error('No se encontró la ficha privada de la tienda.')
   const tienda = tiendaDoc.data()
-  const mostrarPrecios = configuracionDoc.exists() ? configuracionDoc.data().mostrarPrecios !== false : true
+  const configuracion = configuracionDoc.exists() ? configuracionDoc.data() : {}
+  const mostrarPrecios = configuracion.mostrarPrecios !== false
   if (tienda.propietarioUid !== uid) throw new Error('La tienda asignada no pertenece a esta cuenta.')
   const contacto = contactoEmprendedora(tienda.contacto)
-  const canalesContacto = canalesContactoEmprendedora(tienda.canalesContacto)
+  const canalesDatos = tienda.canalesContacto && typeof tienda.canalesContacto === 'object'
+    ? tienda.canalesContacto as Record<string, unknown>
+    : null
+  const whatsappDatos = canalesDatos?.whatsapp && typeof canalesDatos.whatsapp === 'object'
+    ? canalesDatos.whatsapp as Record<string, unknown>
+    : null
+  const formularioDatos = canalesDatos?.formulario && typeof canalesDatos.formulario === 'object'
+    ? canalesDatos.formulario as Record<string, unknown>
+    : null
+  const correoDatos = canalesDatos?.correo && typeof canalesDatos.correo === 'object'
+    ? canalesDatos.correo as Record<string, unknown>
+    : null
+  const formaContactoDeclarada = typeof configuracion.formaContacto === 'string' && configuracion.formaContacto.trim() !== ''
+  const formaContacto = formaContactoDeclarada ? texto(configuracion.formaContacto, 'formulario') : 'formulario'
+  const canalesContacto: CanalesContactoEmprendedoraWeb = canalesDatos ? {
+    whatsapp: {
+      habilitado: whatsappDatos?.habilitado === true,
+      numero: texto(whatsappDatos?.numero),
+    },
+    formulario: {
+      formularioId: texto(formularioDatos?.formularioId),
+      habilitado: formularioDatos?.habilitado === true,
+    },
+    correo: {
+      habilitado: correoDatos ? correoDatos.habilitado === true : tienda.mostrarContacto === true && contacto?.tipo === 'correo',
+      direccion: correoDatos ? texto(correoDatos.direccion) : contacto?.tipo === 'correo' ? contacto.valor : '',
+    },
+  } : {
+    whatsapp: {
+      habilitado: tienda.mostrarContacto === true && contacto?.tipo === 'whatsapp'
+        && (['whatsapp', 'ambos'].includes(formaContacto) || !formaContactoDeclarada),
+      numero: contacto?.tipo === 'whatsapp' ? contacto.valor : '',
+    },
+    formulario: {
+      formularioId: `contacto-${tiendaId}`,
+      habilitado: ['formulario', 'ambos'].includes(formaContacto),
+    },
+    correo: {
+      habilitado: tienda.mostrarContacto === true && contacto?.tipo === 'correo',
+      direccion: contacto?.tipo === 'correo' ? contacto.valor : '',
+    },
+  }
   let logoPublico: string | null = null
   if (tienda.estadoPublicacion === 'publicado') {
     try {
@@ -298,14 +323,37 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       sectorId: texto(tienda.sectorId),
       mostrarPrecios,
       contacto,
-      ...(canalesContacto ? { canalesContacto } : {}),
+      canalesContacto,
       mostrarContacto: tienda.mostrarContacto === true,
       versionEsperada: versionTienda(tienda.actualizadoEn),
       estadoPublicacion: texto(tienda.estadoPublicacion, 'borrador'),
       tieneLogo: typeof tienda.logo === 'string' && tienda.logo.trim() !== '',
       logoPublico,
-      contactoVisible: tienda.mostrarContacto === true && contacto !== null,
+      contactoVisible: canalesContacto.whatsapp.habilitado || canalesContacto.formulario.habilitado || canalesContacto.correo.habilitado,
     },
     productos,
   }
+}
+
+export function observarImagenesProductosPublicas(
+  firebase: ServiciosCliente,
+  tiendaId: string,
+  mostrarPrecios: boolean,
+  alCambiar: (imagenes: Map<string, string>) => void,
+  alFallar?: (error: Error) => void,
+): () => void {
+  const coleccionPublica = mostrarPrecios ? 'productos' : 'productosConsulta'
+  return onSnapshot(query(
+    collection(firebase.db, 'tiendasPublicas', tiendaId, coleccionPublica),
+    where('estadoPublicacion', '==', 'publicado'),
+  ), (snapshot) => {
+    const imagenes = new Map<string, string>()
+    for (const producto of snapshot.docs) {
+      const datos = producto.data()
+      const rutas = Array.isArray(datos.miniaturas) ? datos.miniaturas : datos.imagenes
+      const primera = Array.isArray(rutas) ? rutas.find((ruta): ruta is string => typeof ruta === 'string' && ruta.trim() !== '') : undefined
+      if (primera) imagenes.set(producto.id, primera)
+    }
+    alCambiar(imagenes)
+  }, (error) => alFallar?.(error instanceof Error ? error : new Error('No se pudieron mantener actualizadas las imágenes públicas.')))
 }

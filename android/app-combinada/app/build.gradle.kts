@@ -11,6 +11,8 @@ val amancayApiBaseUrl = amancayLocalProperties.getProperty(
 ).replace("\\", "\\\\").replace("\"", "\\\"")
 val amancayWebClientId = amancayLocalProperties.getProperty("amancay.google.webClientId", "")
     .replace("\\", "\\\\").replace("\"", "\\\"")
+val amancayPublicWebUrl = amancayLocalProperties.getProperty("amancay.web.publicUrl", "https://rincon-amancay.web.app")
+    .replace("\\", "\\\\").replace("\"", "\\\"")
 
 plugins {
     alias(libs.plugins.android.application)
@@ -35,6 +37,7 @@ android {
         buildConfigField("boolean", "FIREBASE_EMULATORS", amancayFirebaseEmulators.toString())
         buildConfigField("String", "API_BASE_URL", "\"$amancayApiBaseUrl\"")
         buildConfigField("String", "WEB_CLIENT_ID", "\"$amancayWebClientId\"")
+        buildConfigField("String", "PUBLIC_WEB_URL", "\"$amancayPublicWebUrl\"")
     }
 
     buildTypes {

@@ -193,8 +193,8 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
-            connection.connectTimeout = 10_000
-            connection.readTimeout = 30_000
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 90_000
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("Accept", "image/jpeg, image/png, image/webp")
             val status = connection.responseCode

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentData, type Firestore } from 'firebase-admin/firestore';
 import { ErrorOperacion, version } from './publicacion.ts';
 import { prepararImagen, type ImagenPreparada } from './imagenes.ts';
 
@@ -182,39 +182,137 @@ export function crearServicioImagenesSupabase(db:Firestore,storage:ClienteStorag
     exigir(await prepararImagen(bytes,extension),'imagen-no-autorizada','El archivo no es una imagen válida o excede los límites de procesamiento.');
     const tiendaRef=db.doc(`tiendasPrivadas/${tiendaId}`);
     const productoRef=tiendaRef.collection('productos').doc(productoId);
-    const comprobar=async()=>{
-      const [access,store,product]=await Promise.all([
-        db.doc(`accesos/${uid}`).get(),tiendaRef.get(),productoRef.get(),
-      ]);
-      const a=access.data();
-      exigir(a?.estado==='activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId===tiendaId && store.data()?.propietarioUid===uid,'sin-permiso','La cuenta no es propietaria activa de esta tienda.');
-      exigir(product.exists,'no-encontrado','Guarda primero el borrador del producto.');
-    };
-    await comprobar();
+    const publicStoreRef=db.doc(`tiendasPublicas/${tiendaId}`);
+    const publicProductRef=publicStoreRef.collection('productos').doc(productoId);
+    const publicProductConsultaRef=publicStoreRef.collection('productosConsulta').doc(productoId);
+    const approvalRef=productoRef.collection('publicacion').doc('vigente');
+    const receiptRef=tiendaRef.collection('operacionesImagenes').doc(archivoId);
+    const [accessSnap,storeSnap,productSnap,publicStoreSnap]=await Promise.all([
+      db.doc(`accesos/${uid}`).get(),tiendaRef.get(),productoRef.get(),publicStoreRef.get(),
+    ]);
+    const access=accessSnap.data(),store=storeSnap.data(),product=productSnap.data();
+    exigir(access?.estado==='activo' && Array.isArray(access.roles) && access.roles.includes('emprendedora') && access.tiendaId===tiendaId && store?.propietarioUid===uid,'sin-permiso','La cuenta no es propietaria activa de esta tienda.');
+    exigir(productSnap.exists && product,'no-encontrado','Guarda primero el borrador del producto.');
     const ruta=`tiendas/${tiendaId}/productos/${productoId}/${archivoId}.${extension}`;
+    const firma=createHash('sha256').update(JSON.stringify([uid,tiendaId,productoId,ruta,reemplazarIndice??null])).update(bytes).digest('hex');
+    const reciboPrevio=await receiptRef.get();
+    if(reciboPrevio.exists){
+      exigir(reciboPrevio.data()?.firma===firma,'id-reutilizado','El identificador de archivo ya se usó con otra imagen.');
+      const pendientes=reciboPrevio.data()?.limpiezaImagenes as string[]|undefined;
+      if(pendientes?.length)await limpiar(pendientes);
+      return ruta;
+    }
+    const imagenesAnteriores=Array.isArray(product.imagenes)?product.imagenes.filter((value:unknown):value is string=>typeof value==='string'):[];
+    exigir(reemplazarIndice===undefined || reemplazarIndice<imagenesAnteriores.length,'conflicto','La imagen que ibas a reemplazar ya no está en el producto. Vuelve a cargarlo e inténtalo otra vez.');
+    const publicada=product.estadoPublicacion==='publicado' && store.estadoPublicacion==='publicado';
+    const actualizarPublicada=publicada && reemplazarIndice!==undefined;
+    if(actualizarPublicada)exigir(publicStoreSnap.data()?.estadoPublicacion==='publicado' && publicStoreSnap.data()?.habilitada===true,'conflicto','La tienda publicada no tiene una proyección pública disponible.');
+    const cantidadEsperada=imagenesAnteriores.length;
+    const imagenEsperada=reemplazarIndice===undefined?undefined:imagenesAnteriores[reemplazarIndice];
     await storage.subirInmutable(buckets.originales,ruta,bytes,contentType);
+    const derivada=actualizarPublicada?await procesar(ruta,tiendaId,productoId):false;
+    if(actualizarPublicada)exigir(derivada && typeof derivada==='object','imagen-no-autorizada','No se pudo preparar la imagen para actualizar el producto publicado.');
+    const actualizarArrays=(data:DocumentData,indice:number,esNueva:boolean,imagen:ImagenPreparada):DocumentData=>{
+      const imagenes=Array.isArray(data.imagenes)?data.imagenes.filter((value:unknown):value is string=>typeof value==='string'):[];
+      if(indice<imagenes.length)imagenes[indice]=imagen.imagen;
+      else if(esNueva && indice===imagenes.length)imagenes.push(imagen.imagen);
+      else throw new ErrorOperacion('conflicto','La galería pública del producto cambió; vuelve a cargarlo e inténtalo otra vez.');
+      const actualizacion:DocumentData={imagenes};
+      const miniaturas=Array.isArray(data.miniaturas)?data.miniaturas.filter((value:unknown):value is string=>typeof value==='string'):[];
+      if(miniaturas.length){
+        if(indice<miniaturas.length)miniaturas[indice]=imagen.miniatura;
+        else if(esNueva && indice===miniaturas.length)miniaturas.push(imagen.miniatura);
+        else throw new ErrorOperacion('conflicto','Las miniaturas públicas del producto cambiaron; vuelve a cargarlo e inténtalo otra vez.');
+        actualizacion.miniaturas=miniaturas;
+      }
+      return actualizacion;
+    };
+    let transaccionConfirmada=false;
+    let imagenesPublicasLimpieza:string[]=[];
+    let confirmado=ruta;
     try {
-      await db.runTransaction(async tx=>{
-        const [access,store,product]=await tx.getAll(db.doc(`accesos/${uid}`),tiendaRef,productoRef);
-        const a=access.data(),d=product.data();
-        exigir(a?.estado==='activo' && Array.isArray(a.roles) && a.roles.includes('emprendedora') && a.tiendaId===tiendaId && store.data()?.propietarioUid===uid,'sin-permiso','La cuenta perdió acceso a la tienda.');
-        exigir(d,'no-encontrado','El borrador del producto ya no existe.');
-        const current=Array.isArray(d.imagenes)?d.imagenes.filter((value:unknown):value is string=>typeof value==='string'):[];
-        if(current.includes(ruta))return;
-        if(reemplazarIndice!==undefined) {
-          exigir(reemplazarIndice<current.length,'conflicto','La imagen que ibas a reemplazar ya no está en el producto. Vuelve a cargarlo e inténtalo otra vez.');
-          current[reemplazarIndice]=ruta;
-        } else {
-          exigir(current.length<5,'limite-local','Un producto puede tener hasta cinco imágenes.');
-          current.push(ruta);
+      const resultado=await db.runTransaction(async tx=>{
+        const [currentAccess,currentStore,currentProduct,currentPublicStore,currentPublicProduct,currentPublicProductConsulta,approval,receipt]=await tx.getAll(
+          db.doc(`accesos/${uid}`),tiendaRef,productoRef,publicStoreRef,publicProductRef,publicProductConsultaRef,approvalRef,receiptRef,
+        );
+        const currentAccessData=currentAccess.data(),currentStoreData=currentStore.data(),currentProductData=currentProduct.data();
+        exigir(currentAccessData?.estado==='activo' && Array.isArray(currentAccessData.roles) && currentAccessData.roles.includes('emprendedora') && currentAccessData.tiendaId===tiendaId && currentStoreData?.propietarioUid===uid,'sin-permiso','La cuenta perdió acceso a la tienda.');
+        if(receipt.exists){
+          exigir(receipt.data()?.firma===firma,'id-reutilizado','El identificador de archivo ya se usó con otra imagen.');
+          return {ruta,limpieza:receipt.data()?.limpiezaImagenes as string[]|undefined};
         }
-        tx.update(productoRef,{imagenes:current,actualizadoEn:FieldValue.serverTimestamp()});
+        exigir(currentProductData,'no-encontrado','El producto ya no existe.');
+        const publicadaAhora=currentProductData.estadoPublicacion==='publicado' && currentStoreData.estadoPublicacion==='publicado';
+        exigir(publicadaAhora===publicada,'conflicto','El estado de publicación cambió durante la carga; vuelve a intentar.');
+        if(actualizarPublicada)exigir(currentPublicStore.data()?.estadoPublicacion==='publicado' && currentPublicStore.data()?.habilitada===true,'conflicto','La proyección pública de la tienda cambió durante la carga.');
+        const current=Array.isArray(currentProductData.imagenes)?currentProductData.imagenes.filter((value:unknown):value is string=>typeof value==='string'):[];
+        let indice=reemplazarIndice;
+        let imagenesActualizadas=[...current];
+        if(reemplazarIndice!==undefined){
+          if(current[reemplazarIndice]===ruta){
+            indice=reemplazarIndice;
+          }else{
+            exigir(current[reemplazarIndice]===imagenEsperada,'conflicto','La imagen del producto cambió durante la carga; vuelve a intentarlo.');
+            imagenesActualizadas[reemplazarIndice]=ruta;
+          }
+        }else{
+          if(current.includes(ruta))indice=current.indexOf(ruta);
+          else{
+            exigir(current.length===cantidadEsperada,'conflicto','La galería del producto cambió durante la carga; vuelve a intentarlo.');
+            exigir(current.length<5,'limite-local','Un producto puede tener hasta cinco imágenes.');
+            indice=current.length;
+            imagenesActualizadas.push(ruta);
+          }
+        }
+        exigir(indice!==undefined,'conflicto','No se pudo determinar la posición de la imagen.');
+        const now=FieldValue.serverTimestamp();
+        const limpieza=new Set<string>();
+        const rutasAnteriores:string[]=[];
+        const rutasNuevas=new Set<string>();
+        const acumular=(data:DocumentData|undefined,actualizacion?:DocumentData)=>{
+          if(!data)return;
+          for(const value of [...(Array.isArray(data.imagenes)?data.imagenes:[]),...(Array.isArray(data.miniaturas)?data.miniaturas:[])])if(typeof value==='string')rutasAnteriores.push(value);
+          if(actualizacion)for(const value of [...(Array.isArray(actualizacion.imagenes)?actualizacion.imagenes:[]),...(Array.isArray(actualizacion.miniaturas)?actualizacion.miniaturas:[])])if(typeof value==='string')rutasNuevas.add(value);
+        };
+        let aprobadaActualizada:DocumentData|undefined;
+        const approvalData=approval.data();
+        const productoAprobadoData=approvalData?.producto;
+        const cicloActual=currentStoreData.cicloCatalogo??0;
+        if(actualizarPublicada && (approvalData?.cicloCatalogo??0)===cicloActual && productoAprobadoData && typeof productoAprobadoData==='object'){
+          const productoAprobado=productoAprobadoData as DocumentData;
+          aprobadaActualizada=actualizarArrays(productoAprobado,indice,indice===current.length && imagenesActualizadas.length>current.length,derivada as ImagenPreparada);
+          acumular(productoAprobado,aprobadaActualizada);
+          tx.update(approvalRef,{producto:{...productoAprobado,...aprobadaActualizada,actualizadoEn:now}});
+        }
+        for(const snap of [currentPublicProduct,currentPublicProductConsulta]){
+          if(!actualizarPublicada || !snap.exists)continue;
+          const data=snap.data()!;
+          const galeriaLocal=actualizarArrays(data,indice,indice===current.length && imagenesActualizadas.length>current.length,derivada as ImagenPreparada);
+          const actualizacion=aprobadaActualizada
+            ? {...aprobadaActualizada,...(galeriaLocal.miniaturas?{miniaturas:galeriaLocal.miniaturas}:{})}
+            : galeriaLocal;
+          acumular(data,actualizacion);
+          tx.set(snap.ref,{...data,...actualizacion,actualizadoEn:now});
+          // El respaldo aprobado es la fuente común para ambas proyecciones, para no desalinear sus galerías.
+          if(aprobadaActualizada)for(const value of [...(Array.isArray(aprobadaActualizada.imagenes)?aprobadaActualizada.imagenes:[]),...(Array.isArray(aprobadaActualizada.miniaturas)?aprobadaActualizada.miniaturas:[])])if(typeof value==='string')rutasNuevas.add(value);
+        }
+        for(const path of rutasAnteriores)if(!rutasNuevas.has(path))limpieza.add(path);
+        tx.update(productoRef,{imagenes:imagenesActualizadas,actualizadoEn:now});
+        const rutasLimpieza=[...limpieza].filter(path=>/^catalogo\/[a-zA-Z0-9_-]{1,128}\/productos\/[a-zA-Z0-9_-]{1,128}\/[0-9a-f]{64}_(1600|320)\.webp$/.test(path));
+        tx.create(receiptRef,{firma,ruta,limpiezaImagenes:rutasLimpieza,realizadoPor:uid,creadoEn:now});
+        return {ruta,limpieza:rutasLimpieza};
       });
+      transaccionConfirmada=true;
+      confirmado=resultado.ruta;
+      imagenesPublicasLimpieza=resultado.limpieza??[];
     } catch(error) {
+      if(derivada && typeof derivada==='object')await limpiar([derivada.imagen,derivada.miniatura]).catch(()=>undefined);
       await storage.borrar(buckets.originales,[ruta]).catch(()=>undefined);
       throw error;
     }
-    return ruta;
+    if(!transaccionConfirmada)throw new ErrorOperacion('pendiente','No se confirmó el cambio de imagen.');
+    if(imagenesPublicasLimpieza.length)await limpiar(imagenesPublicasLimpieza);
+    return confirmado;
   };
 
   const leer=async(uid:string,tiendaId:string,productoId:string,indice:number):Promise<{bytes:Buffer;contentType:string}>=>{

@@ -26,16 +26,23 @@ POST `/api/v1/editarTiendaEmprendedora`, con `Authorization: Bearer <Firebase ID
   "tipoEmprendimientoId": "tejidos",
   "sectorId": "alerce",
   "contacto": { "tipo": "whatsapp", "valor": "+56912345678" },
-  "mostrarContacto": true
+  "mostrarContacto": true,
+  "canalesContacto": {
+    "whatsapp": { "habilitado": true, "numero": "+56912345678" },
+    "formulario": { "habilitado": true },
+    "correo": { "habilitado": true, "direccion": "hola@mitienda.cl" }
+  }
 }
 ```
 
 `contacto` puede ser `null` si `mostrarContacto` es `false`. Los tipos son `whatsapp`, `correo` o `web`; el sitio web debe ser HTTPS. El número de WhatsApp requiere formato válido con código de país. La versión es el `seconds:nanoseconds` de `actualizadoEn` de la ficha privada leída antes de abrir el formulario.
 
+`canalesContacto` es opcional para mantener compatibilidad con clientes anteriores. Si se envía, cada canal se configura de forma independiente: `whatsapp` requiere un número válido y `correo` una dirección válida cuando están habilitados; `formulario` activa la recepción de consultas. La API conserva o crea el identificador del formulario. Solo proyecta los datos de contacto de canales habilitados. Si no se envía `canalesContacto`, la edición conserva las preferencias anteriores.
+
 ## Efectos
 
-- Escribe nombre, descripción, tipo, sector, contacto, `mostrarContacto` y `actualizadoEn` en la ficha privada.
-- Si la tienda está publicada, aplica los campos públicos aprobados a `tiendasPublicas/{tiendaId}` dentro de la misma transacción. Al ocultar contacto, lo elimina de la proyección pública.
+- Escribe nombre, descripción, tipo, sector, contacto, `mostrarContacto`, los canales de contacto enviados y `actualizadoEn` en la ficha privada.
+- Si la tienda está publicada, aplica los campos públicos aprobados a `tiendasPublicas/{tiendaId}` dentro de la misma transacción. Publica únicamente el número o correo de canales habilitados, junto con las preferencias de formulario; los canales apagados no exponen su dato en la proyección pública.
 - No modifica productos publicados, propietario, fecha de creación ni estado de publicación.
 - Guarda un recibo idempotente en `tiendasPrivadas/{tiendaId}/operacionesEdicion/{operacionId}`. La propietaria no puede leer ni escribir esos recibos mediante reglas de cliente.
 

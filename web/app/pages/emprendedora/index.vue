@@ -2,11 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import '~/assets/amancay-tokens.css'
-import { cargarCuentaEmprendedora, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
+import { cargarCuentaEmprendedora, observarImagenesProductosPublicas, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
 
 type Seccion = 'inicio' | 'productos' | 'agregar' | 'ventas' | 'mas'
 type Filtro = 'todos' | 'publicado' | 'borrador' | 'archivado'
-type TipoContacto = 'whatsapp' | 'correo' | 'web'
 type ElementoCatalogo = { id: string; nombre: string }
 type OperacionVentaPendiente = {
   firma: string
@@ -63,12 +62,11 @@ const formularioTienda = ref({
   descripcion: '',
   tipoEmprendimientoId: '',
   sectorId: '',
-  contactoTipo: 'whatsapp' as TipoContacto,
-  contactoValor: '',
-  mostrarContacto: false,
   whatsappHabilitado: false,
   whatsappNumero: '',
   formularioHabilitado: false,
+  correoHabilitado: false,
+  correoDireccion: '',
   mostrarPrecios: true,
 })
 const edicionTiendaPendiente = ref<{ firma: string; operacionId: string } | null>(null)
@@ -76,6 +74,7 @@ const logoSeleccionado = ref<File | null>(null)
 const logoArchivoId = ref('')
 const logoVistaPrevia = ref('')
 const logoInput = ref<HTMLInputElement | null>(null)
+let detenerObservadorImagenesProductos: (() => void) | undefined
 const productoVentaId = ref('')
 const varianteVentaId = ref('')
 const cantidadVenta = ref('1')
@@ -151,13 +150,38 @@ function limpiarVistaPreviaLogo() {
   logoVistaPrevia.value = ''
 }
 
-onBeforeUnmount(limpiarVistaPreviaLogo)
+onBeforeUnmount(() => {
+  detenerObservadorImagenesProductos?.()
+  limpiarVistaPreviaLogo()
+})
 
 function cliente() {
   const { $amancay } = useNuxtApp()
   if (!$amancay?.firebase) throw new Error('El acceso no está disponible en este momento.')
   return $amancay
 }
+
+watch(() => [cuenta.value?.tienda.id, cuenta.value?.tienda.mostrarPrecios] as const, ([tiendaId, mostrarPrecios]) => {
+  detenerObservadorImagenesProductos?.()
+  detenerObservadorImagenesProductos = undefined
+  if (!import.meta.client || !tiendaId || typeof mostrarPrecios !== 'boolean') return
+  try {
+    const firebase = cliente().firebase
+    detenerObservadorImagenesProductos = observarImagenesProductosPublicas(firebase, tiendaId, mostrarPrecios, (imagenes) => {
+      if (cuenta.value?.tienda.id !== tiendaId) return
+      cuenta.value = {
+        ...cuenta.value,
+        productos: cuenta.value.productos.map((producto) => {
+          const imagenPublica = imagenes.get(producto.id)
+          if (imagenPublica) return { ...producto, imagenPublica }
+          const sinImagenPublica = { ...producto }
+          delete sinImagenPublica.imagenPublica
+          return sinImagenPublica
+        }),
+      }
+    })
+  } catch {}
+})
 
 function nombrePersona() {
   const nombre = cuenta.value?.nombreMostrar.trim()
@@ -267,12 +291,11 @@ async function abrirEdicionTienda() {
       descripcion: actualizada.tienda.descripcion,
       tipoEmprendimientoId: actualizada.tienda.tipoEmprendimientoId,
       sectorId: actualizada.tienda.sectorId,
-      contactoTipo: actualizada.tienda.contacto?.tipo ?? 'whatsapp',
-      contactoValor: actualizada.tienda.contacto?.valor ?? '',
-      mostrarContacto: actualizada.tienda.mostrarContacto,
       whatsappHabilitado: actualizada.tienda.canalesContacto?.whatsapp?.habilitado ?? (actualizada.tienda.mostrarContacto && actualizada.tienda.contacto?.tipo === 'whatsapp'),
       whatsappNumero: actualizada.tienda.canalesContacto?.whatsapp?.numero ?? (actualizada.tienda.contacto?.tipo === 'whatsapp' ? actualizada.tienda.contacto.valor: ''),
       formularioHabilitado: actualizada.tienda.canalesContacto?.formulario?.habilitado ?? false,
+      correoHabilitado: actualizada.tienda.canalesContacto?.correo?.habilitado ?? (actualizada.tienda.mostrarContacto && actualizada.tienda.contacto?.tipo === 'correo'),
+      correoDireccion: actualizada.tienda.canalesContacto?.correo?.direccion ?? (actualizada.tienda.contacto?.tipo === 'correo' ? actualizada.tienda.contacto.valor : ''),
       mostrarPrecios: actualizada.tienda.mostrarPrecios,
     }
     catalogosTienda.value = await $catalogoPublico.listarCatalogosPublicos()
@@ -328,19 +351,26 @@ async function guardarTienda() {
     descripcion: formularioTienda.value.descripcion.trim(),
     tipoEmprendimientoId: formularioTienda.value.tipoEmprendimientoId,
     sectorId: formularioTienda.value.sectorId,
-    contacto: formularioTienda.value.contactoValor.trim()
-      ? { tipo: formularioTienda.value.contactoTipo, valor: formularioTienda.value.contactoValor.trim() }
-      : null,
-    mostrarContacto: formularioTienda.value.mostrarContacto,
+    contacto: formularioTienda.value.whatsappHabilitado && formularioTienda.value.whatsappNumero.trim()
+      ? { tipo: 'whatsapp', valor: formularioTienda.value.whatsappNumero.trim() }
+      : formularioTienda.value.correoHabilitado && formularioTienda.value.correoDireccion.trim()
+        ? { tipo: 'correo', valor: formularioTienda.value.correoDireccion.trim() }
+        : null,
+    mostrarContacto: (formularioTienda.value.whatsappHabilitado && Boolean(formularioTienda.value.whatsappNumero.trim()))
+      || (formularioTienda.value.correoHabilitado && Boolean(formularioTienda.value.correoDireccion.trim())),
     canalesContacto: {
-    whatsapp: {
-    habilitado: formularioTienda.value.whatsappHabilitado,
-    numero: formularioTienda.value.whatsappNumero.trim(),
-  },
-  formulario: {
-    habilitado: formularioTienda.value.formularioHabilitado,
-  },
-},
+      whatsapp: {
+        habilitado: formularioTienda.value.whatsappHabilitado,
+        numero: formularioTienda.value.whatsappNumero.trim(),
+      },
+      formulario: {
+        habilitado: formularioTienda.value.formularioHabilitado,
+      },
+      correo: {
+        habilitado: formularioTienda.value.correoHabilitado,
+        direccion: formularioTienda.value.correoDireccion.trim(),
+      },
+    },
   }
   if (!campos.nombre || campos.nombre.length > 120) {
     error.value = 'Escribe un nombre para tu tienda de hasta 120 caracteres.'
@@ -354,8 +384,12 @@ async function guardarTienda() {
     error.value = 'Selecciona el tipo de emprendimiento y el sector.'
     return
   }
-  if (campos.mostrarContacto && !campos.contacto) {
-    error.value = 'Agrega un dato de contacto antes de mostrarlo a quienes visiten tu tienda.'
+  if (formularioTienda.value.whatsappHabilitado && !/^\+?[0-9][0-9\s()-]{6,22}$/.test(formularioTienda.value.whatsappNumero.trim())) {
+    error.value = 'Ingresa un número válido para habilitar WhatsApp.'
+    return
+  }
+  if (formularioTienda.value.correoHabilitado && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formularioTienda.value.correoDireccion.trim())) {
+    error.value = 'Ingresa un correo válido para habilitar este canal.'
     return
   }
 
@@ -896,43 +930,33 @@ onMounted(async () => {
                 <section class="paso-edicion-tienda">
                   <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">1</span><div><h2>Información de la tienda</h2><p>Cuéntanos sobre tu emprendimiento.</p></div></header>
                   <div class="campos-ficha-tienda">
-                    <label class="interruptor-contacto-tienda">
-                      <input
-                        v-model="formularioTienda.whatsappHabilitado"type="checkbox":disabled="guardandoTienda"/>
-                        <span>
-                        <strong>Permitir contacto por WhatsApp</strong>
-                        </span>
-                        </label>
-                        <label v-if="formularioTienda.whatsappHabilitado"class="campo-ficha-tienda">
-                        Número de WhatsApp
-                        <input v-model="formularioTienda.whatsappNumero" type="tel" placeholder="+56 9 1234 5678" :disabled="guardandoTienda"/>
-                        </label>
-                        <label class="interruptor-contacto-tienda">
-                        <input v-model="formularioTienda.formularioHabilitado" type="checkbox" :disabled="guardandoTienda"/>
-                        <span>
-                        <strong>Permitir contacto mediante formulario</strong>
-                      </span>
-                    </label>
-                </div>
+                    <p>Elige una o varias formas para que tus clientes se comuniquen contigo.</p>
+                  </div>
                 </section>
 
                 <section class="paso-edicion-tienda">
                   <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">2</span><div><h2>Contacto público</h2><p>Elige cómo pueden contactarte tus clientes.</p></div></header>
                   <div class="campos-ficha-tienda">
-                    <label class="campo-ficha-tienda">Medio de contacto
-                      <select v-model="formularioTienda.contactoTipo" :disabled="cargandoEdicionTienda || guardandoTienda">
-                        <option value="whatsapp">WhatsApp</option>
-                        <option value="correo">Correo electrónico</option>
-                        <option value="web">Sitio web (HTTPS)</option>
-                      </select>
+                    <label class="interruptor-contacto-tienda">
+                      <input v-model="formularioTienda.whatsappHabilitado" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
+                      <span class="pista-interruptor"></span>
+                      <span><strong>WhatsApp</strong><small>Conversación directa con tus clientes.</small></span>
                     </label>
-                    <label class="campo-ficha-tienda">Dato de contacto
-                      <input v-model="formularioTienda.contactoValor" :type="formularioTienda.contactoTipo === 'correo' ? 'email' : formularioTienda.contactoTipo === 'web' ? 'url' : 'tel'" :placeholder="formularioTienda.contactoTipo === 'correo' ? 'hola@mitienda.cl' : formularioTienda.contactoTipo === 'web' ? 'https://mitienda.cl' : '+56 9 1234 5678'" :disabled="cargandoEdicionTienda || guardandoTienda" />
+                    <label v-if="formularioTienda.whatsappHabilitado" class="campo-ficha-tienda">Número de WhatsApp
+                      <input v-model="formularioTienda.whatsappNumero" type="tel" maxlength="32" placeholder="+56 9 1234 5678" :disabled="guardandoTienda" />
                     </label>
                     <label class="interruptor-contacto-tienda">
-                      <input v-model="formularioTienda.mostrarContacto" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
+                      <input v-model="formularioTienda.formularioHabilitado" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
                       <span class="pista-interruptor"></span>
-                      <span><strong>Mostrar este contacto a quienes visiten mi tienda</strong><small>Tu contacto será visible en la tienda pública.</small></span>
+                      <span><strong>Formulario</strong><small>Recibirás consultas en la bandeja de tu tienda.</small></span>
+                    </label>
+                    <label class="interruptor-contacto-tienda">
+                      <input v-model="formularioTienda.correoHabilitado" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
+                      <span class="pista-interruptor"></span>
+                      <span><strong>Correo electrónico</strong><small>El comprador podrá escribirte directamente.</small></span>
+                    </label>
+                    <label v-if="formularioTienda.correoHabilitado" class="campo-ficha-tienda">Correo de contacto
+                      <input v-model="formularioTienda.correoDireccion" type="email" maxlength="254" autocomplete="email" placeholder="hola@mitienda.cl" :disabled="guardandoTienda" />
                     </label>
                   </div>
                 </section>
@@ -971,8 +995,12 @@ onMounted(async () => {
                     <div class="logo-vista-previa"><img :src="logoVisible" :alt="'Logo de ' + (formularioTienda.nombre || 'mi tienda')" /></div>
                     <div class="texto-vista-previa"><h3>{{ formularioTienda.nombre || 'Nombre de tu tienda' }}</h3><p>{{ tipoTiendaVisible }}</p><span class="sector-vista-previa"><span aria-hidden="true">◇</span>{{ sectorTiendaVisible }}</span></div>
                   </div>
-                  <button v-if="formularioTienda.mostrarContacto && formularioTienda.contactoValor.trim()" class="contacto-vista-previa" type="button" disabled><span aria-hidden="true">{{ formularioTienda.contactoTipo === 'whatsapp' ? '◉' : formularioTienda.contactoTipo === 'correo' ? '✉' : '↗' }}</span>{{ formularioTienda.contactoTipo === 'whatsapp' ? 'Contactar por WhatsApp' : formularioTienda.contactoTipo === 'correo' ? 'Contactar por correo' : 'Visitar sitio web' }}</button>
-                  <div v-else class="contacto-vista-previa contacto-inactivo"><span aria-hidden="true">◎</span>El contacto está oculto</div>
+                  <div v-if="formularioTienda.whatsappHabilitado || formularioTienda.formularioHabilitado || formularioTienda.correoHabilitado" class="contactos-vista-previa">
+                    <span v-if="formularioTienda.whatsappHabilitado" class="contacto-vista-previa">◉ WhatsApp</span>
+                    <span v-if="formularioTienda.formularioHabilitado" class="contacto-vista-previa">▤ Formulario</span>
+                    <span v-if="formularioTienda.correoHabilitado" class="contacto-vista-previa">✉ Correo</span>
+                  </div>
+                  <div v-else class="contacto-vista-previa contacto-inactivo"><span aria-hidden="true">◎</span>No hay canales de contacto activos</div>
                 </article>
                 <div class="nota-vista-previa"><span aria-hidden="true">i</span><p>Esta es una vista referencial. Los cambios se reflejarán en tu tienda pública.</p></div>
               </aside>
@@ -1327,6 +1355,7 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
 .cuerpo-vista-previa{display:flex;align-items:center;gap:14px;padding:21px 19px}
 .logo-vista-previa{display:grid;place-items:center;flex:0 0 88px;height:88px;border-radius:17px;background:#fff7ef}.logo-vista-previa img{width:100%;height:100%;object-fit:contain;padding:9px}
 .texto-vista-previa{display:grid;gap:6px;min-width:0}.texto-vista-previa h3{overflow:hidden;margin:0;color:var(--amancay-bordo-oscuro);font:400 24px/1.1 'DM Serif Display',Georgia,serif;text-overflow:ellipsis;white-space:nowrap}.texto-vista-previa p{overflow:hidden;margin:0;color:var(--texto);font-size:14px;text-overflow:ellipsis;white-space:nowrap}.sector-vista-previa{display:flex;align-items:center;gap:8px;color:var(--texto);font-size:12px}.sector-vista-previa>span{font-size:20px}
+.contactos-vista-previa{display:grid;gap:8px;margin:0 20px 20px}.contactos-vista-previa .contacto-vista-previa{width:100%;margin:0;min-height:44px;background:var(--amancay-verde-fondo);color:var(--amancay-verde-texto)}
 .contacto-vista-previa{display:flex;align-items:center;justify-content:center;gap:10px;width:calc(100% - 40px);min-height:54px;margin:0 20px 20px;border:0;border-radius:14px;background:var(--amancay-verde-fondo);color:var(--amancay-verde-texto);font:700 13px 'Plus Jakarta Sans',sans-serif}.contacto-vista-previa>span{font-size:20px}.contacto-inactivo{background:var(--amancay-superficie-variante);color:var(--suave);font-weight:600}
 .nota-vista-previa{display:flex;align-items:center;gap:13px;margin-top:16px;padding:15px 17px;border:1px solid #f0dcc6;border-radius:15px;background:#fffaf4}.nota-vista-previa>span{display:grid;place-items:center;flex:0 0 32px;height:32px;border:2px solid var(--naranja);border-radius:50%;color:var(--naranja);font-size:18px;font-weight:700}.nota-vista-previa p{margin:0;color:var(--suave);font-size:12px;line-height:1.55}
 .barra-acciones-editor{position:sticky;bottom:0;z-index:3;display:flex;justify-content:flex-end;gap:13px;margin:18px -2px 0;padding:14px 2px 16px;border-top:1px solid rgba(231,213,190,.8);background:rgba(251,243,228,.96);backdrop-filter:blur(10px)}

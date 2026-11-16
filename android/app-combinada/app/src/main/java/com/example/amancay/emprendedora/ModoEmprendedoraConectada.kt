@@ -72,6 +72,7 @@ import com.example.amancay.EmprendedoraAppConectada
 import com.example.amancay.data.ApiEmprendedoraClient
 import com.example.amancay.data.AutenticacionCorreo
 import com.example.amancay.data.AutenticacionGoogleComprador
+import com.example.amancay.data.CanalesContactoTienda
 import com.example.amancay.data.ContactoEmprendedora
 import com.example.amancay.data.CuentaEmprendedora
 import com.example.amancay.data.CuentaEmprendedoraRepository
@@ -82,6 +83,8 @@ import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.ui.Fig
 import com.example.amancay.ui.BotanicalBackdrop
 import com.example.amancay.ui.OutlineButton
+import com.example.amancay.ui.BotonCodigoQr
+import com.example.amancay.ui.EnlacesPublicos
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
@@ -589,9 +592,11 @@ internal data class BorradorFicha(
     val sectorId: String,
     val tipoId: String,
     val direccion: String,
-    val contactoTipo: String,
-    val contactoValor: String,
-    val mostrarContacto: Boolean
+    val whatsappHabilitado: Boolean,
+    val whatsappNumero: String,
+    val formularioHabilitado: Boolean,
+    val correoHabilitado: Boolean,
+    val correoDireccion: String
 )
 
 private const val PREFS_BORRADOR_FICHA = "amancay_borrador_tienda"
@@ -607,9 +612,11 @@ internal fun guardarBorradorFicha(context: Context, uid: String, borrador: Borra
         .put("sectorId", borrador.sectorId)
         .put("tipoId", borrador.tipoId)
         .put("direccion", borrador.direccion)
-        .put("contactoTipo", borrador.contactoTipo)
-        .put("contactoValor", borrador.contactoValor)
-        .put("mostrarContacto", borrador.mostrarContacto)
+        .put("whatsappHabilitado", borrador.whatsappHabilitado)
+        .put("whatsappNumero", borrador.whatsappNumero)
+        .put("formularioHabilitado", borrador.formularioHabilitado)
+        .put("correoHabilitado", borrador.correoHabilitado)
+        .put("correoDireccion", borrador.correoDireccion)
     context.getSharedPreferences(PREFS_BORRADOR_FICHA, Context.MODE_PRIVATE)
         .edit().putString("$CLAVE_BORRADOR_FICHA$uid", json.toString()).apply()
 }
@@ -619,16 +626,21 @@ internal fun leerBorradorFicha(context: Context, uid: String): BorradorFicha? {
     val texto = context.getSharedPreferences(PREFS_BORRADOR_FICHA, Context.MODE_PRIVATE)
         .getString("$CLAVE_BORRADOR_FICHA$uid", null) ?: return null
     val json = runCatching { JSONObject(texto) }.getOrNull() ?: return null
+    val tipoLegado = json.optString("contactoTipo", "whatsapp")
+    val datoLegado = json.optString("contactoValor")
     return BorradorFicha(
         nombre = json.optString("nombre"),
         descripcion = json.optString("descripcion"),
         sectorId = json.optString("sectorId"),
         tipoId = json.optString("tipoId"),
         direccion = json.optString("direccion"),
-        contactoTipo = json.optString("contactoTipo").ifBlank { "whatsapp" },
-        contactoValor = json.optString("contactoValor"),
-        mostrarContacto = json.optBoolean("mostrarContacto", false)
-    ).takeIf { it.nombre.isNotBlank() || it.descripcion.isNotBlank() || it.direccion.isNotBlank() || it.contactoValor.isNotBlank() }
+        whatsappHabilitado = json.optBoolean("whatsappHabilitado", tipoLegado == "whatsapp" && datoLegado.isNotBlank()),
+        whatsappNumero = json.optString("whatsappNumero", datoLegado.takeIf { tipoLegado == "whatsapp" }.orEmpty()),
+        // Antes no existía un interruptor para el formulario; el flujo comprador lo ofrecía por defecto.
+        formularioHabilitado = json.optBoolean("formularioHabilitado", true),
+        correoHabilitado = json.optBoolean("correoHabilitado", tipoLegado == "correo" && datoLegado.isNotBlank()),
+        correoDireccion = json.optString("correoDireccion", datoLegado.takeIf { tipoLegado == "correo" }.orEmpty())
+    ).takeIf { it.nombre.isNotBlank() || it.descripcion.isNotBlank() || it.direccion.isNotBlank() || it.whatsappNumero.isNotBlank() || it.correoDireccion.isNotBlank() }
 }
 
 internal fun limpiarBorradorFicha(context: Context, uid: String) {
@@ -729,9 +741,11 @@ internal fun PantallaEdicionTienda(
     var sectorId by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.sectorId ?: tienda.sectorId) }
     var tipoId by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.tipoId ?: tienda.tipoEmprendimientoId) }
     var direccion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.direccion ?: tienda.direccion) }
-    var contactoTipo by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.contactoTipo ?: tienda.contacto?.tipo ?: "whatsapp") }
-    var contactoValor by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.contactoValor ?: tienda.contacto?.valor.orEmpty()) }
-    var mostrarContacto by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.mostrarContacto ?: tienda.mostrarContacto) }
+    var whatsappHabilitado by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.whatsappHabilitado ?: tienda.canalesContacto.whatsappHabilitado) }
+    var whatsappNumero by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.whatsappNumero ?: tienda.canalesContacto.whatsappNumero) }
+    var formularioHabilitado by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.formularioHabilitado ?: tienda.canalesContacto.formularioHabilitado) }
+    var correoHabilitado by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.correoHabilitado ?: tienda.canalesContacto.correoHabilitado) }
+    var correoDireccion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.correoDireccion ?: tienda.canalesContacto.correoDireccion) }
 
     // Foto o logo: previsualización nueva, copia local guardada y envío a la API.
     var logoEnviando by remember { mutableStateOf(false) }
@@ -794,28 +808,40 @@ internal fun PantallaEdicionTienda(
     }
 
     // Conservar borrador al cerrar la app: se guarda con cada cambio y se limpia cuando vuelve a coincidir con la ficha guardada.
-    LaunchedEffect(nombre, descripcion, sectorId, tipoId, direccion, contactoTipo, contactoValor, mostrarContacto) {
+    LaunchedEffect(nombre, descripcion, sectorId, tipoId, direccion, whatsappHabilitado, whatsappNumero, formularioHabilitado, correoHabilitado, correoDireccion) {
         val difiere = nombre != tienda.nombre ||
             descripcion != tienda.descripcion ||
             sectorId != tienda.sectorId ||
             tipoId != tienda.tipoEmprendimientoId ||
             direccion != tienda.direccion ||
-            contactoTipo != (tienda.contacto?.tipo ?: "whatsapp") ||
-            contactoValor != tienda.contacto?.valor.orEmpty() ||
-            mostrarContacto != tienda.mostrarContacto
+            whatsappHabilitado != tienda.canalesContacto.whatsappHabilitado ||
+            whatsappNumero != tienda.canalesContacto.whatsappNumero ||
+            formularioHabilitado != tienda.canalesContacto.formularioHabilitado ||
+            correoHabilitado != tienda.canalesContacto.correoHabilitado ||
+            correoDireccion != tienda.canalesContacto.correoDireccion
         if (difiere) {
-            guardarBorradorFicha(context, cuenta.uid, BorradorFicha(nombre, descripcion, sectorId, tipoId, direccion, contactoTipo, contactoValor, mostrarContacto))
+            guardarBorradorFicha(context, cuenta.uid, BorradorFicha(nombre, descripcion, sectorId, tipoId, direccion, whatsappHabilitado, whatsappNumero, formularioHabilitado, correoHabilitado, correoDireccion))
         } else {
             limpiarBorradorFicha(context, cuenta.uid)
         }
     }
 
-    val errorContacto = validarContactoTienda(contactoTipo, contactoValor)
+    val errorWhatsApp = when {
+        !whatsappHabilitado -> null
+        whatsappNumero.isBlank() -> "Ingresa el número para habilitar WhatsApp."
+        else -> validarContactoTienda("whatsapp", whatsappNumero)
+    }
+    val errorCorreo = when {
+        !correoHabilitado -> null
+        correoDireccion.isBlank() -> "Ingresa el correo para habilitar este canal."
+        else -> validarContactoTienda("correo", correoDireccion)
+    }
     val errorFicha = when {
         nombre.isBlank() -> "Escribe el nombre de la tienda."
         tipoId.isBlank() -> "Selecciona el tipo de emprendimiento."
         sectorId.isBlank() -> "Selecciona un sector para guardar la ficha."
-        mostrarContacto && contactoValor.isBlank() -> "Ingresa un dato de contacto para mostrarlo en la tienda pública."
+        errorWhatsApp != null -> errorWhatsApp
+        errorCorreo != null -> errorCorreo
         else -> null
     }
 
@@ -823,6 +849,10 @@ internal fun PantallaEdicionTienda(
     Text("Mi tienda", fontSize = 32.sp, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
     Text("Los cambios de nombre, descripción, sector, tipo y contacto se reflejan en la proyección pública si la tienda ya está publicada.", fontSize = 15.sp, color = Muted)
     Spacer(Modifier.height(16.dp))
+    if (tienda.estadoPublicacion == "publicado") {
+        BotonCodigoQr("Código QR de mi tienda", tienda.nombre, EnlacesPublicos.tienda(cuenta.tiendaId))
+        Spacer(Modifier.height(12.dp))
+    }
     if (borradorRestaurado != null) {
         AvisoEmprendedora("Se conservó el borrador de tu ficha al cerrar la app. Continúa donde lo dejaste o guarda los cambios.", false)
     }
@@ -939,23 +969,26 @@ internal fun PantallaEdicionTienda(
     }
     Spacer(Modifier.height(12.dp))
     Text("Contacto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Dark)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-        listOf("whatsapp" to "WhatsApp", "correo" to "Correo", "web" to "Sitio web").forEach { (id, label) ->
-            SelectableChip(text = label, selected = contactoTipo == id) { contactoTipo = id }
-        }
-    }
+    Text("Elige una o varias opciones. Cada canal activo aparecerá en tu tienda pública.", fontSize = 13.sp, color = Muted)
     Spacer(Modifier.height(8.dp))
-    AmancayInput("Dato de contacto", contactoValor, { contactoValor = it }, 254)
-    errorContacto?.let {
-        Text(it, color = AccentRed, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        SelectableChip(text = "WhatsApp", selected = whatsappHabilitado) { whatsappHabilitado = !whatsappHabilitado }
+        SelectableChip(text = "Formulario", selected = formularioHabilitado) { formularioHabilitado = !formularioHabilitado }
+        SelectableChip(text = "Correo", selected = correoHabilitado) { correoHabilitado = !correoHabilitado }
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(
-            checked = mostrarContacto,
-            onCheckedChange = { mostrarContacto = it },
-            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-        )
-        Text("Mostrar este contacto en la tienda pública", color = Dark)
+    if (whatsappHabilitado) {
+        Spacer(Modifier.height(8.dp))
+        AmancayInput("Número de WhatsApp", whatsappNumero, { whatsappNumero = it }, 32)
+        errorWhatsApp?.let { Text(it, color = AccentRed, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) }
+    }
+    if (formularioHabilitado) {
+        Spacer(Modifier.height(8.dp))
+        Text("La persona podrá dejar su mensaje, nombre y correo desde el catálogo.", fontSize = 13.sp, color = Muted, modifier = Modifier.fillMaxWidth().background(CardPink, RoundedCornerShape(14.dp)).padding(12.dp))
+    }
+    if (correoHabilitado) {
+        Spacer(Modifier.height(8.dp))
+        AmancayInput("Correo de contacto", correoDireccion, { correoDireccion = it }, 254)
+        errorCorreo?.let { Text(it, color = AccentRed, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) }
     }
     Spacer(Modifier.height(8.dp))
     OutlineButton("Volver a configuración", alCancelar)
@@ -966,10 +999,17 @@ internal fun PantallaEdicionTienda(
     PrimaryButton(
         text = if (enviando) "Guardando…" else "Guardar ficha",
         onClick = {
-            val contacto = contactoValor.trim().takeIf(String::isNotEmpty)?.let { ContactoEmprendedora(contactoTipo, it) }
-            alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, direccion = direccion.trim(), contacto = contacto, mostrarContacto = mostrarContacto))
+            val numero = whatsappNumero.trim()
+            val email = correoDireccion.trim()
+            val contacto = when {
+                whatsappHabilitado && numero.isNotBlank() -> ContactoEmprendedora("whatsapp", numero)
+                correoHabilitado && email.isNotBlank() -> ContactoEmprendedora("correo", email)
+                else -> null
+            }
+            val canales = CanalesContactoTienda(whatsappHabilitado, numero, formularioHabilitado, correoHabilitado, email)
+            alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, direccion = direccion.trim(), contacto = contacto, mostrarContacto = contacto != null, canalesContacto = canales))
         },
-        enabled = !enviando && !logoEnviando && errorFicha == null && errorContacto == null,
+        enabled = !enviando && !logoEnviando && errorFicha == null,
         fontSize = 16.sp
     )
     Text("Tienda asignada: ${cuenta.tiendaId}", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))

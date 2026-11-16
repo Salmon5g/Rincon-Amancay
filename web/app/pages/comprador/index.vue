@@ -11,6 +11,7 @@ useHead({
 
 // Cliente y estado de la página
 const { $catalogoPublico } = useNuxtApp();
+const apiUrlPublica = useRuntimeConfig().public.apiUrl;
 const route = useRoute();
 const router = useRouter();
 const tienda = ref<FichaComprador | null>(null);
@@ -37,6 +38,7 @@ let avisoTimer: ReturnType<typeof setTimeout> | undefined;
 let pausaSincronizacionRuta = 0;
 let temporizadorRuta: ReturnType<typeof setTimeout> | undefined;
 let rutaInicializada = false;
+let detenerObservadoresProductos: (() => void)[] = [];
 
 function valorRuta(valor: unknown): string {
     if (Array.isArray(valor)) return typeof valor[0] === 'string' ? valor[0] : '';
@@ -230,48 +232,108 @@ const etiquetaTipo = computed(() => {
 });
 const conteoProductos = computed(() => `${filas.value.length}${siguiente.value ? '+' : ''}`);
 
-const whatsappPublico = computed(() => {
-    const canales = tienda.value?.datos.canalesContacto;
-    if (canales){
+function numeroWhatsapp(ficha: FichaComprador | null | undefined): string | null {
+    if (!ficha) return null;
+    const canales = ficha.datos.canalesContacto;
+    if (canales) {
         if (!canales.whatsapp?.habilitado) return null;
         const numero = (canales.whatsapp.numero || '').replace(/\D/g, '');
-        return /^[1-9]\d{7,14}$/.test(numero) ? `https://wa.me/${numero}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}` : null;
+        return /^[1-9]\d{7,14}$/.test(numero) ? numero : null;
     }
-
-    const contacto = tienda.value?.datos.contacto;
-    if (contacto.tipo !== 'whatsapp') return null;
+    const contacto = ficha.datos.contacto;
+    if (contacto?.tipo !== 'whatsapp') return null;
     const numero = contacto.valor.replace(/\D/g, '');
-    return /^[1-9]\d{7,14}$/.test(numero)? `https://wa.me/${numero}?text=${encodeURIComponent('Hola, vi tus productos en Rincón Amancay.')}` : null;
+    return /^[1-9]\d{7,14}$/.test(numero) ? numero : null;
+}
+
+function enlaceWhatsapp(numero: string, mensaje: string): string {
+    return `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
+}
+
+const whatsappPublico = computed(() => {
+    const numero = numeroWhatsapp(tienda.value);
+    return numero ? enlaceWhatsapp(numero, 'Hola, vi tus productos en Rincón Amancay.') : null;
 });
+
+function correoContactoPublico(ficha: FichaComprador | null | undefined): string | null {
+    if (!ficha) return null;
+    const canales = ficha.datos.canalesContacto;
+    const correo = canales
+        ? canales.correo?.habilitado === true ? canales.correo.direccion : ''
+        : ficha.datos.contacto?.tipo === 'correo' ? ficha.datos.contacto.valor : '';
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim()) ? correo.trim() : null;
+}
+
+const correoPublico = computed(() => correoContactoPublico(tienda.value));
 
 const formularioPublico = computed(() => {
-    return tienda.value?.datos.canalesContacto?.formulario?.habilitado === true
-}); 
-
-const tieneContactoPublico = computed(() => {
-  return Boolean(whatsappPublico.value || formularioPublico.value);
+    const canales = tienda.value?.datos.canalesContacto;
+    // Las fichas antiguas se normalizan desde formaContacto en el repositorio.
+    // Si un adaptador no entrega canales, se conserva el comportamiento legado de formulario.
+    return canales ? canales.formulario?.habilitado === true : Boolean(tienda.value);
 });
 
+const tieneContactoPublico = computed(() => Boolean(whatsappPublico.value || formularioPublico.value || correoPublico.value));
+
 const formularioContactoAbierto = ref(false);
-function abrirFormularioContacto() {
-    if (!formularioPublico.value || !tienda.value) return;
-    formularioContactoAbierto.value = true;
-}
-function cerrarFormularioContacto() {
-    formularioContactoAbierto.value = false;
-}
+const formularioContactoDirecto = ref(false);
+const nombreConsulta = ref('');
+const correoConsulta = ref('');
+const mensajeConsulta = ref('');
+const enviandoConsulta = ref(false);
+const consultaEnviada = ref(false);
+const errorConsulta = ref('');
+let consultaPendiente: { firma: string; operacionId: string } | null = null;
+
+const urlConsultasPublicas = computed(() => {
+    try {
+        const url = new URL(apiUrlPublica);
+        const httpLocal = url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+        if ((url.protocol !== 'https:' && !httpLocal) || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
+        return `${url.origin}/api/v1/consultasPublicas`;
+    } catch {
+        return null;
+    }
+});
+
+const productoContacto = ref<FichaComprador | null>(null);
+const varianteContacto = ref<FichaComprador | null>(null);
+const imagenProductoContacto = computed(() => varianteContacto.value?.datos.imagen || productoContacto.value?.datos.imagenes?.[0] || '');
+const varianteProductoContacto = computed(() => varianteContacto.value ? nombreVariante(varianteContacto.value) : '');
+const precioProductoContacto = computed(() => {
+    if (tiendaContacto.value?.datos.mostrarPrecios !== true || !productoContacto.value) return 'Consultar precio';
+    const monto = productoContacto.value.datos.tieneVariantes
+        ? varianteContacto.value?.datos.precio
+        : productoContacto.value.datos.precioBase;
+    return precio(monto);
+});
 
 const enlaceContacto = computed(() => {
-    const contacto = tienda.value?.datos.contacto;
-    if (!contacto) return null;
-    if (contacto.tipo === 'whatsapp') {
-        return whatsappPublico.value
-            ? { href: whatsappPublico.value, texto: 'Contactar por WhatsApp' }
-            : null;
+    const ficha = tienda.value;
+    const numero = numeroWhatsapp(ficha);
+    if (ficha?.datos.canalesContacto) {
+        if (numero) return { href: enlaceWhatsapp(numero, 'Hola, vi tus productos en Rincón Amancay.'), texto: 'Contactar por WhatsApp' };
+        const correo = correoContactoPublico(ficha);
+        return correo ? { href: `mailto:${correo}`, texto: 'Contactar por correo' } : null;
     }
+    const contacto = ficha?.datos.contacto;
+    if (!contacto) return null;
+    if (contacto.tipo === 'whatsapp') return numero ? { href: enlaceWhatsapp(numero, 'Hola, vi tus productos en Rincón Amancay.'), texto: 'Contactar por WhatsApp' } : null;
     if (contacto.tipo === 'correo') return { href: `mailto:${contacto.valor}`, texto: 'Contactar por correo' };
     if (contacto.tipo === 'web' && contacto.valor.startsWith('https://')) return { href: contacto.valor, texto: 'Visitar sitio de la tienda' };
     return null;
+});
+
+const contactoTiendaVisible = computed(() => {
+    const ficha = tienda.value;
+    if (!ficha) return null;
+    if (ficha.datos.canalesContacto) {
+        const numero = numeroWhatsapp(ficha);
+        if (numero) return { tipo: 'whatsapp' as const, valor: numero };
+        const correo = correoContactoPublico(ficha);
+        return correo ? { tipo: 'correo' as const, valor: correo } : null;
+    }
+    return ficha.datos.contacto ?? null;
 });
 
 const stockProducto = computed(() => textoStockProducto(producto.value, variantes.value, cargando.value));
@@ -284,37 +346,166 @@ const etiquetaModalidad = computed(() => {
 
 // Ventana de contacto: solo muestra datos públicos de la tienda.
 const tiendaContacto = ref<FichaComprador | null>(null);
+const correoContacto = computed(() => correoContactoPublico(tiendaContacto.value));
 const estadoCopia = ref<'' | 'ok' | 'error'>('');
 let overflowContacto = '';
 const tiposContacto: Record<string, string> = { correo: 'Correo', whatsapp: 'WhatsApp', web: 'Sitio web' };
+const contactoContacto = computed(() => {
+    const ficha = tiendaContacto.value;
+    if (!ficha) return null;
+    if (ficha.datos.canalesContacto) {
+        const numero = numeroWhatsapp(ficha);
+        if (numero) return { tipo: 'whatsapp' as const, valor: numero };
+        const correo = correoContactoPublico(ficha);
+        return correo ? { tipo: 'correo' as const, valor: correo } : null;
+    }
+    return ficha.datos.contacto ?? null;
+});
+const whatsappContacto = computed(() => {
+    const numero = numeroWhatsapp(tiendaContacto.value);
+    if (!numero) return null;
+    const nombre = productoContacto.value?.datos.nombre;
+    const variante = varianteProductoContacto.value;
+    const mensaje = nombre
+        ? `Hola, vi el producto ${nombre}${variante ? ` (${variante})` : ''} en Rincón Amancay y quisiera hacer una consulta.`
+        : `Hola, vi la tienda ${tiendaContacto.value?.datos.nombre ?? ''} en Rincón Amancay y quisiera hacer una consulta.`;
+    return enlaceWhatsapp(numero, mensaje);
+});
 const sectorContacto = computed(() => {
     const id = tiendaContacto.value?.datos.sectorId;
     return id ? sectores.value[id] ?? '' : '';
 });
 
-function abrirContacto(ficha: FichaComprador | null) {
-    if (!ficha) return;
+function inicializarContacto(ficha: FichaComprador, productoFicha: FichaComprador | null, varianteFicha: FichaComprador | null, mostrarFormulario: boolean, formularioDirecto: boolean) {
+    if (!tieneContactoPublico.value && ficha.id === tienda.value?.id) return;
     tiendaContacto.value = ficha;
+    productoContacto.value = productoFicha;
+    varianteContacto.value = varianteFicha;
+    formularioContactoAbierto.value = mostrarFormulario;
+    formularioContactoDirecto.value = formularioDirecto;
+    nombreConsulta.value = '';
+    correoConsulta.value = '';
+    mensajeConsulta.value = '';
+    enviandoConsulta.value = false;
+    consultaEnviada.value = false;
+    errorConsulta.value = '';
     estadoCopia.value = '';
+    consultaPendiente = null;
     if (import.meta.client) {
         overflowContacto = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
     }
 }
 
+function abrirFormularioContacto() {
+    if (!formularioPublico.value || !tienda.value) return;
+    inicializarContacto(tienda.value, null, null, true, true);
+}
+
+function mostrarFormularioContacto() {
+    if (!formularioPublico.value) return;
+    formularioContactoAbierto.value = true;
+    errorConsulta.value = '';
+}
+
+function volverCanalesContacto() {
+    if (formularioContactoDirecto.value) {
+        cerrarContacto();
+        return;
+    }
+    formularioContactoAbierto.value = false;
+    errorConsulta.value = '';
+    consultaEnviada.value = false;
+}
+
+function abrirContacto(ficha: FichaComprador | null, productoFicha: FichaComprador | null = null) {
+    if (!ficha) return;
+    inicializarContacto(ficha, productoFicha, productoFicha ? variante.value ?? null : null, false, false);
+}
+
 function cerrarContacto() {
     tiendaContacto.value = null;
+    productoContacto.value = null;
+    varianteContacto.value = null;
+    formularioContactoAbierto.value = false;
+    formularioContactoDirecto.value = false;
+    consultaEnviada.value = false;
+    errorConsulta.value = '';
     if (import.meta.client) document.body.style.overflow = overflowContacto;
 }
 
 async function copiarContacto() {
-    const valor = valorContactoVisible(tiendaContacto.value);
+    const valor = contactoContacto.value?.valor || valorContactoVisible(tiendaContacto.value);
     if (!valor) return;
     try {
         await navigator.clipboard.writeText(valor);
         estadoCopia.value = 'ok';
     } catch {
         estadoCopia.value = 'error';
+    }
+}
+
+function crearOperacionConsulta(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') throw new Error('Este navegador no puede proteger el reintento del formulario.');
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function enviarConsulta() {
+    const ficha = tiendaContacto.value;
+    if (!ficha || !formularioPublico.value || enviandoConsulta.value || consultaEnviada.value) return;
+    if (!urlConsultasPublicas.value) {
+        errorConsulta.value = 'El envío del formulario no está configurado en este entorno. Inténtalo más tarde.';
+        return;
+    }
+    const nombre = nombreConsulta.value.trim();
+    const correo = correoConsulta.value.trim();
+    const mensaje = mensajeConsulta.value.trim();
+    if (nombre.length < 2 || nombre.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo) || correo.length > 254 || mensaje.length < 5 || mensaje.length > 2000) {
+        errorConsulta.value = 'Revisa tu nombre, correo y mensaje antes de enviar.';
+        return;
+    }
+    const productoNombre = productoContacto.value
+        ? `${productoContacto.value.datos.nombre}${varianteProductoContacto.value ? ` · ${varianteProductoContacto.value}` : ''}`.slice(0, 160)
+        : undefined;
+    const solicitud = {
+        tiendaId: ficha.id,
+        nombre,
+        correo,
+        mensaje,
+        ...(productoNombre ? { producto: productoNombre } : {}),
+    };
+    const firma = JSON.stringify(solicitud);
+    if (!consultaPendiente || consultaPendiente.firma !== firma) {
+        try {
+            consultaPendiente = { firma, operacionId: crearOperacionConsulta() };
+        } catch (fallo) {
+            errorConsulta.value = fallo instanceof Error ? fallo.message : 'No se pudo preparar el envío.';
+            return;
+        }
+    }
+    enviandoConsulta.value = true;
+    errorConsulta.value = '';
+    try {
+        const respuesta = await fetch(urlConsultasPublicas.value, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'omit',
+            body: JSON.stringify({ ...solicitud, operacionId: consultaPendiente.operacionId }),
+        });
+        const resultado = await respuesta.json().catch(() => null) as { datos?: { recibida?: boolean }; error?: { mensaje?: string } } | null;
+        if (!respuesta.ok) throw new Error(resultado?.error?.mensaje || 'No se pudo enviar tu consulta. Inténtalo nuevamente.');
+        if (resultado?.datos?.recibida !== true) throw new Error('No se confirmó la recepción de tu consulta. Puedes reintentar el envío.');
+        consultaEnviada.value = true;
+        consultaPendiente = null;
+    } catch (fallo) {
+        errorConsulta.value = fallo instanceof Error ? fallo.message : 'No se pudo enviar tu consulta. Inténtalo nuevamente.';
+    } finally {
+        enviandoConsulta.value = false;
     }
 }
 
@@ -609,6 +800,31 @@ watch(
     },
 );
 
+watch(() => JSON.stringify(tienda.value
+    ? [tienda.value.id, filas.value.map((ficha) => ficha.id)]
+    : destacados.value.map(({ tienda: fichaTienda, producto: fichaProducto }) => [fichaTienda.id, fichaProducto.id])), () => {
+    detenerObservadoresProductos.forEach((detener) => detener());
+    detenerObservadoresProductos = [];
+    if (!import.meta.client) return;
+    const observados = tienda.value
+        ? filas.value.map((ficha) => ({ tiendaId: tienda.value!.id, productoId: ficha.id }))
+        : destacados.value.map(({ tienda: fichaTienda, producto: fichaProducto }) => ({ tiendaId: fichaTienda.id, productoId: fichaProducto.id }));
+    for (const { tiendaId, productoId } of observados) {
+        detenerObservadoresProductos.push($catalogoPublico.observarProducto(tiendaId, productoId, (actualizado) => {
+            if (!actualizado) return;
+            const ficha = fichaProducto(actualizado);
+            if (tienda.value?.id === tiendaId) {
+                filas.value = filas.value.map((fila) => fila.id === productoId ? ficha : fila);
+                if (producto.value?.id === productoId) producto.value = ficha;
+                if (tiendaContacto.value?.id === tiendaId && productoContacto.value?.id === productoId) productoContacto.value = ficha;
+            }
+            destacados.value = destacados.value.map((destacado) => destacado.tienda.id === tiendaId && destacado.producto.id === productoId
+                ? { ...destacado, producto: ficha }
+                : destacado);
+        }));
+    }
+}, { immediate: true });
+
 watch([busqueda, categoriaSeleccionada, pagina], () => {
     if (!import.meta.client || pausaSincronizacionRuta > 0) return;
     clearTimeout(temporizadorRuta);
@@ -653,6 +869,8 @@ onNuxtReady(() => {
 });
 onBeforeUnmount(() => {
     revision++;
+    detenerObservadoresProductos.forEach((detener) => detener());
+    detenerObservadoresProductos = [];
     clearTimeout(avisoTimer);
     clearTimeout(temporizadorRuta);
     window.removeEventListener('keydown', alTeclearEscape);
@@ -1050,10 +1268,10 @@ onBeforeUnmount(() => {
               </template>
             </dl>
             <div class="ficha-acciones">
-              <button class="boton boton-mostaza" type="button" @click="abrirContacto(tienda)">
+              <button v-if="tieneContactoPublico" class="boton boton-mostaza" type="button" @click="abrirContacto(tienda, producto)">
                 Contactar emprendedora
               </button>
-              <a v-if="enlaceContacto" class="boton boton-primario" :href="enlaceContacto.href" target="_blank" rel="noopener noreferrer">{{ enlaceContacto.texto }}</a>
+              <p v-else class="ficha-nota">Esta tienda aún no habilita un canal de contacto.</p>
               <button class="boton boton-secundario" type="button" @click="volver">Volver a los productos</button>
             </div>
           </div>
@@ -1138,17 +1356,17 @@ onBeforeUnmount(() => {
                 <p>{{ etiquetaSector }}</p>
               </div>
             </div>
-            <div v-if="tienda.datos.contacto" class="dato-tienda">
+            <div v-if="contactoTiendaVisible" class="dato-tienda">
               <span class="dato-icono" aria-hidden="true">☎</span>
               <div>
-                <b>Contacto</b>
+                <b>{{ tiposContacto[contactoTiendaVisible.tipo] ?? 'Contacto' }}</b>
                 <a
                   v-if="enlaceContacto"
                   :href="enlaceContacto.href"
                   target="_blank"
                   rel="noopener noreferrer"
-                >{{ valorContactoVisible(tienda) }}</a>
-                <p v-else>{{ valorContactoVisible(tienda) }}</p>
+                >{{ contactoTiendaVisible.valor }}</a>
+                <p v-else>{{ contactoTiendaVisible.valor }}</p>
               </div>
             </div>
             <div class="sobre-nosotras">
@@ -1173,43 +1391,102 @@ onBeforeUnmount(() => {
         <div class="modal contacto">
           <button class="modal-cerrar" type="button" aria-label="Cerrar" @click="cerrarContacto">✕</button>
           <div class="modal-scroll">
-            <h2 id="contacto-titulo" class="modal-titulo">Contactar emprendedora</h2>
-            <div class="dato-tienda">
-              <span class="dato-icono" aria-hidden="true">🏪</span>
-              <div>
-                <b>Tienda</b>
-                <p>{{ tiendaContacto.datos.nombre }}</p>
+            <h2 id="contacto-titulo" class="modal-titulo">
+              {{ formularioContactoAbierto ? `Contactar a ${tiendaContacto.datos.nombre}` : 'Contactar emprendedora' }}
+            </h2>
+            <p v-if="formularioContactoAbierto" class="contacto-subtitulo">Haz tu consulta directamente a la emprendedora.</p>
+            <div v-if="productoContacto" class="contacto-producto">
+              <div class="contacto-producto-imagen">
+                <ImagenPublica v-if="imagenProductoContacto" :ruta="imagenProductoContacto" :alt="productoContacto.datos.nombre" ajuste="contain" :zoom="false" />
+                <span v-else aria-hidden="true">✿</span>
+              </div>
+              <div class="contacto-producto-texto">
+                <b>{{ productoContacto.datos.nombre }}</b>
+                <span>{{ varianteProductoContacto || tiendaContacto.datos.nombre }}</span>
+                <strong>{{ precioProductoContacto }}</strong>
               </div>
             </div>
-            <div v-if="sectorContacto" class="dato-tienda">
-              <span class="dato-icono" aria-hidden="true">📍</span>
-              <div>
-                <b>Sector</b>
-                <p>{{ sectorContacto }}</p>
+            <template v-if="!formularioContactoAbierto">
+              <div class="dato-tienda">
+                <span class="dato-icono" aria-hidden="true">🏪</span>
+                <div>
+                  <b>Tienda</b>
+                  <p>{{ tiendaContacto.datos.nombre }}</p>
+                </div>
               </div>
-            </div>
-            <div v-if="tiendaContacto.datos.contacto" class="dato-tienda">
-              <span class="dato-icono" aria-hidden="true">☎</span>
-              <div>
-                <b>{{ tiposContacto[tiendaContacto.datos.contacto.tipo] ?? 'Contacto' }}</b>
-                <p class="contacto-valor">{{ valorContactoVisible(tiendaContacto) }}</p>
+              <div v-if="sectorContacto" class="dato-tienda">
+                <span class="dato-icono" aria-hidden="true">📍</span>
+                <div>
+                  <b>Sector</b>
+                  <p>{{ sectorContacto }}</p>
+                </div>
               </div>
-            </div>
-            <p v-else class="contacto-aviso" role="status">
-              Esta emprendedora aún no publicó un medio de contacto.
-            </p>
-            <p v-if="estadoCopia" class="contacto-copia" role="status">
-              {{ estadoCopia === 'ok' ? 'Contacto copiado.' : 'No se pudo copiar. Selecciona el texto y cópialo manualmente.' }}
-            </p>
-            <div class="modal-acciones">
-              <button
-                v-if="tiendaContacto.datos.contacto"
-                class="boton boton-mostaza"
-                type="button"
-                @click="copiarContacto"
-              >Copiar contacto</button>
-              <button class="boton boton-secundario" type="button" @click="cerrarContacto">Cerrar</button>
-            </div>
+              <div v-if="contactoContacto" class="dato-tienda">
+                <span class="dato-icono" aria-hidden="true">☎</span>
+                <div>
+                  <b>{{ tiposContacto[contactoContacto.tipo] ?? 'Contacto' }}</b>
+                  <p class="contacto-valor">{{ contactoContacto.valor }}</p>
+                </div>
+              </div>
+              <p v-if="!whatsappContacto && !formularioPublico && !correoContacto" class="contacto-aviso" role="status">
+                Esta emprendedora aún no habilitó un medio de contacto.
+              </p>
+              <p v-if="estadoCopia" class="contacto-copia" role="status">
+                {{ estadoCopia === 'ok' ? 'Contacto copiado.' : 'No se pudo copiar. Selecciona el texto y cópialo manualmente.' }}
+              </p>
+              <section v-if="whatsappContacto || formularioPublico || correoContacto" class="canales-contacto" aria-labelledby="canales-titulo">
+                <h3 id="canales-titulo">¿Cómo quieres contactar?</h3>
+                <a v-if="whatsappContacto" class="canal-contacto canal-whatsapp" :href="whatsappContacto" target="_blank" rel="noopener noreferrer">
+                  <span class="canal-icono" aria-hidden="true">◉</span>
+                  <span><b>Contactar por WhatsApp</b><small>Conversación directa</small></span>
+                  <span aria-hidden="true">↗</span>
+                </a>
+                <button v-if="formularioPublico" class="canal-contacto canal-formulario" type="button" @click="mostrarFormularioContacto">
+                  <span class="canal-icono" aria-hidden="true">▤</span>
+                  <span><b>Contactar con formulario</b><small>Deja tu consulta</small></span>
+                  <span aria-hidden="true">→</span>
+                </button>
+                <a v-if="correoContacto" class="canal-contacto canal-correo" :href="`mailto:${correoContacto}`">
+                  <span class="canal-icono" aria-hidden="true">✉</span>
+                  <span><b>Contactar por correo</b><small>{{ correoContacto }}</small></span>
+                  <span aria-hidden="true">↗</span>
+                </a>
+              </section>
+              <div class="modal-acciones">
+                <button
+                  v-if="contactoContacto && !tiendaContacto.datos.canalesContacto"
+                  class="boton boton-mostaza"
+                  type="button"
+                  @click="copiarContacto"
+                >Copiar contacto</button>
+                <button class="boton boton-secundario" type="button" @click="cerrarContacto">Cerrar</button>
+              </div>
+            </template>
+            <template v-else>
+              <div v-if="consultaEnviada" class="consulta-estado consulta-exito" role="status">
+                <b>Consulta enviada</b>
+                <span>La emprendedora recibió tu mensaje y podrá responderte al correo que indicaste.</span>
+              </div>
+              <form v-else class="formulario-consulta" @submit.prevent="enviarConsulta">
+                <label for="consulta-mensaje">Tu mensaje</label>
+                <textarea id="consulta-mensaje" v-model="mensajeConsulta" rows="4" maxlength="2000" required :placeholder="productoContacto ? 'Hola, me interesa este producto…' : 'Hola, quiero hacer una consulta…'" />
+                <small class="consulta-contador">{{ mensajeConsulta.length }}/2000</small>
+                <label for="consulta-nombre">Tu nombre</label>
+                <input id="consulta-nombre" v-model="nombreConsulta" type="text" maxlength="100" autocomplete="name" required placeholder="Tu nombre" />
+                <label for="consulta-correo">Tu correo</label>
+                <input id="consulta-correo" v-model="correoConsulta" type="email" maxlength="254" autocomplete="email" required placeholder="Tu correo" />
+                <p v-if="errorConsulta" class="consulta-estado consulta-error" role="alert">{{ errorConsulta }}</p>
+                <button class="boton boton-primario consulta-enviar" type="submit" :disabled="enviandoConsulta || nombreConsulta.trim().length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoConsulta.trim()) || mensajeConsulta.trim().length < 5">
+                  {{ enviandoConsulta ? 'Enviando consulta…' : 'Enviar consulta →' }}
+                </button>
+              </form>
+              <div class="modal-acciones">
+                <button v-if="!consultaEnviada" class="boton boton-secundario" type="button" :disabled="enviandoConsulta" @click="volverCanalesContacto">
+                  {{ formularioContactoDirecto ? 'Cerrar' : 'Volver a los canales' }}
+                </button>
+                <button v-if="consultaEnviada" class="boton boton-mostaza" type="button" @click="cerrarContacto">Listo</button>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -2572,8 +2849,19 @@ article.tarjeta-tienda:hover {
 }
 
 .galeria-marco :deep(.imagen-publica) {
+    aspect-ratio: auto;
+    height: min(68vh, 760px);
     border-radius: 18px;
     background: linear-gradient(160deg, var(--amancay-superficie-variante), var(--amancay-naranja-fondo));
+}
+
+.galeria-marco :deep(.imagen-publica img) {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: center;
 }
 
 .ficha {
@@ -2861,6 +3149,218 @@ article.tarjeta-tienda:hover {
 
 .contacto .dato-tienda {
     width: 100%;
+}
+
+.contacto-subtitulo {
+    margin: -0.1rem 0 0.45rem;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.91rem;
+    line-height: 1.5;
+}
+
+.contacto-producto {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    width: 100%;
+    padding: 0.65rem;
+    border: 1px solid var(--amancay-borde);
+    border-radius: 16px;
+    background: var(--amancay-superficie);
+}
+
+.contacto-producto-imagen {
+    display: grid;
+    flex: 0 0 76px;
+    width: 76px;
+    height: 76px;
+    overflow: hidden;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--amancay-mostaza-suave);
+    color: var(--amancay-bordo);
+    font-size: 2rem;
+}
+
+.contacto-producto-imagen :deep(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.contacto-producto-texto {
+    display: grid;
+    min-width: 0;
+    gap: 0.2rem;
+}
+
+.contacto-producto-texto b,
+.contacto-producto-texto span,
+.contacto-producto-texto strong {
+    overflow-wrap: anywhere;
+}
+
+.contacto-producto-texto b,
+.contacto-producto-texto strong {
+    color: var(--amancay-bordo);
+}
+
+.contacto-producto-texto span {
+    color: var(--amancay-tinta-suave);
+    font-size: 0.82rem;
+}
+
+.contacto-producto-texto strong {
+    font-size: 0.91rem;
+}
+
+.canales-contacto {
+    display: grid;
+    gap: 0.55rem;
+    width: 100%;
+    margin-top: 0.35rem;
+}
+
+.canales-contacto h3 {
+    margin: 0.25rem 0 0.1rem;
+    color: var(--amancay-bordo);
+    font-size: 1rem;
+}
+
+.canal-contacto {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    min-height: 66px;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--amancay-borde);
+    border-radius: 16px;
+    color: var(--amancay-bordo);
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.canal-contacto > span:nth-child(2) {
+    display: grid;
+    flex: 1;
+    gap: 0.1rem;
+}
+
+.canal-contacto small {
+    color: var(--amancay-tinta-suave);
+    font-size: 0.76rem;
+}
+
+.canal-icono {
+    display: grid;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--amancay-bordo);
+    color: white;
+    font-size: 1.1rem;
+}
+
+.canal-whatsapp {
+    background: #edf5e7;
+    border-color: #cddfc3;
+    color: #315e37;
+}
+
+.canal-whatsapp .canal-icono {
+    background: #315e37;
+}
+
+.canal-formulario {
+    background: #f8eaf0;
+}
+
+.canal-correo {
+    background: #fff4dc;
+    border-color: #efddb4;
+}
+
+.canal-contacto:hover {
+    filter: brightness(0.98);
+}
+
+.formulario-consulta {
+    display: grid;
+    gap: 0.48rem;
+    width: 100%;
+    margin-top: 0.35rem;
+}
+
+.formulario-consulta label {
+    margin-top: 0.25rem;
+    color: var(--amancay-bordo);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.formulario-consulta input,
+.formulario-consulta textarea {
+    width: 100%;
+    min-width: 0;
+    padding: 0.78rem 0.85rem;
+    border: 1px solid #aa9da2;
+    border-radius: 11px;
+    outline: none;
+    background: var(--amancay-superficie);
+    color: var(--amancay-tinta);
+    font: inherit;
+    font-size: 0.9rem;
+}
+
+.formulario-consulta textarea {
+    min-height: 112px;
+    resize: vertical;
+    line-height: 1.45;
+}
+
+.formulario-consulta input:focus,
+.formulario-consulta textarea:focus {
+    border-color: var(--amancay-bordo);
+    box-shadow: 0 0 0 3px rgba(117, 38, 79, 0.12);
+}
+
+.consulta-contador {
+    margin: -0.25rem 0 0;
+    color: var(--amancay-tinta-suave);
+    text-align: right;
+    font-size: 0.75rem;
+}
+
+.consulta-enviar {
+    width: 100%;
+    margin-top: 0.45rem;
+}
+
+.consulta-estado {
+    display: grid;
+    gap: 0.3rem;
+    width: 100%;
+    margin: 0.3rem 0;
+    padding: 0.8rem 0.9rem;
+    border-radius: 13px;
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.consulta-error {
+    border: 1px solid #e8b9b4;
+    background: #fff0ee;
+    color: #922f2b;
+}
+
+.consulta-exito {
+    border: 1px solid #cddfc3;
+    background: #edf5e7;
+    color: #315e37;
 }
 
 .contacto-valor {

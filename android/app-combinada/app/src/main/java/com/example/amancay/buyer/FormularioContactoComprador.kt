@@ -54,6 +54,7 @@ internal fun FormularioContactoComprador(
     nombreSesion: String?,
     alCerrar: () -> Unit,
     alWhatsApp: () -> Unit,
+    alCorreo: () -> Unit,
     alEnviar: (nombre: String, correo: String, mensaje: String) -> Unit
 ) {
     var nombre by remember(tienda.id, producto, nombreSesion) { mutableStateOf(nombreSesion.orEmpty()) }
@@ -61,7 +62,10 @@ internal fun FormularioContactoComprador(
     var mensaje by remember(tienda.id, producto) { mutableStateOf("") }
     val correoValido = correo.matches(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))
     val habilitado = nombre.trim().length in 2..100 && correoValido && mensaje.trim().length in 5..2000
-    val mostrarWhatsApp = tienda.formaContacto == "ambos" || tienda.formaContacto == "whatsapp"
+    val mostrarWhatsApp = tienda.whatsappHabilitado
+    var mostrarFormulario by remember(tienda.id, producto, tienda.formularioHabilitado) {
+        mutableStateOf(tienda.formularioHabilitado && !tienda.whatsappHabilitado && !tienda.correoHabilitado)
+    }
     val precioVisible = tienda.mostrarPrecios
     val precio = fichaProducto?.let { ficha ->
         variante?.precio?.let(::formatoPrecio) ?: ficha.precioBase?.let(::formatoPrecio)
@@ -107,18 +111,23 @@ internal fun FormularioContactoComprador(
                 }
                 item {
                     Text("¿Cómo quieres contactar?", color = AmancayBordo, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (mostrarWhatsApp) {
-                            CanalContacto("WhatsApp", "Conversación directa", "◉", AmancayVerdeFondo, AmancayVerdeTexto, Modifier.weight(1f), alWhatsApp)
+                            CanalContacto("WhatsApp", "Conversación directa", "◉", AmancayVerdeFondo, AmancayVerdeTexto, Modifier.fillMaxWidth(), alWhatsApp)
                         }
-                        CanalContacto("Formulario", "Deja tu consulta", "▤", AmancayChipRosa, AmancayBordo, Modifier.weight(1f)) { }
+                        if (tienda.formularioHabilitado) {
+                            CanalContacto("Formulario", "Deja tu consulta", "▤", AmancayChipRosa, AmancayBordo, Modifier.fillMaxWidth(), { mostrarFormulario = true }, seleccionado = mostrarFormulario)
+                        }
+                        if (tienda.correoHabilitado && tienda.correoDireccion.isNotBlank()) {
+                            CanalContacto("Correo", tienda.correoDireccion, "✉", AmancayChipDurazno, AmancayBordo, Modifier.fillMaxWidth(), alCorreo)
+                        }
                     }
                 }
-                item {
+                if (mostrarFormulario && tienda.formularioHabilitado) item {
                     Text("Tu mensaje", color = AmancayBordo, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(mensaje, { if (it.length <= 2000) mensaje = it }, placeholder = { Text("Hola, me interesa este producto…") }, minLines = 4, maxLines = 7, supportingText = { Text("${mensaje.length}/2000", modifier = Modifier.fillMaxWidth()) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
                 }
-                item {
+                if (mostrarFormulario && tienda.formularioHabilitado) item {
                     if (nombreSesion.isNullOrBlank()) {
                         OutlinedTextField(nombre, { if (it.length <= 100) nombre = it }, label = { Text("Tu nombre") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
@@ -129,7 +138,7 @@ internal fun FormularioContactoComprador(
                     }
                     if (correo.isNotBlank() && !correoValido) Text("Escribe un correo válido.", color = MaterialTheme.colorScheme.error)
                 }
-                item {
+                if (mostrarFormulario && tienda.formularioHabilitado) item {
                     Button(onClick = { alEnviar(nombre.trim(), correo.trim(), mensaje.trim()) }, enabled = habilitado, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(28.dp), colors = ButtonDefaults.buttonColors(containerColor = AmancayBordo, contentColor = Color.White)) {
                         Text("Enviar consulta   →", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
@@ -141,8 +150,8 @@ internal fun FormularioContactoComprador(
 }
 
 @Composable
-private fun CanalContacto(titulo: String, bajada: String, icono: String, fondo: Color, tinta: Color, modifier: Modifier, alClick: () -> Unit) {
-    Card(onClick = alClick, modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = fondo), border = BorderStroke(1.dp, tinta.copy(alpha = .35f))) {
+private fun CanalContacto(titulo: String, bajada: String, icono: String, fondo: Color, tinta: Color, modifier: Modifier, alClick: () -> Unit, seleccionado: Boolean = false) {
+    Card(onClick = alClick, modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = fondo), border = BorderStroke(if (seleccionado) 2.dp else 1.dp, tinta.copy(alpha = if (seleccionado) .8f else .35f))) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Surface(modifier = Modifier.size(42.dp), shape = CircleShape, color = tinta) {
                 Box(contentAlignment = Alignment.Center) { Text(icono, color = Color.White, style = MaterialTheme.typography.titleLarge) }

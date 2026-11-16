@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -129,7 +130,7 @@ fun BotanicalBackdrop(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null, etiquetaEspacio: Boolean = false) {
+fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null, etiquetaEspacio: Boolean = false, onNotifications: (() -> Unit)? = null, notificationsCount: Int = 0) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -164,6 +165,17 @@ fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null, etiquetaEspa
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Text("Salir", fontWeight = FontWeight.Bold, color = Wine)
+            }
+        }
+        if (onNotifications != null) {
+            BadgedBox(badge = {
+                if (notificationsCount > 0) Badge(containerColor = Color(0xFFE95A54)) {
+                    Text(if (notificationsCount > 99) "99+" else notificationsCount.toString())
+                }
+            }) {
+                IconButton(onClick = onNotifications, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                    Icon(Icons.Outlined.Notifications, contentDescription = "Consultas nuevas", tint = Wine)
+                }
             }
         }
         Box(

@@ -64,6 +64,10 @@ import com.example.amancay.data.sesionDesdeUsuario
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -108,6 +112,41 @@ fun ModoCompradorScreen(
     var feriaSeleccionada by remember { mutableStateOf<FeriaComprador?>(null) }
     var formularioContacto by remember { mutableStateOf<Triple<TiendaCatalogoComprador, String?, VarianteCatalogoComprador?>?>(null) }
     var avisoContacto by remember { mutableStateOf<String?>(null) }
+    var misConsultas by remember { mutableStateOf(leerConsultasGuardadas(context)) }
+    val consultasActualizadas by androidx.compose.runtime.rememberUpdatedState(misConsultas)
+    var cargandoRespuestas by remember { mutableStateOf(false) }
+    var errorRespuestas by remember { mutableStateOf<String?>(null) }
+
+    suspend fun actualizarRespuestas(consultas: List<ConsultaSeguida>, maximo: Int? = null): List<ConsultaSeguida> {
+        val pendientes = consultas.filter { it.respuesta == null }.let { if (maximo == null) it else it.take(maximo) }
+        if (pendientes.isEmpty()) return consultas
+        val resultados = coroutineScope {
+            pendientes.map { consulta -> async {
+                consulta.operacionId to ApiConsultasComprador.leerRespuesta(consulta.tiendaId, consulta.operacionId)
+            } }.awaitAll().toMap()
+        }
+        return consultas.map { consulta ->
+            val respuesta = resultados[consulta.operacionId]
+            if (!respuesta.isNullOrBlank() && respuesta != consulta.respuesta) consulta.copy(respuesta = respuesta, respuestaVista = false)
+            else consulta
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val actuales = consultasActualizadas
+            if (actuales.isNotEmpty()) {
+                runCatching { actualizarRespuestas(actuales, maximo = 25) }
+                    .onSuccess { nuevas ->
+                        if (nuevas != actuales) {
+                            misConsultas = nuevas
+                            guardarConsultas(context, nuevas)
+                        }
+                    }
+            }
+            delay(60_000)
+        }
+    }
 
     val ferias = rememberRepositorioFerias()
     val listaFerias by ferias.ferias.collectAsState()
@@ -179,7 +218,7 @@ fun ModoCompradorScreen(
     }
 
     fun abrirWhatsApp(tienda: TiendaCatalogoComprador, mensaje: String) {
-        val telefono = tienda.contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty().filter(Char::isDigit)
+        val telefono = (tienda.whatsappNumero.ifBlank { tienda.contacto?.takeIf { it.tipo == "whatsapp" }?.valor.orEmpty() }).filter(Char::isDigit)
         if (telefono.isBlank()) {
             avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
             return
@@ -192,17 +231,25 @@ fun ModoCompradorScreen(
         formularioContacto = Triple(tienda, producto, variante)
     }
 
+    fun abrirCorreo(tienda: TiendaCatalogoComprador, producto: String?) {
+        val direccion = tienda.correoDireccion.ifBlank { tienda.contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty() }
+        if (direccion.isBlank()) {
+            avisoContacto = "Esta tienda no tiene un correo público configurado."
+            return
+        }
+        val asunto = producto?.let { "Consulta sobre $it" } ?: "Consulta sobre tu tienda"
+        val enlace = Uri.fromParts("mailto", direccion, null).buildUpon()
+            .appendQueryParameter("subject", asunto)
+            .build()
+        abrirEnlace(enlace)
+        formularioContacto = null
+    }
+
     fun contactar(tienda: TiendaCatalogoComprador, producto: String? = null, variante: VarianteCatalogoComprador? = null) {
-        when (tienda.formaContacto) {
-            "ambos" -> abrirFormularioContacto(tienda, producto, variante)
-            "formulario" -> abrirFormularioContacto(tienda, producto, variante)
-            "whatsapp" -> {
-                if (tienda.contacto?.tipo == "whatsapp") abrirWhatsApp(tienda, "Hola, me interesa ${producto ?: "conocer tu emprendimiento"}.")
-                else avisoContacto = "Esta tienda no tiene un número de WhatsApp público configurado."
-            }
-            else -> {
-                avisoContacto = "Esta tienda aún no configuró una vía de contacto disponible."
-            }
+        if (tienda.whatsappHabilitado || tienda.formularioHabilitado || tienda.correoHabilitado) {
+            abrirFormularioContacto(tienda, producto, variante)
+        } else {
+            avisoContacto = "Esta tienda aún no configuró una vía de contacto disponible."
         }
     }
 
@@ -210,7 +257,9 @@ fun ModoCompradorScreen(
         formularioContacto = null
         alcance.launch {
             try {
-                ApiConsultasComprador.enviar(tienda.id, producto, nombre, correo, mensaje)
+                val operacionId = ApiConsultasComprador.enviar(tienda.id, producto, nombre, correo, mensaje)
+                misConsultas = (listOf(ConsultaSeguida(tienda.id, tienda.nombre, operacionId, correo, producto, mensaje)) + misConsultas).distinctBy { it.operacionId }
+                guardarConsultas(context, misConsultas)
                 avisoContacto = "Tu consulta se envió a la bandeja de la emprendedora."
             } catch (e: Exception) {
                 avisoContacto = e.message ?: "No se pudo enviar la consulta. Inténtalo de nuevo."
@@ -290,7 +339,9 @@ fun ModoCompradorScreen(
         containerColor = AmancayFondo,
         topBar = {
             BarraSuperiorAmancay(
-                alVolver = if (pestana != PestanaComprador.INICIO) ({ pestana = PestanaComprador.INICIO }) else null
+                alVolver = if (pestana != PestanaComprador.INICIO) ({ pestana = PestanaComprador.INICIO }) else null,
+                respuestasNuevas = misConsultas.count { it.respuesta != null && !it.respuestaVista },
+                alVerRespuestas = { pestana = PestanaComprador.RESPUESTAS }
             ) {
                 val sesionActual = sesion
                 if (sesionActual == null) {
@@ -383,6 +434,35 @@ fun ModoCompradorScreen(
                     .padding(horizontal = 16.dp)
             )
 
+            PestanaComprador.RESPUESTAS -> RespuestasCompradorScreen(
+                consultas = misConsultas,
+                cargando = cargandoRespuestas,
+                error = errorRespuestas,
+                alActualizar = {
+                    alcance.launch {
+                        cargandoRespuestas = true
+                        errorRespuestas = null
+                        try {
+                            misConsultas = actualizarRespuestas(misConsultas)
+                            guardarConsultas(context, misConsultas)
+                        } catch (e: Exception) {
+                            errorRespuestas = e.message ?: "No se pudieron actualizar tus respuestas."
+                        } finally {
+                            cargandoRespuestas = false
+                        }
+                    }
+                },
+                alMarcarVistas = {
+                    val actualizadas = misConsultas.map { consulta ->
+                        if (consulta.respuesta != null) consulta.copy(respuestaVista = true) else consulta
+                    }
+                    if (actualizadas != misConsultas) {
+                        misConsultas = actualizadas
+                        guardarConsultas(context, actualizadas)
+                    }
+                }
+            )
+
             PestanaComprador.CUENTA -> PantallaCuentaComprador(
                 sesion = sesion,
                 auth = auth,
@@ -440,6 +520,11 @@ fun ModoCompradorScreen(
                             }
                         }
                     }
+                    com.example.amancay.ui.BotonCodigoQr(
+                        "Código QR de la tienda",
+                        tienda.nombre,
+                        com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
+                    )
                     if (catalogo.isEmpty()) Text("No hay productos públicos disponibles para mostrar.")
                     catalogo.forEach { producto ->
                         TextButton(onClick = { productoSeleccionado = producto }) {
@@ -478,6 +563,7 @@ fun ModoCompradorScreen(
                 formularioContacto = null
                 abrirWhatsApp(tienda, "Hola, me interesa ${nombreProducto ?: "conocer tu emprendimiento"}${varianteElegida?.opciones?.values?.joinToString(" · ")?.let { " ($it)" }.orEmpty()}.")
             },
+            alCorreo = { abrirCorreo(tienda, nombreProducto) },
             alEnviar = { nombre, correo, mensaje ->
                 enviarFormularioContacto(tienda, nombreProducto, nombre, correo, mensaje)
             }

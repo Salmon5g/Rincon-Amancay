@@ -421,7 +421,7 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                     PreviewCatalogScreen(
                         producto = p,
                         onShare = {
-                            clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
+                            clipboard.setText(AnnotatedString(EnlacesPublicos.inicio()))
                             repositorio.marcarEnlaceCompartido()
                             scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
                         },
@@ -979,10 +979,11 @@ internal fun EmprendedoraAppConectada(
     }
 
     val productoDeVista = productos.firstOrNull { it.id == productoVista }?.let(::productoLegado)
+    val nuevasConsultas = productosRepository.consultas.collectAsState().value.count { it.estado == "nueva" }
 
     Scaffold(
         containerColor = Cream,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -1090,8 +1091,6 @@ internal fun EmprendedoraAppConectada(
                                     Spacer(Modifier.height(8.dp))
                                     OutlineButton("Registrar venta · Historial de encargos", { screen = Screen.Ventas })
                                     Spacer(Modifier.height(8.dp))
-                                    val consultasNoLeidas = productosRepository.consultas.collectAsState().value.count { !it.leida }
-                                    OutlineButton(if (consultasNoLeidas > 0) "Bandeja de consultas · $consultasNoLeidas nuevas" else "Bandeja de consultas", { screen = Screen.Consultas })
                                 }
                             }
                         }
@@ -1369,6 +1368,12 @@ internal fun EmprendedoraAppConectada(
                                     .onFailure { errorProducto = "No pudimos actualizar esta consulta. Comprueba tu conexión e inténtalo de nuevo." }
                             }
                         },
+                        alResponder = { consulta, respuesta ->
+                            scope.launch {
+                                runCatching { productosRepository.responderConsulta(sesion.tiendaId, consulta.id, respuesta) }
+                                    .onFailure { errorProducto = it.message ?: "No se pudo enviar la respuesta." }
+                            }
+                        },
                         alVolver = { screen = Screen.Home; tab = Tab.INICIO }
                     )
                     is Screen.Preview -> PreviewCatalogScreen(
@@ -1378,8 +1383,9 @@ internal fun EmprendedoraAppConectada(
                         privateImageError = errorFotoVista,
                         onRetryPrivateImage = { reintentoFotoVista++ },
                         esVistaPrivada = productoDeVista?.esBorrador == true,
+                        link = EnlacesPublicos.tienda(sesion.tiendaId),
                         onShare = {
-                            clipboard.setText(AnnotatedString("https://rincon-amancay.tienda"))
+                            clipboard.setText(AnnotatedString(EnlacesPublicos.tienda(sesion.tiendaId)))
                             linkCompartido = true
                             scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
                         },
