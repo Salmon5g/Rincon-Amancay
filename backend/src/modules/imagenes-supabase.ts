@@ -173,9 +173,10 @@ export function crearServicioImagenesSupabase(db:Firestore,storage:ClienteStorag
     return prepararYPublicar(ruta,match[3].toLowerCase(),`catalogo/${tiendaId}/tienda`);
   };
 
-  const subir=async(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>=>{
+  const subir=async(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>=>{
     exigir(id.test(uid),'no-autenticado','Identidad Firebase no válida.');
     exigir(id.test(tiendaId) && id.test(productoId) && uuid.test(archivoId),'datos-invalidos','La ruta de tienda, producto o archivo no es válida.');
+    exigir(reemplazarIndice===undefined || (Number.isInteger(reemplazarIndice) && reemplazarIndice>=0 && reemplazarIndice<5),'datos-invalidos','La posición de imagen a reemplazar no es válida.');
     const extension=extensiones[contentType];
     exigir(extension!==undefined && bytes.length>0 && bytes.length<=maxBytes,'datos-invalidos','Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
     exigir(await prepararImagen(bytes,extension),'imagen-no-autorizada','El archivo no es una imagen válida o excede los límites de procesamiento.');
@@ -200,8 +201,14 @@ export function crearServicioImagenesSupabase(db:Firestore,storage:ClienteStorag
         exigir(d,'no-encontrado','El borrador del producto ya no existe.');
         const current=Array.isArray(d.imagenes)?d.imagenes.filter((value:unknown):value is string=>typeof value==='string'):[];
         if(current.includes(ruta))return;
-        exigir(current.length<5,'limite-local','Un producto puede tener hasta cinco imágenes.');
-        tx.update(productoRef,{imagenes:[...current,ruta],actualizadoEn:FieldValue.serverTimestamp()});
+        if(reemplazarIndice!==undefined) {
+          exigir(reemplazarIndice<current.length,'conflicto','La imagen que ibas a reemplazar ya no está en el producto. Vuelve a cargarlo e inténtalo otra vez.');
+          current[reemplazarIndice]=ruta;
+        } else {
+          exigir(current.length<5,'limite-local','Un producto puede tener hasta cinco imágenes.');
+          current.push(ruta);
+        }
+        tx.update(productoRef,{imagenes:current,actualizadoEn:FieldValue.serverTimestamp()});
       });
     } catch(error) {
       await storage.borrar(buckets.originales,[ruta]).catch(()=>undefined);

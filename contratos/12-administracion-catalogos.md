@@ -23,7 +23,7 @@ Documentos nuevos guardan `nombre`, `nombreNormalizado`, `activo`, `creadoEn` y 
 - `tiposProducto/{id}/versiones/{numero}` guarda la definición de esa versión: `version`, `campos`, `opcionesVariante`, `creadoEn` y `actualizadoEn`.
 - Cada campo de producto tiene `clave`, `etiqueta`, `tipo: "texto"` y `obligatorio`.
 
-Editar solamente el nombre mantiene la versión actual. Cambiar los campos u opciones de variante crea una versión nueva; las versiones anteriores no se modifican ni se eliminan. Los productos ya creados siguen apuntando a su versión original. El backend de productos permite mantener una ficha con referencias históricas inactivas, pero solo acepta catálogos activos al crear un producto.
+Editar solamente el nombre mantiene la versión actual. Cambiar los campos u opciones de variante crea una versión nueva; las versiones anteriores no se modifican ni se eliminan. Los productos ya creados siguen apuntando a su versión original. El backend de productos permite mantener una ficha con referencias históricas inactivas, pero solo acepta catálogos activos al crear un producto. Al republicar una ficha existente también conserva sus referencias históricas si el tipo, la versión y la categoría siguen existiendo y coinciden con las guardadas en el producto.
 
 Por ahora se admiten hasta 20 campos de texto y 10 opciones de variante por definición. No se admiten claves repetidas ni claves que no comiencen con minúscula o incluyan símbolos distintos de letras, números y guion bajo.
 

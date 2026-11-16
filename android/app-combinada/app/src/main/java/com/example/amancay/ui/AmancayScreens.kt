@@ -623,7 +623,7 @@ fun PhotoStep(
                     Spacer(Modifier.height(10.dp))
                     Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
                         Text(
-                            if (draft.fotoLista) "Foto elegida" else "Referencia de imagen existente",
+                            if (draft.fotoLista) "Foto elegida" else "Foto actual",
                             fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )

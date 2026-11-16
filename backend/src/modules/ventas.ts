@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
-import type { Firestore, QuerySnapshot } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
+import type { DocumentSnapshot, Firestore, QueryDocumentSnapshot, QuerySnapshot } from 'firebase-admin/firestore';
 import { ErrorOperacion, estado } from './publicacion.ts';
 import { crearProductoSinPrecios, crearVarianteSinPrecio } from './vista-sin-precios.ts';
 
@@ -8,8 +8,43 @@ function exigir(ok: unknown, code: string, message: string): asserts ok { if (!o
 function id(v: unknown): v is string { return typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v); }
 function texto(v: unknown, max: number, label: string): string { exigir(typeof v === 'string' && v.trim().length > 0 && v.trim().length <= max, 'datos-invalidos', `${label} es obligatorio.`); return v.trim(); }
 
-export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto'] as const;
+export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto', 'configurarMostrarPrecios'] as const;
 export type AccionVenta = typeof accionesVenta[number];
+
+async function prepararVistasSinPrecios(db: Firestore, tiendaId: string) {
+  const tiendaPublica = db.doc(`tiendasPublicas/${tiendaId}`);
+  const productosPublicos = tiendaPublica.collection('productos');
+  let cursor: QueryDocumentSnapshot | undefined;
+  while (true) {
+    let consulta = productosPublicos.orderBy(FieldPath.documentId()).limit(25);
+    if (cursor) consulta = consulta.startAfter(cursor);
+    const pagina = await consulta.get();
+    if (pagina.empty) return;
+    for (const referencia of pagina.docs) {
+      const productoConsulta = tiendaPublica.collection('productosConsulta').doc(referencia.id);
+      await db.runTransaction(async tx => {
+        const [tienda, producto, consultaExistente] = await tx.getAll(tiendaPublica, referencia.ref, productoConsulta);
+        const datos = producto.data();
+        if (tienda.data()?.estadoPublicacion !== 'publicado' || tienda.data()?.habilitada !== true) return;
+        if (!datos || datos.estadoPublicacion !== 'publicado') {
+          const variantesAntiguas = await tx.get(productoConsulta.collection('variantes').limit(101));
+          exigir(variantesAntiguas.size <= 100, 'limite-local', 'Hay demasiadas variantes públicas para completar la proyección sin precios.');
+          for (const variante of variantesAntiguas.docs) tx.delete(variante.ref);
+          if (consultaExistente.exists) tx.delete(productoConsulta);
+          return;
+        }
+        const variantesPublicas = await tx.get(referencia.ref.collection('variantes').limit(101));
+        const variantesAnteriores = await tx.get(productoConsulta.collection('variantes').limit(101));
+        exigir(variantesPublicas.size <= 20 && variantesAnteriores.size <= 100, 'limite-local', 'Hay demasiadas variantes públicas para completar la proyección sin precios.');
+        const idsActuales = new Set(variantesPublicas.docs.map(variante => variante.id));
+        for (const variante of variantesAnteriores.docs) if (!idsActuales.has(variante.id)) tx.delete(variante.ref);
+        tx.set(productoConsulta, crearProductoSinPrecios(datos));
+        for (const variante of variantesPublicas.docs) tx.set(productoConsulta.collection('variantes').doc(variante.id), crearVarianteSinPrecio(variante.data()));
+      });
+    }
+    cursor = pagina.docs[pagina.docs.length - 1];
+  }
+}
 
 export function crearVentas(db: Firestore) {
   return async (accion: AccionVenta, identidad: {uid: string}, input: unknown) => {
@@ -19,6 +54,32 @@ export function crearVentas(db: Firestore) {
     const tienda = db.doc(`tiendasPrivadas/${d.tiendaId}`);
     const configuracion = tienda.collection('configuracion').doc('general');
     const accesoRef = db.doc(`accesos/${identidad.uid}`);
+    if (accion === 'configurarMostrarPrecios') {
+      exigir(Object.keys(d).length === 2 && typeof d.mostrarPrecios === 'boolean', 'datos-invalidos', 'Se requiere el estado de visibilidad de precios.');
+      const tiendaPublica = db.doc(`tiendasPublicas/${d.tiendaId}`);
+      const [accesoInicial, tiendaInicial, configuracionInicial, tiendaPublicaInicial] = await Promise.all([
+        accesoRef.get(), tienda.get(), configuracion.get(), tiendaPublica.get(),
+      ]);
+      const validarPropiedad = (acceso: DocumentSnapshot, ficha: DocumentSnapshot) => {
+        exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && ficha.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
+      };
+      validarPropiedad(accesoInicial, tiendaInicial);
+      exigir(configuracionInicial.exists, 'no-encontrado', 'No existe la configuración de la tienda.');
+      if (d.mostrarPrecios === false && tiendaInicial.data()?.estadoPublicacion === 'publicado'
+        && tiendaPublicaInicial.data()?.estadoPublicacion === 'publicado' && tiendaPublicaInicial.data()?.habilitada === true) {
+        await prepararVistasSinPrecios(db, d.tiendaId);
+      }
+      return db.runTransaction(async tx => {
+        const [acceso, ficha, config, publica] = await tx.getAll(accesoRef, tienda, configuracion, tiendaPublica);
+        validarPropiedad(acceso, ficha);
+        exigir(config.exists, 'no-encontrado', 'No existe la configuración de la tienda.');
+        const catalogoPublicado = ficha.data()?.estadoPublicacion === 'publicado'
+          && publica.data()?.estadoPublicacion === 'publicado' && publica.data()?.habilitada === true;
+        tx.update(configuracion, {mostrarPrecios: d.mostrarPrecios, actualizadoEn: FieldValue.serverTimestamp()});
+        if (catalogoPublicado) tx.update(tiendaPublica, {mostrarPrecios: d.mostrarPrecios, actualizadoEn: FieldValue.serverTimestamp()});
+        return {mostrarPrecios: d.mostrarPrecios, catalogoPublicado};
+      });
+    }
     if (accion === 'configurarHistorialVentas') {
       exigir(Object.keys(d).length === 2 && typeof d.historialVentasActivo === 'boolean', 'datos-invalidos', 'Se requiere el estado del historial.');
       return db.runTransaction(async tx => {

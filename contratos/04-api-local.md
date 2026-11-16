@@ -25,7 +25,7 @@ Todos son POST y requieren Content-Type: application/json y Authorization: Beare
 | /api/v1/editarTiendaEmprendedora | tiendaId, operacionId, versionEsperada y ficha autorizada (contrato 17) |
 | /api/v1/eliminarProducto | tiendaId, productoId, operacionId, versionEsperada (contrato 07) |
 | /api/v1/tiendas/{tiendaId}/logo | Archivo binario y cabecera X-Archivo-Id UUID; sube el logo de la propietaria al backend compartido local |
-| /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes | Archivo binario y cabecera X-Archivo-Id UUID; agrega una imagen al borrador propio |
+| /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes | Archivo binario y cabecera X-Archivo-Id UUID; agrega una imagen al borrador propio. X-Reemplazar-Indice (0–4) sustituye una imagen existente y conserva las demás |
 
 Rutas adicionales autenticadas: altaEmprendedora (contrato 06), crearProducto, editarProducto y eliminarProducto (contrato 07), ajustarStock (contrato 08), ciclo de cuentas (contrato 10), catálogos (12), asociaciones (13), cuentas administradoras y configuración (15), y administración de ferias (16). Tienen sus propios cuerpos y conservan las comprobaciones de sesión y límites HTTP de esta API.
 

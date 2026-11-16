@@ -76,11 +76,14 @@ import com.example.amancay.ui.theme.Wine
 internal fun ConfiguracionVistaPreviaScreen(
     productos: List<ProductoEmprendedora>,
     miniaturas: Map<String, Bitmap>,
+    mostrarPrecios: Boolean,
+    preciosListos: Boolean,
     historialActivo: Boolean,
     valoresDefecto: ValoresDefectoProducto,
     catalogoSinConexion: Boolean,
     enviando: Boolean,
     error: String?,
+    alCambiarMostrarPrecios: (Boolean) -> Unit,
     alGuardarValoresDefecto: (ValoresDefectoProducto) -> Unit,
     alCambiarHistorial: (Boolean) -> Unit,
     alCambiarCatalogoSinConexion: (Boolean) -> Unit,
@@ -103,6 +106,21 @@ internal fun ConfiguracionVistaPreviaScreen(
 
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
                 Column {
+                    FilaAjuste(
+                        "Mostrar precios en el catálogo",
+                        if (mostrarPrecios) "Tus clientes ven los montos de todos tus productos." else "Tus clientes ven «Consultar precio» en todos tus productos.",
+                        Icons.Filled.Inventory2,
+                        null
+                    ) {
+                        Switch(
+                            checked = mostrarPrecios,
+                            onCheckedChange = alCambiarMostrarPrecios,
+                            enabled = !enviando && preciosListos,
+                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                            colors = SwitchDefaults.colors(checkedTrackColor = Wine, checkedThumbColor = Color.White)
+                        )
+                    }
+                    HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
                     FilaAjuste("Historial de encargos", if (historialActivo) "Activo. Guarda precio, fecha y lugar de cada venta." else "Apagado. Las ventas nuevas no se registran en el historial.", Icons.Filled.ReceiptLong, alVerHistorial) {
                         Switch(
                             checked = historialActivo,
@@ -181,7 +199,7 @@ internal fun ConfiguracionVistaPreviaScreen(
             if (destacado == null) {
                 Text("Cuando agregues un producto, aquí verás cómo lo verían tus clientes.", color = Muted)
             } else {
-                TarjetaVistaCliente(destacado, miniaturas[destacado.id])
+                TarjetaVistaCliente(destacado, miniaturas[destacado.id], mostrarPrecios)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -274,7 +292,7 @@ private fun OpcionCatalogo(titulo: String, detalle: String, seleccionado: Boolea
 }
 
 @Composable
-private fun TarjetaVistaCliente(producto: ProductoEmprendedora, miniatura: Bitmap?) {
+private fun TarjetaVistaCliente(producto: ProductoEmprendedora, miniatura: Bitmap?, mostrarPrecios: Boolean) {
     val precio = if (producto.tieneVariantes) producto.variantes.filter { it.activa }.minOfOrNull { it.precio } ?: 0L else producto.precioBase ?: 0L
     val visible = visibleEnCatalogoPublico(producto)
     val unidades = unidadesDisponibles(producto)
@@ -287,7 +305,7 @@ private fun TarjetaVistaCliente(producto: ProductoEmprendedora, miniatura: Bitma
                 MiniaturaProducto(miniatura, producto.nombre, 112)
                 Column(Modifier.weight(1f)) {
                     Text(producto.nombre, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 22.sp, color = Dark, fontFamily = FontFamily.Serif, maxLines = 2)
-                    Text(formatPrice(precio) + " CLP", color = Color(0xFFE94848), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(if (mostrarPrecios) formatPrice(precio) + " CLP" else "Consultar precio", color = Color(0xFFE94848), fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (producto.tieneVariantes) EtiquetaVistaCliente("${producto.variantes.count { it.activa }} variantes", Color(0xFFF3EAF7), Wine)
                         val estadoStock = when {

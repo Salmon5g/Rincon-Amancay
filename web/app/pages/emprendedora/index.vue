@@ -57,6 +57,7 @@ const formularioTienda = ref({
   whatsappHabilitado: false,
   whatsappNumero: '',
   formularioHabilitado: false,
+  mostrarPrecios: true,
 })
 const edicionTiendaPendiente = ref<{ firma: string; operacionId: string } | null>(null)
 const logoSeleccionado = ref<File | null>(null)
@@ -225,6 +226,7 @@ async function abrirEdicionTienda() {
       whatsappHabilitado: actualizada.tienda.canalesContacto?.whatsapp?.habilitado ?? (actualizada.tienda.mostrarContacto && actualizada.tienda.contacto?.tipo === 'whatsapp'),
       whatsappNumero: actualizada.tienda.canalesContacto?.whatsapp?.numero ?? (actualizada.tienda.contacto?.tipo === 'whatsapp' ? actualizada.tienda.contacto.valor: ''),
       formularioHabilitado: actualizada.tienda.canalesContacto?.formulario?.habilitado ?? false,
+      mostrarPrecios: actualizada.tienda.mostrarPrecios,
     }
     catalogosTienda.value = await $catalogoPublico.listarCatalogosPublicos()
   } catch (fallo) {
@@ -311,7 +313,7 @@ async function guardarTienda() {
   }
 
   const servicio = cliente() as ReturnType<typeof cliente> & {
-    llamar?: (operacion: 'editarTiendaEmprendedora', solicitud: Record<string, unknown>) => Promise<Record<string, unknown>>
+    llamar?: (operacion: 'editarTiendaEmprendedora' | 'configurarMostrarPrecios', solicitud: Record<string, unknown>) => Promise<Record<string, unknown>>
     subirLogoTienda?: (tiendaId: string, archivo: Blob, archivoId: string) => Promise<string>
   }
   if (typeof servicio.llamar !== 'function') {
@@ -325,6 +327,7 @@ async function guardarTienda() {
 
   const uid = cuenta.value.uid
   const tiendaId = cuenta.value.tienda.id
+  const mostrarPreciosCambio = formularioTienda.value.mostrarPrecios !== cuenta.value.tienda.mostrarPrecios
   guardandoTienda.value = true
   try {
     if (logoSeleccionado.value) {
@@ -349,13 +352,21 @@ async function guardarTienda() {
     const pendiente = edicionTiendaPendiente.value
     const solicitud = { ...datos, operacionId: pendiente.operacionId }
     await servicio.llamar('editarTiendaEmprendedora', solicitud)
-    cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid)
     edicionTiendaPendiente.value = null
+    cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid)
+    if (mostrarPreciosCambio) {
+      await servicio.llamar('configurarMostrarPrecios', { tiendaId, mostrarPrecios: formularioTienda.value.mostrarPrecios })
+      cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid)
+    }
     editandoTienda.value = false
     logoSeleccionado.value = null
     logoArchivoId.value = ''
     if (logoInput.value) logoInput.value.value = ''
-    aviso.value = 'Los datos de tu tienda se guardaron correctamente.'
+    aviso.value = mostrarPreciosCambio
+      ? (formularioTienda.value.mostrarPrecios
+        ? 'La tienda se guardó y los precios están visibles en el catálogo comprador.'
+        : 'La tienda se guardó. El catálogo comprador muestra «Consultar precio» sin exponer los montos.')
+      : 'Los datos de tu tienda se guardaron correctamente.'
   } catch (fallo) {
     const codigo = typeof fallo === 'object' && fallo !== null && 'code' in fallo ? String((fallo as { code?: unknown }).code ?? '') : ''
     if (codigo === 'conflicto') {
@@ -625,8 +636,17 @@ onMounted(async () => {
                   </div>
                 </section>
 
+                <section class="paso-edicion-tienda">
+                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">3</span><div><h2>Precios del catálogo</h2><p>Elige qué verán quienes visiten tu tienda.</p></div></header>
+                  <label class="interruptor-contacto-tienda">
+                    <input v-model="formularioTienda.mostrarPrecios" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
+                    <span class="pista-interruptor"></span>
+                    <span><strong>Mostrar precios en el catálogo</strong><small>{{ formularioTienda.mostrarPrecios ? 'Los montos se mostrarán en todos tus productos.' : 'Tus clientes verán «Consultar precio»; los montos se mantienen en tu gestión y no se envían al catálogo.' }}</small></span>
+                  </label>
+                </section>
+
                 <section class="paso-edicion-tienda paso-identidad-tienda">
-                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">3</span><div><h2>Identidad visual</h2><p>Agrega un logo para que tu tienda destaque.</p></div></header>
+                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">4</span><div><h2>Identidad visual</h2><p>Agrega un logo para que tu tienda destaque.</p></div></header>
                   <div class="selector-logo-tienda">
                     <div class="marco-logo-tienda"><img :src="logoVisible" :alt="'Logo de ' + (formularioTienda.nombre || 'mi tienda')" /></div>
                     <div class="datos-logo-tienda">

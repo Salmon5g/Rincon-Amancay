@@ -78,7 +78,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -138,7 +138,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esSubidaLogoAsociacion=Boolean(subidaLogoAsociacion && imagenes?.subirLogoAsociacion);
       if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
-        res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id', 'Cache-Control': 'no-store' });
+        res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id, X-Reemplazar-Indice', 'Cache-Control': 'no-store' });
         return res.end();
       }
       if (esLecturaImagen && req.method !== 'GET') { res.setHeader('Allow', 'GET, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar GET.'); }
@@ -168,10 +168,13 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if(esSubidaImagen || esSubidaLogo || esSubidaLogoAsociacion) {
         const archivoId=req.headers['x-archivo-id'];
         if(typeof archivoId!=='string' || archivoId.length>64)throw new ErrorHttp(400,'datos-invalidos','Enviar un X-Archivo-Id UUID para que el reintento sea idempotente.');
+        const indiceHeader=req.headers['x-reemplazar-indice'];
+        if(indiceHeader!==undefined && (typeof indiceHeader!=='string' || !/^[0-4]$/.test(indiceHeader)))throw new ErrorHttp(400,'datos-invalidos','X-Reemplazar-Indice debe ser una posición entre 0 y 4.');
+        const reemplazarIndice=typeof indiceHeader==='string'?Number(indiceHeader):undefined;
         const bytes=await cuerpoImagen(req);
         const contentType=req.headers['content-type']!.split(';')[0].trim();
         const ruta=esSubidaImagen
-          ? await imagenes!.subir(uid,subidaImagen![1],subidaImagen![2],archivoId,contentType,bytes)
+          ? await imagenes!.subir(uid,subidaImagen![1],subidaImagen![2],archivoId,contentType,bytes,reemplazarIndice)
           : esSubidaLogoAsociacion
             ? await imagenes!.subirLogoAsociacion!(uid,archivoId,contentType,bytes)
             : await imagenes!.subirTienda!(uid,subidaLogo![1],archivoId,contentType,bytes);

@@ -406,7 +406,7 @@ async function cargarCatalogos() {
 }
 
 async function cargarDestacados(tiendas: FichaComprador[], revisionDestacados: number) {
-    const candidatas = tiendas.filter(t => t.datos.mostrarPrecios === true).slice(0, 4);
+    const candidatas = tiendas.slice(0, 4);
     if (!candidatas.length) {
         if (revisionDestacados === revision) destacados.value = [];
         return;
@@ -859,7 +859,7 @@ onBeforeUnmount(() => {
                 </span>
                 {{ d.tienda.datos.nombre }}
               </span>
-              <b class="precio">{{ precio(d.producto.datos.precioBase) }}</b>
+              <b class="precio">{{ d.tienda.datos.mostrarPrecios ? precio(d.producto.datos.precioBase) : 'Consultar precio' }}</b>
             </button>
           </div>
         </section>
@@ -1091,10 +1091,11 @@ onBeforeUnmount(() => {
                 </span>
                 <h3>{{ f.datos.nombre }}</h3>
                 <span class="tarjeta-meta">
-                  <b v-if="tienda.datos.mostrarPrecios === true && !f.datos.tieneVariantes" class="precio">
-                    {{ precio(f.datos.precioBase) }}
+                  <b class="precio">
+                    {{ tienda.datos.mostrarPrecios === true
+                      ? (f.datos.tieneVariantes ? 'Ver variantes y precios' : precio(f.datos.precioBase))
+                      : 'Consultar precio' }}
                   </b>
-                  <small v-if="f.datos.tieneVariantes" class="precio nota">Ver variantes y precios</small>
                   <span class="badge" :class="claseDisponibilidad(f.datos.estadoDisponibilidad)">
                     {{ disponibilidad(f.datos.estadoDisponibilidad) }}
                   </span>

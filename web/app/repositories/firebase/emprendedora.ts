@@ -30,6 +30,7 @@ export type CuentaEmprendedoraWeb = {
     descripcion: string
     tipoEmprendimientoId: string
     sectorId: string
+    mostrarPrecios: boolean
     contacto: ContactoEmprendedoraWeb | null
     mostrarContacto: boolean
     versionEsperada: string
@@ -81,13 +82,15 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   if (!perfilDoc.exists()) throw new Error('No se encontró el perfil de emprendedora.')
   if (perfilDoc.data().tiendaId !== tiendaId) throw new Error('El perfil y el acceso no coinciden con la tienda asignada.')
 
-  const [tiendaDoc, usuarioDoc, productosDocs] = await Promise.all([
+  const [tiendaDoc, usuarioDoc, productosDocs, configuracionDoc] = await Promise.all([
     getDocFromServer(doc(db, 'tiendasPrivadas', tiendaId)),
     getDocFromServer(doc(db, 'usuarios', uid)),
     getDocsFromServer(collection(db, 'tiendasPrivadas', tiendaId, 'productos')),
+    getDocFromServer(doc(db, 'tiendasPrivadas', tiendaId, 'configuracion', 'general')),
   ])
   if (!tiendaDoc.exists()) throw new Error('No se encontró la ficha privada de la tienda.')
   const tienda = tiendaDoc.data()
+  const mostrarPrecios = configuracionDoc.exists() ? configuracionDoc.data().mostrarPrecios !== false : true
   if (tienda.propietarioUid !== uid) throw new Error('La tienda asignada no pertenece a esta cuenta.')
   const contacto = contactoEmprendedora(tienda.contacto)
   let logoPublico: string | null = null
@@ -124,7 +127,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   if (tienda.estadoPublicacion === 'publicado') {
     try {
       const publicos = await getDocsFromServer(query(
-        collection(db, 'tiendasPublicas', tiendaId, 'productos'),
+        collection(db, 'tiendasPublicas', tiendaId, mostrarPrecios ? 'productos' : 'productosConsulta'),
         where('estadoPublicacion', '==', 'publicado'),
       ))
       for (const productoDoc of publicos.docs) {
@@ -153,6 +156,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       descripcion: texto(tienda.descripcion),
       tipoEmprendimientoId: texto(tienda.tipoEmprendimientoId),
       sectorId: texto(tienda.sectorId),
+      mostrarPrecios,
       contacto,
       mostrarContacto: tienda.mostrarContacto === true,
       versionEsperada: versionTienda(tienda.actualizadoEn),

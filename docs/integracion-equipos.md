@@ -119,7 +119,7 @@ Ver ../android/ejemplos/README.md: inicialización debug, dependencias, red loca
 5. Comprador: consultar esa tienda desde la web sin sesión y, cuando se integre Android, desde el mismo computador anfitrión. Verificar coincidencia de nombre, precio e imagen.
 6. Ajustar stock: conserva la ficha aprobada y actualiza su disponibilidad (contrato 11); solo los datos anteriores sin aprobación requieren republicar. Desactivar la cuenta: toda la tienda deja de ser pública.
 
-La configuración mostrarPrecios=false todavía bloquea la lectura del catálogo de productos. Leer la tienda primero y manejar esa condición; no solicitar una consulta de productos como si fueran visibles. Esto es una limitación implementada, no un catálogo sin precios terminado.
+La configuración `mostrarPrecios=false` publica y sirve una vista del catálogo sin importes. Leer primero la tienda y dirigir las consultas a `productosConsulta`; el comprador debe mostrar «Consultar precio» y no debe descargar la proyección con precios.
 
 ## Errores y reintentos
 

@@ -11,9 +11,12 @@ service firebase.storage {
     }
     function published(tiendaId, productoId, archivo) {
       let store = firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)).data;
-      let product = firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data;
-      return store.estadoPublicacion == 'publicado' && store.habilitada == true && store.mostrarPrecios == true
+      let product = store.mostrarPrecios == true
+        ? firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data
+        : firestore.get(/databases/(default)/documents/tiendasPublicas/$(tiendaId)/productosConsulta/$(productoId)).data;
+      return store.estadoPublicacion == 'publicado' && store.habilitada == true
         && product.estadoPublicacion == 'publicado'
+        && (store.mostrarPrecios == true || !product.keys().hasAny(['precioBase']))
         && (('catalogo/' + tiendaId + '/productos/' + productoId + '/' + archivo) in product.imagenes
           || ('miniaturas' in product && ('catalogo/' + tiendaId + '/productos/' + productoId + '/' + archivo) in product.miniaturas));
     }

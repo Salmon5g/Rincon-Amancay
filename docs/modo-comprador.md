@@ -127,13 +127,12 @@ Todas las lecturas ocurren fuera del hilo principal (`Dispatchers.IO`).
 | Colección | Filtro de lectura |
 |-----------|-------------------|
 | `tiendasPublicas` | `estadoPublicacion = 'publicado'` y `habilitada = true`. |
-| `tiendasPublicas/{id}/productos` | `estadoPublicacion = 'publicado'` **y** la tienda muestra precios. |
-| `tiendasPublicas/{id}/productos/{id}/variantes` | `activa = true` **y** la tienda muestra precios. |
+| `tiendasPublicas/{id}/productos` | `estadoPublicacion = 'publicado'` y la tienda muestra precios. |
+| `tiendasPublicas/{id}/productos/{id}/variantes` | `activa = true` y la tienda muestra precios. |
+| `tiendasPublicas/{id}/productosConsulta` y sus variantes | Tienda publicada, precios ocultos y proyección sin campos de precio. |
 | `sectores`, `tiposEmprendimiento`, `categorias` | `activo = true`. |
 
-> Detalle importante: si una tienda tiene `mostrarPrecios = false`, las reglas de Firestore
-> **bloquean** la lectura de sus productos. Por eso `DetalleTiendaViewModel` solo pide los
-> productos cuando la tienda sí muestra precios.
+> La app lee primero la ficha pública de la tienda y elige `productos` o `productosConsulta` según `mostrarPrecios`. En la vista sin precios, los montos no se envían al comprador; las reglas rechazan la colección con precios y las variantes con importes.
 
 ---
 

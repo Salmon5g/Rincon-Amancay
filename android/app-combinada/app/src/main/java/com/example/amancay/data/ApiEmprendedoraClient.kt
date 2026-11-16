@@ -77,7 +77,8 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
         productoId: String,
         archivoId: String,
         contentType: String,
-        bytes: ByteArray
+        bytes: ByteArray,
+        reemplazarIndice: Int? = null
     ): String = withContext(Dispatchers.IO) {
         if (!tiendaId.matches(Regex("[A-Za-z0-9_-]{1,128}")) ||
             !productoId.matches(Regex("[A-Za-z0-9_-]{1,128}")) ||
@@ -99,6 +100,10 @@ class ApiEmprendedoraClient(private val auth: FirebaseAuth) {
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("X-Archivo-Id", archivoId)
+            reemplazarIndice?.let {
+                if (it !in 0..4) throw ApiEmprendedoraException("datos-invalidos", "La posición de imagen a reemplazar no es válida.")
+                connection.setRequestProperty("X-Reemplazar-Indice", it.toString())
+            }
             connection.setRequestProperty("Accept", "application/json")
             connection.outputStream.use { it.write(bytes) }
             val status = connection.responseCode

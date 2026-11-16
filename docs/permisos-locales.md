@@ -25,7 +25,7 @@ Firestore no filtra resultados prohibidos: una consulta sin los filtros necesari
 
 ## Indicadores derivados y operaciones de servidor
 
-Las reglas exigen `estadoPublicacion`, `habilitada`, `mostrarPrecios` y `activa` para permitir lecturas públicas. Si una tienda oculta precios, la regla bloquea los documentos de producto y variante derivados de esa tienda; no existe una redacción por campo dentro de Firestore.
+Las reglas exigen `estadoPublicacion`, `habilitada`, `mostrarPrecios` y `activa` para permitir lecturas públicas. Con precios visibles, la tienda lee `productos`; al ocultarlos, solo puede leer `productosConsulta` y sus variantes, que no tienen campos de precio. Las reglas bloquean la proyección con precios; Firestore no redacta campos de documentos.
 
 Las operaciones actuales de publicación, retiro, desactivación y stock pasan por la API autenticada, que mantiene coordinados los documentos privados y sus proyecciones públicas. Cambiar manualmente un documento privado desde consola o Admin SDK no retira por sí mismo su copia pública. Las pruebas de reglas simulan escrituras de servidor con permisos desactivados; no sustituyen una revisión de las validaciones de la API.
 

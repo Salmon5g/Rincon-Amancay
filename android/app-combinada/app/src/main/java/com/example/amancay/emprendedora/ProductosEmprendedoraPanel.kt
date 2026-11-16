@@ -487,7 +487,8 @@ internal fun ProductosEmprendedoraPanel(
                         val productoId = repository.guardar(tiendaId, solicitud)
                         if (imagen != null) {
                             val preparada = prepararImagenProducto(context.contentResolver, imagen.uri, imagen.bitmap)
-                            repository.subirImagen(tiendaId, productoId, imagen.archivoId, preparada)
+                            val indiceAReemplazar = editando?.imagenes?.takeIf { it.isNotEmpty() }?.let { 0 }
+                            repository.subirImagen(tiendaId, productoId, imagen.archivoId, preparada, indiceAReemplazar)
                         }
                         imagenesVariantes.forEach { (varianteId, fotoVariante) ->
                             val preparada = prepararImagenProducto(context.contentResolver, fotoVariante.uri, fotoVariante.bitmap)
@@ -1066,7 +1067,7 @@ private fun EditorProductoEmprendedora(
                 imagenPrivada != null -> "Vista previa de tu imagen privada. Solo tú puedes verla hasta publicar el producto."
                 cargandoVistaPrevia -> "Cargando la vista previa segura…"
                 errorVistaPrevia != null -> errorVistaPrevia
-                else -> "La imagen está guardada de forma privada. Puedes agregar otra foto aquí."
+                else -> "La foto actual está guardada de forma privada. Si eliges otra, reemplazará la imagen principal y conservará las demás."
             })
     } else if (paso == 2) {
         StepScaffold("Paso 2 de 5", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
@@ -1295,7 +1296,7 @@ private fun EditorProductoEmprendedora(
             Spacer(Modifier.height(12.dp))
             val mensajeImagen = when {
                 fotoLocal.fotoLista -> "Al guardar, primero se conservará el borrador y luego se subirá la foto. Si falla la carga, podrás reintentar sin perder el producto."
-                original?.imagenes?.isNotEmpty() == true -> "La imagen guardada se conserva de forma privada. Puedes agregar otra foto; la tienda debe estar publicada para publicar el producto."
+                original?.imagenes?.isNotEmpty() == true -> "Al elegir otra foto, reemplazará la imagen principal y conservará las demás imágenes. La nueva foto se verá en la tienda al publicar los cambios."
                 else -> "Puedes guardar el borrador sin foto, pero tendrás que agregar una imagen antes de publicarlo."
             }
             AvisoEmprendedora(mensajeImagen, false)

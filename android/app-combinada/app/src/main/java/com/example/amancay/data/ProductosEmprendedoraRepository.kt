@@ -314,13 +314,15 @@ class ProductosEmprendedoraRepository(
         tiendaId: String,
         productoId: String,
         archivoId: String,
-        imagen: ImagenProductoPreparada
+        imagen: ImagenProductoPreparada,
+        reemplazarIndice: Int? = null
     ): String = api.subirImagenProducto(
         tiendaId = tiendaId,
         productoId = productoId,
         archivoId = archivoId,
         contentType = imagen.contentType,
-        bytes = imagen.bytes
+        bytes = imagen.bytes,
+        reemplazarIndice = reemplazarIndice
     )
 
     suspend fun leerImagenPrivada(tiendaId: String, productoId: String, indice: Int = 0): ByteArray =
@@ -449,6 +451,17 @@ class ProductosEmprendedoraRepository(
 
     suspend fun configurarHistorialVentas(tiendaId: String, activo: Boolean) {
         api.llamar("configurarHistorialVentas", mapOf("tiendaId" to tiendaId, "historialVentasActivo" to activo))
+    }
+
+    suspend fun configurarMostrarPrecios(tiendaId: String, mostrar: Boolean) {
+        api.llamar("configurarMostrarPrecios", mapOf("tiendaId" to tiendaId, "mostrarPrecios" to mostrar))
+    }
+
+    suspend fun leerMostrarPrecios(tiendaId: String): Boolean = withContext(Dispatchers.IO) {
+        val referencia = db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general")
+        val documento = Tasks.await(referencia.get(Source.SERVER))
+        if (!documento.exists()) throw ApiEmprendedoraException("no-encontrado", "No existe la configuración de la tienda.")
+        documento.getBoolean("mostrarPrecios") ?: true
     }
 
     suspend fun configurarValoresDefecto(tiendaId: String, valores: ValoresDefectoProducto) {

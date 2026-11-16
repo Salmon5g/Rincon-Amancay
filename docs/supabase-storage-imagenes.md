@@ -63,9 +63,11 @@ POST /api/v1/asociaciones/logo
 Authorization: Bearer <Firebase ID token>
 Content-Type: image/jpeg | image/png | image/webp
 X-Archivo-Id: <UUID único para el reintento>
+# Opcional para sustituir una imagen de producto ya guardada:
+X-Reemplazar-Indice: 0..4
 ```
 
-El cuerpo es el archivo binario, no JSON ni base64. La API genera el nombre final y lo sube al bucket privado. Para producto, agrega la ruta a `imagenes` en el borrador; si ya tiene cinco imágenes, la operación se rechaza e intenta retirar el original recién cargado. Para logo de tienda, guarda la ruta en la ficha privada y, si ya está publicada, sincroniza las derivadas públicas. Para asociación, el endpoint valida el rol administrador y devuelve la URL pública que guarda la operación existente de crear/editar asociación. Si Firestore falla después de cargar un logo, podría quedar un original privado o una derivada pública huérfanos; no se borran automáticamente ante un resultado incierto.
+El cuerpo es el archivo binario, no JSON ni base64. La API genera el nombre final y lo sube al bucket privado. Para producto, sin cabecera opcional agrega la ruta a `imagenes` en el borrador y aplica el máximo de cinco; `X-Reemplazar-Indice` sustituye la imagen de esa posición, conservando las demás. Para logo de tienda, guarda la ruta en la ficha privada y, si ya está publicada, sincroniza las derivadas públicas. Para asociación, el endpoint valida el rol administrador y devuelve la URL pública que guarda la operación existente de crear/editar asociación. Si Firestore falla después de cargar un logo, podría quedar un original privado o una derivada pública huérfanos; no se borran automáticamente ante un resultado incierto.
 
 Publicar usa las operaciones existentes `publicarTienda` y `publicarProducto`. La API verifica cada ruta privada, genera las dos copias y guarda sus rutas en la proyección pública de Firestore. `retirarProducto` y `retirarTienda` borran las derivadas públicas después de actualizar Firestore; una respuesta `503` durante esa limpieza indica que hay que reintentar la misma operación con el mismo `operacionId`.
 

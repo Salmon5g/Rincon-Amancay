@@ -6,6 +6,12 @@ Contrato local inicial de la API autenticada. Las operaciones requieren una cuen
 
 `POST /api/v1/configurarHistorialVentas` recibe exactamente `tiendaId` e `historialVentasActivo`. Modifica `tiendasPrivadas/{tiendaId}/configuracion/general`. No elimina ventas históricas al desactivar el interruptor.
 
+## Configurar visibilidad de precios
+
+`POST /api/v1/configurarMostrarPrecios` recibe exactamente `tiendaId` y `mostrarPrecios: boolean`. Solo la propietaria activa asignada puede cambiarlo. La preferencia se guarda en `tiendasPrivadas/{tiendaId}/configuracion/general` y, cuando la tienda está publicada, se actualiza junto con la ficha de `tiendasPublicas`.
+
+El ajuste es global: afecta a los productos publicados y a los que se publiquen después. Antes de ocultar los precios de una tienda publicada, la API prepara o actualiza `productosConsulta` y sus variantes desde las proyecciones públicas vigentes, eliminando `precioBase` y `precio`. Solo después cambia `mostrarPrecios` a `false`; así la colección con importes queda bloqueada por reglas y el comprador lee la vista sin precios. Al volver a activar los montos, el comprador usa la proyección normal `productos`. La ficha privada y la gestión de la emprendedora conservan los precios.
+
 ## Registrar una venta
 
 `POST /api/v1/registrarVenta` recibe `tiendaId`, `operacionId`, `productoId`, `cantidad` y, cuando corresponda, `varianteId`. Con el historial activo también requiere feria o lugar; la fecha ISO es opcional y, si se omite, se usa la hora del servidor. Con el historial apagado no exige ni guarda los datos del lugar.

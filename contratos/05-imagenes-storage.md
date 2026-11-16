@@ -23,13 +23,15 @@ POST /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes
 Authorization: Bearer <Firebase ID token>
 Content-Type: image/jpeg | image/png | image/webp
 X-Archivo-Id: <UUID>
+# Opcional solo para imágenes de producto ya guardadas:
+X-Reemplazar-Indice: 0..4
 ```
 
 La API verifica sesión, rol activo, tienda asignada y propiedad en Firestore. Usa una sesión normal de Supabase Auth con una cuenta técnica guardada solo en el entorno del backend, comprueba su UID y sube el original privado. El cliente nunca recibe credenciales Supabase.
 
 La subida de logo actualiza `tiendasPrivadas/{tiendaId}.logo`. Si la tienda ya está publicada, procesa el logo y actualiza sus dos rutas públicas dentro de Firestore; la derivada anterior se elimina después de la transacción. Si aún es borrador, el procesamiento público se hace al publicar la tienda.
 
-La carga de imagen de producto agrega la ruta privada a `tiendasPrivadas/{tiendaId}/productos/{productoId}.imagenes`. Al publicar, la API vuelve a leer y decodificar el original, elimina metadatos y crea WebP de hasta 1600 × 1600 y 320 × 320. La imagen principal intenta calidad 90 y baja a 86/82 solo si debe respetar el límite de 5 MiB; la miniatura se genera directamente desde el original. Los objetos se guardan con nombres derivados del hash del contenido y no se sobrescriben.
+La carga de imagen de producto agrega la ruta privada a `tiendasPrivadas/{tiendaId}/productos/{productoId}.imagenes`. Para cambiar una imagen existente, el cliente puede enviar `X-Reemplazar-Indice` con una posición ocupada entre 0 y 4; la API sustituye esa ruta y conserva las otras imágenes, sin superar el máximo de cinco. Si no envía la cabecera, la ruta se agrega y se aplica el límite normal. Al publicar, la API vuelve a leer y decodificar el original, elimina metadatos y crea WebP de hasta 1600 × 1600 y 320 × 320. La imagen principal intenta calidad 90 y baja a 86/82 solo si debe respetar el límite de 5 MiB; la miniatura se genera directamente desde el original. Los objetos se guardan con nombres derivados del hash del contenido y no se sobrescriben.
 
 Las políticas RLS permiten a la cuenta técnica operar solo en las rutas reales indicadas y solo dentro de los dos buckets Amancay. La autorización de la emprendedora ocurre en la API mediante Firebase/Firestore. No se utiliza `service_role`.
 

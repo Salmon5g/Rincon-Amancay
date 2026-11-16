@@ -24,8 +24,8 @@ service cloud.firestore {
       let product = get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data;
       return publicStore(tiendaId) && product.estadoPublicacion == 'publicado';
     }
-    // Hasta implementar la retirada coordinada de precios, una política de
-    // precios ocultos bloquea todo el catálogo derivado (falla de forma cerrada).
+    // La tienda decide qué proyección pública se puede leer: con precios,
+    // productos; sin precios, productosConsulta, que omite todos los importes.
     function visiblePrices(tiendaId) {
       return get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data.mostrarPrecios == true;
     }
@@ -94,15 +94,14 @@ service cloud.firestore {
             && resource.data.activa == true;
         }
       }
-      // Vista pública separada sin importes para tiendas que ocultan sus precios.
+      // Vista sin importes construida por la API. Firestore no puede redactar
+      // campos durante una consulta, así que la colección y sus escritores son separados.
       match /productosConsulta/{productoId} {
         allow read: if resource.data.estadoPublicacion == 'publicado'
-          && publicStore(tiendaId) && !visiblePrices(tiendaId)
-          && !resource.data.keys().hasAny(['precioBase']);
+          && publicStore(tiendaId) && !visiblePrices(tiendaId);
         match /variantes/{varianteId} {
           allow read: if publicProductConsulta(tiendaId, productoId)
-            && resource.data.activa == true
-            && !resource.data.keys().hasAny(['precio']);
+            && resource.data.activa == true;
         }
       }
     }

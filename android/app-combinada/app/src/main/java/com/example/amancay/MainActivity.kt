@@ -85,6 +85,10 @@ import com.example.amancay.ui.theme.Muted
 import com.example.amancay.ui.theme.Wine
 import kotlinx.coroutines.launch
 
+private data class MiniaturaProductoCache(val firmaImagenes: String, val bitmap: Bitmap)
+
+private fun firmaImagenes(producto: ProductoEmprendedora) = producto.imagenes.joinToString(",")
+
 private fun mensajeCargaVentas(error: Exception, recurso: String): String {
     val firestoreError = generateSequence(error as Throwable?) { it.cause }
         .filterIsInstance<com.google.firebase.firestore.FirebaseFirestoreException>()
@@ -643,7 +647,16 @@ internal fun EmprendedoraAppConectada(
     var cargandoFotoVista by remember(sesion.uid) { mutableStateOf(false) }
     var errorFotoVista by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var reintentoFotoVista by remember(sesion.uid) { mutableIntStateOf(0) }
-    var miniaturasProductos by remember(sesion.uid) { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    var miniaturasProductos by remember(sesion.uid) { mutableStateOf<Map<String, MiniaturaProductoCache>>(emptyMap()) }
+    val firmasImagenesActuales = productos.associate { it.id to firmaImagenes(it) }
+    val firmasImagenesAlTerminarCarga by rememberUpdatedState(firmasImagenesActuales)
+    val miniaturasProductosVisibles = remember(productos, miniaturasProductos) {
+        productos.mapNotNull { producto ->
+            miniaturasProductos[producto.id]
+                ?.takeIf { it.firmaImagenes == firmaImagenes(producto) }
+                ?.let { producto.id to it.bitmap }
+        }.toMap()
+    }
     val firmaImagenesProductos = productos.joinToString("|") { "${it.id}:${it.imagenes.joinToString(",")}" }
     var enviandoProducto by remember(sesion.uid) { mutableStateOf(false) }
     var avisoProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
@@ -657,6 +670,10 @@ internal fun EmprendedoraAppConectada(
         mutableStateOf(PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, sesion.tiendaId))
     }
     var valoresDefectoListos by remember(sesion.tiendaId) { mutableStateOf(false) }
+    var mostrarPrecios by remember(sesion.tiendaId) {
+        mutableStateOf(PreferenciasCatalogoEmprendedora.leerMostrarPrecios(context, sesion.tiendaId))
+    }
+    var preciosListos by remember(sesion.tiendaId) { mutableStateOf(false) }
     var altaNuevaPendiente by remember(sesion.tiendaId) { mutableStateOf(false) }
     var catalogoSinConexion by remember(sesion.tiendaId) {
         mutableStateOf(PreferenciasCatalogoEmprendedora.catalogoSinConexion(context, sesion.tiendaId))
@@ -736,14 +753,22 @@ internal fun EmprendedoraAppConectada(
     LaunchedEffect(screen, sesion.tiendaId, reintentoCargaVentas) {
         if (screen == Screen.ConfiguracionCatalogo) {
             historialConfiguracionCargada = false
+            preciosListos = false
             errorVentas = null
+            try {
+                mostrarPrecios = productosRepository.leerMostrarPrecios(sesion.tiendaId)
+                PreferenciasCatalogoEmprendedora.guardarMostrarPrecios(context, sesion.tiendaId, mostrarPrecios)
+                preciosListos = true
+            } catch (e: Exception) {
+                errorVentas = e.message ?: "No se pudo consultar la visibilidad de precios de la tienda."
+            }
             try {
                 historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
                 valoresDefecto = productosRepository.leerValoresDefecto(sesion.tiendaId)
                 PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valoresDefecto)
                 historialConfiguracionCargada = true
             } catch (e: Exception) {
-                errorVentas = e.message ?: "No se pudo leer la configuración del catálogo."
+                if (errorVentas == null) errorVentas = e.message ?: "No se pudo leer la configuración del catálogo."
             }
             return@LaunchedEffect
         }
@@ -788,7 +813,7 @@ internal fun EmprendedoraAppConectada(
         }
     }
 
-    LaunchedEffect(screen, productoVista, reintentoFotoVista) {
+    LaunchedEffect(screen, productoVista, reintentoFotoVista, firmaImagenesProductos) {
         val preview = screen as? Screen.Preview ?: return@LaunchedEffect
         val id = preview.productId ?: productoVista ?: return@LaunchedEffect
         val producto = productos.firstOrNull { it.id == id } ?: return@LaunchedEffect
@@ -810,12 +835,17 @@ internal fun EmprendedoraAppConectada(
 
     LaunchedEffect(screen, editandoProducto, sesion.tiendaId, firmaImagenesProductos) {
         if (screen != Screen.Products || editandoProducto) return@LaunchedEffect
-        productos.filter { it.imagenes.isNotEmpty() && it.id !in miniaturasProductos }.forEach { producto ->
+        productos.filter { producto ->
+            producto.imagenes.isNotEmpty() && miniaturasProductos[producto.id]?.firmaImagenes != firmaImagenes(producto)
+        }.forEach { producto ->
+            val firma = firmaImagenes(producto)
             try {
                 val bitmap = decodificarVistaPreviaProducto(
                     productosRepository.leerImagenPrivada(sesion.tiendaId, producto.id)
                 )
-                if (bitmap != null) miniaturasProductos = miniaturasProductos + (producto.id to bitmap)
+                if (bitmap != null && firmasImagenesAlTerminarCarga[producto.id] == firma) {
+                    miniaturasProductos = miniaturasProductos + (producto.id to MiniaturaProductoCache(firma, bitmap))
+                }
             } catch (_: Exception) {
                 // La miniatura no impide abrir el detalle: allí se puede reintentar la carga privada.
             }
@@ -1018,7 +1048,7 @@ internal fun EmprendedoraAppConectada(
                         onVerFerias = { screen = Screen.Ferias },
                         tiendaVisible = tienda.estadoPublicacion == "publicado",
                         nombreEmprendedora = sesion.nombreMostrar,
-                        productosRecientes = productos.take(3).map { productoLegado(it, miniaturasProductos[it.id]) },
+                        productosRecientes = productos.take(3).map { productoLegado(it, miniaturasProductosVisibles[it.id]) },
                         contenidoAdicional = {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1069,7 +1099,7 @@ internal fun EmprendedoraAppConectada(
                     Screen.OrganizarCatalogo -> OrganizarCatalogoScreen(
                         productos = productos,
                         categorias = categoriasProducto,
-                        miniaturas = miniaturasProductos,
+                        miniaturas = miniaturasProductosVisibles,
                         enviando = enviandoProducto,
                         alEditar = { producto ->
                             productoInicialId = producto.id
@@ -1137,7 +1167,7 @@ internal fun EmprendedoraAppConectada(
                         )
                     } else {
                         ProductsScreen(
-                            productos = productos.map { productoLegado(it, miniaturasProductos[it.id]) },
+                            productos = productos.map { productoLegado(it, miniaturasProductosVisibles[it.id]) },
                             onEdit = {
                                 productoInicialId = it.id
                                 editandoProducto = true
@@ -1191,12 +1221,31 @@ internal fun EmprendedoraAppConectada(
                     }
                     Screen.ConfiguracionCatalogo -> ConfiguracionVistaPreviaScreen(
                         productos = productos,
-                        miniaturas = miniaturasProductos,
+                        miniaturas = miniaturasProductosVisibles,
+                        mostrarPrecios = mostrarPrecios,
+                        preciosListos = preciosListos,
                         historialActivo = historialVentasActivo,
                         valoresDefecto = valoresDefecto,
                         catalogoSinConexion = catalogoSinConexion,
                         enviando = enviandoProducto,
                         error = errorVentas,
+                        alCambiarMostrarPrecios = { mostrar ->
+                            scope.launch {
+                                enviandoProducto = true
+                                errorVentas = null
+                                try {
+                                    productosRepository.configurarMostrarPrecios(sesion.tiendaId, mostrar)
+                                    PreferenciasCatalogoEmprendedora.guardarMostrarPrecios(context, sesion.tiendaId, mostrar)
+                                    mostrarPrecios = mostrar
+                                    avisoProducto = if (mostrar) "Los precios ya están visibles en el catálogo comprador." else "El catálogo muestra «Consultar precio» y no expone los montos."
+                                    preciosListos = true
+                                } catch (e: Exception) {
+                                    errorVentas = e.message ?: "No se pudo cambiar la visibilidad de precios."
+                                } finally {
+                                    enviandoProducto = false
+                                }
+                            }
+                        },
                         alGuardarValoresDefecto = { valores ->
                             scope.launch {
                                 enviandoProducto = true

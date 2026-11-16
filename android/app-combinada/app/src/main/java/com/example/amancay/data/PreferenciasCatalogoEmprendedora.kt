@@ -31,6 +31,17 @@ object PreferenciasCatalogoEmprendedora {
         check(guardados) { "No se pudo guardar la configuración local del catálogo." }
     }
 
+    fun leerMostrarPrecios(context: Context, tiendaId: String): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(clave(tiendaId, "mostrarPrecios"), true)
+
+    fun guardarMostrarPrecios(context: Context, tiendaId: String, mostrar: Boolean) {
+        val guardados = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(clave(tiendaId, "mostrarPrecios"), mostrar)
+            .commit()
+        check(guardados) { "No se pudo guardar localmente la preferencia de precios." }
+    }
+
     fun hayValoresDefectoSincronizados(context: Context, tiendaId: String): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(clave(tiendaId, "valoresDefectoSincronizados"), false)

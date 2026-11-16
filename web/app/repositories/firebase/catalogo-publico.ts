@@ -59,6 +59,7 @@ function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica 
       ? whatsappDatos.numero.trim(): '',
     },
     formulario: {
+      formularioId: texto(formularioDatos?.formularioId).trim(),
       habilitado: formularioDatos?.habilitado === true,
     },
   }
@@ -179,6 +180,14 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
     return `${baseSupabase}/storage/v1/object/public/amancay-catalogo/${segmentos.map(encodeURIComponent).join('/')}`
   }
 
+  async function coleccionPublicaProductos(tiendaId: string): Promise<'productos' | 'productosConsulta'> {
+    const tienda = await getDoc(doc(db, 'tiendasPublicas', validarId(tiendaId)))
+    if (!tienda.exists() || tienda.data().estadoPublicacion !== 'publicado' || tienda.data().habilitada !== true) {
+      throw Object.assign(new Error('La tienda solicitada ya no está disponible.'), { code: 'no-encontrado' })
+    }
+    return tienda.data().mostrarPrecios === true ? 'productos' : 'productosConsulta'
+  }
+
   return {
     async listarTiendas(cursor = null) {
       return ejecutarConErrorNormalizado(async () => {
@@ -198,8 +207,9 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
     async listarProductos(tiendaId, cursor = null) {
       return ejecutarConErrorNormalizado(async () => {
         const tienda = validarId(tiendaId)
+        const coleccion = await coleccionPublicaProductos(tienda)
         const consulta = query(
-          collection(db, 'tiendasPublicas', tienda, 'productos'),
+          collection(db, 'tiendasPublicas', tienda, coleccion),
           where('estadoPublicacion', '==', 'publicado'),
           orderBy(documentId()),
           ...(cursor ? [startAfter(cursor)] : []),
@@ -224,7 +234,8 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
       return ejecutarConErrorNormalizado(async () => {
         const tienda = validarId(tiendaId)
         const producto = validarId(productoId)
-        const documento = await getDoc(doc(db, 'tiendasPublicas', tienda, 'productos', producto))
+        const coleccion = await coleccionPublicaProductos(tienda)
+        const documento = await getDoc(doc(db, 'tiendasPublicas', tienda, coleccion, producto))
         if (!documento.exists() || documento.data().estadoPublicacion !== 'publicado') {
           throw Object.assign(new Error('El producto solicitado ya no está disponible.'), { code: 'no-encontrado' })
         }
@@ -234,8 +245,10 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
 
     async listarVariantes(tiendaId, productoId) {
       return ejecutarConErrorNormalizado(async () => {
+        const tienda = validarId(tiendaId)
+        const coleccion = await coleccionPublicaProductos(tienda)
         const consulta = query(
-          collection(db, 'tiendasPublicas', validarId(tiendaId), 'productos', validarId(productoId), 'variantes'),
+          collection(db, 'tiendasPublicas', tienda, coleccion, validarId(productoId), 'variantes'),
           where('activa', '==', true),
           orderBy(documentId()),
           limit(100),

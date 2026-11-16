@@ -78,7 +78,7 @@ Meta: catálogo público **sin sesión** (tiendas, productos, variantes, imágen
 - Métodos: `listarTiendas()`, `listarProductos(tiendaId)`, `listarVariantes(tiendaId, productoId)`, `leerImagen(ruta)`.
 - Paginación: guardar el **DocumentSnapshot** como cursor (no solo el id). Una página vacía = fin.
 - Las imágenes del fixture están vacías: mostrar un **placeholder**, no asumir una URL.
-- Si `mostrarPrecios` es `false`, la lectura del catálogo de productos se bloquea: leer la tienda primero y manejar esa condición.
+- Leer la tienda antes de sus productos. Con `mostrarPrecios=true`, consultar `productos`; con `false`, consultar `productosConsulta`, que no contiene importes.
 
 ### 1b. Web administrador
 
