@@ -72,6 +72,7 @@ function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica 
   const datos = documento.data() ?? {}
   const contactoDatos = datos.contacto as Record<string, unknown> | undefined
   const canalesDatos = datos.canalesContacto as Record<string, unknown> | undefined
+  const puntoDatos = datos.puntoRetiro as Record<string, unknown> | undefined
   const whatsappDatos = canalesDatos?.whatsapp as Record<string, unknown> | undefined
   const formularioDatos = canalesDatos?.formulario as Record<string, unknown> | undefined
   const correoDatos = canalesDatos?.correo as Record<string, unknown> | undefined
@@ -110,6 +111,21 @@ function mapearTienda(documento: DocumentSnapshot<DocumentData>): TiendaPublica 
     ...(typeof datos.logoMiniatura === 'string' ? { logoMiniatura: datos.logoMiniatura } : {}),
     ...(contacto ? { contacto } : {}),
     canalesContacto,
+    ...(puntoDatos
+      && typeof puntoDatos.latitud === 'number'
+      && typeof puntoDatos.longitud === 'number'
+      && !Number.isNaN(puntoDatos.latitud)
+      && !Number.isNaN(puntoDatos.longitud)
+      ? {
+          puntoRetiro: {
+            latitud: puntoDatos.latitud,
+            longitud: puntoDatos.longitud,
+            ...(typeof puntoDatos.descripcion === 'string' && puntoDatos.descripcion.trim()
+              ? { descripcion: puntoDatos.descripcion.trim() }
+              : {}),
+          },
+        }
+      : {}),
   }
 }
 
@@ -261,6 +277,15 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
       })
     },
 
+    observarTienda(tiendaId, alCambiar) {
+      return onSnapshot(doc(db, 'tiendasPublicas', validarId(tiendaId)), (documento) => {
+        if (documento.exists() && documento.data().estadoPublicacion === 'publicado' && documento.data().habilitada === true) {
+          alCambiar(mapearTienda(documento))
+        }
+      }, () => {
+        // La ficha también se puede volver a consultar al abrir la tienda.
+      })
+    },
     async leerProducto(tiendaId, productoId) {
       return ejecutarConErrorNormalizado(async () => {
         const tienda = validarId(tiendaId)

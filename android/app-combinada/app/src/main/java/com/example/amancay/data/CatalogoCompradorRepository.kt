@@ -51,7 +51,8 @@ data class TiendaCatalogoComprador(
     val whatsappNumero: String = "",
     val formularioHabilitado: Boolean = true,
     val correoHabilitado: Boolean = false,
-    val correoDireccion: String = ""
+    val correoDireccion: String = "",
+    val puntoRetiro: PuntoRetiroTienda? = null
 )
 
 data class IntegranteAsociacionCatalogo(val tiendaId: String, val nombre: String)
@@ -214,7 +215,16 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                             ?: (formaContacto in listOf("formulario", "ambos")),
                         correoHabilitado = correo?.get("habilitado") as? Boolean ?: contacto?.tipo == "correo",
                         correoDireccion = (correo?.get("direccion") as? String)
-                            ?: contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty()
+                            ?: contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty(),
+                        puntoRetiro = (documento.get("puntoRetiro") as? Map<*, *>)?.let { punto ->
+                            val latitud = punto["latitud"] as? Number
+                            val longitud = punto["longitud"] as? Number
+                            if (latitud != null && longitud != null) PuntoRetiroTienda(
+                                latitud = latitud.toDouble(),
+                                longitud = longitud.toDouble(),
+                                descripcion = punto["descripcion"] as? String ?: ""
+                            ) else null
+                        }
                     )
                 }
                 tiendas.clear()

@@ -14,6 +14,12 @@ import java.util.UUID
 
 data class ContactoEmprendedora(val tipo: String, val valor: String)
 
+data class PuntoRetiroTienda(
+    val latitud: Double,
+    val longitud: Double,
+    val descripcion: String = ""
+)
+
 data class CanalesContactoTienda(
     val whatsappHabilitado: Boolean = false,
     val whatsappNumero: String = "",
@@ -40,7 +46,8 @@ data class TiendaEmprendedora(
     val versionEsperada: String,
     val logo: String? = null,
     val direccion: String = "",
-    val canalesContacto: CanalesContactoTienda = CanalesContactoTienda()
+    val canalesContacto: CanalesContactoTienda = CanalesContactoTienda(),
+    val puntoRetiro: PuntoRetiroTienda? = null
 )
 
 data class OpcionCatalogoEmprendedora(val id: String, val nombre: String)
@@ -130,6 +137,13 @@ class CuentaEmprendedoraRepository(
     suspend fun guardarTienda(cuenta: CuentaEmprendedora, propuesta: TiendaEmprendedora) = withContext(Dispatchers.IO) {
         val contacto = propuesta.contacto?.let { mapOf("tipo" to it.tipo, "valor" to it.valor) }
         val canales = propuesta.canalesContacto
+        val puntoRetiro = propuesta.puntoRetiro?.let {
+            mapOf(
+                "latitud" to it.latitud,
+                "longitud" to it.longitud,
+                "descripcion" to it.descripcion
+            )
+        }
         api.llamar(
             "editarTiendaEmprendedora",
             mapOf(
@@ -139,7 +153,9 @@ class CuentaEmprendedoraRepository(
                     propuesta.descripcion, propuesta.direccion, propuesta.tipoEmprendimientoId, propuesta.sectorId,
                     propuesta.contacto?.tipo.orEmpty(), propuesta.contacto?.valor.orEmpty(), propuesta.mostrarContacto.toString(),
                     canales.whatsappHabilitado.toString(), canales.whatsappNumero,
-                    canales.formularioHabilitado.toString(), canales.correoHabilitado.toString(), canales.correoDireccion
+                    canales.formularioHabilitado.toString(), canales.correoHabilitado.toString(), canales.correoDireccion,
+                    puntoRetiro?.get("latitud").toString(), puntoRetiro?.get("longitud").toString(),
+                    propuesta.puntoRetiro?.descripcion.orEmpty()
                 ),
                 "versionEsperada" to propuesta.versionEsperada,
                 "nombre" to propuesta.nombre,
@@ -149,6 +165,7 @@ class CuentaEmprendedoraRepository(
                 "direccion" to propuesta.direccion,
                 "contacto" to contacto,
                 "mostrarContacto" to propuesta.mostrarContacto,
+                "puntoRetiro" to puntoRetiro,
                 "canalesContacto" to mapOf(
                     "whatsapp" to mapOf("habilitado" to canales.whatsappHabilitado, "numero" to canales.whatsappNumero),
                     "formulario" to mapOf("habilitado" to canales.formularioHabilitado),
@@ -247,7 +264,18 @@ class CuentaEmprendedoraRepository(
             versionEsperada = "${actualizadoEn.seconds}:${actualizadoEn.nanoseconds}",
             logo = data["logo"] as? String,
             direccion = data["direccion"] as? String ?: "",
-            canalesContacto = canalesContacto
+            canalesContacto = canalesContacto,
+            puntoRetiro = (data["puntoRetiro"] as? Map<*, *>)?.let { punto ->
+                val latitud = punto["latitud"] as? Number
+                val longitud = punto["longitud"] as? Number
+                if (latitud != null && longitud != null) {
+                    PuntoRetiroTienda(
+                        latitud = latitud.toDouble(),
+                        longitud = longitud.toDouble(),
+                        descripcion = punto["descripcion"] as? String ?: ""
+                    )
+                } else null
+            }
         )
     }
 

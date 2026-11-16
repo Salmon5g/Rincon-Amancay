@@ -31,6 +31,11 @@ POST `/api/v1/editarTiendaEmprendedora`, con `Authorization: Bearer <Firebase ID
     "whatsapp": { "habilitado": true, "numero": "+56912345678" },
     "formulario": { "habilitado": true },
     "correo": { "habilitado": true, "direccion": "hola@mitienda.cl" }
+  },
+  "puntoRetiro": {
+    "latitud": -41.4693,
+    "longitud": -72.9414,
+    "descripcion": "Casa del taller, entrada por la vereda norte"
   }
 }
 ```
@@ -39,9 +44,11 @@ POST `/api/v1/editarTiendaEmprendedora`, con `Authorization: Bearer <Firebase ID
 
 `canalesContacto` es opcional para mantener compatibilidad con clientes anteriores. Si se envía, cada canal se configura de forma independiente: `whatsapp` requiere un número válido y `correo` una dirección válida cuando están habilitados; `formulario` activa la recepción de consultas. La API conserva o crea el identificador del formulario. Solo proyecta los datos de contacto de canales habilitados. Si no se envía `canalesContacto`, la edición conserva las preferencias anteriores.
 
+`puntoRetiro` es opcional y marca el punto de venta o de retiro en el mapa de la tienda. Si se envía como objeto, `latitud` va de -90 a 90 y `longitud` de -180 a 180; `descripcion` es texto opcional de hasta 200 caracteres. Si se envía `null`, se quita el punto guardado. Si no se envía, la edición lo conserva. El punto se guarda en la ficha privada y, si la tienda está publicada, se copia completo a la proyección pública en la misma transacción; al quitarlo se retira de ambas.
+
 ## Efectos
 
-- Escribe nombre, descripción, tipo, sector, contacto, `mostrarContacto`, los canales de contacto enviados y `actualizadoEn` en la ficha privada.
+- Escribe nombre, descripción, tipo, sector, contacto, `mostrarContacto`, los canales de contacto enviados, el `puntoRetiro` enviado y `actualizadoEn` en la ficha privada.
 - Si la tienda está publicada, aplica los campos públicos aprobados a `tiendasPublicas/{tiendaId}` dentro de la misma transacción. Publica únicamente el número o correo de canales habilitados, junto con las preferencias de formulario; los canales apagados no exponen su dato en la proyección pública.
 - No modifica productos publicados, propietario, fecha de creación ni estado de publicación.
 - Guarda un recibo idempotente en `tiendasPrivadas/{tiendaId}/operacionesEdicion/{operacionId}`. La propietaria no puede leer ni escribir esos recibos mediante reglas de cliente.
