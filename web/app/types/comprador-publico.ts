@@ -33,6 +33,19 @@ export interface AsociacionPublica {
   integrantes: IntegranteAsociacionPublica[];
 }
 
+export interface FeriaPublica {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  organizador: string;
+  direccion: string;
+  fechaInicio: Date | null;
+  fechaFin: Date | null;
+  imagenUrl: string;
+  latitud: number | null;
+  longitud: number | null;
+}
+
 export interface ContactoPublico {
   tipo: 'whatsapp' | 'correo' | 'web';
   valor: string;

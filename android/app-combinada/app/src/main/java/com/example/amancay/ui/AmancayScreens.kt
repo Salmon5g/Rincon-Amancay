@@ -57,8 +57,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -447,19 +445,6 @@ private fun DetalleFila(etiqueta: String, valor: String) {
         Text(etiqueta, fontSize = 14.sp, color = Muted, modifier = Modifier.weight(1f))
         Text(valor, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark, textAlign = TextAlign.End)
     }
-}
-
-// ---------- QR ----------
-
-fun generarQR(texto: String, px: Int = 512): Bitmap {
-    val bits = QRCodeWriter().encode(texto, BarcodeFormat.QR_CODE, px, px)
-    val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.RGB_565)
-    for (x in 0 until px) {
-        for (y in 0 until px) {
-            bmp.setPixel(x, y, if (bits.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
-        }
-    }
-    return bmp
 }
 
 // ---------- CAMARA INTEGRADA ----------
@@ -1034,7 +1019,8 @@ fun PreviewCatalogScreen(
     privateImageLoading: Boolean = false,
     privateImageError: String? = null,
     onRetryPrivateImage: () -> Unit = {},
-    esVistaPrivada: Boolean = false
+    esVistaPrivada: Boolean = false,
+    link: String = EnlacesPublicos.inicio()
 ) {
     val p = producto
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1048,7 +1034,6 @@ fun PreviewCatalogScreen(
         }
         Spacer(Modifier.height(14.dp))
         var showShare by remember { mutableStateOf(false) }
-        val link = "https://rincon-amancay.tienda"
         if (p == null) {
             Text("Aún no tienes productos publicados.", color = Muted)
         } else {
@@ -1159,33 +1144,21 @@ private fun ShareDialog(link: String, onCopiar: () -> Unit, onCompartir: () -> U
             PopIn {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text("Compartir tienda", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
-                    if (!verQR) {
-                        Text(link, fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center)
-                        Spacer(Modifier.height(14.dp))
-                        PrimaryButton("WhatsApp", { abrirWhatsApp(); onCerrar() })
-                        Spacer(Modifier.height(8.dp))
-                        OutlineButton("Código QR", { verQR = true })
-                        Spacer(Modifier.height(8.dp))
-                        OutlineButton("Copiar enlace", onCopiar)
-                        Spacer(Modifier.height(4.dp))
-                        GhostButton("Cerrar", onCerrar)
-                    } else {
-                        Spacer(Modifier.height(8.dp))
-                        val qr = remember(link) { generarQR(link) }
-                        Image(
-                            bitmap = qr.asImageBitmap(), contentDescription = "QR de la tienda",
-                            modifier = Modifier.size(220.dp).clip(RoundedCornerShape(20.dp)).border(1.dp, Line, RoundedCornerShape(20.dp))
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text("Escanea para abrir la tienda", fontSize = 13.sp, color = Muted)
-                        Spacer(Modifier.height(8.dp))
-                        OutlineButton("Volver", { verQR = false })
-                    }
+                    Text(link, fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(14.dp))
+                    PrimaryButton("WhatsApp", { abrirWhatsApp(); onCerrar() })
+                    Spacer(Modifier.height(8.dp))
+                    OutlineButton("Código QR", { verQR = true })
+                    Spacer(Modifier.height(8.dp))
+                    OutlineButton("Copiar enlace", onCopiar)
+                    Spacer(Modifier.height(4.dp))
+                    GhostButton("Cerrar", onCerrar)
                 }
             }
         },
         confirmButton = {}
     )
+    if (verQR) DialogoCodigoQr("Mi tienda", link) { verQR = false }
 }
 
 // ---------- REGISTRAR VENTA ----------

@@ -83,6 +83,8 @@ import com.example.amancay.data.TiendaEmprendedora
 import com.example.amancay.ui.Fig
 import com.example.amancay.ui.BotanicalBackdrop
 import com.example.amancay.ui.OutlineButton
+import com.example.amancay.ui.BotonCodigoQr
+import com.example.amancay.ui.EnlacesPublicos
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
@@ -847,6 +849,10 @@ internal fun PantallaEdicionTienda(
     Text("Mi tienda", fontSize = 32.sp, color = Dark, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
     Text("Los cambios de nombre, descripción, sector, tipo y contacto se reflejan en la proyección pública si la tienda ya está publicada.", fontSize = 15.sp, color = Muted)
     Spacer(Modifier.height(16.dp))
+    if (tienda.estadoPublicacion == "publicado") {
+        BotonCodigoQr("Código QR de mi tienda", tienda.nombre, EnlacesPublicos.tienda(cuenta.tiendaId))
+        Spacer(Modifier.height(12.dp))
+    }
     if (borradorRestaurado != null) {
         AvisoEmprendedora("Se conservó el borrador de tu ficha al cerrar la app. Continúa donde lo dejaste o guarda los cambios.", false)
     }

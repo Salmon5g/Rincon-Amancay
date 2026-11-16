@@ -1,4 +1,4 @@
-import type { AsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { AsociacionPublica, FeriaPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 export interface PaginaRepositorio<T> {
   elementos: T[]
@@ -25,6 +25,8 @@ export interface CatalogoPublicoRepository {
   listarVariantes(tiendaId: string, productoId: string): Promise<VariantePublica[]>
   listarCatalogosPublicos(): Promise<CatalogosPublicos>
   listarAsociacionesPublicas(): Promise<AsociacionPublica[]>
+  listarFeriasPublicas(): Promise<FeriaPublica[]>
+  leerFeria(feriaId: string): Promise<FeriaPublica>
   resolverUrlImagen(ruta: string): string | null
   leerImagen(ruta: string): Promise<Blob>
 }

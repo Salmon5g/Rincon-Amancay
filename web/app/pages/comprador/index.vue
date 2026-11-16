@@ -175,6 +175,15 @@ function fichaProducto(elemento: ProductoPublico): FichaComprador {
     };
 }
 
+function valorContactoVisible(ficha: FichaComprador | null): string {
+    const contacto = ficha?.datos.contacto;
+    if (!contacto) return '';
+    const whatsapp = ficha.datos.canalesContacto?.whatsapp;
+    return contacto.tipo === 'whatsapp' && whatsapp?.habilitado && whatsapp.numero.trim()
+        ? whatsapp.numero
+        : contacto.valor;
+}
+
 function fichaVariante(elemento: VariantePublica): FichaComprador {
     const nombre = Object.values(elemento.opciones)[0] || elemento.id;
     return {
@@ -426,7 +435,7 @@ function cerrarContacto() {
 }
 
 async function copiarContacto() {
-    const valor = contactoContacto.value?.valor;
+    const valor = contactoContacto.value?.valor || valorContactoVisible(tiendaContacto.value);
     if (!valor) return;
     try {
         await navigator.clipboard.writeText(valor);

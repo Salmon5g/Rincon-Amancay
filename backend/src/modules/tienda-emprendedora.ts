@@ -91,9 +91,8 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
     // 'direccion' y 'canalesContacto' son opcionales para conservar compatibilidad con clientes
     // que no los envían; si faltan, no modifican los valores guardados.
     const CAMPOS_EDICION = ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto', 'canalesContacto'];
-    const CAMPOS_REQUERIDOS = CAMPOS_EDICION.filter(clave => clave !== 'canalesContacto');
     exigir(Object.keys(solicitud).every(clave => clave === 'direccion' || CAMPOS_EDICION.includes(clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
-    exigir(CAMPOS_REQUERIDOS.every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
+    exigir(CAMPOS_EDICION.filter(clave => clave !== 'canalesContacto').every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
     exigir(id(solicitud.tiendaId) && id(solicitud.operacionId) && id(solicitud.tipoEmprendimientoId) && id(solicitud.sectorId), 'datos-invalidos', 'Identificadores inválidos.');
     exigir(typeof solicitud.versionEsperada === 'string' && /^[0-9]{1,12}:[0-9]{1,9}$/.test(solicitud.versionEsperada), 'datos-invalidos', 'Versión inválida.');
     const nombre = texto(solicitud.nombre, 120);
@@ -101,7 +100,7 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
     const llevaDireccion = Object.hasOwn(solicitud, 'direccion') && solicitud.direccion !== null;
     const direccion = llevaDireccion ? texto(solicitud.direccion, 200, true) : '';
     const contacto = validarContacto(solicitud.contacto);
-    const canalesContacto = validarCanalesContacto(solicitud.canalesContacto);
+    const canalesContacto = Object.hasOwn(solicitud, 'canalesContacto') ? validarCanalesContacto(solicitud.canalesContacto) : undefined;
     exigir(typeof solicitud.mostrarContacto === 'boolean', 'datos-invalidos', 'Indica si el contacto se muestra públicamente.');
     exigir(!solicitud.mostrarContacto || contacto !== null, 'datos-invalidos', 'Completa un contacto antes de mostrarlo públicamente.');
     const solicitudNormalizada: Record<string, unknown> = { tiendaId: solicitud.tiendaId, operacionId: solicitud.operacionId, versionEsperada: solicitud.versionEsperada, nombre, descripcion, tipoEmprendimientoId: solicitud.tipoEmprendimientoId, sectorId: solicitud.sectorId, contacto, mostrarContacto: solicitud.mostrarContacto };

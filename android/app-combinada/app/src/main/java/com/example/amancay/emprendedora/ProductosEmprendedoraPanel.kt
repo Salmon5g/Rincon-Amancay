@@ -318,6 +318,19 @@ private fun prepararSolicitudAlta(
     return AltaPreparada(identidad, solicitud.copy(productoIdNuevo = productoId, operacionId = operacionId))
 }
 
+private suspend fun guardarConVersionVigente(
+    repository: ProductosEmprendedoraRepository,
+    tiendaId: String,
+    solicitud: ProductoSolicitud
+): String = try {
+    repository.guardar(tiendaId, solicitud)
+} catch (e: ApiEmprendedoraException) {
+    val id = solicitud.id
+    if (id == null || !ColaOfflineCatalogo.esConflictoDeVersion(e)) throw e
+    val version = repository.leerVersionesDisponibilidad(tiendaId, listOf(id))[id] ?: throw e
+    repository.guardar(tiendaId, solicitud.copy(versionEsperada = version, operacionId = UUID.randomUUID().toString()))
+}
+
 private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? = runCatching {
     val raw = context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).getString(tiendaId, null) ?: return null
     val json = JSONObject(raw)
@@ -484,7 +497,7 @@ internal fun ProductosEmprendedoraPanel(
                             alFinalizarEdicion()
                             return@launch
                         }
-                        val productoId = repository.guardar(tiendaId, solicitud)
+                        val productoId = guardarConVersionVigente(repository, tiendaId, solicitud)
                         if (imagen != null) {
                             val preparada = prepararImagenProducto(context.contentResolver, imagen.uri, imagen.bitmap)
                             val indiceAReemplazar = editando?.imagenes?.takeIf { it.isNotEmpty() }?.let { 0 }
