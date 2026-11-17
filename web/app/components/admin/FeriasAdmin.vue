@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { Operacion } from '~/lib/cliente-base'
+import SelectorUbicacionFeria from './MapaUbicacionFeria.client.vue'
 import { leerParticipantesFeria, listarFeriasAdmin } from '~/repositories/admin'
 import type { FeriaAdmin, ParticipanteFeria, ParticipantesFeria } from '~/types/admin'
 
@@ -27,6 +28,13 @@ const tipoGestion = ref<'invitarParticipanteFeria' | 'agregarParticipanteFeria'>
 const retiro = ref<ParticipanteFeria | null>(null)
 const pendiente = ref<{ operacion: Operacion; solicitud: Record<string, unknown> } | null>(null)
 const borrador = ref({ nombre: '', descripcion: '', organizador: '', direccion: '', fechaInicio: '', fechaFin: '', imagenUrl: '', latitud: '', longitud: '' })
+const ubicacionMarcada = computed(() => {
+  const latitud = Number(borrador.value.latitud)
+  const longitud = Number(borrador.value.longitud)
+  return borrador.value.latitud.trim() !== '' && borrador.value.longitud.trim() !== ''
+    && Number.isFinite(latitud) && latitud >= -90 && latitud <= 90
+    && Number.isFinite(longitud) && longitud >= -180 && longitud <= 180
+})
 
 const seleccionDisponible = computed(() => {
   if (!detalle.value || !candidata.value) return null
@@ -88,6 +96,15 @@ function fechaLocal(value: string | null) {
   return local.toISOString().slice(0, 16)
 }
 
+function actualizarUbicacion(ubicacion: { latitud: number; longitud: number; direccion: string }) {
+  borrador.value = {
+    ...borrador.value,
+    direccion: ubicacion.direccion.slice(0, 300),
+    latitud: String(ubicacion.latitud),
+    longitud: String(ubicacion.longitud),
+  }
+}
+
 function editar(item: FeriaAdmin) {
   feriaEditando.value = item
   borrador.value = {
@@ -105,9 +122,8 @@ function payloadFeria() {
   }
   const latitud = String(borrador.value.latitud ?? '').trim()
   const longitud = String(borrador.value.longitud ?? '').trim()
-  if (latitud || longitud) {
-    datos.latitud = Number(latitud); datos.longitud = Number(longitud)
-  }
+  datos.latitud = Number(latitud)
+  datos.longitud = Number(longitud)
   return datos
 }
 
@@ -127,7 +143,7 @@ async function procesarPendiente() {
 }
 
 function guardarFeria() {
-  if (!habilitado || pendiente.value || !borrador.value.fechaInicio || !borrador.value.fechaFin) return
+  if (!habilitado || pendiente.value || !ubicacionMarcada.value || !borrador.value.fechaInicio || !borrador.value.fechaFin) return
   const op = opId(); const datos = payloadFeria()
   if (feriaEditando.value) {
     pendiente.value = { operacion: 'editarFeria', solicitud: { ...datos, operacionId: op, feriaId: feriaEditando.value.id, versionEsperada: feriaEditando.value.versionEsperada } }
@@ -187,7 +203,7 @@ onMounted(() => { void cargar() })
 
 <template>
   <section class="ferias-admin">
-    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar y participantes. Las invitaciones se registran en Firebase; esta versión todavía no envía correos ni notificaciones. Para imágenes se acepta una URL HTTPS pública; aún no incluye carga a Storage ni selector de mapa.</p></div>
+    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar y participantes. Las invitaciones se registran en Firebase; esta versión todavía no envía correos ni notificaciones. Para imágenes se acepta una URL HTTPS pública; la ubicación de cada feria se puede buscar o marcar en el mapa.</p></div>
     <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para administrar ferias.</p>
     <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} registros</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
     <p v-if="cargando" role="status">Leyendo ferias desde Firebase…</p>
@@ -202,10 +218,19 @@ onMounted(() => { void cargar() })
         <label>Organizador o responsable<input v-model="borrador.organizador" maxlength="120" required :disabled="enviando || !!pendiente" /></label>
         <label class="completo">Descripción<textarea v-model="borrador.descripcion" maxlength="2000" rows="3" :disabled="enviando || !!pendiente" /></label>
         <label class="completo">Dirección o lugar<input v-model="borrador.direccion" maxlength="300" required placeholder="Ej.: Sede de la Asociación, Alerce" :disabled="enviando || !!pendiente" /></label>
+        <SelectorUbicacionFeria
+          class="completo"
+          :latitud="borrador.latitud.trim() ? Number(borrador.latitud) : null"
+          :longitud="borrador.longitud.trim() ? Number(borrador.longitud) : null"
+          :direccion="borrador.direccion"
+          :disabled="enviando || !!pendiente"
+          @ubicacion-seleccionada="actualizarUbicacion"
+        />
+        <p v-if="!ubicacionMarcada" class="aviso-ubicacion completo" role="status">Marca un punto en el mapa o busca una dirección para guardar la ubicación de la feria.</p>
         <label>Inicio<input v-model="borrador.fechaInicio" type="datetime-local" required :disabled="enviando || !!pendiente" /></label>
         <label>Término<input v-model="borrador.fechaFin" type="datetime-local" required :disabled="enviando || !!pendiente" /></label>
         <label class="completo">URL de imagen HTTPS (opcional)<input v-model="borrador.imagenUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || !!pendiente" /></label>
-        <div class="acciones completo"><button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !borrador.nombre.trim() || !borrador.organizador.trim() || !borrador.direccion.trim()">{{ enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="formulario = false">Cancelar</button></div>
+        <div class="acciones completo"><button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !ubicacionMarcada || !borrador.nombre.trim() || !borrador.organizador.trim() || !borrador.direccion.trim()">{{ enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="formulario = false">Cancelar</button></div>
       </form>
     </section>
 

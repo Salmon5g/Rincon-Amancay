@@ -91,7 +91,8 @@ fun tienePermisoUbicacion(contexto: Context): Boolean =
         PackageManager.PERMISSION_GRANTED
 
 fun feriaConUbicacion(feria: FeriaComprador): Boolean =
-    feria.latitud != null && feria.longitud != null
+    feria.latitud?.let { it.isFinite() && it in -90.0..90.0 } == true &&
+        feria.longitud?.let { it.isFinite() && it in -180.0..180.0 } == true
 
 /** Última posición conocida del sistema; no enciende el GPS por sí sola. */
 fun ultimaUbicacionConocida(contexto: Context): Pair<Double, Double>? {
@@ -161,25 +162,39 @@ fun formatoDistancia(metros: Float): String = when {
     else -> "${"%.0f".format(metros / 1000f)} km"
 }
 
-/** Abre la aplicación de mapas del celular en el punto de la feria (A11). */
+private fun destinoFeria(feria: FeriaComprador): String? = when {
+    feriaConUbicacion(feria) -> String.format(Locale.US, "%.6f,%.6f", feria.latitud, feria.longitud)
+    feria.direccion.isNotBlank() -> feria.direccion.trim()
+    else -> null
+}
+
+private fun uriMapaFeria(feria: FeriaComprador): Uri? {
+    val destino = destinoFeria(feria) ?: return null
+    val etiqueta = feria.nombre.trim()
+    val consulta = if (etiqueta.isNotEmpty() && feriaConUbicacion(feria)) "$destino($etiqueta)" else destino
+    return Uri.parse("geo:0,0?q=${Uri.encode(consulta)}")
+}
+
+private fun uriDireccionesGoogle(feria: FeriaComprador): Uri? {
+    val destino = destinoFeria(feria) ?: return null
+    return Uri.parse("https://www.google.com/maps/dir/").buildUpon()
+        .appendQueryParameter("api", "1")
+        .appendQueryParameter("destination", destino)
+        .build()
+}
+
+/** Abre la aplicación de mapas del celular directamente en el destino de la feria (A11). */
 fun abrirComoLlegar(contexto: Context, feria: FeriaComprador): Boolean {
-    val destino = when {
-        feriaConUbicacion(feria) -> "${feria.latitud},${feria.longitud}"
-        feria.direccion.isNotBlank() -> Uri.encode(feria.direccion)
-        else -> return false
-    }
-    val consulta = if (feria.nombre.isNotBlank()) {
-        "${Uri.encode(feria.nombre)}%09$destino"
-    } else destino
-    val geo = Uri.parse("geo:$destino?q=$consulta")
+    val geo = uriMapaFeria(feria) ?: return false
     try {
         contexto.startActivity(Intent(Intent.ACTION_VIEW, geo))
         return true
     } catch (_: Exception) {
-        // Sin app de mapas: cae al buscador web, que también abre el mapa.
+        // Si no hay una app que entienda geo:, abre la ruta web con el mismo destino.
     }
+    val direcciones = uriDireccionesGoogle(feria) ?: return false
     return try {
-        contexto.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=$consulta")))
+        contexto.startActivity(Intent(Intent.ACTION_VIEW, direcciones))
         true
     } catch (_: Exception) {
         false
