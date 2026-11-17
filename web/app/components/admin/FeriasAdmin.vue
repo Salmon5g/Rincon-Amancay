@@ -27,7 +27,11 @@ const filtroTipoParticipante = ref('todos')
 const tipoGestion = ref<'invitarParticipanteFeria' | 'agregarParticipanteFeria'>('invitarParticipanteFeria')
 const retiro = ref<ParticipanteFeria | null>(null)
 const pendiente = ref<{ operacion: Operacion; solicitud: Record<string, unknown> } | null>(null)
-const borrador = ref({ nombre: '', descripcion: '', organizador: '', direccion: '', fechaInicio: '', fechaFin: '', imagenUrl: '', latitud: '', longitud: '' })
+const borrador = ref({ nombre: '', descripcion: '', organizador: '', direccion: '', fecha: '', horaInicio: '', horaFin: '', imagenUrl: '', latitud: '', longitud: '' })
+const archivoImagen = ref<File | null>(null)
+const archivoIdImagen = ref('')
+const vistaImagen = ref('')
+const subiendoImagen = ref(false)
 const ubicacionMarcada = computed(() => {
   const latitud = Number(borrador.value.latitud)
   const longitud = Number(borrador.value.longitud)
@@ -35,6 +39,16 @@ const ubicacionMarcada = computed(() => {
     && Number.isFinite(latitud) && latitud >= -90 && latitud <= 90
     && Number.isFinite(longitud) && longitud >= -180 && longitud <= 180
 })
+const fechaHora = computed(() => {
+  const { fecha, horaInicio, horaFin } = borrador.value
+  if (!fecha || !horaInicio || !horaFin) return null
+  const inicio = new Date(`${fecha}T${horaInicio}`)
+  const fin = new Date(`${fecha}T${horaFin}`)
+  if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fin.getTime())) return null
+  return { inicio, fin, valido: fin > inicio }
+})
+const imagenLista = computed(() => Boolean(borrador.value.imagenUrl || archivoImagen.value))
+const inicioPasado = computed(() => Boolean(fechaHora.value?.valido && fechaHora.value.inicio.getTime() <= Date.now()))
 
 const seleccionDisponible = computed(() => {
   if (!detalle.value || !candidata.value) return null
@@ -57,9 +71,10 @@ const participantesVisibles = computed(() => {
 function opId() { return crypto.randomUUID().replaceAll('-', '') }
 function mensajeError(cause: unknown) {
   const code = (cause as { code?: string })?.code
+  const detalle = cause instanceof Error ? cause.message.trim() : ''
   if (code === 'sin-permiso') return 'La API no reconoce una cuenta administradora activa.'
-  if (code === 'datos-invalidos') return 'Revisa los campos: las fechas deben ser válidas, el término posterior al inicio y la imagen debe usar HTTPS.'
-  if (code === 'conflicto') return 'La feria o el participante cambió, o la acción ya no corresponde a su estado. Actualiza el módulo.'
+  if (code === 'datos-invalidos') return detalle || 'Revisa los campos: nombre, descripción, lugar, fecha, horario e imagen son obligatorios; el término debe ser posterior al inicio.'
+  if (code === 'conflicto') return detalle || 'La feria o el participante cambió, o la acción ya no corresponde a su estado. Actualiza el módulo.'
   if (code === 'conexion-interrumpida' || (cause as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Reintenta la misma solicitud sin cambiar sus datos.'
   if (code === 'no-encontrado') return 'La feria, asociación o cuenta ya no existe. Actualiza el listado.'
   return 'No se pudo completar la operación. Revisa la conexión y vuelve a cargar el módulo.'
@@ -85,15 +100,52 @@ async function cargarParticipantes(id: string) {
 
 function nuevo() {
   feriaEditando.value = null
-  borrador.value = { nombre: '', descripcion: '', organizador: '', direccion: '', fechaInicio: '', fechaFin: '', imagenUrl: '', latitud: '', longitud: '' }
+  borrador.value = { nombre: '', descripcion: '', organizador: '', direccion: '', fecha: '', horaInicio: '', horaFin: '', imagenUrl: '', latitud: '', longitud: '' }
+  limpiarArchivoImagen()
   formulario.value = true; error.value = ''; aviso.value = ''
 }
 
+function cerrarFormulario() {
+  if (enviando.value || pendiente.value) return
+  limpiarArchivoImagen()
+  formulario.value = false
+}
+
+function dosDigitos(valor: number) { return String(valor).padStart(2, '0') }
 function fechaLocal(value: string | null) {
   if (!value) return ''
   const date = new Date(value)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 16)
+  if (!Number.isFinite(date.getTime())) return ''
+  return `${date.getFullYear()}-${dosDigitos(date.getMonth() + 1)}-${dosDigitos(date.getDate())}`
+}
+function horaLocal(value: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
+  return `${dosDigitos(date.getHours())}:${dosDigitos(date.getMinutes())}`
+}
+
+function limpiarArchivoImagen() {
+  archivoImagen.value = null
+  archivoIdImagen.value = ''
+  if (vistaImagen.value.startsWith('blob:')) URL.revokeObjectURL(vistaImagen.value)
+  vistaImagen.value = ''
+}
+
+function seleccionarImagen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const archivo = input.files?.[0] ?? null
+  if (!archivo) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(archivo.type) || archivo.size <= 0 || archivo.size > 5 * 1024 * 1024) {
+    error.value = 'Usa una imagen JPEG, PNG o WebP de hasta 5 MiB.'
+    input.value = ''
+    return
+  }
+  if (vistaImagen.value.startsWith('blob:')) URL.revokeObjectURL(vistaImagen.value)
+  error.value = ''
+  archivoImagen.value = archivo
+  archivoIdImagen.value = crypto.randomUUID()
+  vistaImagen.value = URL.createObjectURL(archivo)
 }
 
 function actualizarUbicacion(ubicacion: { latitud: number; longitud: number; direccion: string }) {
@@ -107,18 +159,22 @@ function actualizarUbicacion(ubicacion: { latitud: number; longitud: number; dir
 
 function editar(item: FeriaAdmin) {
   feriaEditando.value = item
+  limpiarArchivoImagen()
   borrador.value = {
     nombre: item.nombre, descripcion: item.descripcion, organizador: item.organizador, direccion: item.direccion,
-    fechaInicio: fechaLocal(item.fechaInicio), fechaFin: fechaLocal(item.fechaFin), imagenUrl: item.imagenUrl, latitud: item.latitud === null ? '' : String(item.latitud), longitud: item.longitud === null ? '' : String(item.longitud),
+    fecha: fechaLocal(item.fechaInicio), horaInicio: horaLocal(item.fechaInicio), horaFin: horaLocal(item.fechaFin),
+    imagenUrl: item.imagenUrl, latitud: item.latitud === null ? '' : String(item.latitud), longitud: item.longitud === null ? '' : String(item.longitud),
   }
   formulario.value = true; error.value = ''; aviso.value = ''
 }
 
-function payloadFeria() {
+function payloadFeria(imagenUrl: string) {
+  const tramo = fechaHora.value
+  if (!tramo) throw new Error('Completa la fecha y el horario de la feria.')
   const datos: Record<string, unknown> = {
     nombre: borrador.value.nombre.trim(), descripcion: borrador.value.descripcion.trim(), organizador: borrador.value.organizador.trim(),
-    direccion: borrador.value.direccion.trim(), fechaInicio: new Date(borrador.value.fechaInicio).toISOString(), fechaFin: new Date(borrador.value.fechaFin).toISOString(),
-    imagenUrl: borrador.value.imagenUrl.trim(),
+    direccion: borrador.value.direccion.trim(), fechaInicio: tramo.inicio.toISOString(), fechaFin: tramo.fin.toISOString(),
+    imagenUrl,
   }
   const latitud = String(borrador.value.latitud ?? '').trim()
   const longitud = String(borrador.value.longitud ?? '').trim()
@@ -134,6 +190,7 @@ async function procesarPendiente() {
   try {
     await $amancay.llamar(current.operacion, current.solicitud)
     pendiente.value = null; formulario.value = false; retiro.value = null
+    limpiarArchivoImagen()
     aviso.value = 'Los cambios de la feria se guardaron en Firebase.'
     await cargar()
   } catch (cause) {
@@ -142,15 +199,47 @@ async function procesarPendiente() {
   } finally { enviando.value = false }
 }
 
-function guardarFeria() {
-  if (!habilitado || pendiente.value || !ubicacionMarcada.value || !borrador.value.fechaInicio || !borrador.value.fechaFin) return
-  const op = opId(); const datos = payloadFeria()
-  if (feriaEditando.value) {
-    pendiente.value = { operacion: 'editarFeria', solicitud: { ...datos, operacionId: op, feriaId: feriaEditando.value.id, versionEsperada: feriaEditando.value.versionEsperada } }
-  } else {
-    pendiente.value = { operacion: 'crearFeria', solicitud: { ...datos, operacionId: op } }
+async function guardarFeria() {
+  if (!habilitado || enviando.value || pendiente.value) return
+  if (!borrador.value.nombre.trim() || !borrador.value.descripcion.trim() || !borrador.value.organizador.trim() || !borrador.value.direccion.trim()) {
+    error.value = 'Completa nombre, descripción, organizador y lugar.'
+    return
   }
-  void procesarPendiente()
+  if (!fechaHora.value || !fechaHora.value.valido) {
+    error.value = 'Completa la fecha y un horario con término posterior al inicio.'
+    return
+  }
+  if (fechaHora.value.inicio.getTime() <= Date.now()) {
+    error.value = 'Elige una fecha y hora de inicio posteriores a este momento.'
+    return
+  }
+  if (!ubicacionMarcada.value) {
+    error.value = 'Marca la ubicación de la feria en el mapa o busca su dirección.'
+    return
+  }
+  if (!imagenLista.value) {
+    error.value = 'Selecciona una imagen para la feria.'
+    return
+  }
+  enviando.value = true; error.value = ''; aviso.value = ''
+  try {
+    let imagenUrl = borrador.value.imagenUrl.trim()
+    if (archivoImagen.value) {
+      subiendoImagen.value = true
+      imagenUrl = await $amancay.subirImagenFeria(archivoImagen.value, archivoIdImagen.value)
+      borrador.value.imagenUrl = imagenUrl
+    }
+    const datos = payloadFeria(imagenUrl)
+    pendiente.value = feriaEditando.value
+      ? { operacion: 'editarFeria', solicitud: { ...datos, operacionId: opId(), feriaId: feriaEditando.value.id, versionEsperada: feriaEditando.value.versionEsperada } }
+      : { operacion: 'crearFeria', solicitud: { ...datos, operacionId: opId() } }
+  } catch (cause) {
+    subiendoImagen.value = false; enviando.value = false
+    error.value = mensajeError(cause)
+    return
+  }
+  subiendoImagen.value = false; enviando.value = false
+  await procesarPendiente()
 }
 
 function cambiarEstado(item: FeriaAdmin, estado: 'publicada' | 'cancelada') {
@@ -203,7 +292,7 @@ onMounted(() => { void cargar() })
 
 <template>
   <section class="ferias-admin">
-    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar y participantes. Las invitaciones se registran en Firebase; esta versión todavía no envía correos ni notificaciones. Para imágenes se acepta una URL HTTPS pública; la ubicación de cada feria se puede buscar o marcar en el mapa.</p></div>
+    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. La imagen se sube al almacenamiento y queda asociada a la feria. Las invitaciones se registran en Firebase; esta versión todavía no envía correos ni notificaciones. La ubicación de cada feria se puede buscar o marcar en el mapa.</p></div>
     <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para administrar ferias.</p>
     <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} registros</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
     <p v-if="cargando" role="status">Leyendo ferias desde Firebase…</p>
@@ -212,12 +301,12 @@ onMounted(() => { void cargar() })
     <div v-if="pendiente" class="nota pendiente" role="status"><p>La respuesta de la API no se confirmó. Conservé el mismo identificador para evitar duplicar la operación.</p><button class="boton" type="button" :disabled="enviando" @click="procesarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar operación' }}</button></div>
 
     <section v-if="formulario" class="formulario">
-      <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="formulario = false">Cerrar</button></div>
+      <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cerrar</button></div>
       <form class="campos" @submit.prevent="guardarFeria">
         <label>Nombre de la feria<input v-model="borrador.nombre" maxlength="120" required :disabled="enviando || !!pendiente" /></label>
         <label>Organizador o responsable<input v-model="borrador.organizador" maxlength="120" required :disabled="enviando || !!pendiente" /></label>
-        <label class="completo">Descripción<textarea v-model="borrador.descripcion" maxlength="2000" rows="3" :disabled="enviando || !!pendiente" /></label>
-        <label class="completo">Dirección o lugar<input v-model="borrador.direccion" maxlength="300" required placeholder="Ej.: Sede de la Asociación, Alerce" :disabled="enviando || !!pendiente" /></label>
+        <label class="completo">Descripción<textarea v-model="borrador.descripcion" maxlength="2000" rows="3" required :disabled="enviando || !!pendiente" /></label>
+        <label class="completo">Lugar<input v-model="borrador.direccion" maxlength="300" required placeholder="Ej.: Sede de la Asociación, Alerce" :disabled="enviando || !!pendiente" /></label>
         <SelectorUbicacionFeria
           class="completo"
           :latitud="borrador.latitud.trim() ? Number(borrador.latitud) : null"
@@ -227,10 +316,20 @@ onMounted(() => { void cargar() })
           @ubicacion-seleccionada="actualizarUbicacion"
         />
         <p v-if="!ubicacionMarcada" class="aviso-ubicacion completo" role="status">Marca un punto en el mapa o busca una dirección para guardar la ubicación de la feria.</p>
-        <label>Inicio<input v-model="borrador.fechaInicio" type="datetime-local" required :disabled="enviando || !!pendiente" /></label>
-        <label>Término<input v-model="borrador.fechaFin" type="datetime-local" required :disabled="enviando || !!pendiente" /></label>
-        <label class="completo">URL de imagen HTTPS (opcional)<input v-model="borrador.imagenUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || !!pendiente" /></label>
-        <div class="acciones completo"><button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !ubicacionMarcada || !borrador.nombre.trim() || !borrador.organizador.trim() || !borrador.direccion.trim()">{{ enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="formulario = false">Cancelar</button></div>
+        <div class="completo horario">
+          <label>Fecha<input v-model="borrador.fecha" type="date" required :disabled="enviando || !!pendiente" /></label>
+          <label>Hora de inicio<input v-model="borrador.horaInicio" type="time" required :disabled="enviando || !!pendiente" /></label>
+          <label>Hora de término<input v-model="borrador.horaFin" type="time" required :disabled="enviando || !!pendiente" /></label>
+        </div>
+        <p v-if="borrador.fecha && borrador.horaInicio && borrador.horaFin && !fechaHora?.valido" class="aviso-ubicacion completo" role="alert">La hora de término debe ser posterior a la de inicio.</p>
+        <p v-else-if="inicioPasado" class="aviso-ubicacion completo" role="alert">La fecha y hora de inicio deben ser futuras.</p>
+        <div class="completo imagen-campo">
+          <p class="etiqueta">Imagen de la feria</p>
+          <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="enviando || !!pendiente" @change="seleccionarImagen" />
+          <small>Se sube al almacenamiento y se guarda su URL en la feria. JPEG, PNG o WebP de hasta 5 MiB.</small>
+          <img v-if="vistaImagen || borrador.imagenUrl" :src="vistaImagen || borrador.imagenUrl" alt="Vista previa de la imagen de la feria" />
+        </div>
+        <div class="acciones completo"><button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !ubicacionMarcada || !fechaHora?.valido || inicioPasado || !imagenLista || !borrador.nombre.trim() || !borrador.descripcion.trim() || !borrador.organizador.trim() || !borrador.direccion.trim()">{{ subiendoImagen ? 'Subiendo imagen…' : enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cancelar</button></div>
       </form>
     </section>
 
@@ -287,4 +386,5 @@ onMounted(() => { void cargar() })
 
 <style scoped>
 .ferias-admin{--vino:#75264f;--vino-oscuro:#5a1c3c;--crema:#fff8ef;--borde:#ead9cc;--texto:#3a1228;color:var(--texto);display:grid;gap:18px}.nota,.formulario,.feria,.participantes,.confirmacion{background:#fff;border:1px solid var(--borde);border-radius:20px;padding:18px}.nota{display:flex;gap:12px;background:var(--crema);color:#6d5663;line-height:1.55}.nota p{margin:0}.barra,.formulario-cabecera{display:flex;align-items:center;justify-content:space-between;gap:12px}.barra h2,.formulario h3,.participantes h3,.feria h3{font:400 1.55rem 'DM Serif Display',serif;color:var(--vino);margin:4px 0}.barra p,.feria p,.formulario p{margin:4px 0;color:#775f6c}.acciones{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.boton,.secundario,.peligro{border:0;border-radius:999px;padding:10px 15px;font:inherit;font-weight:700;cursor:pointer}.boton{background:var(--vino);color:#fff}.secundario{background:#f4e7ed;color:var(--vino)}.peligro{background:#fff0e8;color:#9c3a28}button:disabled{opacity:.55;cursor:not-allowed}.formulario{display:grid;gap:16px}.sobre{font-size:.74rem!important;text-transform:uppercase;letter-spacing:.12em;color:var(--vino)!important;font-weight:700}.campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.campos label,.asignar label,.filtros label{display:grid;gap:7px;font-weight:600}.filtros{display:grid;grid-template-columns:2fr 1fr;gap:12px}.participantes-filtros{grid-template-columns:2fr 1fr 1fr}input,textarea,select{width:100%;border:1px solid var(--borde);border-radius:12px;padding:11px;font:inherit;color:var(--texto);background:#fff}.completo{grid-column:1/-1}.lista{list-style:none;margin:0;padding:0;display:grid;gap:12px}.feria{display:grid;gap:12px}.feria-cabecera{display:flex;justify-content:space-between;gap:15px}.feria-cabecera>div{min-width:0}.feria-cabecera img{width:128px;height:100px;object-fit:cover;border-radius:14px}.feria small,.participante small{color:#775f6c}.estado{display:inline-block;border-radius:999px;padding:5px 10px;font-size:.78rem;font-weight:700}.estado.borrador{background:#f9edda;color:#755319}.estado.publicada{background:#e8f4df;color:#365b2f}.estado.cancelada{background:#f8e1e1;color:#8e2b38}.asistencia{background:#f4e7ed;color:var(--vino)}.participantes{display:grid;gap:15px}.asignar{display:grid;grid-template-columns:2fr 1.5fr auto;gap:12px;align-items:end}.participantes-lista{border-top:1px solid var(--borde);padding-top:14px}.participante{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--borde);border-radius:15px;flex-wrap:wrap}.persona{display:grid;gap:4px;flex:1;min-width:150px}.confirmacion{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.confirmacion p{flex:1}.vacio{padding:24px;text-align:center;color:#775f6c;border:1px dashed var(--borde);border-radius:16px}.error{color:#a32335}.exito{color:#27603b}.pendiente{display:grid}.barra>div:first-child{flex:1}@media(max-width:760px){.barra,.formulario-cabecera{align-items:flex-start;flex-direction:column}.campos,.asignar,.filtros,.participantes-filtros{grid-template-columns:1fr}.completo{grid-column:auto}.feria-cabecera img{width:88px;height:78px}.participante{align-items:flex-start}.feria-cabecera{align-items:flex-start}}
+.horario{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.horario label{display:grid;gap:7px;font-weight:600}.imagen-campo{display:grid;gap:8px}.imagen-campo .etiqueta{font-weight:600;color:var(--texto);margin:0}.imagen-campo small{color:#775f6c}.imagen-campo input[type=file]{padding:9px;background:var(--crema)}.imagen-campo img{max-width:260px;max-height:180px;border-radius:14px;object-fit:cover;border:1px solid var(--borde)}@media(max-width:680px){.horario{grid-template-columns:1fr}}
 </style>

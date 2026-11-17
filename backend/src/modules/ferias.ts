@@ -49,29 +49,29 @@ function fechaVersión(value: unknown) { exigir(typeof value === 'string' && /^[
 function firma(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function estadoFeria(value: unknown): value is EstadoFeria { return value === 'borrador' || value === 'publicada' || value === 'cancelada'; }
 
-type DatosFeria = { nombre: string; descripcion: string; organizador: string; direccion: string; fechaInicio: Date; fechaFin: Date; imagenUrl?: string; latitud?: number; longitud?: number };
+type DatosFeria = { nombre: string; descripcion: string; organizador: string; direccion: string; fechaInicio: Date; fechaFin: Date; imagenUrl: string; latitud?: number; longitud?: number };
 function parsearDatosFeria(data: Record<string, unknown>): DatosFeria {
   const nombre = texto(data.nombre, 120, 'El nombre');
-  const descripcion = texto(data.descripcion, 2000, 'La descripción', false);
+  const descripcion = texto(data.descripcion, 2000, 'La descripción');
   const organizador = texto(data.organizador, 120, 'La persona u organización responsable');
   const direccion = texto(data.direccion, 300, 'La dirección');
   const fechaInicio = fecha(data.fechaInicio, 'La fecha de inicio');
   const fechaFin = fecha(data.fechaFin, 'La fecha de término');
   exigir(fechaFin > fechaInicio, 'datos-invalidos', 'El término debe ser posterior al inicio.');
   coordenadas(data.latitud, data.longitud);
-  const imagenUrl = https(data.imagenUrl, 'La imagen', true);
-  return { nombre, descripcion, organizador, direccion, fechaInicio, fechaFin, ...(imagenUrl ? { imagenUrl } : {}), ...(data.latitud !== undefined ? { latitud: Number(data.latitud), longitud: Number(data.longitud) } : {}) };
+  const imagenUrl = https(data.imagenUrl, 'La imagen') as string;
+  return { nombre, descripcion, organizador, direccion, fechaInicio, fechaFin, imagenUrl, ...(data.latitud !== undefined ? { latitud: Number(data.latitud), longitud: Number(data.longitud) } : {}) };
 }
 function parsear(accion: AccionFeria, input: unknown) {
   const data = objeto(input);
   if (accion === 'listarFeriasAdmin') { exactos(data, []); return { accion } as const; }
   if (accion === 'crearFeria') {
-    exactos(data, ['operacionId', 'nombre', 'descripcion', 'organizador', 'direccion', 'fechaInicio', 'fechaFin'], ['imagenUrl', 'latitud', 'longitud']);
+    exactos(data, ['operacionId', 'nombre', 'descripcion', 'imagenUrl', 'organizador', 'direccion', 'fechaInicio', 'fechaFin'], ['latitud', 'longitud']);
     exigir(operationId(data.operacionId), 'datos-invalidos', 'ID de operación inválido.');
     return { accion, operacionId: data.operacionId, datos: parsearDatosFeria(data) } as const;
   }
   if (accion === 'editarFeria') {
-    exactos(data, ['operacionId', 'feriaId', 'versionEsperada', 'nombre', 'descripcion', 'organizador', 'direccion', 'fechaInicio', 'fechaFin'], ['imagenUrl', 'latitud', 'longitud']);
+    exactos(data, ['operacionId', 'feriaId', 'versionEsperada', 'nombre', 'descripcion', 'imagenUrl', 'organizador', 'direccion', 'fechaInicio', 'fechaFin'], ['latitud', 'longitud']);
     exigir(operationId(data.operacionId) && id(data.feriaId), 'datos-invalidos', 'IDs inválidos.');
     return { accion, operacionId: data.operacionId, feriaId: data.feriaId, versionEsperada: fechaVersión(data.versionEsperada), datos: parsearDatosFeria(data) } as const;
   }
@@ -209,7 +209,6 @@ export function crearFerias(db: Firestore) {
         if (request.accion === 'editarFeria') {
           exigir(current.fechaInicio.toDate() > new Date(), 'conflicto', 'No se puede editar una feria que ya comenzó.');
           const update: DocumentData = { ...request.datos, fechaInicio: Timestamp.fromDate(request.datos.fechaInicio), fechaFin: Timestamp.fromDate(request.datos.fechaFin), actualizadoEn: now };
-          if (!request.datos.imagenUrl) update.imagenUrl = FieldValue.delete();
           if (request.datos.latitud === undefined) { update.latitud = FieldValue.delete(); update.longitud = FieldValue.delete(); }
           tx.update(feriaRef, update); result = { feriaId: feriaRef.id, estado: current.estado };
         } else {

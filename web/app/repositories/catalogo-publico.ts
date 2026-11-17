@@ -16,6 +16,8 @@ export interface CatalogosPublicos {
   categorias: ElementoEtiqueta[]
 }
 
+export type PoliticaNavegacion = 'permitir' | 'invitar' | 'exigir'
+
 export interface CatalogoPublicoRepository {
   listarTiendas(cursor?: string | null): Promise<PaginaRepositorio<TiendaPublica>>
   listarProductos(tiendaId: string, cursor?: string | null): Promise<PaginaRepositorio<ProductoPublico>>
@@ -28,6 +30,7 @@ export interface CatalogoPublicoRepository {
   listarAsociacionesPublicas(): Promise<AsociacionPublica[]>
   listarFeriasPublicas(): Promise<FeriaPublica[]>
   leerFeria(feriaId: string): Promise<FeriaPublica>
+  leerPoliticaNavegacion(): Promise<PoliticaNavegacion>
   resolverUrlImagen(ruta: string): string | null
   leerImagen(ruta: string): Promise<Blob>
 }

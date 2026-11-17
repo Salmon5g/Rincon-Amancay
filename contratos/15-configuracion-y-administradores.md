@@ -10,7 +10,7 @@ Documento: `configuracionAplicacion/navegacion`.
 | `creadoEn` | timestamp | Primera escritura |
 | `actualizadoEn` | timestamp | Última escritura; también controla la versión |
 
-`permitir` deja recorrer el catálogo sin sesión. `invitar` conserva la navegación y permite que los clientes ofrezcan iniciar sesión. `exigir` expresa una futura política con cuenta. En esta versión web y Android todavía no leen este documento para modificar su navegación: mantener `permitir` hasta integrar y verificar esa lectura en ambos clientes.
+`permitir` deja recorrer el catálogo sin sesión. `invitar` conserva el contenido y muestra en la web del comprador un aviso no bloqueante para iniciar sesión con Google, con la opción de omitirlo durante la sesión del navegador. `exigir` bloquea las rutas `/comprador` hasta que la persona inicie sesión con Google. La web lee este documento al cargar sus páginas del comprador; si la lectura falla, mantiene `permitir`. La app Android todavía no consume este documento, así que para operar con ella conviene mantener `permitir`.
 
 Las operaciones `leerConfiguracionNavegacion` y `guardarConfiguracionNavegacion` requieren una sesión Firebase y un documento `accesos/{uid}` activo con rol `administrador`. La escritura requiere `versionEsperada` y `operacionId`; el servidor registra el resultado idempotente y la auditoría. El documento contiene solo una preferencia pública, por lo que las reglas permiten su lectura directa; ningún cliente puede escribirlo.
 

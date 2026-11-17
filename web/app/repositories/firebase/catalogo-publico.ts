@@ -399,6 +399,14 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
 
     resolverUrlImagen,
 
+    async leerPoliticaNavegacion() {
+      return ejecutarConErrorNormalizado(async () => {
+        const documento = await getDoc(doc(db, 'configuracionAplicacion', 'navegacion'))
+        const modo = documento.data()?.modo
+        return modo === 'invitar' || modo === 'exigir' ? modo : 'permitir'
+      })
+    },
+
     leerImagen(ruta) {
       if (!ruta || ruta.startsWith('/') || ruta.includes('..')) return Promise.reject(new Error('La ruta de la imagen no es válida.'))
       return ejecutarConErrorNormalizado(() => getBlob(storageRef(storage, ruta), MAXIMO_IMAGEN_BYTES))
