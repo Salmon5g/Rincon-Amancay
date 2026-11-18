@@ -48,6 +48,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +69,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.amancay.R
 import com.example.amancay.EmprendedoraAppConectada
 import com.example.amancay.data.ApiEmprendedoraClient
@@ -77,6 +81,7 @@ import com.example.amancay.data.ContactoEmprendedora
 import com.example.amancay.data.CuentaEmprendedora
 import com.example.amancay.data.CuentaEmprendedoraRepository
 import com.example.amancay.data.FirebaseClientServices
+import com.example.amancay.data.PuntoRetiroTienda
 import com.example.amancay.data.OpcionCatalogoEmprendedora
 import com.example.amancay.data.ProductosEmprendedoraRepository
 import com.example.amancay.data.TiendaEmprendedora
@@ -98,6 +103,7 @@ import com.example.amancay.ui.theme.Line
 import com.example.amancay.ui.theme.Muted
 import com.example.amancay.ui.theme.Wine
 import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -746,6 +752,43 @@ internal fun PantallaEdicionTienda(
     var formularioHabilitado by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.formularioHabilitado ?: tienda.canalesContacto.formularioHabilitado) }
     var correoHabilitado by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.correoHabilitado ?: tienda.canalesContacto.correoHabilitado) }
     var correoDireccion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(borradorRestaurado?.correoDireccion ?: tienda.canalesContacto.correoDireccion) }
+    var puntoRetiroMarcado by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(tienda.puntoRetiro) }
+    var puntoDescripcion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf(tienda.puntoRetiro?.descripcion ?: "") }
+    var puntoDireccion by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf<String?>(null) }
+    var puntoParaSector by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf<PuntoRetiroTienda?>(null) }
+    var avisoSector by remember(cuenta.uid, tienda.versionEsperada) { mutableStateOf<String?>(null) }
+    var centrarPunto by remember { mutableStateOf(0) }
+    var peticionAcercar by remember { mutableStateOf(0) }
+    var peticionAlejar by remember { mutableStateOf(0) }
+    var mapaCompleto by remember { mutableStateOf(false) }
+    val camaraPunto = remember { CamaraMapa() }
+
+    LaunchedEffect(puntoParaSector, sectores) {
+        val punto = puntoParaSector ?: return@LaunchedEffect
+        delay(1_000)
+        val zonas = zonasDelPunto(punto.latitud, punto.longitud)
+        if (puntoParaSector != punto) return@LaunchedEffect
+        val coincidencias = sectores.filter { opcion ->
+            opcion.nombre.split(" - ").all { normalizarZona(it) in zonas }
+        }
+        val sectorDetectado = coincidencias.filter { " - " in it.nombre }.singleOrNull()
+            ?: coincidencias.singleOrNull()
+        if (sectorDetectado != null) {
+            sectorId = sectorDetectado.id
+            avisoSector = null
+        } else {
+            avisoSector = "No pudimos identificar el sector del punto. Revisa la zona y elígela en la lista."
+        }
+        puntoParaSector = null
+    }
+
+    fun marcarPunto(latitud: Double, longitud: Double, etiqueta: String? = null) {
+        val punto = PuntoRetiroTienda(latitud, longitud, puntoDescripcion.trim())
+        puntoRetiroMarcado = punto
+        puntoDireccion = etiqueta
+        avisoSector = null
+        puntoParaSector = punto
+    }
 
     // Foto o logo: previsualización nueva, copia local guardada y envío a la API.
     var logoEnviando by remember { mutableStateOf(false) }
@@ -935,8 +978,47 @@ internal fun PantallaEdicionTienda(
     Spacer(Modifier.height(12.dp))
     AmancayInput("Dirección de la tienda (opcional)", direccion, { direccion = it }, 200)
     Spacer(Modifier.height(16.dp))
-    // Propuesta para el equipo (zona + mapa): bloque aislado y destacado para poder
-    // presentarla y quitarla completo si se descarta. Lo que se usa hoy es la dirección.
+
+    SelectorCatalogo(
+        "Zona de la tienda (sector)",
+        listOf(OpcionCatalogoEmprendedora("", "Ninguno")) + sectores,
+        sectorId,
+        {
+            sectorId = it
+            puntoParaSector = null
+            avisoSector = null
+        }
+    )
+    (if (puntoParaSector != null) "Buscando el sector del punto…" else avisoSector)?.let {
+        Text(it, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
+    }
+    if (sectorId.isBlank()) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Por ahora, para guardar la ficha necesitas elegir una zona de la lista. La opción \"Ninguno\" estará disponible más adelante.",
+            fontSize = 13.sp,
+            color = Muted,
+            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    val etiquetaPunto = puntoDireccion?.let { it.substringBefore(",").ifBlank { it } }
+        ?: "Punto de venta o retiro"
+    val elegirDireccionPunto: (DireccionEncontrada) -> Unit = { encontrada ->
+
+        if (puntoDescripcion.isBlank()) {
+            puntoDescripcion = encontrada.nombreCorto.take(200)
+        }
+        if (direccion.isBlank()) {
+            direccion = encontrada.nombreCorto.take(200)
+        }
+        marcarPunto(encontrada.latitud, encontrada.longitud, encontrada.nombre)
+        centrarPunto++
+    }
+    val usarUbicacionPunto: (Double, Double) -> Unit = { latitud, longitud ->
+        marcarPunto(latitud, longitud, "Tu ubicación actual")
+        centrarPunto++
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -944,28 +1026,156 @@ internal fun PantallaEdicionTienda(
             .border(2.dp, Wine, RoundedCornerShape(16.dp))
             .padding(12.dp)
     ) {
-        SelectorCatalogo(
-            "Zona de la tienda (sector)",
-            listOf(OpcionCatalogoEmprendedora("", "Ninguno")) + sectores,
-            sectorId,
-            { sectorId = it }
+        Text(
+            "Punto de venta o retiro en el mapa (opcional)",
+            fontWeight = FontWeight.Bold,
+            color = Dark,
+            fontSize = 15.sp
         )
-        MapaZonaVisual(sectorId.takeIf(String::isNotBlank))
-        if (sectorId.isBlank()) {
-            Text(
-                "Por ahora, para guardar la ficha necesitas elegir una zona de la lista. La opción \"Ninguno\" estará disponible más adelante.",
-                fontSize = 13.sp,
-                color = Muted,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Toca el mapa o busca tu dirección. Quien visite tu tienda verá el punto y podrá usar «Cómo llegar».",
+            fontSize = 12.sp,
+            color = Muted
+        )
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(300.dp)
+                .clip(RoundedCornerShape(14.dp))
+        ) {
+            MapaPuntoRetiro(
+                punto = puntoRetiroMarcado,
+                peticionCentrado = centrarPunto,
+                peticionAcercar = peticionAcercar,
+                peticionAlejar = peticionAlejar,
+                camara = camaraPunto,
+                etiqueta = etiquetaPunto,
+                alMarcar = { latitud, longitud -> marcarPunto(latitud, longitud) }
+            )
+            PieMapaOsmdroid(Modifier.fillMaxSize())
+            ControlesZoomMapa(
+                alAcercar = { peticionAcercar++ },
+                alAlejar = { peticionAlejar++ },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(8.dp)
+            )
+            IconButton(
+                onClick = { mapaCompleto = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(48.dp)
+                    .background(Color.White.copy(alpha = 0.96f), CircleShape)
+            ) {
+                Icon(
+                    Icons.Outlined.Fullscreen,
+                    contentDescription = "Abrir el mapa en pantalla completa",
+                    tint = Wine
+                )
+            }
+            BuscadorDireccionPunto(
+                alElegir = elegirDireccionPunto,
+                alUbicacionActual = usarUbicacionPunto,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(8.dp)
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Idea en evaluación con el equipo: ubicar la tienda por zona con este mapa de referencia. Mientras se decide, la tienda muestra la dirección escrita arriba.",
-            fontSize = 12.sp,
-            color = Muted,
-            modifier = Modifier.padding(start = 4.dp)
-        )
+        puntoRetiroMarcado?.let { punto ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Punto marcado: " + (puntoDireccion
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { "${it.substringBefore(",").trim()} · " }
+                    ?: "") + "%.5f, %.5f".format(punto.latitud, punto.longitud),
+                fontSize = 12.sp,
+                color = Muted
+            )
+            Spacer(Modifier.height(8.dp))
+            AmancayInput("Descripción del punto (opcional)", puntoDescripcion, { puntoDescripcion = it }, 200)
+            Spacer(Modifier.height(8.dp))
+            OutlineButton("Quitar punto del mapa", {
+                puntoRetiroMarcado = null
+                puntoDireccion = null
+                puntoParaSector = null
+                avisoSector = null
+            })
+        }
+    }
+    if (mapaCompleto) {
+        Dialog(
+            onDismissRequest = { mapaCompleto = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.White)) {
+                MapaPuntoRetiro(
+                    punto = puntoRetiroMarcado,
+                    peticionCentrado = centrarPunto,
+                    peticionAcercar = peticionAcercar,
+                    peticionAlejar = peticionAlejar,
+                    camara = camaraPunto,
+                    etiqueta = etiquetaPunto,
+                    alMarcar = { latitud, longitud -> marcarPunto(latitud, longitud) },
+                    modifier = Modifier.fillMaxSize()
+                )
+                PieMapaOsmdroid(Modifier.fillMaxSize())
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    BuscadorDireccionPunto(
+                        alElegir = elegirDireccionPunto,
+                        alUbicacionActual = usarUbicacionPunto,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { mapaCompleto = false },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.White.copy(alpha = 0.96f), CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Close,
+                            contentDescription = "Cerrar el mapa en pantalla completa",
+                            tint = Wine
+                        )
+                    }
+                }
+                ControlesZoomMapa(
+                    alAcercar = { peticionAcercar++ },
+                    alAlejar = { peticionAlejar++ },
+                    tamanoBoton = 56.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                )
+                puntoRetiroMarcado?.let { punto ->
+                    Text(
+                        "Punto marcado: " + (puntoDireccion
+                            ?.takeIf(String::isNotBlank)
+                            ?.let { "${it.substringBefore(",").trim()} · " }
+                            ?: "") + "%.5f, %.5f".format(punto.latitud, punto.longitud),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Dark,
+                        maxLines = 2,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 16.dp, end = 104.dp, bottom = 24.dp)
+                            .background(Color.White.copy(alpha = 0.96f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
     }
     Spacer(Modifier.height(12.dp))
     Text("Contacto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Dark)
@@ -1007,9 +1217,9 @@ internal fun PantallaEdicionTienda(
                 else -> null
             }
             val canales = CanalesContactoTienda(whatsappHabilitado, numero, formularioHabilitado, correoHabilitado, email)
-            alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, direccion = direccion.trim(), contacto = contacto, mostrarContacto = contacto != null, canalesContacto = canales))
+            alGuardar(tienda.copy(nombre = nombre.trim(), descripcion = descripcion.trim(), sectorId = sectorId, tipoEmprendimientoId = tipoId, direccion = direccion.trim(), contacto = contacto, mostrarContacto = contacto != null, canalesContacto = canales, puntoRetiro = puntoRetiroMarcado?.copy(descripcion = puntoDescripcion.trim())))
         },
-        enabled = !enviando && !logoEnviando && errorFicha == null,
+        enabled = !enviando && !logoEnviando && puntoParaSector == null && errorFicha == null,
         fontSize = 16.sp
     )
     Text("Tienda asignada: ${cuenta.tiendaId}", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))

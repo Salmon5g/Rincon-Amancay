@@ -9,12 +9,21 @@ export interface TiendaPublica {
   descripcion: string;
   tipoEmprendimientoId: string;
   sectorId: string;
+  direccion?: string;
   mostrarPrecios: boolean;
   /** Rutas WebP de Supabase; el cliente local aún requiere adaptador lector. */
   logo?: string;
   logoMiniatura?: string;
   contacto?: ContactoPublico;
   canalesContacto?: CanalesContactoPublico;
+  /** Punto de venta o retiro marcado por la emprendedora (Entrega 6, A18). */
+  puntoRetiro?: PuntoRetiroPublico;
+}
+
+export interface PuntoRetiroPublico {
+  latitud: number;
+  longitud: number;
+  descripcion?: string;
 }
 
 export interface IntegranteAsociacionPublica {
@@ -102,6 +111,7 @@ export interface FichaComprador {
     tipoEmprendimientoId?: string;
     sectorId?: string;
     direccion?: string;
+    puntoRetiro?: PuntoRetiroPublico;
     categoriaId?: string;
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;

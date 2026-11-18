@@ -110,6 +110,7 @@ fun ModoCompradorScreen(
     var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
     var productoSeleccionado by remember { mutableStateOf<ProductoCatalogoComprador?>(null) }
     var feriaSeleccionada by remember { mutableStateOf<FeriaComprador?>(null) }
+    var mapaFeriasVisible by remember { mutableStateOf(false) }
     var formularioContacto by remember { mutableStateOf<Triple<TiendaCatalogoComprador, String?, VarianteCatalogoComprador?>?>(null) }
     var avisoContacto by remember { mutableStateOf<String?>(null) }
     var misConsultas by remember { mutableStateOf(leerConsultasGuardadas(context)) }
@@ -180,8 +181,9 @@ fun ModoCompradorScreen(
         }
     }
 
-    BackHandler(enabled = pestana != PestanaComprador.INICIO) {
-        pestana = PestanaComprador.INICIO
+    BackHandler(enabled = pestana != PestanaComprador.INICIO || mapaFeriasVisible) {
+        if (mapaFeriasVisible) mapaFeriasVisible = false
+        else pestana = PestanaComprador.INICIO
     }
 
     val categorias = remember(productos) {
@@ -339,7 +341,10 @@ fun ModoCompradorScreen(
         containerColor = AmancayFondo,
         topBar = {
             BarraSuperiorAmancay(
-                alVolver = if (pestana != PestanaComprador.INICIO) ({ pestana = PestanaComprador.INICIO }) else null,
+                alVolver = if (pestana != PestanaComprador.INICIO) ({
+                if (mapaFeriasVisible) mapaFeriasVisible = false
+                else pestana = PestanaComprador.INICIO
+            }) else null,
                 respuestasNuevas = misConsultas.count { it.respuesta != null && !it.respuestaVista },
                 alVerRespuestas = { pestana = PestanaComprador.RESPUESTAS }
             ) {
@@ -423,16 +428,31 @@ fun ModoCompradorScreen(
                     .padding(horizontal = 16.dp)
             )
 
-            PestanaComprador.FERIAS -> PantallaFeriasComprador(
-                ferias = listaFerias,
-                cargando = feriasCargando,
-                error = feriasError,
-                alDetalle = { feriaSeleccionada = it },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(inset)
-                    .padding(horizontal = 16.dp)
-            )
+            PestanaComprador.FERIAS -> {
+                if (mapaFeriasVisible) {
+                    PantallaMapaFerias(
+                        ferias = listaFerias,
+                        cargando = feriasCargando,
+                        error = feriasError,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(inset)
+                            .padding(horizontal = 16.dp)
+                    )
+                } else {
+                    PantallaFeriasComprador(
+                        ferias = listaFerias,
+                        cargando = feriasCargando,
+                        error = feriasError,
+                        alDetalle = { feriaSeleccionada = it },
+                        alVerMapa = { mapaFeriasVisible = true },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(inset)
+                            .padding(horizontal = 16.dp)
+                    )
+                }
+            }
 
             PestanaComprador.RESPUESTAS -> RespuestasCompradorScreen(
                 consultas = misConsultas,
@@ -525,6 +545,61 @@ fun ModoCompradorScreen(
                         tienda.nombre,
                         com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
                     )
+                    tienda.puntoRetiro?.let { punto ->
+                        Text(
+                            "Punto de venta o retiro",
+                            fontWeight = FontWeight.SemiBold,
+                            color = AmancayTinta,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        if (punto.descripcion.isNotBlank()) Text(
+                            punto.descripcion,
+                            color = AmancayTintaSuave
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(170.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                                .padding(top = 6.dp)
+                        ) {
+                            MapaOsmdroid(
+                                ferias = listOf(
+                                    FeriaComprador(
+                                        id = tienda.id,
+                                        nombre = tienda.nombre,
+                                        descripcion = "",
+                                        organizador = "",
+                                        direccion = punto.descripcion,
+                                        fechaInicio = null,
+                                        fechaFin = null,
+                                        latitud = punto.latitud,
+                                        longitud = punto.longitud
+                                    )
+                                ),
+                                ubicacionUsuario = null,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        TextButton(onClick = {
+                            val feria = FeriaComprador(
+                                id = tienda.id,
+                                nombre = tienda.nombre,
+                                descripcion = "",
+                                organizador = "",
+                                direccion = punto.descripcion,
+                                fechaInicio = null,
+                                fechaFin = null,
+                                latitud = punto.latitud,
+                                longitud = punto.longitud
+                            )
+                            if (!abrirComoLlegar(context, feria)) {
+                                avisoContacto = "No se pudo abrir la aplicación de mapas."
+                            }
+                        }) {
+                            Text("Cómo llegar al punto", color = AmancayBordo)
+                        }
+                    }
                     if (catalogo.isEmpty()) Text("No hay productos públicos disponibles para mostrar.")
                     catalogo.forEach { producto ->
                         TextButton(onClick = { productoSeleccionado = producto }) {

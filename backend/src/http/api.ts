@@ -78,7 +78,7 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirImagenFeria?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
@@ -138,11 +138,13 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const lecturaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes\/([0-4])$/);
       const subidaLogo=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/logo$/);
       const subidaLogoAsociacion=req.url==='/api/v1/asociaciones/logo';
+      const subidaImagenFeria=req.url==='/api/v1/ferias/imagen';
       const esSubidaImagen=Boolean(subidaImagen && imagenes);
       const esLecturaImagen=Boolean(lecturaImagen && imagenes?.leer);
       const esSubidaLogo=Boolean(subidaLogo && imagenes?.subirTienda);
       const esSubidaLogoAsociacion=Boolean(subidaLogoAsociacion && imagenes?.subirLogoAsociacion);
-      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !esRespuestaConsulta && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
+      const esSubidaImagenFeria=Boolean(subidaImagenFeria && imagenes?.subirImagenFeria);
+      if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !esRespuestaConsulta && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && !esSubidaImagenFeria && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id, X-Reemplazar-Indice', 'Cache-Control': 'no-store' });
         return res.end();
@@ -171,7 +173,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         });
         return res.end(imagen.bytes);
       }
-      if(esSubidaImagen || esSubidaLogo || esSubidaLogoAsociacion) {
+      if(esSubidaImagen || esSubidaLogo || esSubidaLogoAsociacion || esSubidaImagenFeria) {
         const archivoId=req.headers['x-archivo-id'];
         if(typeof archivoId!=='string' || archivoId.length>64)throw new ErrorHttp(400,'datos-invalidos','Enviar un X-Archivo-Id UUID para que el reintento sea idempotente.');
         const indiceHeader=req.headers['x-reemplazar-indice'];
@@ -183,7 +185,9 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
           ? await imagenes!.subir(uid,subidaImagen![1],subidaImagen![2],archivoId,contentType,bytes,reemplazarIndice)
           : esSubidaLogoAsociacion
             ? await imagenes!.subirLogoAsociacion!(uid,archivoId,contentType,bytes)
-            : await imagenes!.subirTienda!(uid,subidaLogo![1],archivoId,contentType,bytes);
+            : esSubidaImagenFeria
+              ? await imagenes!.subirImagenFeria!(uid,archivoId,contentType,bytes)
+              : await imagenes!.subirTienda!(uid,subidaLogo![1],archivoId,contentType,bytes);
         return json(res,200,{datos:{ruta}});
       }
       const input = await body(req);

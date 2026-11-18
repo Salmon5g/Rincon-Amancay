@@ -1,6 +1,7 @@
 package com.example.amancay.buyer
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,7 +57,9 @@ data class FeriaComprador(
     val organizador: String,
     val direccion: String,
     val fechaInicio: Date?,
-    val fechaFin: Date?
+    val fechaFin: Date?,
+    val latitud: Double?,
+    val longitud: Double?
 )
 
 class RepositorioFeriasComprador(private val db: FirebaseFirestore) {
@@ -93,7 +97,9 @@ class RepositorioFeriasComprador(private val db: FirebaseFirestore) {
                             organizador = documento.getString("organizador").orEmpty(),
                             direccion = documento.getString("direccion").orEmpty(),
                             fechaInicio = documento.getTimestamp("fechaInicio")?.toDate(),
-                            fechaFin = documento.getTimestamp("fechaFin")?.toDate()
+                            fechaFin = documento.getTimestamp("fechaFin")?.toDate(),
+                            latitud = documento.getDouble("latitud"),
+                            longitud = documento.getDouble("longitud")
                         )
                     }
                     .sortedWith(Comparator { primera, segunda ->
@@ -133,6 +139,7 @@ fun PantallaFeriasComprador(
     cargando: Boolean,
     error: String?,
     alDetalle: (FeriaComprador) -> Unit,
+    alVerMapa: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier) {
@@ -141,6 +148,10 @@ fun PantallaFeriasComprador(
             bajada = "Ferias publicadas de los emprendimientos Amancay."
         )
         Spacer(Modifier.height(12.dp))
+        if (ferias.isNotEmpty() || cargando) {
+            BotonPrimarioAmancay(texto = "Ver ferias en el mapa", alClick = alVerMapa)
+            Spacer(Modifier.height(12.dp))
+        }
         when {
             cargando && ferias.isEmpty() -> Column(
                 modifier = Modifier.fillMaxSize(),
@@ -237,6 +248,7 @@ private fun TarjetaFeria(feria: FeriaComprador, alAbrir: () -> Unit) {
 
 @Composable
 fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
+    val contexto = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = alCerrar,
         title = { Text(feria.nombre, fontWeight = FontWeight.Bold, color = AmancayTinta) },
@@ -249,6 +261,31 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
                 if (feria.direccion.isNotBlank()) Text(feria.direccion, color = AmancayTinta)
                 if (feria.organizador.isNotBlank()) Text("Organiza: ${feria.organizador}", color = AmancayTintaSuave)
                 if (feria.descripcion.isNotBlank()) Text(feria.descripcion, color = AmancayTinta)
+                if (feriaConUbicacion(feria)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                    ) {
+                        MapaOsmdroid(
+                            ferias = listOf(feria),
+                            ubicacionUsuario = null,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Text(
+                            "© OpenStreetMap",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AmancayTintaSuave,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(6.dp)
+                        )
+                    }
+                    BotonPrimarioAmancay(texto = "Cómo llegar", alClick = {
+                        abrirComoLlegar(contexto, feria)
+                    })
+                }
                 com.example.amancay.ui.BotonCodigoQr(
                     "Código QR de la feria",
                     feria.nombre,
@@ -263,7 +300,7 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
     )
 }
 
-private fun formatoFeria(fecha: Date?): String {
+internal fun formatoFeria(fecha: Date?): String {
     fecha ?: return ""
     val dia = SimpleDateFormat("EEEE d 'de' MMMM", Locale.forLanguageTag("es")).format(fecha)
     val hora = SimpleDateFormat("HH:mm", Locale.forLanguageTag("es")).format(fecha)

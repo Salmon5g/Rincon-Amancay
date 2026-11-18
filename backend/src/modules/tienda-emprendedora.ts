@@ -46,6 +46,18 @@ function validarContacto(value: unknown): { tipo: 'whatsapp' | 'correo' | 'web';
   return { tipo, valor };
 }
 
+function validarPuntoRetiro(value: unknown): { latitud: number; longitud: number; descripcion: string } | null {
+  if (value === null) return null;
+  const punto = objeto(value);
+  campos(punto, ['latitud', 'longitud', 'descripcion']);
+  const latitud = punto.latitud;
+  const longitud = punto.longitud;
+  exigir(typeof latitud === 'number' && Number.isFinite(latitud) && latitud >= -90 && latitud <= 90, 'datos-invalidos', 'La latitud del punto de retiro está fuera de rango.');
+  exigir(typeof longitud === 'number' && Number.isFinite(longitud) && longitud >= -180 && longitud <= 180, 'datos-invalidos', 'La longitud del punto de retiro está fuera de rango.');
+  const descripcion = texto(punto.descripcion, 200, true);
+  return { latitud, longitud, descripcion };
+}
+
 type CanalesContacto = {
   whatsapp: { habilitado: boolean; numero: string };
   formulario: { habilitado: boolean };
@@ -88,9 +100,9 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
   return async (identidad: { uid: string }, input: unknown) => {
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Sesión requerida.');
     const solicitud = objeto(input);
-    // 'direccion' y 'canalesContacto' son opcionales para conservar compatibilidad con clientes
-    // que no los envían; si faltan, no modifican los valores guardados.
-    const CAMPOS_EDICION = ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto', 'canalesContacto'];
+    // 'direccion', 'canalesContacto' y 'puntoRetiro' son opcionales para conservar compatibilidad
+    // con clientes que no los envían; si faltan, no modifican los valores guardados.
+    const CAMPOS_EDICION = ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto', 'canalesContacto', 'puntoRetiro'];
     exigir(Object.keys(solicitud).every(clave => clave === 'direccion' || CAMPOS_EDICION.includes(clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
     exigir(CAMPOS_EDICION.filter(clave => clave !== 'canalesContacto').every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
     exigir(id(solicitud.tiendaId) && id(solicitud.operacionId) && id(solicitud.tipoEmprendimientoId) && id(solicitud.sectorId), 'datos-invalidos', 'Identificadores inválidos.');
@@ -101,11 +113,14 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
     const direccion = llevaDireccion ? texto(solicitud.direccion, 200, true) : '';
     const contacto = validarContacto(solicitud.contacto);
     const canalesContacto = Object.hasOwn(solicitud, 'canalesContacto') ? validarCanalesContacto(solicitud.canalesContacto) : undefined;
+    const llevaPuntoRetiro = Object.hasOwn(solicitud, 'puntoRetiro');
+    const puntoRetiro = llevaPuntoRetiro ? validarPuntoRetiro(solicitud.puntoRetiro) : undefined;
     exigir(typeof solicitud.mostrarContacto === 'boolean', 'datos-invalidos', 'Indica si el contacto se muestra públicamente.');
     exigir(!solicitud.mostrarContacto || contacto !== null, 'datos-invalidos', 'Completa un contacto antes de mostrarlo públicamente.');
     const solicitudNormalizada: Record<string, unknown> = { tiendaId: solicitud.tiendaId, operacionId: solicitud.operacionId, versionEsperada: solicitud.versionEsperada, nombre, descripcion, tipoEmprendimientoId: solicitud.tipoEmprendimientoId, sectorId: solicitud.sectorId, contacto, mostrarContacto: solicitud.mostrarContacto };
     if (canalesContacto) solicitudNormalizada.canalesContacto = canalesContacto;
     if (llevaDireccion) solicitudNormalizada.direccion = direccion;
+    if (llevaPuntoRetiro) solicitudNormalizada.puntoRetiro = puntoRetiro;
     const firma = createHash('sha256').update(canon({ uid: identidad.uid, solicitud: solicitudNormalizada })).digest('hex');
     const storeRef = db.doc(`tiendasPrivadas/${solicitud.tiendaId}`);
     const receiptRef = storeRef.collection('operacionesEdicion').doc(solicitud.operacionId as string);
@@ -188,6 +203,10 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
         if (direccion) fields.direccion = direccion;
         else fields.direccion = FieldValue.delete();
       }
+      if (llevaPuntoRetiro) {
+        if (puntoRetiro) fields.puntoRetiro = puntoRetiro;
+        else fields.puntoRetiro = FieldValue.delete();
+      }
       tx.update(storeRef, fields);
 
       if (published) {
@@ -204,6 +223,10 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
         if (llevaDireccion) {
           if (direccion) publicFields.direccion = direccion;
           else publicFields.direccion = FieldValue.delete();
+        }
+        if (llevaPuntoRetiro) {
+          if (puntoRetiro) publicFields.puntoRetiro = puntoRetiro;
+          else publicFields.puntoRetiro = FieldValue.delete();
         }
         tx.update(publicRef, publicFields);
       }

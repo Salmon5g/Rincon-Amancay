@@ -147,6 +147,8 @@ function fichaTienda(elemento: TiendaPublica): FichaComprador {
             descripcion: elemento.descripcion,
             tipoEmprendimientoId: elemento.tipoEmprendimientoId,
             sectorId: elemento.sectorId,
+            direccion: elemento.direccion,
+            puntoRetiro: elemento.puntoRetiro,
             mostrarPrecios: elemento.mostrarPrecios,
             contacto: elemento.contacto,
             canalesContacto: elemento.canalesContacto,
@@ -219,16 +221,21 @@ const imagenes = computed<string[]>(() => {
     const imagenVariante = variante.value?.datos.imagen;
     return imagenVariante ? [imagenVariante] : (producto.value?.datos.imagenes ?? []);
 });
-const etiquetaSector = computed(() => ubicacionTienda(tienda.value?.datos));
-// La ubicación mostrada es la dirección escrita por la emprendedora; si no tiene,
-// se muestra la zona del catálogo (comportamiento anterior).
-const ubicacionTienda = (datos?: { direccion?: string; sectorId?: string }) => {
+const ubicacionTienda = (datos?: Pick<FichaComprador['datos'], 'direccion' | 'sectorId'>) => {
     if (!datos) return '';
-    return (datos.direccion ?? '').trim() || (datos.sectorId ? sectores.value[datos.sectorId] ?? '' : '');
+    const sector = datos.sectorId ? sectores.value[datos.sectorId] : '';
+    if (sector) return sector;
+    return datos.direccion?.trim() ?? '';
 };
+const etiquetaUbicacion = computed(() => ubicacionTienda(tienda.value?.datos));
 const etiquetaTipo = computed(() => {
     const id = tienda.value?.datos.tipoEmprendimientoId;
     return id ? tiposEmprendimiento.value[id] ?? '' : '';
+});
+const enlaceComoLlegarPunto = computed(() => {
+    const punto = tienda.value?.datos.puntoRetiro;
+    if (!punto) return '';
+    return `https://www.google.com/maps/dir/?api=1&destination=${punto.latitud},${punto.longitud}`;
 });
 const conteoProductos = computed(() => `${filas.value.length}${siguiente.value ? '+' : ''}`);
 
@@ -371,10 +378,7 @@ const whatsappContacto = computed(() => {
         : `Hola, vi la tienda ${tiendaContacto.value?.datos.nombre ?? ''} en Rincón Amancay y quisiera hacer una consulta.`;
     return enlaceWhatsapp(numero, mensaje);
 });
-const sectorContacto = computed(() => {
-    const id = tiendaContacto.value?.datos.sectorId;
-    return id ? sectores.value[id] ?? '' : '';
-});
+const ubicacionContacto = computed(() => ubicacionTienda(tiendaContacto.value?.datos));
 
 function inicializarContacto(ficha: FichaComprador, productoFicha: FichaComprador | null, varianteFicha: FichaComprador | null, mostrarFormulario: boolean, formularioDirecto: boolean) {
     if (!tieneContactoPublico.value && ficha.id === tienda.value?.id) return;
@@ -671,6 +675,7 @@ const tiendasCarrusel = ref<FichaComprador[]>([]);
 const indiceCarrusel = ref(0);
 const totalCarrusel = computed(() => tiendasCarrusel.value.length + 1);
 const tiendaCarrusel = computed(() => tiendasCarrusel.value[indiceCarrusel.value - 1] ?? null);
+const ubicacionCarrusel = computed(() => ubicacionTienda(tiendaCarrusel.value?.datos));
 
 // Fotos de productos por tienda para la cinta animada de fondo.
 const fotosCarrusel = ref<Record<string, string[]>>({});
@@ -800,6 +805,15 @@ watch(
     },
 );
 
+watch(() => tienda.value?.id, (tiendaId, _, alLimpiar) => {
+    if (!import.meta.client || !tiendaId) return;
+    alLimpiar($catalogoPublico.observarTienda(tiendaId, actualizada => {
+        if (tienda.value?.id !== tiendaId) return;
+        const ficha = fichaTienda(actualizada);
+        tienda.value = ficha;
+        if (tiendaContacto.value?.id === tiendaId) tiendaContacto.value = ficha;
+    }));
+});
 watch(() => JSON.stringify(tienda.value
     ? [tienda.value.id, filas.value.map((ficha) => ficha.id)]
     : destacados.value.map(({ tienda: fichaTienda, producto: fichaProducto }) => [fichaTienda.id, fichaProducto.id])), () => {
@@ -989,9 +1003,9 @@ onBeforeUnmount(() => {
               </span>
               <span class="hero-texto">
                 <span class="sobretitulo">EMPRENDIMIENTOS DESTACADOS</span>
-                <span v-if="tiendaCarrusel.datos.sectorId && sectores[tiendaCarrusel.datos.sectorId]" class="carrusel-sector">
+                <span v-if="ubicacionCarrusel" class="carrusel-sector">
                   <span aria-hidden="true">📍</span>
-                  {{ sectores[tiendaCarrusel.datos.sectorId] }}
+                  {{ ubicacionCarrusel }}
                 </span>
                 <span class="carrusel-nombre">{{ tiendaCarrusel.datos.nombre }}</span>
               </span>
@@ -1158,9 +1172,9 @@ onBeforeUnmount(() => {
                   <span aria-hidden="true">🧺</span>
                   {{ etiquetaTipo }}
                 </span>
-                <span v-if="etiquetaSector" class="chip">
+                <span v-if="etiquetaUbicacion" class="chip">
                   <span aria-hidden="true">📍</span>
-                  {{ etiquetaSector }}
+                  {{ etiquetaUbicacion }}
                 </span>
               </div>
               <p class="sub clamp">{{ tienda.datos.descripcion }}</p>
@@ -1349,11 +1363,31 @@ onBeforeUnmount(() => {
                 <p>{{ etiquetaTipo }}</p>
               </div>
             </div>
-            <div v-if="etiquetaSector" class="dato-tienda">
+            <div v-if="etiquetaUbicacion && !tienda.datos.puntoRetiro" class="dato-tienda">
               <span class="dato-icono" aria-hidden="true">📍</span>
               <div>
-                <b>Sector</b>
-                <p>{{ etiquetaSector }}</p>
+                <b>Ubicación</b>
+                <p>{{ etiquetaUbicacion }}</p>
+              </div>
+            </div>
+            <div v-if="tienda.datos.puntoRetiro" class="dato-tienda dato-punto">
+              <span class="dato-icono" aria-hidden="true">📌</span>
+              <div>
+                <b>Punto de venta o retiro</b>
+                <p v-if="tienda.datos.puntoRetiro.descripcion">{{ tienda.datos.puntoRetiro.descripcion }}</p>
+              </div>
+              <div class="visor-punto">
+                <MapaPuntoRetiro
+                  :latitud="tienda.datos.puntoRetiro.latitud"
+                  :longitud="tienda.datos.puntoRetiro.longitud"
+                  :nombre-tienda="tienda.datos.nombre"
+                />
+                <a
+                  class="enlace-punto"
+                  :href="enlaceComoLlegarPunto"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >Cómo llegar al punto →</a>
               </div>
             </div>
             <div v-if="contactoTiendaVisible" class="dato-tienda">
@@ -1414,11 +1448,11 @@ onBeforeUnmount(() => {
                   <p>{{ tiendaContacto.datos.nombre }}</p>
                 </div>
               </div>
-              <div v-if="sectorContacto" class="dato-tienda">
+              <div v-if="ubicacionContacto" class="dato-tienda">
                 <span class="dato-icono" aria-hidden="true">📍</span>
                 <div>
-                  <b>Sector</b>
-                  <p>{{ sectorContacto }}</p>
+                  <b>Ubicación</b>
+                  <p>{{ ubicacionContacto }}</p>
                 </div>
               </div>
               <div v-if="contactoContacto" class="dato-tienda">
@@ -2792,6 +2826,23 @@ article.tarjeta-tienda:hover {
 
 .dato-tienda a:hover {
     text-decoration: underline;
+}
+
+
+.dato-punto {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    row-gap: 0.55rem;
+}
+
+.visor-punto {
+    grid-column: 1 / -1;
+}
+
+.dato-tienda .enlace-punto {
+    display: inline-block;
+    margin-top: 0.45rem;
 }
 
 .sobre-nosotras {
