@@ -4,6 +4,7 @@ import android.net.Uri
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -181,6 +182,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         suscripciones += db.collection("tiendasPublicas")
             .whereEqualTo("estadoPublicacion", "publicado")
             .whereEqualTo("habilitada", true)
+            .limit(20)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)
@@ -261,6 +263,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
             .document(tiendaId)
             .collection(coleccion)
             .whereEqualTo("estadoPublicacion", "publicado")
+            .limit(20)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)
@@ -290,6 +293,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
             .document(producto.id)
             .collection("variantes")
             .whereEqualTo("activa", true)
+            .limit(20)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)

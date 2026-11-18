@@ -85,35 +85,49 @@ service cloud.firestore {
       }
     }
     match /tiendasPublicas/{tiendaId} {
-      allow read: if resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true;
+      allow get: if resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true;
+      allow list: if request.query.limit <= 20
+        && resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true;
       match /productos/{productoId} {
-        allow read: if resource.data.estadoPublicacion == 'publicado'
+        allow get: if resource.data.estadoPublicacion == 'publicado'
+          && publicStore(tiendaId) && visiblePrices(tiendaId);
+        allow list: if request.query.limit <= 20 && resource.data.estadoPublicacion == 'publicado'
           && publicStore(tiendaId) && visiblePrices(tiendaId);
         match /variantes/{varianteId} {
-          allow read: if publicProduct(tiendaId, productoId) && visiblePrices(tiendaId)
+          allow get: if publicProduct(tiendaId, productoId) && visiblePrices(tiendaId)
             && resource.data.activa == true;
+          allow list: if request.query.limit <= 100
+            && publicProduct(tiendaId, productoId) && visiblePrices(tiendaId) && resource.data.activa == true;
         }
       }
       // Vista sin importes construida por la API. Firestore no puede redactar
       // campos durante una consulta, así que la colección y sus escritores son separados.
       match /productosConsulta/{productoId} {
-        allow read: if resource.data.estadoPublicacion == 'publicado'
+        allow get: if resource.data.estadoPublicacion == 'publicado'
+          && publicStore(tiendaId) && !visiblePrices(tiendaId);
+        allow list: if request.query.limit <= 20 && resource.data.estadoPublicacion == 'publicado'
           && publicStore(tiendaId) && !visiblePrices(tiendaId);
         match /variantes/{varianteId} {
-          allow read: if publicProductConsulta(tiendaId, productoId)
-            && resource.data.activa == true;
+          allow get: if publicProductConsulta(tiendaId, productoId)
+            && resource.data.activa == true
+            && !resource.data.keys().hasAny(['precio']);
+          allow list: if request.query.limit <= 100
+            && publicProductConsulta(tiendaId, productoId) && resource.data.activa == true
+            && !resource.data.keys().hasAny(['precio']);
         }
       }
     }
     match /asociacionesPublicas/{asociacionId} {
-      allow get, list: if resource.data.activo == true;
+      allow get: if resource.data.activo == true;
+      allow list: if request.query.limit <= 20 && resource.data.activo == true;
     }
     match /configuracionAplicacion/{configId} {
       allow get: if configId == 'navegacion';
       allow list: if admin();
     }
     match /ferias/{feriaId} {
-      allow get, list: if resource.data.estado == 'publicada' || admin();
+      allow get: if resource.data.estado == 'publicada' || admin();
+      allow list: if (request.query.limit <= 100 && resource.data.estado == 'publicada') || admin();
       match /participantes/{participanteId} {
         allow read: if admin();
       }
