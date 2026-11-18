@@ -89,6 +89,7 @@ import com.example.amancay.ui.Fig
 import com.example.amancay.ui.BotanicalBackdrop
 import com.example.amancay.ui.OutlineButton
 import com.example.amancay.ui.BotonCodigoQr
+import com.example.amancay.ui.BotonCompartirEnlace
 import com.example.amancay.ui.EnlacesPublicos
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
@@ -893,6 +894,8 @@ internal fun PantallaEdicionTienda(
     Text("Los cambios de nombre, descripción, sector, tipo y contacto se reflejan en la proyección pública si la tienda ya está publicada.", fontSize = 15.sp, color = Muted)
     Spacer(Modifier.height(16.dp))
     if (tienda.estadoPublicacion == "publicado") {
+        BotonCompartirEnlace("Compartir mi tienda", tienda.nombre, EnlacesPublicos.tienda(cuenta.tiendaId))
+        Spacer(Modifier.height(8.dp))
         BotonCodigoQr("Código QR de mi tienda", tienda.nombre, EnlacesPublicos.tienda(cuenta.tiendaId))
         Spacer(Modifier.height(12.dp))
     }

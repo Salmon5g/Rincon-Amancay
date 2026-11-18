@@ -60,8 +60,19 @@ object EnlacesPublicos {
     private val base get() = BuildConfig.PUBLIC_WEB_URL.trimEnd('/')
     fun inicio() = "$base/comprador"
     fun tienda(id: String) = "$base/comprador?tienda=${Uri.encode(id)}"
+    fun producto(tiendaId: String, productoId: String) =
+        "$base/comprador?tienda=${Uri.encode(tiendaId)}&producto=${Uri.encode(productoId)}"
     fun asociacion(id: String) = "$base/comprador/directorio?vista=asociaciones&asociacion=${Uri.encode(id)}"
     fun feria(id: String) = "$base/comprador/ferias?feria=${Uri.encode(id)}"
+}
+
+fun compartirEnlacePublico(context: Context, titulo: String, enlace: String) {
+    val envio = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, titulo)
+        putExtra(Intent.EXTRA_TEXT, "$titulo en Rincón Amancay: $enlace")
+    }
+    context.startActivity(Intent.createChooser(envio, "Compartir enlace"))
 }
 
 fun imagenCodigoQr(titulo: String, enlace: String): Bitmap {
@@ -143,6 +154,12 @@ fun BotonCodigoQr(texto: String, titulo: String, enlace: String, modifier: Modif
     var abierto by remember { mutableStateOf(false) }
     OutlineButton(texto, { abierto = true }, modifier)
     if (abierto) DialogoCodigoQr(titulo, enlace) { abierto = false }
+}
+
+@Composable
+fun BotonCompartirEnlace(texto: String, titulo: String, enlace: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    OutlineButton(texto, { compartirEnlacePublico(context, titulo, enlace) }, modifier)
 }
 
 @Composable

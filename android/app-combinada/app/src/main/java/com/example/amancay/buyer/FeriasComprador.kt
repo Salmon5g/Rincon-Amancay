@@ -291,6 +291,11 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
                     feria.nombre,
                     com.example.amancay.ui.EnlacesPublicos.feria(feria.id)
                 )
+                com.example.amancay.ui.BotonCompartirEnlace(
+                    "Compartir feria",
+                    feria.nombre,
+                    com.example.amancay.ui.EnlacesPublicos.feria(feria.id)
+                )
             }
         },
         confirmButton = {

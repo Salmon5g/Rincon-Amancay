@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import '~/assets/amancay-tokens.css'
 import type { AsociacionPublica, TiendaPublica } from '~/types/comprador-publico'
 import type { CatalogosPublicos } from '~/repositories/catalogo-publico'
+import { compartirEnlacePublico } from '~/utils/compartir-enlace-publico'
 
 useHead({
   title: 'Directorio local — Rincón Amancay',
@@ -24,6 +25,7 @@ const sectorSeleccionado = ref('')
 const asociacionSeleccionada = ref('')
 const cargando = ref(false)
 const error = ref(false)
+const mensajeCompartir = ref('')
 
 const vista = computed(() => route.query.vista === 'asociaciones' ? 'asociaciones' : 'emprendedoras')
 const asociacionId = computed(() => {
@@ -100,6 +102,24 @@ function hrefTienda(tiendaId: string) {
 
 function hrefAsociacion(id: string) {
   return { path: '/comprador/directorio', query: { vista: 'asociaciones', asociacion: id } }
+}
+
+async function compartirAsociacion(asociacion: AsociacionPublica) {
+  const url = new URL('/comprador/directorio', window.location.origin)
+  url.searchParams.set('vista', 'asociaciones')
+  url.searchParams.set('asociacion', asociacion.id)
+  const resultado = await compartirEnlacePublico({
+    titulo: asociacion.nombre,
+    texto: `${asociacion.nombre} en Rincón Amancay`,
+    url: url.toString(),
+  })
+  mensajeCompartir.value = resultado === 'copiado'
+    ? 'Enlace copiado.'
+    : resultado === 'compartido'
+      ? 'Enlace compartido.'
+      : resultado === 'fallo'
+        ? 'No se pudo compartir el enlace.'
+        : ''
 }
 
 async function cambiarVista(nuevaVista: 'emprendedoras' | 'asociaciones') {
@@ -211,6 +231,10 @@ onMounted(() => void cargarDirectorio())
             <div class="asociacion-datos">
               <span v-if="nombreSector(asociacionActual.sectorId)">{{ nombreSector(asociacionActual.sectorId) }}</span>
               <span>{{ asociacionActual.integrantes.length }} {{ asociacionActual.integrantes.length === 1 ? 'emprendimiento integrante' : 'emprendimientos integrantes' }}</span>
+            </div>
+            <div class="asociacion-compartir">
+              <button class="directorio-boton" type="button" @click="compartirAsociacion(asociacionActual)">Compartir asociación</button>
+              <p v-if="mensajeCompartir" role="status" aria-live="polite">{{ mensajeCompartir }}</p>
             </div>
           </div>
         </article>
@@ -973,6 +997,20 @@ onMounted(() => void cargarDirectorio())
   color: var(--amancay-tinta);
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+.asociacion-compartir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.asociacion-compartir p {
+  margin: 0;
+  color: var(--amancay-tinta-suave);
+  font-size: 0.84rem;
 }
 
 .integrantes-seccion {

@@ -133,6 +133,11 @@ internal fun DirectorioComprador(
                                     asociacionActual.nombre,
                                     com.example.amancay.ui.EnlacesPublicos.asociacion(asociacionActual.id)
                                 )
+                                com.example.amancay.ui.BotonCompartirEnlace(
+                                    "Compartir asociación",
+                                    asociacionActual.nombre,
+                                    com.example.amancay.ui.EnlacesPublicos.asociacion(asociacionActual.id)
+                                )
                             }
                         }
                     }

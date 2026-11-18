@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import '~/assets/amancay-tokens.css';
 import type { FeriaPublica } from '~/types/comprador-publico';
+import { compartirEnlacePublico } from '~/utils/compartir-enlace-publico';
 
 const { $catalogoPublico } = useNuxtApp();
 const route = useRoute();
@@ -12,6 +13,7 @@ const mapaAbierto = computed(() => route.query.mapa === '1');
 const ubicacionUsuario = ref<{ latitud: number; longitud: number } | null>(null);
 const estadoUbicacion = ref<'inactiva' | 'buscando' | 'activa' | 'rechazada' | 'fallo'>('inactiva');
 const mensajeUbicacion = ref('');
+const mensajeCompartir = ref('');
 const cargando = ref(true);
 const error = ref('');
 
@@ -116,6 +118,24 @@ function localizarUsuario() {
 function enlaceComoLlegar(f: FeriaPublica) {
     const destino = ubicacionValida(f) ? `${f.latitud},${f.longitud}` : f.direccion.trim();
     return destino ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destino)}` : '';
+}
+
+async function compartirFeria() {
+    if (!feria.value) return;
+    const url = new URL('/comprador/ferias', window.location.origin);
+    url.searchParams.set('feria', feria.value.id);
+    const resultado = await compartirEnlacePublico({
+        titulo: feria.value.nombre,
+        texto: `${feria.value.nombre} en Rincón Amancay`,
+        url: url.toString(),
+    });
+    mensajeCompartir.value = resultado === 'copiado'
+        ? 'Enlace copiado.'
+        : resultado === 'compartido'
+            ? 'Enlace compartido.'
+            : resultado === 'fallo'
+                ? 'No se pudo compartir el enlace.'
+                : '';
 }
 
 function seleccionarFeria(id: string) {
@@ -237,10 +257,12 @@ useHead({
           <p v-else class="ubicacion-pendiente" role="status">Esta feria aún no tiene un punto guardado en el mapa.</p>
         </section>
         <div class="detalle-acciones">
+          <button class="boton boton-secundario" type="button" @click="compartirFeria">Compartir feria</button>
           <a v-if="enlaceComoLlegar(feria)" class="boton" :href="enlaceComoLlegar(feria)" target="_blank" rel="noopener">Cómo llegar ↗</a>
           <NuxtLink class="boton boton-secundario" to="/comprador/ferias">Volver a ferias</NuxtLink>
           <NuxtLink class="boton boton-secundario" to="/comprador">Explorar tiendas →</NuxtLink>
         </div>
+        <p v-if="mensajeCompartir" class="aviso-compartir" role="status" aria-live="polite">{{ mensajeCompartir }}</p>
       </article>
 
       <template v-else>
@@ -590,6 +612,12 @@ h1 {
     display: flex;
     flex-wrap: wrap;
     gap: 0.7rem;
+}
+
+.aviso-compartir {
+    margin: 0.7rem 0 0;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.88rem;
 }
 
 .boton-secundario {

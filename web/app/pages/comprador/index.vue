@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import '~/assets/amancay-tokens.css';
 import type { FichaComprador, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico';
+import { compartirEnlacePublico } from '~/utils/compartir-enlace-publico';
 useHead({
     title: 'Comprar local — Rincón Amancay',
     link: [{ rel: 'icon', href: '/favicon.png' },
@@ -845,30 +846,38 @@ watch([busqueda, categoriaSeleccionada, pagina], () => {
     temporizadorRuta = setTimeout(() => { void guardarVistaEnUrl('replace'); }, 250);
 });
 
+function urlPublicaTienda(productoId?: string) {
+    if (!tienda.value) return '';
+    const url = new URL('/comprador', window.location.origin);
+    url.searchParams.set('tienda', tienda.value.id);
+    if (productoId) url.searchParams.set('producto', productoId);
+    return url.toString();
+}
+
 async function compartirTienda() {
     if (!tienda.value) return;
-    const url = window.location.href;
-    const datos = {
-        title: tienda.value.datos.nombre,
-        text: `${tienda.value.datos.nombre} en Rincón Amancay`,
-        url,
-    };
-    try {
-        if (navigator.share) {
-            await navigator.share(datos);
-            return;
-        }
-        await navigator.clipboard.writeText(url);
-        mostrarAviso('Enlace copiado');
-    } catch (causa) {
-        if ((causa as { name?: string }).name === 'AbortError') return;
-        try {
-            await navigator.clipboard.writeText(url);
-            mostrarAviso('Enlace copiado');
-        } catch {
-            mostrarAviso('No se pudo compartir el enlace.');
-        }
-    }
+    const nombre = tienda.value.datos.nombre;
+    const resultado = await compartirEnlacePublico({
+        titulo: nombre,
+        texto: `${nombre} en Rincón Amancay`,
+        url: urlPublicaTienda(),
+    });
+    if (resultado === 'copiado') mostrarAviso('Enlace copiado');
+    else if (resultado === 'compartido') mostrarAviso('Enlace compartido');
+    else if (resultado === 'fallo') mostrarAviso('No se pudo compartir el enlace.');
+}
+
+async function compartirProducto() {
+    if (!tienda.value || !producto.value) return;
+    const nombre = producto.value.datos.nombre;
+    const resultado = await compartirEnlacePublico({
+        titulo: nombre,
+        texto: `${nombre} en ${tienda.value.datos.nombre} · Rincón Amancay`,
+        url: urlPublicaTienda(producto.value.id),
+    });
+    if (resultado === 'copiado') mostrarAviso('Enlace copiado');
+    else if (resultado === 'compartido') mostrarAviso('Enlace compartido');
+    else if (resultado === 'fallo') mostrarAviso('No se pudo compartir el enlace.');
 }
 
 // Ciclo de vida
@@ -1191,6 +1200,7 @@ onBeforeUnmount(() => {
                 <button v-if="formularioPublico" class="boton boton-secundario" type="button" @click="abrirFormularioContacto">
                   Enviar mensaje
                 </button>
+                <button class="boton boton-secundario" type="button" @click="compartirTienda">Compartir tienda</button>
               </div>
             </div>
           </div>
@@ -1282,6 +1292,7 @@ onBeforeUnmount(() => {
               </template>
             </dl>
             <div class="ficha-acciones">
+              <button class="boton boton-secundario" type="button" @click="compartirProducto">Compartir producto</button>
               <button v-if="tieneContactoPublico" class="boton boton-mostaza" type="button" @click="abrirContacto(tienda, producto)">
                 Contactar emprendedora
               </button>

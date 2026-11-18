@@ -545,6 +545,11 @@ fun ModoCompradorScreen(
                         tienda.nombre,
                         com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
                     )
+                    com.example.amancay.ui.BotonCompartirEnlace(
+                        "Compartir tienda",
+                        tienda.nombre,
+                        com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
+                    )
                     tienda.puntoRetiro?.let { punto ->
                         Text(
                             "Punto de venta o retiro",

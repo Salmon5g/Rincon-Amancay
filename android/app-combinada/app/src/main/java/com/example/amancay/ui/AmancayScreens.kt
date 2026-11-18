@@ -1122,19 +1122,8 @@ private fun ShareDialog(link: String, onCopiar: () -> Unit, onCompartir: () -> U
     val ctx = LocalContext.current
     var verQR by remember { mutableStateOf(false) }
     fun abrirWhatsApp() {
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, "Mira mi tienda Rincón Amancay: $link")
-        }
-        try {
-            send.setPackage("com.whatsapp")
-            ctx.startActivity(send)
-            onCompartir()
-        } catch (_: Exception) {
-            send.setPackage(null)
-            ctx.startActivity(Intent.createChooser(send, "Compartir tienda"))
-            onCompartir()
-        }
+        compartirEnlacePublico(ctx, "Mi tienda", link)
+        onCompartir()
     }
     AlertDialog(
         onDismissRequest = onCerrar,
@@ -1146,7 +1135,7 @@ private fun ShareDialog(link: String, onCopiar: () -> Unit, onCompartir: () -> U
                     Text("Compartir tienda", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
                     Text(link, fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(14.dp))
-                    PrimaryButton("WhatsApp", { abrirWhatsApp(); onCerrar() })
+                    PrimaryButton("Compartir enlace", { abrirWhatsApp(); onCerrar() })
                     Spacer(Modifier.height(8.dp))
                     OutlineButton("Código QR", { verQR = true })
                     Spacer(Modifier.height(8.dp))

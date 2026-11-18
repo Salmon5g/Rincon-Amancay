@@ -334,6 +334,11 @@ fun DialogoDetalleProducto(
                         color = AmancayBordo
                     )
                 }
+                com.example.amancay.ui.BotonCompartirEnlace(
+                    "Compartir producto",
+                    producto.nombre,
+                    com.example.amancay.ui.EnlacesPublicos.producto(producto.tiendaId, producto.id)
+                )
             }
         },
         confirmButton = {
