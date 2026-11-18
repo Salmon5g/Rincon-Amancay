@@ -2,6 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function catalogoPublicoHabilitado() { return true; }
     function active(uid) {
       let access = get(/databases/$(database)/documents/accesos/$(uid)).data;
       return access.estado == 'activo'
@@ -85,63 +86,74 @@ service cloud.firestore {
       }
     }
     match /tiendasPublicas/{tiendaId} {
-      allow get: if resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true;
-      allow list: if request.query.limit <= 20
-        && resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true;
+      allow get: if admin() || owner(tiendaId)
+        || (catalogoPublicoHabilitado() && resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true);
+      allow list: if admin() || (catalogoPublicoHabilitado() && request.query.limit <= 20
+        && resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true);
       match /productos/{productoId} {
-        allow get: if resource.data.estadoPublicacion == 'publicado'
-          && publicStore(tiendaId) && visiblePrices(tiendaId);
-        allow list: if request.query.limit <= 20 && resource.data.estadoPublicacion == 'publicado'
-          && publicStore(tiendaId) && visiblePrices(tiendaId);
+        allow get: if admin() || owner(tiendaId)
+          || (catalogoPublicoHabilitado() && resource.data.estadoPublicacion == 'publicado'
+            && publicStore(tiendaId) && visiblePrices(tiendaId));
+        allow list: if admin() || owner(tiendaId)
+          || (catalogoPublicoHabilitado() && request.query.limit <= 20 && resource.data.estadoPublicacion == 'publicado'
+            && publicStore(tiendaId) && visiblePrices(tiendaId));
         match /variantes/{varianteId} {
-          allow get: if publicProduct(tiendaId, productoId) && visiblePrices(tiendaId)
-            && resource.data.activa == true;
-          allow list: if request.query.limit <= 100
-            && publicProduct(tiendaId, productoId) && visiblePrices(tiendaId) && resource.data.activa == true;
+          allow get: if admin() || owner(tiendaId)
+            || (catalogoPublicoHabilitado() && publicProduct(tiendaId, productoId) && visiblePrices(tiendaId)
+              && resource.data.activa == true);
+          allow list: if admin() || owner(tiendaId)
+            || (catalogoPublicoHabilitado() && request.query.limit <= 100
+              && publicProduct(tiendaId, productoId) && visiblePrices(tiendaId) && resource.data.activa == true);
         }
       }
       // Vista sin importes construida por la API. Firestore no puede redactar
       // campos durante una consulta, así que la colección y sus escritores son separados.
       match /productosConsulta/{productoId} {
-        allow get: if resource.data.estadoPublicacion == 'publicado'
-          && publicStore(tiendaId) && !visiblePrices(tiendaId);
-        allow list: if request.query.limit <= 20 && resource.data.estadoPublicacion == 'publicado'
-          && publicStore(tiendaId) && !visiblePrices(tiendaId);
+        allow get: if admin() || owner(tiendaId)
+          || (catalogoPublicoHabilitado() && resource.data.estadoPublicacion == 'publicado'
+            && publicStore(tiendaId) && !visiblePrices(tiendaId));
+        allow list: if admin() || owner(tiendaId)
+          || (catalogoPublicoHabilitado() && request.query.limit <= 20 && resource.data.estadoPublicacion == 'publicado'
+            && publicStore(tiendaId) && !visiblePrices(tiendaId));
         match /variantes/{varianteId} {
-          allow get: if publicProductConsulta(tiendaId, productoId)
-            && resource.data.activa == true
-            && !resource.data.keys().hasAny(['precio']);
-          allow list: if request.query.limit <= 100
-            && publicProductConsulta(tiendaId, productoId) && resource.data.activa == true
-            && !resource.data.keys().hasAny(['precio']);
+          allow get: if admin() || owner(tiendaId)
+            || (catalogoPublicoHabilitado() && publicProductConsulta(tiendaId, productoId)
+              && resource.data.activa == true && !resource.data.keys().hasAny(['precio']));
+          allow list: if admin() || owner(tiendaId)
+            || (catalogoPublicoHabilitado() && request.query.limit <= 100
+              && publicProductConsulta(tiendaId, productoId) && resource.data.activa == true
+              && !resource.data.keys().hasAny(['precio']));
         }
       }
     }
     match /asociacionesPublicas/{asociacionId} {
-      allow get: if resource.data.activo == true;
-      allow list: if request.query.limit <= 20 && resource.data.activo == true;
+      allow get: if admin() || (catalogoPublicoHabilitado() && resource.data.activo == true);
+      allow list: if admin() || (catalogoPublicoHabilitado() && request.query.limit <= 20 && resource.data.activo == true);
     }
     match /configuracionAplicacion/{configId} {
-      allow get: if configId == 'navegacion';
+      allow get: if admin() || (catalogoPublicoHabilitado() && configId == 'navegacion');
       allow list: if admin();
     }
     match /ferias/{feriaId} {
-      allow get: if resource.data.estado == 'publicada' || admin();
-      allow list: if (request.query.limit <= 100 && resource.data.estado == 'publicada') || admin();
+      allow get: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora') && resource.data.estado == 'publicada')
+        || (catalogoPublicoHabilitado() && resource.data.estado == 'publicada');
+      allow list: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')
+          && request.query.limit <= 100 && resource.data.estado == 'publicada')
+        || (catalogoPublicoHabilitado() && request.query.limit <= 100 && resource.data.estado == 'publicada');
       match /participantes/{participanteId} {
         allow read: if admin();
       }
     }
-    match /sectores/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
+    match /sectores/{id} { allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true); }
     // Un tipo o categoría inactiva deja de ofrecerse al crear productos, pero
     // una emprendedora puede leer su definición histórica para mantener fichas existentes.
-    match /categorias/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
-    match /tiposEmprendimiento/{id} { allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')); }
+    match /categorias/{id} { allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true); }
+    match /tiposEmprendimiento/{id} { allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true); }
     match /tiposProducto/{id} {
-      allow read: if resource.data.activo == true || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora'));
+      allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true);
       match /versiones/{version} {
-        allow read: if get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true
-          || admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora'));
+        allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora'))
+          || (catalogoPublicoHabilitado() && get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true);
       }
     }
     match /operacionesAdministracion/{operationId} { allow read: if admin(); }

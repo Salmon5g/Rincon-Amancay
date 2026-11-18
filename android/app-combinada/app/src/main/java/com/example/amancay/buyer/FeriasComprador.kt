@@ -80,6 +80,7 @@ class RepositorioFeriasComprador(private val db: FirebaseFirestore) {
         // ferias(estado, fechaInicio) y el orden se aplica en el cliente.
         suscripcion = db.collection("ferias")
             .whereEqualTo("estado", "publicada")
+            .limit(100)
             .addSnapshotListener { snapshot, excepcion ->
                 if (excepcion != null) {
                     _error.value = "No se pudieron leer las ferias publicadas."

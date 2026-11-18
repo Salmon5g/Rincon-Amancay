@@ -307,9 +307,15 @@ fun ModoCompradorScreen(
         }
     }
 
-    val exigeGoogle = modoNavegacion == "exigir" && auth.currentUser?.providerData.orEmpty().none { it.providerId == "google.com" }
-    val invitaGoogle = modoNavegacion == "invitar" && sesion == null && !omitioInvitacion
-    val catalogoRestringido = modoNavegacion == null || exigeGoogle || invitaGoogle
+    val estadoPolitica = evaluarPoliticaNavegacion(
+        modo = modoNavegacion,
+        haySesion = sesion != null,
+        sesionGoogle = auth.currentUser?.providerData.orEmpty().any { it.providerId == "google.com" },
+        omitioInvitacion = omitioInvitacion,
+    )
+    val exigeGoogle = modoNavegacion == "exigir" && estadoPolitica.bloqueaCatalogo
+    val invitaGoogle = estadoPolitica.muestraInvitacion
+    val catalogoRestringido = estadoPolitica.bloqueaCatalogo || invitaGoogle
     if (catalogoRestringido && pestana != PestanaComprador.CUENTA) {
         AlertDialog(
             onDismissRequest = {},

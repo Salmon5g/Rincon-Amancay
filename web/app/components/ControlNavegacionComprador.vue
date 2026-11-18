@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { mensajeErrorAcceso } from '~/lib/acceso-comprador'
 import type { AccesoComprador, SesionComprador } from '~/lib/acceso-comprador'
+import { evaluarPoliticaNavegacion } from '~/lib/politica-navegacion'
 import type { PoliticaNavegacion } from '~/repositories/catalogo-publico'
 
 // Aplica la política de navegación elegida en Administración → Configuración.
@@ -15,8 +16,9 @@ const enviando = ref(false)
 const error = ref('')
 let desconectar: (() => void) | undefined
 
-const bloqueado = computed(() => modo.value === 'exigir' && !sesion.value)
-const sugerencia = computed(() => modo.value === 'invitar' && !sesion.value && !omitido.value)
+const estadoPolitica = computed(() => evaluarPoliticaNavegacion(modo.value, sesion.value, omitido.value))
+const bloqueado = computed(() => estadoPolitica.value.bloqueado)
+const sugerencia = computed(() => estadoPolitica.value.sugerencia)
 
 function leerOmitido() {
   try { return sessionStorage.getItem('amancay-omitir-acceso') === '1' } catch { return false }

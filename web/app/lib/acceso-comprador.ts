@@ -57,6 +57,7 @@ export interface SesionComprador {
     nombre: string;
     correo: string;
     verificado: boolean;
+    conGoogle: boolean;
 }
 
 export class ErrorAcceso extends Error {
@@ -118,6 +119,7 @@ export function crearAccesoComprador(
             nombre: nombreMostrar(usuario),
             correo: usuario.email ?? '',
             verificado: usuario.emailVerified,
+            conGoogle: usuario.providerData.some(proveedor => proveedor.providerId === 'google.com'),
         };
     }
 

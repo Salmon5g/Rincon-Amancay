@@ -27,7 +27,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.amancay"
+        applicationId = "com.example.amancay2"
         minSdk = 28
         targetSdk = 36
         versionCode = 1

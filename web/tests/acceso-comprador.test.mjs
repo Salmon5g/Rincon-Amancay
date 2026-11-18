@@ -1,28 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearAccesoComprador, mensajeErrorAcceso, nombreMostrar } from '../app/lib/acceso-comprador.ts';
+import { evaluarPoliticaNavegacion } from '../app/lib/politica-navegacion.ts';
 
 /*SDK simulado: no usa emuladores ni red. Registra qué se llamó y en qué orden.*/
 function escenario({ verificado = true, acceso = null, conApi = true, falla = {} } = {}) {
     const llamadas = [];
     const usuario = {
-        uid: 'u1', email: 'ana.perez@example.test', displayName: 'Ana Pérez', emailVerified: verificado,
+        uid: 'u1', email: 'ana.perez@example.test', displayName: 'Ana Pérez', emailVerified: verificado, providerData: [],
         reload: async () => { llamadas.push('reload'); },
         getIdToken: async () => { llamadas.push('token'); return 't'; },
     };
     const auth = { currentUser: null };
-    const entrar = async () => { auth.currentUser = usuario; return { user: usuario }; };
+    const entrar = async providerId => { usuario.providerData = [{ providerId }]; auth.currentUser = usuario; return { user: usuario }; };
     const sdk = {
         GoogleAuthProvider: class { setCustomParameters() { } },
         createUserWithEmailAndPassword: async () => {
             llamadas.push('crear');
             if (falla.crear) throw Object.assign(new Error('x'), { code: falla.crear });
-            usuario.emailVerified = false; usuario.displayName = null; return entrar();
+            usuario.emailVerified = false; usuario.displayName = null; return entrar('password');
         },
         updateProfile: async (u, datos) => { llamadas.push('perfil'); u.displayName = datos.displayName; },
         sendEmailVerification: async () => { llamadas.push('verificacion'); if (falla.verificacion && llamadas.filter(l => l === 'verificacion').length === 1) throw new Error('fallo'); },
-        signInWithEmailAndPassword: async () => { llamadas.push('ingreso-correo'); return entrar(); },
-        signInWithPopup: async () => { llamadas.push('popup'); return entrar(); },
+        signInWithEmailAndPassword: async () => { llamadas.push('ingreso-correo'); return entrar('password'); },
+        signInWithPopup: async () => { llamadas.push('popup'); return entrar('google.com'); },
         sendPasswordResetEmail: async () => { llamadas.push('recuperar'); if (falla.recuperar) throw Object.assign(new Error('x'), { code: falla.recuperar }); },
         signOut: async () => { llamadas.push('salir'); auth.currentUser = null; },
         onAuthStateChanged: (_auth, cb) => { cb(auth.currentUser); return () => llamadas.push('desuscribir'); },
@@ -79,6 +80,7 @@ test('ingreso con correo verificado y sin cuenta registra al comprador con el no
     const { servicio, llamadas, registros } = escenario({ acceso: null });
     const r = await servicio.iniciarConCorreo('ana.perez@example.test', 'secreta1');
     assert.deepEqual(r, { estado: 'listo', nombre: 'Ana Pérez' });
+    assert.equal(servicio.sesionActual().conGoogle, false);
     assert.deepEqual(registros, [{ nombreMostrar: 'Ana Pérez' }]);
     assert.ok(llamadas.indexOf('token') < llamadas.indexOf('api:registrarComprador'));
 });
@@ -140,6 +142,7 @@ test('cerrar sesión y observar la sesión', async () => {
     assert.deepEqual(vistas, [null]);
     await servicio.iniciarConGoogle();
     assert.equal(servicio.sesionActual().correo, 'ana.perez@example.test');
+    assert.equal(servicio.sesionActual().conGoogle, true);
     await servicio.cerrarSesion();
     assert.equal(auth.currentUser, null);
     assert.equal(servicio.sesionActual(), null);
@@ -161,4 +164,19 @@ test('nombre por defecto: el del perfil, si no el correo, siempre hasta 100 cara
     assert.equal(nombreMostrar({ displayName: null, email: 'ana.perez@b.cl' }), 'ana.perez');
     assert.equal(nombreMostrar({}), 'Comprador');
     assert.equal(nombreMostrar({ displayName: 'x'.repeat(300) }).length, 100);
+});
+
+test('política de navegación: permitir deja entrar sin sesión', () => {
+    assert.deepEqual(evaluarPoliticaNavegacion('permitir', null, false), { bloqueado: false, sugerencia: false });
+});
+
+test('política de navegación: invitar muestra Google y permite omitir', () => {
+    assert.deepEqual(evaluarPoliticaNavegacion('invitar', null, false), { bloqueado: false, sugerencia: true });
+    assert.deepEqual(evaluarPoliticaNavegacion('invitar', null, true), { bloqueado: false, sugerencia: false });
+});
+
+test('política de navegación: exigir bloquea sin Google y con sesión de correo', () => {
+    assert.deepEqual(evaluarPoliticaNavegacion('exigir', null, false), { bloqueado: true, sugerencia: false });
+    assert.deepEqual(evaluarPoliticaNavegacion('exigir', { conGoogle: false }, false), { bloqueado: true, sugerencia: false });
+    assert.deepEqual(evaluarPoliticaNavegacion('exigir', { conGoogle: true }, false), { bloqueado: false, sugerencia: false });
 });

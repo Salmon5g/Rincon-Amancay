@@ -3,12 +3,13 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { cargarCuentaEmprendedora, leerTipoProductoEmprendedora, listarTiposProductoEmprendedora, type CuentaEmprendedoraWeb, type ProductoEmprendedoraWeb, type TipoProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
 import type { ServiciosCliente, Operacion } from '~/lib/cliente-base'
 import type { ElementoEtiqueta } from '~/repositories/catalogo-publico'
+import { enteroNoNegativoFormulario, textoNumericoFormulario, type ValorNumericoFormulario } from '~/lib/numeros-producto'
 
 type VarianteFormulario = {
   id: string
   opciones: Record<string, string>
-  precio: string
-  stock: string
+  precio: ValorNumericoFormulario
+  stock: ValorNumericoFormulario
   activa: boolean
   existente: boolean
 }
@@ -89,8 +90,8 @@ const formulario = reactive({
   manejaStock: true,
   alAgotarse: 'mostrar_agotado' as ProductoApi['alAgotarse'],
   tieneVariantes: false,
-  precioBase: '',
-  stockInicial: '1',
+  precioBase: '' as ValorNumericoFormulario,
+  stockInicial: '1' as ValorNumericoFormulario,
   atributosEspecificos: {} as Record<string, string>,
   variantes: [] as VarianteFormulario[],
 })
@@ -256,12 +257,13 @@ function seleccionarFoto(evento: Event) {
   input.value = ''
 }
 
-function entero(valor: string, etiqueta: string): number | null {
-  if (!/^\d+$/.test(valor.trim())) {
+function entero(valor: ValorNumericoFormulario, etiqueta: string): number | null {
+  const texto = textoNumericoFormulario(valor)
+  if (!/^\d+$/.test(texto)) {
     error.value = `${etiqueta} debe ser un número entero igual o mayor que cero.`
     return null
   }
-  const numero = Number(valor)
+  const numero = Number(texto)
   if (!Number.isSafeInteger(numero)) {
     error.value = `${etiqueta} está fuera del rango permitido.`
     return null
@@ -454,15 +456,15 @@ function validarPasoActual(): boolean {
     }
   } else if (paso.value === 4) {
     if (formulario.tieneVariantes && !formulario.variantes.length) error.value = 'Agrega al menos una variante o indica que el producto no tiene variantes.'
-    else if (!formulario.tieneVariantes && !/^\\d+$/.test(formulario.precioBase.trim())) error.value = 'Ingresa el precio del producto como un número entero.'
+    else if (!formulario.tieneVariantes && enteroNoNegativoFormulario(formulario.precioBase) === null) error.value = 'Ingresa el precio del producto como un número entero.'
     else if (formulario.tieneVariantes) {
-      const camposIncompletos = formulario.variantes.some((variante) => !tipoSeleccionado.value?.opcionesVariante.every((opcion) => variante.opciones[opcion]?.trim()) || !/^\\d+$/.test(variante.precio.trim()))
+      const camposIncompletos = formulario.variantes.some((variante) => !tipoSeleccionado.value?.opcionesVariante.every((opcion) => variante.opciones[opcion]?.trim()) || enteroNoNegativoFormulario(variante.precio) === null)
       if (camposIncompletos) error.value = 'Completa las opciones y el precio de cada variante.'
     }
   } else {
-    const stockInvalido = formulario.manejaStock && !formulario.tieneVariantes && (!/^\\d+$/.test(formulario.stockInicial.trim()) || (formulario.modalidad === 'pieza_unica' && formulario.stockInicial !== '1'))
+    const stockInvalido = formulario.manejaStock && !formulario.tieneVariantes && (enteroNoNegativoFormulario(formulario.stockInicial) === null || (formulario.modalidad === 'pieza_unica' && textoNumericoFormulario(formulario.stockInicial) !== '1'))
     if (stockInvalido) error.value = formulario.modalidad === 'pieza_unica' ? 'Una pieza única debe comenzar con una unidad de stock.' : 'Ingresa un stock inicial entero igual o mayor que cero.'
-    else if (formulario.manejaStock && formulario.tieneVariantes && formulario.variantes.some((variante) => !variante.existente && !/^\\d+$/.test(variante.stock.trim()))) error.value = 'Ingresa el stock inicial de cada variante.'
+    else if (formulario.manejaStock && formulario.tieneVariantes && formulario.variantes.some((variante) => !variante.existente && enteroNoNegativoFormulario(variante.stock) === null)) error.value = 'Ingresa el stock inicial de cada variante.'
     else if (tipoSeleccionado.value?.campos.some((campo) => campo.obligatorio && !formulario.atributosEspecificos[campo.clave]?.trim())) error.value = 'Completa los detalles obligatorios del producto.'
   }
   return !error.value
