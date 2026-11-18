@@ -19,6 +19,7 @@ GoogleService-Info.plist
 key-*.json
 *adminsdk*.json
 secrets/
+backend/zonas-puerto-montt.mjs
 *.pem
 *.key
 *.jks
