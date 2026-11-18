@@ -1557,6 +1557,9 @@ select:focus-visible {
 }
 
 .comprador {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     min-height: 100vh;
     min-height: 100dvh;
     background: var(--amancay-fondo);
@@ -1567,6 +1570,7 @@ select:focus-visible {
 .comprador.modo-explorar {
     display: grid;
     grid-template-columns: 280px minmax(0, 1fr);
+    min-width: 0;
 }
 
 @media (max-width: 900px) {
@@ -1577,7 +1581,9 @@ select:focus-visible {
 
 .comprador.modo-tienda {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;
+    min-width: 0;
 }
 
 :global(html),
@@ -1640,6 +1646,8 @@ select:focus-visible {
     flex-wrap: wrap;
     gap: 0.8rem 1.2rem;
     padding: 0.8rem clamp(1rem, 3vw, 2.5rem);
+    min-width: 0;
+    box-sizing: border-box;
     background: rgba(255, 251, 242, 0.94);
     backdrop-filter: blur(6px);
     border-bottom: 1.5px solid var(--amancay-borde);
@@ -1723,8 +1731,8 @@ select:focus-visible {
     z-index: 1;
     width: 100%;
     min-width: 0;
-    padding: 1.8rem clamp(1rem, 3vw, 2.5rem) 3.5rem;
     box-sizing: border-box;
+    padding: 1.8rem clamp(1rem, 3vw, 2.5rem) 3.5rem;
 }
 
 :global(.botanica-pie) {
@@ -1772,6 +1780,8 @@ select:focus-visible {
 
 .escena-explorar {
     position: relative;
+    width: 100%;
+    min-width: 0;
 }
 
 .encabezado-fila {
@@ -1875,6 +1885,7 @@ h1 {
     z-index: 1;
     isolation: isolate;
     overflow: visible;
+    box-sizing: border-box;
     clip-path: inset(-190px 0 0 round 26px);
     display: flex;
     align-items: center;
@@ -1966,11 +1977,14 @@ h1 {
 
 .carrusel {
     position: relative;
+    width: 100%;
+    min-width: 0;
     margin-bottom: 1.4rem;
 }
 
 .carrusel .hero {
     width: 100%;
+    box-sizing: border-box;
     min-height: 250px;
     margin-bottom: 0;
     padding-inline: clamp(3.9rem, 6vw, 4.9rem);
@@ -2502,8 +2516,9 @@ h1 {
 /* Tarjetas de producto */
 .rejilla-productos {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
     gap: 1.1rem;
+    min-width: 0;
 }
 
 .tarjeta-producto {
@@ -2677,8 +2692,9 @@ h1 {
 /* Tarjetas de tienda */
 .rejilla-tiendas {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
     gap: 1.1rem;
+    min-width: 0;
 }
 
 article.tarjeta-tienda {
@@ -3569,6 +3585,13 @@ article.tarjeta-tienda:hover {
 @media (max-width: 900px) {
     .comprador.modo-explorar {
         grid-template-columns: minmax(0, 1fr);
+        width: 100vw;
+        max-width: 100vw;
+    }
+
+    .comprador.modo-tienda {
+        width: 100vw;
+        max-width: 100vw;
     }
 
     .lateral {
@@ -3666,7 +3689,58 @@ article.tarjeta-tienda:hover {
     }
 }
 
+@media (max-width: 700px) {
+    .comprador.modo-tienda > * {
+        min-width: 0;
+    }
+
+    .chip {
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: normal;
+    }
+
+    article.tarjeta-tienda {
+        display: grid;
+        grid-template-columns: 68px minmax(0, 1fr);
+        align-items: center;
+        gap: 0.7rem 0.9rem;
+        min-width: 0;
+    }
+
+    .tarjeta-tienda-logo.grande {
+        grid-column: 1;
+        grid-row: 1;
+        width: 64px;
+        height: 64px;
+    }
+
+    .tarjeta-tienda-cuerpo {
+        grid-column: 2;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .tarjeta-tienda-cuerpo .chip {
+        align-self: flex-start;
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: break-word;
+    }
+
+    .tarjeta-tienda .boton {
+        grid-column: 1 / -1;
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
+
 @media (max-width: 560px) {
+    .comprador.modo-tienda > * {
+        min-width: 0;
+    }
+
     .hero {
         padding: 1.25rem;
         clip-path: inset(-50px 0 0 round 26px);
@@ -3750,10 +3824,6 @@ article.tarjeta-tienda:hover {
         right: -66px;
         height: 290px;
         opacity: 0.44;
-    }
-
-    .tarjeta-tienda {
-        flex-wrap: wrap;
     }
 
     .rejilla-productos {

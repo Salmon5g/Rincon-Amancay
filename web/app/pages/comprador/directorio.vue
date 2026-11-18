@@ -429,6 +429,9 @@ onMounted(() => void cargarDirectorio())
 
 <style scoped>
 .comprador {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 100vh;
   min-height: 100dvh;
   min-width: 0;
@@ -440,6 +443,7 @@ onMounted(() => void cargarDirectorio())
 .comprador.modo-explorar {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  min-width: 0;
 }
 
 .directorio-contenido {
@@ -841,6 +845,8 @@ onMounted(() => void cargarDirectorio())
 
 .directorio-boton {
   display: inline-flex;
+  box-sizing: border-box;
+  max-width: 100%;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
@@ -1086,6 +1092,8 @@ onMounted(() => void cargarDirectorio())
 @media (max-width: 1000px) {
   .comprador.modo-explorar {
     grid-template-columns: minmax(0, 1fr);
+    width: 100vw;
+    max-width: 100vw;
   }
 
   .directorio-filtros {

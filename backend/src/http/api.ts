@@ -222,6 +222,15 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (error instanceof ErrorOperacion) return json(res, status[error.code] ?? 400, { error: { code: error.code, mensaje: error.message } });
       if (error instanceof ErrorOperacion) return json(res, status[error.code] ?? 400, { error: { code: error.code, mensaje: error.message } });
       // No devolver stack, tokens, credenciales o mensajes internos del SDK.
+      const detalle = error instanceof Error ? error.message.slice(0, 300) : 'Error desconocido.';
+      const codigoOriginal = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      const codigo = typeof codigoOriginal === 'string' || typeof codigoOriginal === 'number'
+        ? String(codigoOriginal).slice(0, 80)
+        : undefined;
+      console.error('[api] error interno', { ruta: req.url, nombre: error instanceof Error ? error.name : 'Error', codigo, detalle });
+      if (codigo === '8' || codigo === 'resource-exhausted' || detalle.includes('RESOURCE_EXHAUSTED')) {
+        return json(res, 503, { error: { code: 'cuota-firestore', mensaje: 'Firestore alcanzó una cuota o límite temporal. No registres otra venta: conserva este mismo intento y revisa el uso de Firestore antes de volver a probar.' } });
+      }
       json(res, 500, { error: { code: 'error-interno', mensaje: 'No se pudo completar la operación.' } });
     }
   });

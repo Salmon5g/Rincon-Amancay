@@ -15,7 +15,7 @@ export interface ServiciosCliente {
   storage: FirebaseStorage;
 }
 
-export const operaciones = ['publicarTienda','retirarTienda','editarTiendaEmprendedora','configurarMostrarPrecios','registrarVenta','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
+export const operaciones = ['publicarTienda','retirarTienda','editarTiendaEmprendedora','configurarMostrarPrecios','registrarVenta','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','asignarImagenVariante','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
 export type Operacion = typeof operaciones[number];
 export { ErrorApi };
 function id(value: string) {if (!/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new Error('ID inválido.');return value;}
@@ -81,9 +81,10 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
         throw new ErrorApi('conexion-interrumpida','No se confirmó la carga. Reintenta con el mismo archivo.',0,true);
       } finally {clearTimeout(timeout);}
     },
-    async subirImagenProducto(tiendaId: string, productoId: string, archivo: Blob, archivoId: string): Promise<string> {
+    async subirImagenProducto(tiendaId: string, productoId: string, archivo: Blob, archivoId: string, reemplazarIndice?: number): Promise<string> {
       const tienda = id(tiendaId), producto = id(productoId);
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
+      if (reemplazarIndice !== undefined && (!Number.isInteger(reemplazarIndice) || reemplazarIndice < 0 || reemplazarIndice > 4)) throw new Error('La posición de imagen a reemplazar no es válida.');
       if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
       await auth.authStateReady();
       const user=auth.currentUser;
@@ -91,7 +92,9 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
       const token=await user.getIdToken();
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
       try {
-        const response=await fetch(`${apiBase}tiendas/${tienda}/productos/${producto}/imagenes`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
+        const headers: Record<string,string> = {Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId};
+        if (reemplazarIndice !== undefined) headers['X-Reemplazar-Indice'] = String(reemplazarIndice);
+        const response=await fetch(`${apiBase}tiendas/${tienda}/productos/${producto}/imagenes`,{method:'POST',headers,body:archivo,signal:controller.signal,redirect:'error'});
         const body=await response.json();
         if(!response.ok) throw new ErrorApi(body.error?.code??'error-api',body.error?.mensaje??'No se pudo guardar la imagen del producto.',response.status,response.status>=500);
         const ruta=body.datos?.ruta;
