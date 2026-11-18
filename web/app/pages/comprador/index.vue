@@ -628,6 +628,10 @@ async function cargarDestacados(tiendas: FichaComprador[], revisionDestacados: n
     }));
     if (revisionDestacados !== revision || tienda.value) return;
     destacados.value = resultados.filter((d): d is { tienda: FichaComprador; producto: FichaComprador } => d !== null);
+    fotosCarrusel.value = Object.fromEntries(destacados.value.map(({ tienda, producto }) => [
+        tienda.id,
+        producto.imagenes?.[0] ? [producto.imagenes[0]] : [],
+    ]));
 }
 
 async function cargar(destino = pagina.value) {
@@ -655,7 +659,6 @@ async function cargar(destino = pagina.value) {
         if (!tienda.value && destino === 1) {
             tiendasCarrusel.value = filas.value.slice(0, 5);
             indiceCarrusel.value = 0;
-            void cargarFotosCarrusel(tiendasCarrusel.value);
             void cargarDestacados(filas.value, actual);
         }
     }
@@ -687,19 +690,6 @@ const cintaCarrusel = computed(() => {
     while (base.length < 8) base.push(...fotos);
     return [...base, ...base];
 });
-
-async function cargarFotosCarrusel(tiendas: FichaComprador[]) {
-    const pares = await Promise.all(tiendas.map(async (t) => {
-        try {
-            const r = await $catalogoPublico.listarProductos(t.id, null);
-            const fotos = r.elementos.map(p => p.imagenes?.[0]).filter((f): f is string => typeof f === 'string');
-            return [t.id, fotos.slice(0, 8)] as const;
-        } catch {
-            return [t.id, []] as const;
-        }
-    }));
-    fotosCarrusel.value = Object.fromEntries(pares);
-}
 
 function moverCarrusel(paso: number) {
     indiceCarrusel.value = (indiceCarrusel.value + paso + totalCarrusel.value) % totalCarrusel.value;

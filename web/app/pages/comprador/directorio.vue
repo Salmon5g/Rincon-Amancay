@@ -148,14 +148,8 @@ async function cargarDirectorio() {
     catalogos.value = catalogosCargados
     asociaciones.value = asociacionesCargadas
 
-    const todasLasTiendas: TiendaPublica[] = []
-    let cursor: string | null = null
-    do {
-      const pagina = await $catalogoPublico.listarTiendas(cursor)
-      todasLasTiendas.push(...pagina.elementos)
-      cursor = pagina.cursorSiguiente
-    } while (cursor)
-    tiendas.value = todasLasTiendas
+    const paginaInicial = await $catalogoPublico.listarTiendas()
+    tiendas.value = paginaInicial.elementos
   } catch {
     error.value = true
   } finally {

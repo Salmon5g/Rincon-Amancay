@@ -83,6 +83,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
   const enviosConsulta = new Map<string, number[]>();
+  const lecturasRespuesta = new Map<string, number[]>();
   const server = createServer(async (req, res) => {
     try {
       const origin = req.headers.origin;
@@ -91,6 +92,13 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: config.entorno, proyecto: config.proyecto });
       const rutaRespuesta = req.url?.match(/^\/api\/v1\/consultasPublicas\/([a-zA-Z0-9_-]{1,128})\/([0-9a-fA-F-]{36})$/);
       if (req.method === 'GET' && rutaRespuesta && leerRespuestaConsulta) {
+        const ahora = Date.now();
+        const ip = req.socket.remoteAddress ?? 'desconocida';
+        const recientes = (lecturasRespuesta.get(ip) ?? []).filter(t => ahora - t < 60_000);
+        if (recientes.length >= 30) throw new ErrorHttp(429, 'limite-consultas', 'Espera un momento antes de volver a consultar el estado.');
+        recientes.push(ahora);
+        lecturasRespuesta.set(ip, recientes);
+        if (lecturasRespuesta.size > 1000) for (const [clave, tiempos] of lecturasRespuesta) if (!tiempos.some(t => ahora - t < 60_000)) lecturasRespuesta.delete(clave);
         const resultado = await leerRespuestaConsulta(rutaRespuesta[1], rutaRespuesta[2]);
         return json(res, 200, { datos: resultado });
       }
