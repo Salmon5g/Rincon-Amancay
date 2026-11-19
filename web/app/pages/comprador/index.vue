@@ -612,26 +612,34 @@ async function cargarCatalogos() {
 }
 
 async function cargarDestacados(tiendas: FichaComprador[], revisionDestacados: number) {
-    const candidatas = tiendas.slice(0, 4);
+    const candidatas = tiendas.slice(0, 5);
     if (!candidatas.length) {
-        if (revisionDestacados === revision) destacados.value = [];
+        if (revisionDestacados === revision) {
+            destacados.value = [];
+            fotosCarrusel.value = {};
+        }
         return;
     }
-    const resultados = await Promise.all(candidatas.map(async (t) => {
+    type ResultadoCarrusel = { tienda: FichaComprador; producto: FichaComprador | null; fotos: string[] };
+    const resultados: (ResultadoCarrusel | null)[] = await Promise.all(candidatas.map(async (t) => {
         try {
             const r = await $catalogoPublico.listarProductos(t.id, null);
             const primero = r.elementos[0];
-            return primero ? { tienda: t, producto: fichaProducto(primero) } : null;
+            const fotos = r.elementos
+                .map((producto) => producto.imagenes?.[0])
+                .filter((foto): foto is string => typeof foto === 'string')
+                .slice(0, 8);
+            return { tienda: t, producto: primero ? fichaProducto(primero) : null, fotos };
         } catch {
             return null;
         }
     }));
     if (revisionDestacados !== revision || tienda.value) return;
-    destacados.value = resultados.filter((d): d is { tienda: FichaComprador; producto: FichaComprador } => d !== null);
-    fotosCarrusel.value = Object.fromEntries(destacados.value.map(({ tienda, producto }) => [
-        tienda.id,
-        producto.imagenes?.[0] ? [producto.imagenes[0]] : [],
-    ]));
+    const cargados = resultados.filter((resultado): resultado is ResultadoCarrusel => resultado !== null);
+    destacados.value = cargados
+        .flatMap(({ tienda, producto }) => producto ? [{ tienda, producto }] : [])
+        .slice(0, 4);
+    fotosCarrusel.value = Object.fromEntries(cargados.map(({ tienda, fotos }) => [tienda.id, fotos]));
 }
 
 async function cargar(destino = pagina.value) {
