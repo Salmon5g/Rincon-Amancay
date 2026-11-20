@@ -15,11 +15,19 @@ export interface ServiciosCliente {
   storage: FirebaseStorage;
 }
 
-export const operaciones = ['publicarTienda','retirarTienda','editarTiendaEmprendedora','configurarMostrarPrecios','registrarVenta','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','asignarImagenVariante','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
+export const operaciones = ['publicarTienda','retirarTienda','editarTiendaEmprendedora','configurarMostrarPrecios','registrarVenta','publicarProducto','retirarProducto','altaEmprendedora','crearProducto','editarProducto','asignarImagenVariante','ajustarStock','desactivarEmprendedora','registrarComprador','invitarEmprendedora','consultarInvitacion','aceptarInvitacion','cancelarInvitacion','reactivarEmprendedora','listarEmprendedorasAdmin','editarCuentaEmprendedora','crearElementoCatalogo','editarElementoCatalogo','cambiarEstadoCatalogo','listarAsociaciones','leerIntegrantesAsociacion','crearAsociacion','editarAsociacion','cambiarEstadoAsociacion','asignarEmprendedora','quitarEmprendedora','leerConfiguracionNavegacion','guardarConfiguracionNavegacion','listarAdministradores','agregarAdministrador','quitarAdministrador','listarFeriasAdmin','crearFeria','editarFeria','cambiarEstadoFeria','leerParticipantesFeria','invitarParticipanteFeria','agregarParticipanteFeria','cancelarInvitacionFeria','retirarParticipanteFeria','registrarAsistenciaFeria','responderInvitacionFeria'] as const;
 export type Operacion = typeof operaciones[number];
 export { ErrorApi };
 function id(value: string) {if (!/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new Error('ID inválido.');return value;}
 export { versionDocumento };
+type TipoMimeImagen='image/jpeg'|'image/png'|'image/webp';
+async function detectarTipoMimeImagen(archivo:Blob):Promise<TipoMimeImagen>{
+  const bytes=new Uint8Array(await archivo.slice(0,12).arrayBuffer());
+  if(bytes.length>=3 && bytes[0]===0xff && bytes[1]===0xd8 && bytes[2]===0xff)return 'image/jpeg';
+  if(bytes.length>=8 && bytes[0]===0x89 && bytes[1]===0x50 && bytes[2]===0x4e && bytes[3]===0x47 && bytes[4]===0x0d && bytes[5]===0x0a && bytes[6]===0x1a && bytes[7]===0x0a)return 'image/png';
+  if(bytes.length>=12 && bytes[0]===0x52 && bytes[1]===0x49 && bytes[2]===0x46 && bytes[3]===0x46 && bytes[8]===0x57 && bytes[9]===0x45 && bytes[10]===0x42 && bytes[11]===0x50)return 'image/webp';
+  throw new Error('El contenido del archivo no es una imagen JPEG, PNG o WebP válida.');
+}
 
 // Lógica común a los clientes web. `apiBase` debe terminar en /api/v1/.
 export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
@@ -55,22 +63,24 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
     },
     cerrarSesion: () => signOut(auth),
     async subirImagen(tiendaId: string, productoId: string, archivo: Blob): Promise<string> {
-      const extension: Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
-      if(!extension[archivo.type] || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar PNG, JPEG o WebP de hasta 5 MiB.');
-      const ruta=`tiendas/${id(tiendaId)}/productos/${id(productoId)}/${crypto.randomUUID()}.${extension[archivo.type]}`;
-      await uploadBytes(ref(storage,ruta),archivo,{contentType:archivo.type});return ruta;
+      if(archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar PNG, JPEG o WebP de hasta 5 MiB.');
+      const contentType=await detectarTipoMimeImagen(archivo);
+      const extension: Record<TipoMimeImagen,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
+      const ruta=`tiendas/${id(tiendaId)}/productos/${id(productoId)}/${crypto.randomUUID()}.${extension[contentType]}`;
+      await uploadBytes(ref(storage,ruta),archivo,{contentType});return ruta;
     },
     async subirLogoTienda(tiendaId: string, archivo: Blob, archivoId: string): Promise<string> {
       const tienda = id(tiendaId);
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
-      if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      if (archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      const contentType=await detectarTipoMimeImagen(archivo);
       await auth.authStateReady();
       const user=auth.currentUser;
       if(!user) throw new ErrorApi('no-autenticado','Iniciar sesión antes de continuar.',401);
       const token=await user.getIdToken();
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
       try {
-        const response=await fetch(`${apiBase}tiendas/${tienda}/logo`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
+        const response=await fetch(`${apiBase}tiendas/${tienda}/logo`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':contentType,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
         const body=await response.json();
         if(!response.ok) throw new ErrorApi(body.error?.code??'error-api',body.error?.mensaje??'No se pudo guardar el logo.',response.status,response.status>=500);
         const ruta=body.datos?.ruta;
@@ -85,14 +95,15 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
       const tienda = id(tiendaId), producto = id(productoId);
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
       if (reemplazarIndice !== undefined && (!Number.isInteger(reemplazarIndice) || reemplazarIndice < 0 || reemplazarIndice > 4)) throw new Error('La posición de imagen a reemplazar no es válida.');
-      if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      if (archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      const contentType=await detectarTipoMimeImagen(archivo);
       await auth.authStateReady();
       const user=auth.currentUser;
       if(!user) throw new ErrorApi('no-autenticado','Iniciar sesión antes de continuar.',401);
       const token=await user.getIdToken();
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
       try {
-        const headers: Record<string,string> = {Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId};
+        const headers: Record<string,string> = {Authorization:`Bearer ${token}`,'Content-Type':contentType,'X-Archivo-Id':archivoId};
         if (reemplazarIndice !== undefined) headers['X-Reemplazar-Indice'] = String(reemplazarIndice);
         const response=await fetch(`${apiBase}tiendas/${tienda}/productos/${producto}/imagenes`,{method:'POST',headers,body:archivo,signal:controller.signal,redirect:'error'});
         const body=await response.json();
@@ -107,14 +118,15 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
     },
     async subirLogoAsociacion(archivo: Blob, archivoId: string): Promise<string> {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
-      if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      if (archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      const contentType=await detectarTipoMimeImagen(archivo);
       await auth.authStateReady();
       const user=auth.currentUser;
       if(!user) throw new ErrorApi('no-autenticado','Iniciar sesión antes de continuar.',401);
       const token=await user.getIdToken();
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
       try {
-        const response=await fetch(`${apiBase}asociaciones/logo`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
+        const response=await fetch(`${apiBase}asociaciones/logo`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':contentType,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
         const body=await response.json();
         if(!response.ok) throw new ErrorApi(body.error?.code??'error-api',body.error?.mensaje??'No se pudo guardar el logo de la asociación.',response.status,response.status>=500);
         const url=body.datos?.ruta;
@@ -127,14 +139,15 @@ export function crearCliente(firebase: ServiciosCliente, apiBase: string) {
     },
     async subirImagenFeria(archivo: Blob, archivoId: string): Promise<string> {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(archivoId)) throw new Error('El identificador de archivo no es válido.');
-      if (!['image/png','image/jpeg','image/webp'].includes(archivo.type) || archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      if (archivo.size<=0 || archivo.size>5*1024*1024) throw new Error('Usar una imagen JPEG, PNG o WebP de hasta 5 MiB.');
+      const contentType=await detectarTipoMimeImagen(archivo);
       await auth.authStateReady();
       const user=auth.currentUser;
       if(!user) throw new ErrorApi('no-autenticado','Iniciar sesión antes de continuar.',401);
       const token=await user.getIdToken();
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),45000);
       try {
-        const response=await fetch(`${apiBase}ferias/imagen`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':archivo.type,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
+        const response=await fetch(`${apiBase}ferias/imagen`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':contentType,'X-Archivo-Id':archivoId},body:archivo,signal:controller.signal,redirect:'error'});
         const body=await response.json();
         if(!response.ok) throw new ErrorApi(body.error?.code??'error-api',body.error?.mensaje??'No se pudo guardar la imagen de la feria.',response.status,response.status>=500);
         const url=body.datos?.ruta;

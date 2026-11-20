@@ -169,7 +169,7 @@ export interface ParticipanteFeria {
   nombre: string
   nombreTienda: string
   estado: EstadoParticipanteFeria
-  asistencia: AsistenciaFeria
+  asistencia: AsistenciaFeria | null
   versionEsperada: string
 }
 

@@ -229,7 +229,7 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         : undefined;
       console.error('[api] error interno', { ruta: req.url, nombre: error instanceof Error ? error.name : 'Error', codigo, detalle });
       if (codigo === '8' || codigo === 'resource-exhausted' || detalle.includes('RESOURCE_EXHAUSTED')) {
-        return json(res, 503, { error: { code: 'cuota-firestore', mensaje: 'Firestore alcanzó una cuota o límite temporal. No registres otra venta: conserva este mismo intento y revisa el uso de Firestore antes de volver a probar.' } });
+        return json(res, 503, { error: { code: 'cuota-firestore', mensaje: 'Firestore alcanzó una cuota o límite temporal. Conserva esta misma solicitud y revisa el uso de Firestore antes de reintentarla.' } });
       }
       json(res, 500, { error: { code: 'error-interno', mensaje: 'No se pudo completar la operación.' } });
     }

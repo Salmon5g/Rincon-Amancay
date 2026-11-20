@@ -20,6 +20,8 @@ Firebase Auth sigue identificando a emprendedoras y Firebase/Firestore conserva 
 - Imagen pública grande y miniatura: `catalogo/{tiendaId}/productos/{productoId}/{sha256}_{1600|320}.webp`.
 - Logo original privado de asociación: `asociaciones/{archivoId}/logo/{archivoId}.{jpg|png|webp}`.
 - Logo público grande y miniatura de asociación: `catalogo/asociaciones/{archivoId}/logo/{sha256}_{1600|320}.webp`.
+- Imagen original privada de feria: `ferias/{feriaId}/{archivoId}.{jpg|png|webp}`.
+- Imagen pública grande y miniatura de feria: `catalogo/ferias/{feriaId}/{sha256}_{1600|320}.webp`.
 - Los IDs usan letras, números, guion o guion bajo; el nombre de cada original es UUID. El bucket original acepta JPEG y PNG y WebP. El catálogo solo acepta WebP procesado.
 - Los buckets limitan cada objeto a 5 MiB. La ruta pública puede abrirse sin iniciar sesión y puede permanecer en caché después de retirar el producto.
 
@@ -36,7 +38,9 @@ El archivo `.env.compartido.local` está excluido de Git. No copiar estas creden
 
 ## Aplicar las políticas definitivas
 
-`infra/supabase/storage-imagenes.sql` reemplaza todas las políticas `amancay_*` de `storage.objects`, incluidas las políticas temporales de la prueba, y deja las rutas de logo de tienda, asociación y producto de esta guía. Al cambiar estas rutas, vuelve a ejecutar el archivo completo en el SQL Editor de la instancia del curso. Es idempotente para los buckets y las políticas del proyecto.
+`infra/supabase/storage-imagenes.sql` reemplaza todas las políticas `amancay_*` de `storage.objects`, incluidas las políticas temporales de la prueba, y deja las rutas de logo de tienda, asociación, feria y producto de esta guía. Al cambiar estas rutas, vuelve a ejecutar el archivo completo en el SQL Editor de la instancia del curso. Es idempotente para los buckets y las políticas del proyecto.
+
+El SQL admite las rutas de feria solo para la cuenta técnica configurada. La API exige que quien cargue una imagen de feria tenga acceso Firebase activo y rol `administrador`.
 
 Después, comprobar en **Storage → Files**:
 
@@ -54,12 +58,13 @@ Desde `backend/`, con las credenciales ADC de Firebase ya preparadas y Firestore
 npm.cmd run start:compartido:local
 ```
 
-La API escucha en `http://localhost:8080`. Las rutas para cargar un logo o imagen de producto son:
+La API escucha en `http://localhost:8080`. Las rutas para cargar logos e imágenes son:
 
 ```text
 POST /api/v1/tiendas/{tiendaId}/logo
 POST /api/v1/tiendas/{tiendaId}/productos/{productoId}/imagenes
 POST /api/v1/asociaciones/logo
+POST /api/v1/ferias/imagen
 Authorization: Bearer <Firebase ID token>
 Content-Type: image/jpeg | image/png | image/webp
 X-Archivo-Id: <UUID único para el reintento>

@@ -26,8 +26,8 @@ Las reglas consultan documentos de `accesos/{uid}` para confirmar estado, roles 
 
 La política efectiva se define en [`infra/supabase/storage-imagenes.sql`](../../infra/supabase/storage-imagenes.sql) y el flujo de aplicación en [`docs/supabase-storage-imagenes.md`](../supabase-storage-imagenes.md):
 
-- `amancay-originales` es privado. Solo la cuenta técnica puede cargar, leer o borrar originales y únicamente dentro de las rutas de tienda/producto admitidas.
-- `amancay-catalogo` es público para lectura por URL. Solo la cuenta técnica puede crear, leer autenticadamente o borrar derivadas procesadas en las rutas permitidas.
+- `amancay-originales` es privado. Solo la cuenta técnica puede cargar, leer o borrar originales y únicamente dentro de las rutas de tienda, asociación y feria admitidas.
+- `amancay-catalogo` es público para lectura por URL. Solo la cuenta técnica puede crear, leer autenticadamente o borrar derivadas procesadas para tiendas, asociaciones y ferias en las rutas permitidas.
 - Una cuenta normal de Supabase no puede operar sobre ninguno de los dos buckets: la política restrictiva global exige el UID de la cuenta técnica para toda operación. En particular, reemplazos y borrados también quedan bloqueados para cuentas normales.
 - La API comprueba la identidad Firebase de la emprendedora antes de usar la cuenta técnica de Supabase. RLS por sí sola identifica esa cuenta técnica, no el perfil Firebase que inició la solicitud.
 - Una URL del bucket público puede compartirse y quedar en caché; retirar un producto elimina sus derivadas desde la API, pero no revoca copias ya descargadas o almacenadas en caché.

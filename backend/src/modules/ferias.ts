@@ -6,7 +6,7 @@ import { ErrorOperacion, version } from './publicacion.ts';
 export const accionesFeria = [
   'listarFeriasAdmin', 'crearFeria', 'editarFeria', 'cambiarEstadoFeria',
   'leerParticipantesFeria', 'invitarParticipanteFeria', 'agregarParticipanteFeria',
-  'retirarParticipanteFeria', 'registrarAsistenciaFeria', 'responderInvitacionFeria',
+  'cancelarInvitacionFeria', 'retirarParticipanteFeria', 'registrarAsistenciaFeria', 'responderInvitacionFeria',
 ] as const;
 export type AccionFeria = typeof accionesFeria[number];
 type TipoParticipante = 'emprendedora' | 'asociacion';
@@ -89,7 +89,7 @@ function parsear(accion: AccionFeria, input: unknown) {
     exigir(operationId(data.operacionId) && id(data.feriaId) && id(data.entidadId) && (data.tipo === 'emprendedora' || data.tipo === 'asociacion'), 'datos-invalidos', 'Datos del participante inválidos.');
     return { accion, operacionId: data.operacionId, feriaId: data.feriaId, versionFeriaEsperada: fechaVersión(data.versionFeriaEsperada), tipo: data.tipo as TipoParticipante, entidadId: data.entidadId } as const;
   }
-  if (accion === 'retirarParticipanteFeria') {
+  if (accion === 'cancelarInvitacionFeria' || accion === 'retirarParticipanteFeria') {
     exactos(data, ['operacionId', 'feriaId', 'versionFeriaEsperada', 'participanteId']);
     exigir(operationId(data.operacionId) && id(data.feriaId) && id(data.participanteId), 'datos-invalidos', 'IDs inválidos.');
     return { accion, operacionId: data.operacionId, feriaId: data.feriaId, versionFeriaEsperada: fechaVersión(data.versionFeriaEsperada), participanteId: data.participanteId } as const;
@@ -147,7 +147,9 @@ export function crearFerias(db: Firestore) {
       }));
       const existentes = participantes.docs.map(doc => {
         const data = doc.data();
-        return { id: doc.id, tipo: data.tipo === 'asociacion' ? 'asociacion' : 'emprendedora', entidadId: String(data.entidadId ?? ''), nombre: String(data.nombre ?? ''), nombreTienda: String(data.nombreTienda ?? ''), estado: String(data.estado ?? 'invitada'), asistencia: String(data.asistencia ?? 'pendiente'), versionEsperada: version(data) };
+        const estado = String(data.estado ?? 'invitada');
+        const asistencia = ['confirmada', 'agregada_admin'].includes(estado) ? String(data.asistencia ?? 'pendiente') : null;
+        return { id: doc.id, tipo: data.tipo === 'asociacion' ? 'asociacion' : 'emprendedora', entidadId: String(data.entidadId ?? ''), nombre: String(data.nombre ?? ''), nombreTienda: String(data.nombreTienda ?? ''), estado, asistencia, versionEsperada: version(data) };
       });
       const presentes = new Set(existentes.filter(item => item.estado !== 'retirada').map(item => `${item.tipo}:${item.entidadId}`));
       const emprendedoras = candidatos.filter((item): item is NonNullable<typeof item> => Boolean(item)).filter(item => !presentes.has(`emprendedora:${item.entidadId}`));
@@ -168,7 +170,7 @@ export function crearFerias(db: Firestore) {
         if (participant.data()?.estado === estado) return { feriaId: request.feriaId, estado };
         exigir(participant.data()?.estado === 'invitada', 'conflicto', 'La invitación ya fue respondida.');
         const now = FieldValue.serverTimestamp();
-        tx.update(participantRef, { estado, actualizadoEn: now }); tx.update(feriaRef, { actualizadoEn: now });
+        tx.update(participantRef, { estado, ...(estado === 'confirmada' ? { asistencia: 'pendiente' } : { asistencia: FieldValue.delete() }), actualizadoEn: now }); tx.update(feriaRef, { actualizadoEn: now });
         return { feriaId: request.feriaId, estado };
       });
     }
@@ -254,12 +256,34 @@ export function crearFerias(db: Firestore) {
         if (participant.exists) exigir(participant.data()?.estado === 'retirada', 'conflicto', 'La persona o asociación ya participa en esta feria.');
         const now = FieldValue.serverTimestamp();
         const state = request.accion === 'invitarParticipanteFeria' ? 'invitada' : 'agregada_admin';
-        const record = { tipo: request.tipo, entidadId: request.entidadId, nombre: participantName, ...(storeName ? { nombreTienda: storeName } : {}), estado: state, asistencia: 'pendiente', actualizadoEn: now, ...(participant.exists ? {} : { creadoPor: identidad.uid, creadoEn: now }) };
+        const record = { tipo: request.tipo, entidadId: request.entidadId, nombre: participantName, ...(storeName ? { nombreTienda: storeName } : {}), estado: state, ...(state === 'agregada_admin' ? { asistencia: 'pendiente' } : participant.exists ? { asistencia: FieldValue.delete() } : {}), actualizadoEn: now, ...(participant.exists ? {} : { creadoPor: identidad.uid, creadoEn: now }) };
         if (participant.exists) tx.update(participantRef, record); else tx.create(participantRef, record);
         tx.update(feriaRef, { actualizadoEn: now });
         const result = { feriaId, participanteId: participantRef.id, estado: state };
         tx.create(receiptRef, { firma: signature, resultado: result, creadaPor: identidad.uid, creadoEn: now });
-        tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: participant.exists ? { estado: participant.data()?.estado, asistencia: participant.data()?.asistencia } : null, despues: { tipo: request.tipo, entidadId: request.entidadId, estado: state, asistencia: 'pendiente' }, creadoEn: now });
+        tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: participant.exists ? { estado: participant.data()?.estado, asistencia: participant.data()?.asistencia ?? null } : null, despues: { tipo: request.tipo, entidadId: request.entidadId, estado: state, asistencia: state === 'agregada_admin' ? 'pendiente' : null }, creadoEn: now });
+        return result;
+      });
+    }
+
+    if (request.accion === 'cancelarInvitacionFeria') {
+      const participantRef = feriaRef.collection('participantes').doc(request.participanteId);
+      return db.runTransaction(async tx => {
+        const [actor, receipt, fair, participant] = await tx.getAll(actorRef, receiptRef, feriaRef, participantRef);
+        exigir(admin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
+        if (receipt.exists) { exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'El identificador de operación corresponde a otros datos.'); return receipt.data()!.resultado as Record<string, unknown>; }
+        exigir(fair.exists && participant.exists, 'no-encontrado', 'No se encontró la feria o la invitación.');
+        exigir(version(fair.data()!) === request.versionFeriaEsperada, 'conflicto', 'La feria cambió. Actualiza antes de continuar.');
+        const participantData = participant.data()!;
+        exigir(participantData.estado === 'invitada', 'conflicto', 'Solo se puede cancelar una invitación que sigue pendiente.');
+        const now = FieldValue.serverTimestamp();
+        const before = { tipo: participantData.tipo, entidadId: participantData.entidadId, estado: participantData.estado };
+        const after = { tipo: participantData.tipo, entidadId: participantData.entidadId, estado: 'invitacion_cancelada' };
+        tx.delete(participantRef);
+        tx.update(feriaRef, { actualizadoEn: now });
+        const result = { feriaId, participanteId: participantRef.id, estado: 'invitacion_cancelada' };
+        tx.create(receiptRef, { firma: signature, resultado: result, creadaPor: identidad.uid, creadoEn: now });
+        tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: before, despues: after, creadoEn: now });
         return result;
       });
     }
@@ -276,7 +300,7 @@ export function crearFerias(db: Firestore) {
         const participantData = participant.data()!;
         const now = FieldValue.serverTimestamp(); let after: Record<string, unknown>;
         if (request.accion === 'retirarParticipanteFeria') {
-          exigir(participantData.estado !== 'retirada', 'conflicto', 'La participación ya fue retirada.');
+          exigir(['confirmada', 'agregada_admin'].includes(String(participantData.estado)), 'conflicto', 'Solo se puede retirar a un participante confirmado o agregado directamente.');
           exigir(fairData.fechaFin.toDate() > new Date(), 'conflicto', 'No se puede retirar participantes después del término de la feria.');
           after = { estado: 'retirada', asistencia: participantData.asistencia ?? 'pendiente' };
           tx.update(participantRef, { estado: 'retirada', actualizadoEn: now });

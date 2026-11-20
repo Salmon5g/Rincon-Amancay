@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import type { Operacion } from '~/lib/cliente-base'
 import SelectorUbicacionFeria from './MapaUbicacionFeria.client.vue'
 import { leerParticipantesFeria, listarFeriasAdmin } from '~/repositories/admin'
-import type { FeriaAdmin, ParticipanteFeria, ParticipantesFeria } from '~/types/admin'
+import type { FeriaAdmin, ParticipanteFeria, ParticipantesFeria, TipoParticipanteFeria } from '~/types/admin'
 
 const { $amancay } = useNuxtApp()
 const modoFirebase = useRuntimeConfig().public.firebaseModo
@@ -14,13 +14,23 @@ const detalle = ref<ParticipantesFeria | null>(null)
 const cargando = ref(false)
 const cargandoDetalle = ref(false)
 const enviando = ref(false)
+const confirmacionEstado = ref<{ item: FeriaAdmin; estado: 'publicada' | 'cancelada' } | null>(null)
+const dialogoConfirmacionRef = ref<HTMLElement | null>(null)
+const volverConfirmacionRef = ref<HTMLButtonElement | null>(null)
+const ejecutarConfirmacionRef = ref<HTMLButtonElement | null>(null)
+let focoAnteriorConfirmacion: HTMLElement | null = null
 const error = ref('')
 const aviso = ref('')
 const formulario = ref(false)
+const formularioRef = ref<HTMLElement | null>(null)
+const participantesRef = ref<HTMLElement | null>(null)
 const feriaEditando = ref<FeriaAdmin | null>(null)
+const borradorInicial = ref('')
 const busquedaFeria = ref('')
 const filtroEstadoFeria = ref('todas')
 const candidata = ref('')
+const tipoCandidata = ref<TipoParticipanteFeria>('emprendedora')
+const busquedaCandidata = ref('')
 const busquedaParticipante = ref('')
 const filtroEstadoParticipante = ref('todos')
 const filtroTipoParticipante = ref('todos')
@@ -49,13 +59,32 @@ const fechaHora = computed(() => {
 })
 const imagenLista = computed(() => Boolean(borrador.value.imagenUrl || archivoImagen.value))
 const inicioPasado = computed(() => Boolean(fechaHora.value?.valido && fechaHora.value.inicio.getTime() <= Date.now()))
+const edicionModificada = computed(() => Boolean(feriaEditando.value)
+  && (Boolean(archivoImagen.value) || JSON.stringify(borrador.value) !== borradorInicial.value))
+const guardadoFeriaDeshabilitado = computed(() => {
+  if (!habilitado || enviando.value || pendiente.value) return true
+  // En edición, cualquier cambio permite intentar guardar para que guardarFeria
+  // muestre la validación concreta (por ejemplo, un horario inválido) al usuario.
+  if (feriaEditando.value) return !edicionModificada.value
+  return !ubicacionMarcada.value || !fechaHora.value?.valido || inicioPasado.value || !imagenLista.value
+    || !borrador.value.nombre.trim() || !borrador.value.descripcion.trim()
+    || !borrador.value.organizador.trim() || !borrador.value.direccion.trim()
+})
 
 const seleccionDisponible = computed(() => {
   if (!detalle.value || !candidata.value) return null
   const [tipo, ...rest] = candidata.value.split(':')
   const entidadId = rest.join(':')
-  return detalle.value.disponibles.find((item) => item.tipo === tipo && item.entidadId === entidadId) ?? null
+  return detalle.value.disponibles.find((item) => item.tipo === tipo && item.tipo === tipoCandidata.value && item.entidadId === entidadId) ?? null
 })
+const disponiblesPorTipo = computed(() => detalle.value?.disponibles.filter((item) => item.tipo === tipoCandidata.value) ?? [])
+const candidatasFiltradas = computed(() => {
+  const query = busquedaCandidata.value.trim().toLocaleLowerCase('es-CL')
+  return disponiblesPorTipo.value.filter((item) => !query
+    || `${item.nombreTienda ?? ''} ${item.nombre} ${item.entidadId}`.toLocaleLowerCase('es-CL').includes(query))
+})
+const totalEmprendedorasDisponibles = computed(() => detalle.value?.disponibles.filter((item) => item.tipo === 'emprendedora').length ?? 0)
+const totalAsociacionesDisponibles = computed(() => detalle.value?.disponibles.filter((item) => item.tipo === 'asociacion').length ?? 0)
 const feriasVisibles = computed(() => {
   const query = busquedaFeria.value.trim().toLocaleLowerCase('es-CL')
   return ferias.value.filter((item) => (filtroEstadoFeria.value === 'todas' || item.estado === filtroEstadoFeria.value)
@@ -74,6 +103,7 @@ function mensajeError(cause: unknown) {
   const detalle = cause instanceof Error ? cause.message.trim() : ''
   if (code === 'sin-permiso') return 'La API no reconoce una cuenta administradora activa.'
   if (code === 'datos-invalidos') return detalle || 'Revisa los campos: nombre, descripción, lugar, fecha, horario e imagen son obligatorios; el término debe ser posterior al inicio.'
+  if (code === 'pendiente' || code === 'cuota-firestore' || code === 'imagen-no-autorizada') return detalle || 'La API no pudo completar la carga. Conserva los datos y reintenta.'
   if (code === 'conflicto') return detalle || 'La feria o el participante cambió, o la acción ya no corresponde a su estado. Actualiza el módulo.'
   if (code === 'conexion-interrumpida' || (cause as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Reintenta la misma solicitud sin cambiar sus datos.'
   if (code === 'no-encontrado') return 'La feria, asociación o cuenta ya no existe. Actualiza el listado.'
@@ -92,15 +122,30 @@ async function cargar() {
 }
 
 async function cargarParticipantes(id: string) {
+  const cambioFeria = selectedId.value !== id
   selectedId.value = id; cargandoDetalle.value = true; error.value = ''
-  try { detalle.value = await leerParticipantesFeria($amancay, id); candidata.value = '' }
+  if (cambioFeria) {
+    detalle.value = null
+    candidata.value = ''
+    tipoCandidata.value = 'emprendedora'
+    busquedaCandidata.value = ''
+  }
+  try { detalle.value = await leerParticipantesFeria($amancay, id); candidata.value = ''; busquedaCandidata.value = '' }
   catch (cause) { detalle.value = null; error.value = mensajeError(cause) }
   finally { cargandoDetalle.value = false }
+}
+
+function seleccionarTipoCandidata(tipo: TipoParticipanteFeria) {
+  if (tipoCandidata.value === tipo) return
+  tipoCandidata.value = tipo
+  candidata.value = ''
+  busquedaCandidata.value = ''
 }
 
 function nuevo() {
   feriaEditando.value = null
   borrador.value = { nombre: '', descripcion: '', organizador: '', direccion: '', fecha: '', horaInicio: '', horaFin: '', imagenUrl: '', latitud: '', longitud: '' }
+  borradorInicial.value = ''
   limpiarArchivoImagen()
   formulario.value = true; error.value = ''; aviso.value = ''
 }
@@ -157,7 +202,13 @@ function actualizarUbicacion(ubicacion: { latitud: number; longitud: number; dir
   }
 }
 
-function editar(item: FeriaAdmin) {
+function desplazarAlApartado(elemento: HTMLElement | null) {
+  if (!elemento) return
+  const reducirMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  elemento.scrollIntoView({ behavior: reducirMovimiento ? 'auto' : 'smooth', block: 'start' })
+}
+
+async function editar(item: FeriaAdmin) {
   feriaEditando.value = item
   limpiarArchivoImagen()
   borrador.value = {
@@ -165,7 +216,10 @@ function editar(item: FeriaAdmin) {
     fecha: fechaLocal(item.fechaInicio), horaInicio: horaLocal(item.fechaInicio), horaFin: horaLocal(item.fechaFin),
     imagenUrl: item.imagenUrl, latitud: item.latitud === null ? '' : String(item.latitud), longitud: item.longitud === null ? '' : String(item.longitud),
   }
+  borradorInicial.value = JSON.stringify(borrador.value)
   formulario.value = true; error.value = ''; aviso.value = ''
+  await nextTick()
+  desplazarAlApartado(formularioRef.value)
 }
 
 function payloadFeria(imagenUrl: string) {
@@ -189,6 +243,7 @@ async function procesarPendiente() {
   const current = pendiente.value
   try {
     await $amancay.llamar(current.operacion, current.solicitud)
+    if (current.operacion === 'invitarParticipanteFeria' || current.operacion === 'agregarParticipanteFeria') candidata.value = ''
     pendiente.value = null; formulario.value = false; retiro.value = null
     limpiarArchivoImagen()
     aviso.value = 'Los cambios de la feria se guardaron en Firebase.'
@@ -242,17 +297,63 @@ async function guardarFeria() {
   await procesarPendiente()
 }
 
-function cambiarEstado(item: FeriaAdmin, estado: 'publicada' | 'cancelada') {
+async function cambiarEstado(item: FeriaAdmin, estado: 'publicada' | 'cancelada') {
   if (!item.versionEsperada || pendiente.value) return
-  const pregunta = estado === 'publicada' ? `¿Publicar “${item.nombre}” en Firebase?` : `¿Cancelar “${item.nombre}”? Esta acción no se puede revertir.`
-  if (!window.confirm(pregunta)) return
-  pendiente.value = { operacion: 'cambiarEstadoFeria', solicitud: { operacionId: opId(), feriaId: item.id, versionEsperada: item.versionEsperada, estado } }
+  focoAnteriorConfirmacion = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  confirmacionEstado.value = { item, estado }
+  await nextTick()
+  volverConfirmacionRef.value?.focus()
+}
+
+function cerrarConfirmacionEstado() {
+  confirmacionEstado.value = null
+  void nextTick(() => {
+    focoAnteriorConfirmacion?.focus()
+    focoAnteriorConfirmacion = null
+  })
+}
+
+function confirmarCambioEstado() {
+  const confirmacion = confirmacionEstado.value
+  if (!confirmacion) return
+  confirmacionEstado.value = null
+  focoAnteriorConfirmacion = null
+  pendiente.value = { operacion: 'cambiarEstadoFeria', solicitud: { operacionId: opId(), feriaId: confirmacion.item.id, versionEsperada: confirmacion.item.versionEsperada, estado: confirmacion.estado } }
   void procesarPendiente()
 }
 
-function gestionarParticipantes(item: FeriaAdmin) {
+function mantenerFocoConfirmacion(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const volver = volverConfirmacionRef.value
+  const ejecutar = ejecutarConfirmacionRef.value
+  if (!volver || !ejecutar) return
+  if (event.shiftKey && document.activeElement === volver) {
+    event.preventDefault()
+    ejecutar.focus()
+  } else if (!event.shiftKey && document.activeElement === ejecutar) {
+    event.preventDefault()
+    volver.focus()
+  }
+}
+
+async function gestionarParticipantes(item: FeriaAdmin) {
   retiro.value = null
-  void cargarParticipantes(item.id)
+  const carga = cargarParticipantes(item.id)
+  await nextTick()
+  desplazarAlApartado(participantesRef.value)
+  await carga
+}
+
+function cerrarParticipantes() {
+  selectedId.value = ''
+  detalle.value = null
+  candidata.value = ''
+  tipoCandidata.value = 'emprendedora'
+  busquedaCandidata.value = ''
+  retiro.value = null
+  busquedaParticipante.value = ''
+  filtroEstadoParticipante.value = 'todos'
+  filtroTipoParticipante.value = 'todos'
 }
 
 function agregarCandidata() {
@@ -272,8 +373,25 @@ function retirar(item: ParticipanteFeria) {
 
 function confirmarRetiro() {
   if (!detalle.value || !retiro.value || pendiente.value) return
-  pendiente.value = { operacion: 'retirarParticipanteFeria', solicitud: { operacionId: opId(), feriaId: detalle.value.feria.id, versionFeriaEsperada: detalle.value.feria.versionEsperada, participanteId: retiro.value.id } }
+  const operacion = retiro.value.estado === 'invitada' ? 'cancelarInvitacionFeria' : 'retirarParticipanteFeria'
+  pendiente.value = { operacion, solicitud: { operacionId: opId(), feriaId: detalle.value.feria.id, versionFeriaEsperada: detalle.value.feria.versionEsperada, participanteId: retiro.value.id } }
   void procesarPendiente()
+}
+
+function etiquetaEstadoParticipante(persona: ParticipanteFeria) {
+  switch (persona.estado) {
+    case 'invitada': return 'Invitación pendiente'
+    case 'confirmada': return 'Invitación aceptada'
+    case 'rechazada': return 'Invitación rechazada'
+    case 'agregada_admin': return 'Agregada directamente'
+    case 'retirada': return 'Retirada'
+  }
+}
+
+function etiquetaAsistencia(asistencia: ParticipanteFeria['asistencia']) {
+  if (asistencia === 'asistio') return 'Asistió'
+  if (asistencia === 'no_asistio') return 'No asistió'
+  return 'Asistencia pendiente'
 }
 
 function marcarAsistencia(item: ParticipanteFeria, asistencia: 'asistio' | 'no_asistio') {
@@ -298,9 +416,9 @@ onMounted(() => { void cargar() })
     <p v-if="cargando" role="status">Leyendo ferias desde Firebase…</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="aviso" class="exito" role="status">{{ aviso }}</p>
-    <div v-if="pendiente" class="nota pendiente" role="status"><p>La respuesta de la API no se confirmó. Conservé el mismo identificador para evitar duplicar la operación.</p><button class="boton" type="button" :disabled="enviando" @click="procesarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar operación' }}</button></div>
+    <div v-if="pendiente" class="nota pendiente" role="status" tabindex="-1"><p>La respuesta de la API no se confirmó. Conservé el mismo identificador para evitar duplicar la operación.</p><button class="boton" type="button" :disabled="enviando" @click="procesarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar operación' }}</button></div>
 
-    <section v-if="formulario" class="formulario">
+    <section v-if="formulario" ref="formularioRef" class="formulario apartado-desplegable">
       <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cerrar</button></div>
       <form class="campos" @submit.prevent="guardarFeria">
         <label>Nombre de la feria<input v-model="borrador.nombre" maxlength="120" required :disabled="enviando || !!pendiente" /></label>
@@ -329,7 +447,7 @@ onMounted(() => { void cargar() })
           <small>Se sube al almacenamiento y se guarda su URL en la feria. JPEG, PNG o WebP de hasta 5 MiB.</small>
           <img v-if="vistaImagen || borrador.imagenUrl" :src="vistaImagen || borrador.imagenUrl" alt="Vista previa de la imagen de la feria" />
         </div>
-        <div class="acciones completo"><button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !ubicacionMarcada || !fechaHora?.valido || inicioPasado || !imagenLista || !borrador.nombre.trim() || !borrador.descripcion.trim() || !borrador.organizador.trim() || !borrador.direccion.trim()">{{ subiendoImagen ? 'Subiendo imagen…' : enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cancelar</button></div>
+        <div class="acciones completo"><button class="boton" type="submit" :disabled="guardadoFeriaDeshabilitado">{{ subiendoImagen ? 'Subiendo imagen…' : enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cancelar</button></div>
       </form>
     </section>
 
@@ -351,14 +469,97 @@ onMounted(() => { void cargar() })
     </ul>
     <p v-else-if="!cargando" class="vacio">{{ ferias.length ? 'No hay ferias que coincidan con el filtro.' : 'Todavía no hay ferias registradas. Crea un borrador para comenzar.' }}</p>
 
-    <section v-if="selectedId" class="participantes">
-      <div class="formulario-cabecera"><div><p class="sobre">Lista y control</p><h3>Participantes</h3></div><button class="secundario" type="button" :disabled="cargandoDetalle || enviando" @click="cargarParticipantes(selectedId)">Actualizar</button></div>
+    <section v-if="selectedId" ref="participantesRef" class="participantes apartado-desplegable">
+      <div class="formulario-cabecera"><div><p class="sobre">Lista y control</p><h3>Participantes</h3></div><div class="acciones"><button class="secundario" type="button" :disabled="cargandoDetalle || enviando || !!pendiente" @click="cargarParticipantes(selectedId)">Actualizar</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarParticipantes">Cerrar</button></div></div>
       <p v-if="cargandoDetalle" role="status">Consultando participantes…</p>
       <template v-if="detalle">
         <div class="asignar">
-          <label>Persona emprendedora o asociación<select v-model="candidata" :disabled="!habilitado || enviando || !!pendiente || !detalle.disponibles.length"><option value="">{{ detalle.disponibles.length ? 'Seleccionar participante' : 'No hay candidatos disponibles' }}</option><option v-for="(opcion, index) in detalle.disponibles" :key="`${opcion.tipo}:${opcion.entidadId}:${index}`" :value="`${opcion.tipo}:${opcion.entidadId}`">{{ opcion.tipo === 'emprendedora' ? `${opcion.nombreTienda || 'Tienda'} · ${opcion.nombre}` : `${opcion.nombre} · Asociación` }}</option></select></label>
-          <label>Acción<select v-model="tipoGestion" :disabled="enviando || !!pendiente"><option value="invitarParticipanteFeria">Enviar invitación (queda pendiente)</option><option value="agregarParticipanteFeria">Agregar directamente</option></select></label>
-          <button class="boton" type="button" :disabled="!habilitado || !seleccionDisponible || enviando || !!pendiente" @click="agregarCandidata">{{ tipoGestion === 'invitarParticipanteFeria' ? 'Registrar invitación' : 'Agregar a la feria' }}</button>
+          <div class="tipo-participante">
+            <p class="etiqueta-candidata">Tipo de participante</p>
+            <div class="selector-tipo" role="group" aria-label="Tipo de participante">
+              <button
+                class="tipo-candidata"
+                :class="{ activa: tipoCandidata === 'emprendedora' }"
+                type="button"
+                :aria-pressed="tipoCandidata === 'emprendedora'"
+                :disabled="enviando || !!pendiente"
+                @click="seleccionarTipoCandidata('emprendedora')"
+              >
+                Emprendedoras <span>{{ totalEmprendedorasDisponibles }}</span>
+              </button>
+              <button
+                class="tipo-candidata"
+                :class="{ activa: tipoCandidata === 'asociacion' }"
+                type="button"
+                :aria-pressed="tipoCandidata === 'asociacion'"
+                :disabled="enviando || !!pendiente"
+                @click="seleccionarTipoCandidata('asociacion')"
+              >
+                Asociaciones <span>{{ totalAsociacionesDisponibles }}</span>
+              </button>
+            </div>
+          </div>
+
+          <section class="disponibles" :aria-labelledby="'titulo-disponibles-' + selectedId">
+            <div class="disponibles-cabecera">
+              <div>
+                <h4 :id="'titulo-disponibles-' + selectedId">{{ tipoCandidata === 'emprendedora' ? 'Emprendedoras' : 'Asociaciones' }} disponibles</h4>
+                <p>Selecciona una persona o entidad para continuar.</p>
+              </div>
+              <span class="cantidad-disponible">{{ disponiblesPorTipo.length }} disponibles</span>
+            </div>
+            <label class="busqueda-candidata">
+              <span>Buscar por tienda o nombre</span>
+              <input
+                v-model="busquedaCandidata"
+                type="search"
+                :placeholder="tipoCandidata === 'emprendedora' ? 'Buscar emprendedora…' : 'Buscar asociación…'"
+                :disabled="cargandoDetalle || enviando || !!pendiente"
+              />
+            </label>
+            <div
+              v-if="candidatasFiltradas.length"
+              class="opciones-disponibles"
+              role="radiogroup"
+              :aria-label="tipoCandidata === 'emprendedora' ? 'Emprendedoras disponibles' : 'Asociaciones disponibles'"
+            >
+              <label
+                v-for="(opcion, index) in candidatasFiltradas"
+                :key="opcion.tipo + ':' + opcion.entidadId + ':' + index"
+                class="opcion-disponible"
+                :class="{ seleccionada: candidata === opcion.tipo + ':' + opcion.entidadId }"
+              >
+                <input
+                  v-model="candidata"
+                  type="radio"
+                  :name="'participante-feria-' + selectedId"
+                  :value="opcion.tipo + ':' + opcion.entidadId"
+                  :disabled="!habilitado || enviando || !!pendiente"
+                />
+                <span class="radio-visual" aria-hidden="true"></span>
+                <span class="opcion-texto">
+                  <strong>{{ tipoCandidata === 'emprendedora' ? (opcion.nombreTienda || 'Tienda') : opcion.nombre }}</strong>
+                  <small>{{ tipoCandidata === 'emprendedora' ? opcion.nombre : 'Asociación' }}</small>
+                </span>
+              </label>
+            </div>
+            <p v-else-if="disponiblesPorTipo.length" class="sin-disponibles" role="status">
+              No encontramos opciones que coincidan con “{{ busquedaCandidata }}”.
+            </p>
+            <p v-else class="sin-disponibles" role="status">
+              {{ tipoCandidata === 'emprendedora' ? 'No hay emprendedoras disponibles para esta feria.' : 'No hay asociaciones disponibles para esta feria.' }}
+            </p>
+          </section>
+
+          <div class="accion-participante">
+            <label>Acción
+              <select v-model="tipoGestion" :disabled="enviando || !!pendiente">
+                <option value="invitarParticipanteFeria">Enviar invitación (queda pendiente)</option>
+                <option value="agregarParticipanteFeria">Agregar directamente</option>
+              </select>
+            </label>
+            <button class="boton" type="button" :disabled="!habilitado || !seleccionDisponible || enviando || !!pendiente" @click="agregarCandidata">{{ tipoGestion === 'invitarParticipanteFeria' ? 'Registrar invitación' : 'Agregar a la feria' }}</button>
+          </div>
         </div>
         <div v-if="detalle.participantes.length" class="filtros participantes-filtros">
           <label>Buscar<input v-model="busquedaParticipante" type="search" placeholder="Nombre o tienda" /></label>
@@ -367,24 +568,124 @@ onMounted(() => { void cargar() })
         </div>
         <ul v-if="participantesVisibles.length" class="lista participantes-lista">
           <li v-for="persona in participantesVisibles" :key="persona.id" class="participante">
-            <div class="persona"><strong>{{ persona.nombreTienda || persona.nombre }}</strong><small>{{ persona.tipo === 'asociacion' ? 'Asociación' : persona.nombre }} · {{ persona.estado.replace('_', ' ') }}</small></div>
-            <span class="estado asistencia">{{ persona.asistencia === 'pendiente' ? 'Asistencia pendiente' : persona.asistencia === 'asistio' ? 'Asistió' : 'No asistió' }}</span>
+            <div class="persona"><strong>{{ persona.nombreTienda || persona.nombre }}</strong><small>{{ persona.tipo === 'asociacion' ? 'Asociación' : persona.nombre }}</small></div>
+            <div class="estados-participante">
+              <span class="estado estado-participante">{{ etiquetaEstadoParticipante(persona) }}</span>
+              <span v-if="persona.asistencia" class="estado asistencia">{{ etiquetaAsistencia(persona.asistencia) }}</span>
+            </div>
             <div class="acciones" v-if="['confirmada', 'agregada_admin'].includes(persona.estado)"><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'asistio')">Asistió</button><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'no_asistio')">No asistió</button></div>
-            <button v-if="persona.estado !== 'retirada'" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Retirar</button>
+            <button v-if="persona.estado === 'invitada'" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Cancelar invitación</button>
+            <button v-else-if="['confirmada', 'agregada_admin'].includes(persona.estado)" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Retirar</button>
           </li>
         </ul>
         <p v-else class="vacio">{{ detalle.participantes.length ? 'No hay participantes que coincidan con el filtro.' : 'No hay participantes asociados a esta feria.' }}</p>
       </template>
     </section>
-    <div v-if="retiro" class="confirmacion" role="group" aria-label="Confirmar retiro">
-      <p>¿Retirar a <strong>{{ retiro.nombreTienda || retiro.nombre }}</strong>? Se conservará el historial.</p>
-      <button class="peligro" type="button" :disabled="enviando || !!pendiente" @click="confirmarRetiro">Confirmar retiro</button>
+    <div v-if="retiro" class="confirmacion" role="group" :aria-label="retiro.estado === 'invitada' ? 'Confirmar cancelación de invitación' : 'Confirmar retiro'">
+      <p v-if="retiro.estado === 'invitada'">¿Cancelar la invitación pendiente para <strong>{{ retiro.nombreTienda || retiro.nombre }}</strong>? Se quitará de esta feria y podrás invitarle de nuevo más adelante.</p>
+      <p v-else>¿Retirar a <strong>{{ retiro.nombreTienda || retiro.nombre }}</strong>? Se conservará el historial.</p>
+      <button class="peligro" type="button" :disabled="enviando || !!pendiente" @click="confirmarRetiro">{{ retiro.estado === 'invitada' ? 'Confirmar cancelación' : 'Confirmar retiro' }}</button>
       <button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="retiro = null">Volver</button>
     </div>
+
+    <Transition name="confirmacion-modal">
+      <div
+        v-if="confirmacionEstado"
+        class="confirmacion-fondo"
+        @click.self="cerrarConfirmacionEstado"
+        @keydown.esc.stop.prevent="cerrarConfirmacionEstado"
+      >
+        <section
+          ref="dialogoConfirmacionRef"
+          class="confirmacion-dialogo"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirmacion-feria-titulo"
+          aria-describedby="confirmacion-feria-descripcion"
+          tabindex="-1"
+          @keydown="mantenerFocoConfirmacion"
+        >
+          <div class="confirmacion-icono" :class="{ cancelacion: confirmacionEstado.estado === 'cancelada' }" aria-hidden="true">
+            <svg v-if="confirmacionEstado.estado === 'publicada'" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12.5 9.2 17 19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none">
+              <path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            </svg>
+          </div>
+          <p class="confirmacion-sobre">{{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : 'Cancelar feria' }}</p>
+          <h3 id="confirmacion-feria-titulo">{{ confirmacionEstado.estado === 'publicada' ? '¿Publicar esta feria?' : '¿Cancelar esta feria?' }}</h3>
+          <p id="confirmacion-feria-descripcion" class="confirmacion-descripcion">
+            <strong>“{{ confirmacionEstado.item.nombre }}”</strong>
+            <template v-if="confirmacionEstado.estado === 'publicada'"> quedará publicada y podrá aparecer en el catálogo público.</template>
+            <template v-else> dejará de estar activa. Esta acción no se puede revertir desde este módulo.</template>
+          </p>
+          <div class="confirmacion-acciones">
+            <button ref="volverConfirmacionRef" class="secundario" type="button" @click="cerrarConfirmacionEstado">Volver</button>
+            <button
+              ref="ejecutarConfirmacionRef"
+              :class="confirmacionEstado.estado === 'publicada' ? 'boton' : 'peligro'"
+              type="button"
+              @click="confirmarCambioEstado"
+            >
+              {{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : 'Confirmar cancelación' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
   </section>
 </template>
 
 <style scoped>
-.ferias-admin{--vino:#75264f;--vino-oscuro:#5a1c3c;--crema:#fff8ef;--borde:#ead9cc;--texto:#3a1228;color:var(--texto);display:grid;gap:18px}.nota,.formulario,.feria,.participantes,.confirmacion{background:#fff;border:1px solid var(--borde);border-radius:20px;padding:18px}.nota{display:flex;gap:12px;background:var(--crema);color:#6d5663;line-height:1.55}.nota p{margin:0}.barra,.formulario-cabecera{display:flex;align-items:center;justify-content:space-between;gap:12px}.barra h2,.formulario h3,.participantes h3,.feria h3{font:400 1.55rem 'DM Serif Display',serif;color:var(--vino);margin:4px 0}.barra p,.feria p,.formulario p{margin:4px 0;color:#775f6c}.acciones{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.boton,.secundario,.peligro{border:0;border-radius:999px;padding:10px 15px;font:inherit;font-weight:700;cursor:pointer}.boton{background:var(--vino);color:#fff}.secundario{background:#f4e7ed;color:var(--vino)}.peligro{background:#fff0e8;color:#9c3a28}button:disabled{opacity:.55;cursor:not-allowed}.formulario{display:grid;gap:16px}.sobre{font-size:.74rem!important;text-transform:uppercase;letter-spacing:.12em;color:var(--vino)!important;font-weight:700}.campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.campos label,.asignar label,.filtros label{display:grid;gap:7px;font-weight:600}.filtros{display:grid;grid-template-columns:2fr 1fr;gap:12px}.participantes-filtros{grid-template-columns:2fr 1fr 1fr}input,textarea,select{width:100%;border:1px solid var(--borde);border-radius:12px;padding:11px;font:inherit;color:var(--texto);background:#fff}.completo{grid-column:1/-1}.lista{list-style:none;margin:0;padding:0;display:grid;gap:12px}.feria{display:grid;gap:12px}.feria-cabecera{display:flex;justify-content:space-between;gap:15px}.feria-cabecera>div{min-width:0}.feria-cabecera img{width:128px;height:100px;object-fit:cover;border-radius:14px}.feria small,.participante small{color:#775f6c}.estado{display:inline-block;border-radius:999px;padding:5px 10px;font-size:.78rem;font-weight:700}.estado.borrador{background:#f9edda;color:#755319}.estado.publicada{background:#e8f4df;color:#365b2f}.estado.cancelada{background:#f8e1e1;color:#8e2b38}.asistencia{background:#f4e7ed;color:var(--vino)}.participantes{display:grid;gap:15px}.asignar{display:grid;grid-template-columns:2fr 1.5fr auto;gap:12px;align-items:end}.participantes-lista{border-top:1px solid var(--borde);padding-top:14px}.participante{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--borde);border-radius:15px;flex-wrap:wrap}.persona{display:grid;gap:4px;flex:1;min-width:150px}.confirmacion{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.confirmacion p{flex:1}.vacio{padding:24px;text-align:center;color:#775f6c;border:1px dashed var(--borde);border-radius:16px}.error{color:#a32335}.exito{color:#27603b}.pendiente{display:grid}.barra>div:first-child{flex:1}@media(max-width:760px){.barra,.formulario-cabecera{align-items:flex-start;flex-direction:column}.campos,.asignar,.filtros,.participantes-filtros{grid-template-columns:1fr}.completo{grid-column:auto}.feria-cabecera img{width:88px;height:78px}.participante{align-items:flex-start}.feria-cabecera{align-items:flex-start}}
+.ferias-admin{--vino:#75264f;--vino-oscuro:#5a1c3c;--crema:#fff8ef;--borde:#ead9cc;--texto:#3a1228;color:var(--texto);display:grid;gap:18px}.nota,.formulario,.feria,.participantes,.confirmacion{background:#fff;border:1px solid var(--borde);border-radius:20px;padding:18px}.nota{display:flex;gap:12px;background:var(--crema);color:#6d5663;line-height:1.55}.nota p{margin:0}.barra,.formulario-cabecera{display:flex;align-items:center;justify-content:space-between;gap:12px}.barra h2,.formulario h3,.participantes h3,.feria h3{font:400 1.55rem 'DM Serif Display',serif;color:var(--vino);margin:4px 0}.barra p,.feria p,.formulario p{margin:4px 0;color:#775f6c}.acciones{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.boton,.secundario,.peligro{border:0;border-radius:999px;padding:10px 15px;font:inherit;font-weight:700;cursor:pointer;transition:background-color .16s,border-color .16s,box-shadow .16s,transform .16s}.boton{background:var(--vino);color:#fff}.secundario{background:#f4e7ed;color:var(--vino)}.peligro{background:#fff0e8;color:#9c3a28}.boton:not(:disabled):hover,.secundario:not(:disabled):hover,.peligro:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(90,28,60,.18)}.boton:not(:disabled):hover{background:var(--vino-oscuro)}.secundario:not(:disabled):hover{background:#ead4df}.peligro:not(:disabled):hover{background:#ffdfd0}button:disabled{opacity:.55;cursor:not-allowed}.boton:focus-visible,.secundario:focus-visible,.peligro:focus-visible{outline:3px solid #d8a46c;outline-offset:3px}.formulario{display:grid;gap:16px}.apartado-desplegable{scroll-margin-top:1rem}.sobre{font-size:.74rem!important;text-transform:uppercase;letter-spacing:.12em;color:var(--vino)!important;font-weight:700}.campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.campos label,.asignar label,.filtros label{display:grid;gap:7px;font-weight:600}.filtros{display:grid;grid-template-columns:2fr 1fr;gap:12px}.participantes-filtros{grid-template-columns:2fr 1fr 1fr}input,textarea,select{width:100%;border:1px solid var(--borde);border-radius:12px;padding:11px;font:inherit;color:var(--texto);background:#fff}.completo{grid-column:1/-1}.lista{list-style:none;margin:0;padding:0;display:grid;gap:12px}.feria{display:grid;gap:12px;transition:border-color .16s,box-shadow .16s,transform .16s}.feria:hover{border-color:var(--vino);box-shadow:0 14px 30px rgba(117,38,79,.12);transform:translateY(-2px)}.feria-cabecera{display:flex;justify-content:space-between;gap:15px}.feria-cabecera>div{min-width:0}.feria-cabecera img{width:128px;height:100px;object-fit:cover;border-radius:14px}.feria small,.participante small{color:#775f6c}.estado{display:inline-block;border-radius:999px;padding:5px 10px;font-size:.78rem;font-weight:700}.estado.borrador{background:#f9edda;color:#755319}.estado.publicada{background:#e8f4df;color:#365b2f}.estado.cancelada{background:#f8e1e1;color:#8e2b38}.asistencia{background:#f4e7ed;color:var(--vino)}.participantes{display:grid;gap:15px}.asignar{display:grid;grid-template-columns:2fr 1.5fr auto;gap:12px;align-items:end}.participantes-lista{border-top:1px solid var(--borde);padding-top:14px}.participante{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--borde);border-radius:15px;flex-wrap:wrap;transition:border-color .16s,box-shadow .16s,transform .16s}.participante:hover{border-color:var(--durazno);box-shadow:0 8px 20px rgba(117,38,79,.1);transform:translateY(-1px)}.persona{display:grid;gap:4px;flex:1;min-width:150px}.confirmacion{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.confirmacion p{flex:1}.vacio{padding:24px;text-align:center;color:#775f6c;border:1px dashed var(--borde);border-radius:16px}.error{color:#a32335}.exito{color:#27603b}.pendiente{display:grid}.barra>div:first-child{flex:1}@media(max-width:760px){.barra,.formulario-cabecera{align-items:flex-start;flex-direction:column}.campos,.asignar,.filtros,.participantes-filtros{grid-template-columns:1fr}.completo{grid-column:auto}.feria-cabecera img{width:88px;height:78px}.participante{align-items:flex-start}.feria-cabecera{align-items:flex-start}}
 .horario{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.horario label{display:grid;gap:7px;font-weight:600}.imagen-campo{display:grid;gap:8px}.imagen-campo .etiqueta{font-weight:600;color:var(--texto);margin:0}.imagen-campo small{color:#775f6c}.imagen-campo input[type=file]{padding:9px;background:var(--crema)}.imagen-campo img{max-width:260px;max-height:180px;border-radius:14px;object-fit:cover;border:1px solid var(--borde)}@media(max-width:680px){.horario{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.boton,.secundario,.peligro,.feria,.participante{transition:none}.boton:not(:disabled):hover,.secundario:not(:disabled):hover,.peligro:not(:disabled):hover,.feria:hover,.participante:hover{transform:none}}
+.confirmacion-fondo{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:rgba(42,18,33,.46);backdrop-filter:blur(4px)}.confirmacion-dialogo{width:min(100%,480px);padding:28px;border:1px solid var(--borde);border-radius:24px;background:#fffdf9;box-shadow:0 24px 70px rgba(42,18,33,.26);color:var(--texto)}.confirmacion-icono{display:grid;place-items:center;width:48px;height:48px;margin-bottom:18px;border:1px solid #ead9cc;border-radius:16px;background:var(--crema);color:var(--vino)}.confirmacion-icono.cancelacion{border-color:#f1d6ca;background:#fff0e8;color:#9c3a28}.confirmacion-icono svg{width:25px;height:25px}.confirmacion-sobre{margin:0 0 5px!important;color:var(--vino)!important;font-size:.75rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.confirmacion-dialogo h3{margin:0;color:var(--vino);font:400 1.8rem 'DM Serif Display',serif}.confirmacion-descripcion{margin:12px 0 24px!important;color:#775f6c;line-height:1.6}.confirmacion-descripcion strong{color:var(--texto)}.confirmacion-acciones{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.confirmacion-acciones button{min-height:44px}.confirmacion-modal-enter-active,.confirmacion-modal-leave-active{transition:opacity .18s ease}.confirmacion-modal-enter-active .confirmacion-dialogo,.confirmacion-modal-leave-active .confirmacion-dialogo{transition:transform .18s ease,opacity .18s ease}.confirmacion-modal-enter-from,.confirmacion-modal-leave-to{opacity:0}.confirmacion-modal-enter-from .confirmacion-dialogo,.confirmacion-modal-leave-to .confirmacion-dialogo{transform:translateY(8px) scale(.985);opacity:0}@media(max-width:520px){.confirmacion-dialogo{padding:22px;border-radius:20px}.confirmacion-acciones{flex-direction:column-reverse}.confirmacion-acciones button{width:100%}}@media(prefers-reduced-motion:reduce){.confirmacion-modal-enter-active,.confirmacion-modal-leave-active,.confirmacion-modal-enter-active .confirmacion-dialogo,.confirmacion-modal-leave-active .confirmacion-dialogo{transition:none}}
+.asignar{grid-template-columns:minmax(0,1fr);align-items:stretch;gap:16px}
+.etiqueta-candidata{margin:0 0 8px;color:var(--texto);font-weight:700}
+.selector-tipo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:6px;border:1px solid var(--borde);border-radius:16px;background:var(--crema)}
+.tipo-candidata{display:flex;justify-content:center;align-items:center;gap:9px;min-height:46px;padding:9px 14px;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--vino);font:inherit;font-weight:700;cursor:pointer;transition:background-color .16s,border-color .16s,box-shadow .16s,transform .16s}
+.tipo-candidata span{display:grid;place-items:center;min-width:25px;height:25px;padding:0 7px;border-radius:999px;background:#f4e7ed;font-size:.82rem}
+.tipo-candidata:hover:not(:disabled){transform:translateY(-1px);background:#f4e7ed}
+.tipo-candidata.activa{border-color:#e6cad8;background:#fff;color:var(--vino-oscuro);box-shadow:0 3px 10px rgba(90,28,60,.09)}
+.tipo-candidata:focus-visible{outline:3px solid #d8a46c;outline-offset:2px}
+.disponibles{display:grid;gap:12px;padding:16px;border:1px solid var(--borde);border-radius:18px;background:#fffdf9}
+.disponibles-cabecera{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.disponibles-cabecera h4{margin:0;color:var(--vino);font:400 1.2rem 'DM Serif Display',serif}
+.disponibles-cabecera p{margin:4px 0 0;color:#775f6c}
+.cantidad-disponible{flex:none;padding:6px 10px;border-radius:999px;background:#f4e7ed;color:var(--vino);font-size:.84rem;font-weight:700}
+.opciones-disponibles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px}
+.opcion-disponible{position:relative;display:grid!important;grid-template-columns:20px minmax(0,1fr);align-items:center;gap:11px!important;min-height:70px;padding:12px;border:1px solid var(--borde);border-radius:14px;background:#fff;cursor:pointer;transition:border-color .16s,box-shadow .16s,transform .16s}
+.opcion-disponible:hover{transform:translateY(-2px);border-color:#c995ad;box-shadow:0 8px 18px rgba(90,28,60,.1)}
+.opcion-disponible.seleccionada{border-color:var(--vino);background:#fff9fc;box-shadow:0 0 0 2px rgba(117,38,79,.1)}
+.opcion-disponible input[type=radio]{position:absolute;width:1px;height:1px;padding:0;border:0;opacity:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap}
+.radio-visual{display:grid;place-items:center;width:19px;height:19px;border:2px solid #b69aa8;border-radius:50%;background:#fff}
+.opcion-disponible.seleccionada .radio-visual{border-color:var(--vino)}
+.opcion-disponible.seleccionada .radio-visual::after{width:9px;height:9px;border-radius:50%;background:var(--vino);content:''}
+.opcion-disponible input:focus-visible+.radio-visual{outline:3px solid #d8a46c;outline-offset:3px}
+.opcion-texto{display:grid;gap:3px;min-width:0}
+.opcion-texto strong,.opcion-texto small{overflow-wrap:anywhere}
+.opcion-texto strong{color:var(--texto)}
+.opcion-texto small{color:#775f6c;font-weight:400}
+.sin-disponibles{margin:0;padding:14px;border:1px dashed var(--borde);border-radius:14px;background:var(--crema);color:#775f6c}
+.accion-participante{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}
+.accion-participante .boton{min-height:46px}
+.estados-participante{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.estado-participante{background:#f4e7ed;color:var(--vino)}
+@media(max-width:760px){.asignar{grid-template-columns:1fr}.accion-participante{grid-template-columns:1fr}.accion-participante .boton{width:100%}.disponibles-cabecera{align-items:flex-start}}
+@media(max-width:520px){.selector-tipo{grid-template-columns:1fr}.disponibles{padding:12px}.disponibles-cabecera{flex-direction:column}.cantidad-disponible{align-self:flex-start}}
+@media(prefers-reduced-motion:reduce){.tipo-candidata,.opcion-disponible{transition:none}.tipo-candidata:hover:not(:disabled),.opcion-disponible:hover{transform:none}}
+.busqueda-candidata{display:grid;gap:6px;color:#775f6c;font-size:.88rem;font-weight:600}
+.busqueda-candidata input{min-height:42px;font-size:1rem}
+.opciones-disponibles{grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:8px;max-height:256px;overflow-y:auto;overscroll-behavior:contain;padding:2px 5px 2px 2px;scrollbar-width:thin}
+.opcion-disponible{grid-template-columns:18px minmax(0,1fr);gap:9px!important;min-height:52px;padding:8px 10px;border-radius:12px}
+.opcion-disponible:hover{transform:translateY(-1px);box-shadow:0 5px 12px rgba(90,28,60,.08)}
+.radio-visual{width:17px;height:17px}
+.opcion-disponible.seleccionada .radio-visual::after{width:7px;height:7px}
+.opcion-texto strong{font-size:.9rem}
+.opcion-texto small{font-size:.8rem}
+@media(max-width:560px){.opciones-disponibles{grid-template-columns:1fr;max-height:288px}}
+@media(max-width:520px){.selector-tipo{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px}.tipo-candidata{gap:4px;padding:7px 3px;font-size:.78rem}}
+@media(prefers-reduced-motion:reduce){.opcion-disponible:hover{transform:none}}
 </style>

@@ -6,19 +6,19 @@ La colección `ferias/{feriaId}` contiene `nombre`, `descripcion`, `organizador`
 
 Estados de feria: `borrador`, `publicada`, `cancelada`. Crear produce un borrador. Publicar requiere que el inicio aún no ocurra. Las ferias canceladas quedan como historial terminal; no se borran. Una feria publicada se puede editar antes de su inicio.
 
-`ferias/{feriaId}/participantes/{tipo}_{entidadId}` contiene `tipo` (`emprendedora` o `asociacion`), `entidadId`, `nombre`, `estado`, `asistencia`, `creadoPor`, `creadoEn` y `actualizadoEn`. Para emprendedoras puede incluir `nombreTienda`. Estados de participación: `invitada`, `confirmada`, `rechazada`, `agregada_admin` y `retirada`. Asistencia: `pendiente`, `asistio`, `no_asistio`.
+`ferias/{feriaId}/participantes/{tipo}_{entidadId}` contiene `tipo` (`emprendedora` o `asociacion`), `entidadId`, `nombre`, `estado`, `creadoPor`, `creadoEn` y `actualizadoEn`. Para emprendedoras puede incluir `nombreTienda`. `asistencia` solo se usa para participantes confirmados o agregados directamente. Estados de participación: `invitada`, `confirmada`, `rechazada`, `agregada_admin` y `retirada`.
 
 La API construye los nombres desde los registros vigentes; el cliente no puede proporcionar el UID del actor ni sustituir el nombre de una persona. Solo se invitan cuentas emprendedoras activas con perfil y tienda coherentes o asociaciones activas. No se guardan correos personales en la participación.
 
 ## Operaciones
 
 - `listarFeriasAdmin`, `crearFeria`, `editarFeria`, `cambiarEstadoFeria`.
-- `leerParticipantesFeria`, `invitarParticipanteFeria`, `agregarParticipanteFeria`, `retirarParticipanteFeria`, `registrarAsistenciaFeria`.
+- `leerParticipantesFeria`, `invitarParticipanteFeria`, `cancelarInvitacionFeria`, `agregarParticipanteFeria`, `retirarParticipanteFeria`, `registrarAsistenciaFeria`.
 - `responderInvitacionFeria` queda disponible para clientes emprendedora autenticados; solo la persona destinataria puede confirmar o rechazar su invitación.
 
 La imagen de la feria se carga con `POST /api/v1/ferias/imagen`. Requiere una sesión administradora activa, un `X-Archivo-Id` UUID para reintentos idempotentes y un cuerpo binario JPEG, PNG o WebP de hasta 5 MiB. La API guarda el original privado, publica una versión WebP en el almacenamiento y responde `{ datos: { ruta } }` con la URL HTTPS pública que luego se envía como `imagenUrl` en `crearFeria` o `editarFeria`.
 
-Las modificaciones de administración requieren rol activo, versión vigente y `operacionId` estable para reintentos. Se guardan recibos y auditoría en las colecciones administrativas compartidas. Retirar es lógico. La asistencia se registra desde la hora de inicio, únicamente para participantes confirmados o agregados por administración en ferias publicadas.
+Las modificaciones de administración requieren rol activo, versión vigente y `operacionId` estable para reintentos. Se guardan recibos y auditoría en las colecciones administrativas compartidas. `cancelarInvitacionFeria` solo acepta una invitación pendiente, elimina el documento de participación para que la entidad vuelva a estar disponible y conserva el evento en auditoría. `retirarParticipanteFeria` solo acepta participantes confirmados o agregados directamente y conserva su registro con estado `retirada`. La asistencia se registra desde la hora de inicio, únicamente para participantes confirmados o agregados por administración en ferias publicadas. Las invitaciones pendientes no tienen estado de asistencia; una aceptación crea la asistencia como `pendiente`.
 
 ## Lectura, límites y pendientes
 

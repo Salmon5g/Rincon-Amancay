@@ -2,7 +2,7 @@
 
 La web Nuxt se genera como archivos estáticos y se publica con Firebase Hosting. El catálogo consulta Firestore desde el navegador al abrir la página, así que las tiendas publicadas no quedan congeladas dentro de la generación.
 
-**Último estado publicado verificado (14 de octubre de 2026):** [https://rincon-amancay.web.app](https://rincon-amancay.web.app) estaba en modo `real-lectura`. La raíz redirige a `/comprador`, `/admin` permite iniciar sesión y consultar Firestore, y todavía no hay tiendas públicas cargadas. Los cambios locales de administración de catálogos no modifican esa publicación.
+**Último estado publicado verificado (20 de noviembre de 2026):** [https://rincon-amancay.web.app](https://rincon-amancay.web.app) está en modo `real-lectura`, con la configuración Firebase Web actualizada tras la rotación de la clave. `/comprador/ferias` responde HTTP 200 y el bundle publicado ya no contiene el ID anterior de la app web ni la URL local de la API. Se desplegó solo Hosting; no se leyeron documentos de Firestore ni se cambiaron reglas, datos, API o Storage. La página sigue cargando sus datos públicos desde Firestore en el navegador, sujetos a las reglas desplegadas.
 
 ## Antes de generar
 

@@ -67,6 +67,11 @@ create policy amancay_api_guarda_originales
         and (storage.foldername(name))[3] = 'logo'
         and array_length(storage.foldername(name), 1) = 3
         and storage.filename(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'
+      ) or (
+        (storage.foldername(name))[1] = 'ferias'
+        and (storage.foldername(name))[2] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        and array_length(storage.foldername(name), 1) = 2
+        and storage.filename(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'
       )
     )
   );
@@ -97,6 +102,11 @@ create policy amancay_api_lee_originales
         and (storage.foldername(name))[2] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
         and (storage.foldername(name))[3] = 'logo'
         and array_length(storage.foldername(name), 1) = 3
+        and storage.filename(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'
+      ) or (
+        (storage.foldername(name))[1] = 'ferias'
+        and (storage.foldername(name))[2] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        and array_length(storage.foldername(name), 1) = 2
         and storage.filename(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'
       )
     )
@@ -129,6 +139,11 @@ create policy amancay_api_borra_originales
         and (storage.foldername(name))[3] = 'logo'
         and array_length(storage.foldername(name), 1) = 3
         and storage.filename(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'
+      ) or (
+        (storage.foldername(name))[1] = 'ferias'
+        and (storage.foldername(name))[2] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        and array_length(storage.foldername(name), 1) = 2
+        and storage.filename(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'
       )
     )
   );
@@ -144,6 +159,7 @@ create policy amancay_api_publica_derivadas
       ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] ~ '^[A-Za-z0-9_-]{1,128}$' and (storage.foldername(name))[3] = 'productos' and (storage.foldername(name))[4] ~ '^[A-Za-z0-9_-]{1,128}$' and array_length(storage.foldername(name), 1) = 4)
       or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] ~ '^[A-Za-z0-9_-]{1,128}$' and (storage.foldername(name))[3] = 'tienda' and array_length(storage.foldername(name), 1) = 3)
       or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] = 'asociaciones' and (storage.foldername(name))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' and (storage.foldername(name))[4] = 'logo' and array_length(storage.foldername(name), 1) = 4)
+      or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] = 'ferias' and (storage.foldername(name))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' and array_length(storage.foldername(name), 1) = 3)
     )
     and storage.filename(name) ~ '^[0-9a-f]{64}_(1600|320)\.webp$'
   );
@@ -159,6 +175,7 @@ create policy amancay_api_lee_derivadas
       ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] ~ '^[A-Za-z0-9_-]{1,128}$' and (storage.foldername(name))[3] = 'productos' and (storage.foldername(name))[4] ~ '^[A-Za-z0-9_-]{1,128}$' and array_length(storage.foldername(name), 1) = 4)
       or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] ~ '^[A-Za-z0-9_-]{1,128}$' and (storage.foldername(name))[3] = 'tienda' and array_length(storage.foldername(name), 1) = 3)
       or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] = 'asociaciones' and (storage.foldername(name))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' and (storage.foldername(name))[4] = 'logo' and array_length(storage.foldername(name), 1) = 4)
+      or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] = 'ferias' and (storage.foldername(name))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' and array_length(storage.foldername(name), 1) = 3)
     )
     and storage.filename(name) ~ '^[0-9a-f]{64}_(1600|320)\.webp$'
   );
@@ -174,6 +191,7 @@ create policy amancay_api_retira_derivadas
       ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] ~ '^[A-Za-z0-9_-]{1,128}$' and (storage.foldername(name))[3] = 'productos' and (storage.foldername(name))[4] ~ '^[A-Za-z0-9_-]{1,128}$' and array_length(storage.foldername(name), 1) = 4)
       or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] ~ '^[A-Za-z0-9_-]{1,128}$' and (storage.foldername(name))[3] = 'tienda' and array_length(storage.foldername(name), 1) = 3)
       or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] = 'asociaciones' and (storage.foldername(name))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' and (storage.foldername(name))[4] = 'logo' and array_length(storage.foldername(name), 1) = 4)
+      or ((storage.foldername(name))[1] = 'catalogo' and (storage.foldername(name))[2] = 'ferias' and (storage.foldername(name))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' and array_length(storage.foldername(name), 1) = 3)
     )
     and storage.filename(name) ~ '^[0-9a-f]{64}_(1600|320)\.webp$'
   );
