@@ -21,6 +21,10 @@ service cloud.firestore {
       let store = get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data;
       return store.estadoPublicacion == 'publicado' && store.habilitada == true;
     }
+    function publicAssociation(asociacionId) {
+      let association = get(/databases/$(database)/documents/asociacionesPublicas/$(asociacionId)).data;
+      return association.activo == true;
+    }
     function publicProduct(tiendaId, productoId) {
       let product = get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)/productos/$(productoId)).data;
       return publicStore(tiendaId) && product.estadoPublicacion == 'publicado';
@@ -42,6 +46,32 @@ service cloud.firestore {
         && request.resource.data.nombreMostrar.size() > 0
         && request.resource.data.nombreMostrar.size() <= 100
         && request.resource.data.actualizadoEn == request.time;
+      match /tiendasSeguidas/{tiendaId} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['tiendaId'])
+          && request.resource.data.tiendaId == tiendaId
+          && publicStore(tiendaId);
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['tiendaId'])
+          && request.resource.data.tiendaId == tiendaId
+          && request.resource.data == resource.data
+          && publicStore(tiendaId);
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+      match /asociacionesSeguidas/{asociacionId} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['asociacionId'])
+          && request.resource.data.asociacionId == asociacionId
+          && publicAssociation(asociacionId);
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['asociacionId'])
+          && request.resource.data.asociacionId == asociacionId
+          && request.resource.data == resource.data
+          && publicAssociation(asociacionId);
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
     }
     match /accesos/{uid} {
       allow get: if (signedIn() && request.auth.uid == uid) || admin();

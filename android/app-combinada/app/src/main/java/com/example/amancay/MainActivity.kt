@@ -151,6 +151,15 @@ private fun ContenidoAmancay(
     alCambiarEscalaTexto: (Float) -> Unit,
     alCambiarEspacio: (Boolean) -> Unit
 ) {
+    var uidConEleccionDeModo by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(firebaseServices.auth) {
+        val escuchaSesion = com.google.firebase.auth.FirebaseAuth.AuthStateListener { auth ->
+            if (auth.currentUser == null) uidConEleccionDeModo = null
+        }
+        firebaseServices.auth.addAuthStateListener(escuchaSesion)
+        onDispose { firebaseServices.auth.removeAuthStateListener(escuchaSesion) }
+    }
+
     if (espacioEmprendedora) {
         ModoEmprendedoraConectada(
             firebaseServices,
@@ -164,6 +173,8 @@ private fun ContenidoAmancay(
             auth = firebaseServices.auth,
             firestore = firebaseServices.firestore,
             webClientId = BuildConfig.WEB_CLIENT_ID,
+            uidConEleccionDeModo = uidConEleccionDeModo,
+            alRegistrarEleccionDeModo = { uidConEleccionDeModo = it },
             alAbrirEspacioEmprendedora = { alCambiarEspacio(true) }
         )
     }

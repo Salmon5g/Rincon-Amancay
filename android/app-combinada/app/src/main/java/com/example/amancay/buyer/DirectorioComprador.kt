@@ -46,6 +46,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.amancay.data.TiendaCatalogoComprador
 import com.example.amancay.data.AsociacionCatalogoComprador
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 internal fun DirectorioComprador(
@@ -56,15 +57,19 @@ internal fun DirectorioComprador(
     cargando: Boolean,
     error: String?,
     asociacionesIniciales: Boolean = false,
+    asociacionInicialId: String? = null,
+    usuarioId: String?,
+    firestore: FirebaseFirestore,
     alCerrar: () -> Unit,
-    alAbrir: (String) -> Unit
+    alAbrir: (String) -> Unit,
+    alPedirInicioSesion: (String, String) -> Unit
 ) {
     var texto by remember { mutableStateOf("") }
     var tipo by remember { mutableStateOf("") }
     var sector by remember { mutableStateOf("") }
     var asociacionFiltro by remember { mutableStateOf("") }
     var pestana by remember(asociacionesIniciales) { mutableStateOf(asociacionesIniciales) }
-    var asociacionAbierta by remember { mutableStateOf<String?>(null) }
+    var asociacionAbierta by remember(asociacionInicialId) { mutableStateOf(asociacionInicialId) }
     val asociacionActual = asociaciones.firstOrNull { it.id == asociacionAbierta }
     val idsTiendasAsociadas = asociaciones.firstOrNull { it.id == asociacionFiltro }
         ?.integrantes?.map { it.tiendaId }?.toSet()
@@ -112,6 +117,15 @@ internal fun DirectorioComprador(
                 }
 
                 if (asociacionActual != null) {
+                    item {
+                        ControlSeguimientoAsociacion(
+                            asociacionId = asociacionActual.id,
+                            nombreAsociacion = asociacionActual.nombre,
+                            usuarioId = usuarioId,
+                            firestore = firestore,
+                            alPedirInicioSesion = { alPedirInicioSesion(asociacionActual.id, asociacionActual.nombre) }
+                        )
+                    }
                     item {
                         Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = AmancaySuperficie), border = BorderStroke(1.dp, AmancayBorde)) {
                             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +28,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +42,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import com.example.amancay.data.ApiFeriasComprador
+import com.example.amancay.data.ParticipanteFeriaPublico
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +89,7 @@ class RepositorioFeriasComprador(private val db: FirebaseFirestore) {
     val error: StateFlow<String?> = _error.asStateFlow()
 
     private var suscripcion: ListenerRegistration? = null
+    private val alcanceApi = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun iniciar() {
         if (suscripcion != null) return
@@ -109,11 +126,48 @@ class RepositorioFeriasComprador(private val db: FirebaseFirestore) {
                 _error.value = null
                 _cargando.value = false
             }
+        alcanceApi.launch {
+            delay(2_000)
+            while (isActive) {
+                try {
+                    val feriasApi = ApiFeriasComprador.leerFerias()
+                        .map { feria ->
+                            FeriaComprador(
+                                id = feria.id,
+                                nombre = feria.nombre,
+                                descripcion = feria.descripcion,
+                                organizador = feria.organizador,
+                                direccion = feria.direccion,
+                                fechaInicio = feria.fechaInicio,
+                                fechaFin = feria.fechaFin,
+                                latitud = feria.latitud,
+                                longitud = feria.longitud
+                            )
+                        }
+                        .sortedWith(Comparator { primera, segunda ->
+                            compararFechas(primera.fechaInicio, segunda.fechaInicio)
+                        })
+                    if (feriasApi.isNotEmpty() || _ferias.value.isEmpty()) {
+                        _ferias.value = feriasApi
+                        _error.value = null
+                        _cargando.value = false
+                    }
+                    break
+                } catch (error: Exception) {
+                    if (_ferias.value.isEmpty()) {
+                        _error.value = error.message ?: "No se pudieron cargar las ferias."
+                        _cargando.value = false
+                    }
+                    delay(5_000)
+                }
+            }
+        }
     }
 
     fun cerrar() {
         suscripcion?.remove()
         suscripcion = null
+        alcanceApi.cancel()
     }
 
     private fun compararFechas(primera: Date?, segunda: Date?): Int = when {
@@ -250,11 +304,35 @@ private fun TarjetaFeria(feria: FeriaComprador, alAbrir: () -> Unit) {
 @Composable
 fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
     val contexto = androidx.compose.ui.platform.LocalContext.current
+    var intentoCarga by remember(feria.id) { mutableIntStateOf(0) }
+    var participantes by remember(feria.id) { mutableStateOf<List<ParticipanteFeriaPublico>?>(null) }
+    var cargandoParticipantes by remember(feria.id) { mutableStateOf(true) }
+    var errorParticipantes by remember(feria.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(feria.id, intentoCarga) {
+        cargandoParticipantes = true
+        errorParticipantes = null
+        try {
+            participantes = ApiFeriasComprador.leerParticipantes(feria.id)
+        } catch (error: Exception) {
+            participantes = null
+            errorParticipantes = error.message ?: "No se pudo cargar la muestra del catálogo."
+        } finally {
+            cargandoParticipantes = false
+        }
+    }
+
     AlertDialog(
         onDismissRequest = alCerrar,
         title = { Text(feria.nombre, fontWeight = FontWeight.Bold, color = AmancayTinta) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 val fecha = formatoFeria(feria.fechaInicio)
                 if (fecha.isNotBlank()) Text("Inicio: $fecha", color = AmancayTinta)
                 val termino = formatoFeria(feria.fechaFin)
@@ -262,6 +340,74 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
                 if (feria.direccion.isNotBlank()) Text(feria.direccion, color = AmancayTinta)
                 if (feria.organizador.isNotBlank()) Text("Organiza: ${feria.organizador}", color = AmancayTintaSuave)
                 if (feria.descripcion.isNotBlank()) Text(feria.descripcion, color = AmancayTinta)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Participantes confirmadas y catálogo",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AmancayTinta
+                )
+                when {
+                    cargandoParticipantes -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = AmancayBordo,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Cargando participantes…", color = AmancayTintaSuave)
+                    }
+                    errorParticipantes != null -> Column {
+                        Text(errorParticipantes.orEmpty(), color = AmancayTintaSuave)
+                        TextButton(onClick = { intentoCarga++ }) {
+                            Text("Reintentar", color = AmancayBordo)
+                        }
+                    }
+                    participantes.isNullOrEmpty() -> Text(
+                        "Esta feria todavía no tiene participantes confirmadas.",
+                        color = AmancayTintaSuave
+                    )
+                    else -> participantes.orEmpty().forEach { participante ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = AmancaySuperficie)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    participante.nombre,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = AmancayTinta
+                                )
+                                Text(
+                                    if (participante.tipo == "asociacion") "Asociación confirmada" else "Emprendimiento confirmado",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AmancayTintaSuave
+                                )
+                                if (participante.catalogo.isEmpty()) {
+                                    Text("Todavía no hay catálogo público disponible.", color = AmancayTintaSuave)
+                                } else {
+                                    participante.catalogo.forEach { tienda ->
+                                        val nombres = tienda.productos.joinToString(" · ")
+                                        Text(
+                                            if (participante.tipo == "asociacion") {
+                                                if (nombres.isBlank()) tienda.nombreTienda else tienda.nombreTienda + ": " + nombres
+                                            } else {
+                                                if (nombres.isBlank()) "Sin productos públicos para mostrar." else nombres
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = AmancayTintaSuave
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 if (feriaConUbicacion(feria)) {
                     Box(
                         modifier = Modifier

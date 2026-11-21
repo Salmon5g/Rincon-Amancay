@@ -1,6 +1,13 @@
 package com.example.amancay.data
 
 import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -110,6 +117,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     private val nombresCategorias = mutableMapOf<String, String>()
     private val nombresTiposProducto = mutableMapOf<String, String>()
     private val suscripciones = mutableListOf<ListenerRegistration>()
+    private val alcanceApi = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
         suscripciones += db.document("configuracionAplicacion/navegacion")
@@ -119,6 +127,19 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                     _modo.value = snapshot.getString("modo") ?: "permitir"
                 }
             }
+        alcanceApi.launch {
+            delay(2_000)
+            while (_modo.value == null && isActive) {
+                try {
+                    val modo = ApiNavegacionComprador.leerModo()
+                    if (_modo.value == null) _modo.value = modo
+                } catch (error: Exception) {
+                    if (_modo.value == null) _error.value = error.message ?: "No se pudo consultar la configuración de acceso."
+                    delay(5_000)
+                }
+            }
+        }
+
         listOf("tiposEmprendimiento" to _tipos, "sectores" to _sectores).forEach { (coleccion, destino) ->
             suscripciones += db.collection(coleccion).whereEqualTo("activo", true)
                 .addSnapshotListener { snapshot, exception ->
@@ -369,6 +390,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         suscripcionesProductos.values.forEach(ListenerRegistration::remove)
         suscripcionesVariantes.values.forEach(ListenerRegistration::remove)
         suscripciones.clear()
+        alcanceApi.cancel()
         suscripcionesProductos.clear()
         coleccionProductosPorTienda.clear()
         suscripcionesVariantes.clear()

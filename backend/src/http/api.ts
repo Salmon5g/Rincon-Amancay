@@ -78,18 +78,63 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirImagenFeria?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>) {
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirImagenFeria?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>, leerMuestraFeriaPublica?: (feriaId: string) => Promise<unknown>, leerFeriasPublicas?: () => Promise<unknown>, leerPoliticaNavegacionPublica?: () => Promise<unknown>) {
   if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
   const config=validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
   const enviosConsulta = new Map<string, number[]>();
   const lecturasRespuesta = new Map<string, number[]>();
+  const lecturasFeriaPublica = new Map<string, number[]>();
   const server = createServer(async (req, res) => {
     try {
       const origin = req.headers.origin;
       if (origin && !origins.has(origin)) throw new ErrorHttp(403, 'origen-no-permitido', 'Origen no permitido.');
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'GET' && req.url === '/health') return json(res, 200, { estado: 'ok', entorno: config.entorno, proyecto: config.proyecto });
+      if (req.url === '/api/v1/configuracionPublica/navegacion' && leerPoliticaNavegacionPublica) {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Accept', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
+        if (req.method !== 'GET') { res.setHeader('Allow', 'GET, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar GET.'); }
+        const ahora = Date.now();
+        const ip = req.socket.remoteAddress ?? 'desconocida';
+        const recientes = (lecturasFeriaPublica.get(ip) ?? []).filter(t => ahora - t < 60_000);
+        if (recientes.length >= 30) throw new ErrorHttp(429, 'limite-consultas', 'Espera un momento antes de volver a consultar el acceso.');
+        recientes.push(ahora);
+        lecturasFeriaPublica.set(ip, recientes);
+        return json(res, 200, { datos: await leerPoliticaNavegacionPublica() });
+      }
+      if (req.url === '/api/v1/feriasPublicas' && leerFeriasPublicas) {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Accept', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
+        if (req.method !== 'GET') { res.setHeader('Allow', 'GET, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar GET.'); }
+        const ahora = Date.now();
+        const ip = req.socket.remoteAddress ?? 'desconocida';
+        const recientes = (lecturasFeriaPublica.get(ip) ?? []).filter(t => ahora - t < 60_000);
+        if (recientes.length >= 30) throw new ErrorHttp(429, 'limite-consultas', 'Espera un momento antes de volver a cargar las ferias.');
+        recientes.push(ahora);
+        lecturasFeriaPublica.set(ip, recientes);
+        return json(res, 200, { datos: await leerFeriasPublicas() });
+      }
+      const rutaMuestraFeria = req.url?.match(/^\/api\/v1\/feriasPublicas\/([a-zA-Z0-9_-]{1,128})$/);
+      if (rutaMuestraFeria && leerMuestraFeriaPublica) {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Accept', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
+        if (req.method !== 'GET') { res.setHeader('Allow', 'GET, OPTIONS'); throw new ErrorHttp(405, 'metodo-no-admitido', 'Usar GET.'); }
+        const ahora = Date.now();
+        const ip = req.socket.remoteAddress ?? 'desconocida';
+        const recientes = (lecturasFeriaPublica.get(ip) ?? []).filter(t => ahora - t < 60_000);
+        if (recientes.length >= 30) throw new ErrorHttp(429, 'limite-consultas', 'Espera un momento antes de volver a cargar los participantes.');
+        recientes.push(ahora);
+        lecturasFeriaPublica.set(ip, recientes);
+        if (lecturasFeriaPublica.size > 1000) for (const [clave, tiempos] of lecturasFeriaPublica) if (!tiempos.some(t => ahora - t < 60_000)) lecturasFeriaPublica.delete(clave);
+        return json(res, 200, { datos: await leerMuestraFeriaPublica(rutaMuestraFeria[1]) });
+      }
       const rutaRespuesta = req.url?.match(/^\/api\/v1\/consultasPublicas\/([a-zA-Z0-9_-]{1,128})\/([0-9a-fA-F-]{36})$/);
       if (req.method === 'GET' && rutaRespuesta && leerRespuestaConsulta) {
         const ahora = Date.now();

@@ -20,6 +20,14 @@ La [configuración de acceso y administración de cuentas](15-configuracion-y-ad
 
 La [administración de ferias](16-administracion-ferias.md) cubre fichas, publicación/cancelación, participantes, respuestas a invitaciones y asistencia; no implementa envío de notificaciones, carga de fotos ni página pública de ferias.
 
+El [seguimiento de tiendas del comprador](19-seguimiento-tiendas-comprador.md) documenta el guardado privado de A09 en la app y los permisos de Firestore.
+
+El [seguimiento de asociaciones del comprador](20-seguimiento-asociaciones-comprador.md) documenta A10, su persistencia y los permisos de Firestore.
+
+El [seguimiento de tiendas y asociaciones](21-dejar-de-seguir-comprador.md) documenta A11 y la eliminación del seguimiento propio desde la app.
+
+El [seguimiento después de iniciar sesión](22-seguimiento-pendiente-google.md) documenta A12: conservar el destino, autenticarse con Google y completar la acción al volver.
+
 El [ciclo de cuentas](10-ciclo-cuentas.md) define registro, invitaciones, recuperación de contraseña y reactivación. Las pantallas administrativas usan invitaciones; el alta directa del contrato 06 queda como apoyo técnico local. Las reservas interrumpidas tienen [procedimiento técnico](../docs/recuperacion-cuentas.md), fuera de las pantallas.
 
 Aquí se incorporarán progresivamente los acuerdos revisados por el grupo: rutas de documentos, campos obligatorios/opcionales, tipos, estados, permisos y operaciones (entrada, salida y errores).

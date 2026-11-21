@@ -37,10 +37,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +62,8 @@ import com.example.amancay.data.CatalogoCompradorRepository
 import com.example.amancay.data.ProductoCatalogoComprador
 import com.example.amancay.data.ResultadoAccesoGoogle
 import com.example.amancay.data.SesionComprador
+import com.example.amancay.data.SeguimientoAsociacionesComprador
+import com.example.amancay.data.SeguimientoTiendasComprador
 import com.example.amancay.data.sesionDesdeUsuario
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -83,6 +87,8 @@ fun ModoCompradorScreen(
     auth: FirebaseAuth,
     firestore: FirebaseFirestore,
     webClientId: String,
+    uidConEleccionDeModo: String?,
+    alRegistrarEleccionDeModo: (String) -> Unit,
     alAbrirEspacioEmprendedora: () -> Unit
 ) {
     val productos by repositorio.productos.collectAsState()
@@ -95,6 +101,7 @@ fun ModoCompradorScreen(
     val modoNavegacion by repositorio.modoNavegacion.collectAsState()
     var mostrarDirectorio by remember { mutableStateOf(false) }
     var asociacionesPrimero by remember { mutableStateOf(false) }
+    var asociacionInicialId by remember { mutableStateOf<String?>(null) }
     var tiendaSeleccionada by remember { mutableStateOf<String?>(null) }
     var omitioInvitacion by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -105,7 +112,14 @@ fun ModoCompradorScreen(
     var mensajeAcceso by remember { mutableStateOf<String?>(null) }
     var errorRol by remember { mutableStateOf(false) }
     var intentoRol by remember { mutableStateOf(0) }
+    var uidEmprendedoraParaElegir by remember { mutableStateOf<String?>(null) }
     var pestana by remember { mutableStateOf(PestanaComprador.INICIO) }
+    var seguimientoPendienteTipo by rememberSaveable { mutableStateOf<String?>(null) }
+    var seguimientoPendienteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var seguimientoPendienteNombre by rememberSaveable { mutableStateOf<String?>(null) }
+    var pestanaAntesDeSeguimiento by rememberSaveable { mutableStateOf(PestanaComprador.INICIO.name) }
+    var reintentoSeguimientoPendiente by rememberSaveable { mutableIntStateOf(0) }
+    var errorSeguimientoPendiente by remember { mutableStateOf<String?>(null) }
     var busqueda by remember { mutableStateOf("") }
     var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
     var productoSeleccionado by remember { mutableStateOf<ProductoCatalogoComprador?>(null) }
@@ -164,15 +178,56 @@ fun ModoCompradorScreen(
     }
 
     val uid = uidSesion
-    LaunchedEffect(auth, firestore, uid, ingresando, intentoRol) {
+    LaunchedEffect(uid, seguimientoPendienteTipo, seguimientoPendienteId, reintentoSeguimientoPendiente) {
+        val usuarioId = uid ?: return@LaunchedEffect
+        val tipo = seguimientoPendienteTipo ?: return@LaunchedEffect
+        val id = seguimientoPendienteId ?: return@LaunchedEffect
+        val nombre = seguimientoPendienteNombre.orEmpty()
+
+        errorSeguimientoPendiente = null
+        try {
+            when (tipo) {
+                "tienda" -> SeguimientoTiendasComprador(firestore).seguir(usuarioId, id)
+                "asociacion" -> SeguimientoAsociacionesComprador(firestore).seguir(usuarioId, id)
+                else -> error("El tipo de seguimiento pendiente no es válido.")
+            }
+
+            mensajeAcceso = "Ahora sigues a $nombre."
+            pestana = runCatching { PestanaComprador.valueOf(pestanaAntesDeSeguimiento) }
+                .getOrDefault(PestanaComprador.INICIO)
+            if (tipo == "tienda") {
+                tiendaSeleccionada = id
+                mostrarDirectorio = false
+            } else {
+                asociacionesPrimero = true
+                asociacionInicialId = id
+                mostrarDirectorio = true
+            }
+            seguimientoPendienteTipo = null
+            seguimientoPendienteId = null
+            seguimientoPendienteNombre = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            errorSeguimientoPendiente =
+                "Iniciaste sesión, pero no se pudo completar el seguimiento de $nombre. Comprueba la conexión y las reglas de Firestore; puedes reintentar."
+        }
+    }
+
+    LaunchedEffect(auth, firestore, uid, ingresando, intentoRol, seguimientoPendienteTipo, uidConEleccionDeModo) {
         errorRol = false
-        if (uid == null || ingresando) return@LaunchedEffect
+        if (uid == null || ingresando || seguimientoPendienteTipo != null || uid == uidConEleccionDeModo) {
+            if (uid == null) uidEmprendedoraParaElegir = null
+            return@LaunchedEffect
+        }
         try {
             val acceso = firestore.collection("accesos").document(uid).get().await()
             if (auth.currentUser?.uid == uid && acceso.getString("estado") == "activo" &&
                 "emprendedora" in (acceso.get("roles") as? List<*>).orEmpty()
             ) {
-                alAbrirEspacioEmprendedora()
+                uidEmprendedoraParaElegir = uid
+            } else if (uidEmprendedoraParaElegir == uid) {
+                uidEmprendedoraParaElegir = null
             }
         } catch (e: CancellationException) {
             throw e
@@ -209,6 +264,30 @@ fun ModoCompradorScreen(
     fun abrirAcceso() {
         mensajeAcceso = null
         pestana = PestanaComprador.CUENTA
+    }
+
+    fun pedirInicioSesionParaSeguir(tipo: String, id: String, nombre: String) {
+        pestanaAntesDeSeguimiento = pestana.name
+        seguimientoPendienteTipo = tipo
+        seguimientoPendienteId = id
+        seguimientoPendienteNombre = nombre
+        errorSeguimientoPendiente = null
+        mensajeAcceso = "Inicia sesión con Google y volverás siguiendo a $nombre."
+        tiendaSeleccionada = null
+        mostrarDirectorio = false
+        asociacionInicialId = null
+        pestana = PestanaComprador.CUENTA
+    }
+
+    fun responderEleccionEspacioEmprendedora(abrirEspacio: Boolean) {
+        val uidElegido = uidEmprendedoraParaElegir ?: return
+        if (auth.currentUser?.uid != uidElegido) {
+            uidEmprendedoraParaElegir = null
+            return
+        }
+        alRegistrarEleccionDeModo(uidElegido)
+        uidEmprendedoraParaElegir = null
+        if (abrirEspacio) alAbrirEspacioEmprendedora()
     }
 
     fun abrirEnlace(uri: Uri) {
@@ -334,7 +413,9 @@ fun ModoCompradorScreen(
                 ) { Text("Ingresar con Google") }
             },
             dismissButton = {
-                TextButton(onClick = { if (invitaGoogle) omitioInvitacion = true else abrirAcceso() }) {
+                if (modoNavegacion != null) TextButton(
+                    onClick = { if (invitaGoogle) omitioInvitacion = true else abrirAcceso() }
+                ) {
                     Text(if (invitaGoogle) "Omitir" else "Usar correo")
                 }
             }
@@ -408,8 +489,8 @@ fun ModoCompradorScreen(
                 alAbrirProducto = { productoSeleccionado = it },
                 proximaFeria = proximaFeria(listaFerias),
                 alVerTodo = { pestana = PestanaComprador.EXPLORAR },
-                alVerDirectorio = { asociacionesPrimero = false; mostrarDirectorio = true },
-                alVerAsociaciones = { asociacionesPrimero = true; mostrarDirectorio = true },
+                alVerDirectorio = { asociacionesPrimero = false; asociacionInicialId = null; mostrarDirectorio = true },
+                alVerAsociaciones = { asociacionesPrimero = true; asociacionInicialId = null; mostrarDirectorio = true },
                 alVerFerias = { pestana = PestanaComprador.FERIAS },
                 modifier = Modifier
                     .fillMaxSize()
@@ -521,10 +602,61 @@ fun ModoCompradorScreen(
         )
     }
 
+    if (uidEmprendedoraParaElegir != null && uidEmprendedoraParaElegir == uid) {
+        AlertDialog(
+            onDismissRequest = { responderEleccionEspacioEmprendedora(abrirEspacio = false) },
+            title = { Text("¿Quieres ir a tu espacio?") },
+            text = {
+                Text("Esta cuenta también tiene un emprendimiento. Puedes administrarlo ahora o seguir explorando como compradora.")
+            },
+            confirmButton = {
+                TextButton(onClick = { responderEleccionEspacioEmprendedora(abrirEspacio = true) }) {
+                    Text("Ir a mi espacio")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { responderEleccionEspacioEmprendedora(abrirEspacio = false) }) {
+                    Text("Seguir como compradora")
+                }
+            }
+        )
+    }
+
+    errorSeguimientoPendiente?.let { mensaje ->
+        AlertDialog(
+            onDismissRequest = { errorSeguimientoPendiente = null },
+            title = { Text("No se completó el seguimiento") },
+            text = { Text(mensaje) },
+            confirmButton = {
+                TextButton(onClick = {
+                    errorSeguimientoPendiente = null
+                    reintentoSeguimientoPendiente += 1
+                }) { Text("Reintentar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { errorSeguimientoPendiente = null }) { Text("Ahora no") }
+            }
+        )
+    }
+
     if (mostrarDirectorio) {
-        DirectorioComprador(directorio, asociaciones, tiposEmprendimiento, sectores, cargando, error, asociacionesPrimero,
-            alCerrar = { mostrarDirectorio = false },
-            alAbrir = { tiendaSeleccionada = it; mostrarDirectorio = false })
+        DirectorioComprador(
+            tiendas = directorio,
+            asociaciones = asociaciones,
+            tipos = tiposEmprendimiento,
+            sectores = sectores,
+            cargando = cargando,
+            error = error,
+            asociacionesIniciales = asociacionesPrimero,
+            asociacionInicialId = asociacionInicialId,
+            usuarioId = uid,
+            firestore = firestore,
+            alCerrar = { mostrarDirectorio = false; asociacionInicialId = null },
+            alAbrir = { tiendaSeleccionada = it; mostrarDirectorio = false; asociacionInicialId = null },
+            alPedirInicioSesion = { asociacionId, nombre ->
+                pedirInicioSesionParaSeguir("asociacion", asociacionId, nombre)
+            }
+        )
     }
     directorio.firstOrNull { it.id == tiendaSeleccionada }?.let { tienda ->
         if (productoSeleccionado == null) AlertDialog(
@@ -533,6 +665,16 @@ fun ModoCompradorScreen(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     val catalogo = productos.filter { it.tiendaId == tienda.id }
+                    ControlSeguimientoTienda(
+                        tiendaId = tienda.id,
+                        nombreTienda = tienda.nombre,
+                        usuarioId = uid,
+                        firestore = firestore,
+                        alPedirInicioSesion = {
+                            pedirInicioSesionParaSeguir("tienda", tienda.id, tienda.nombre)
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
                     if (tienda.formaContacto != "ninguno") {
                         Text("Contacto configurado: ${tienda.formaContacto}", color = AmancayTintaSuave)
                         if ((tienda.formaContacto == "whatsapp" || tienda.formaContacto == "ambos") && tienda.contacto?.tipo == "whatsapp") {
