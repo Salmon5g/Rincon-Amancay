@@ -173,6 +173,10 @@ export interface ParticipanteFeria {
   tipoEmprendimiento?: { id: string; nombre: string } | null
   asociaciones?: { id: string; nombre: string }[]
   versionEsperada: string
+  recordatorio?:{
+    estado: 'reservado' | 'aceptado'
+    enviadoEn: string | null
+  } | null
 }
 
 export interface DisponibleFeria {

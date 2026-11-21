@@ -29,6 +29,9 @@ const status: Record<string, number> = {
   'no-autenticado': 401, 'sin-permiso': 403, 'datos-invalidos': 400,
   'no-encontrado': 404, conflicto: 409, 'id-reutilizado': 409,
   'correo-ocupado': 409,
+  'sin-destinatario': 422,
+  'servicio-no-configurado': 503,
+  'envio-incierto': 503,
   'imagen-requerida': 422, 'imagen-no-autorizada': 422,
   'no-publicable': 422, 'tienda-no-publicada': 409, pendiente: 503, 'limite-local': 422,
 };
@@ -56,19 +59,19 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   const data = input as Record<string, unknown>;
   return data;
 }
-async function cuerpoImagen(req:IncomingMessage):Promise<Buffer> {
-  const contentType=req.headers['content-type']?.split(';')[0].trim();
-  if(!['image/jpeg','image/png','image/webp'].includes(contentType??''))throw new ErrorHttp(415,'tipo-no-admitido','Usar una imagen JPEG, PNG o WebP.');
-  if(req.headers['content-encoding'] && req.headers['content-encoding']!=='identity')throw new ErrorHttp(415,'tipo-no-admitido','No se admite contenido comprimido.');
-  const declared=Number(req.headers['content-length']??0);
-  if(declared>5*1024*1024)throw new ErrorHttp(413,'cuerpo-demasiado-grande','Máximo 5 MiB.');
-  const chunks:Buffer[]=[];let size=0;
-  for await(const chunk of req) {
-    size+=chunk.length;
-    if(size>5*1024*1024)throw new ErrorHttp(413,'cuerpo-demasiado-grande','Máximo 5 MiB.');
+async function cuerpoImagen(req: IncomingMessage): Promise<Buffer> {
+  const contentType = req.headers['content-type']?.split(';')[0].trim();
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType ?? '')) throw new ErrorHttp(415, 'tipo-no-admitido', 'Usar una imagen JPEG, PNG o WebP.');
+  if (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity') throw new ErrorHttp(415, 'tipo-no-admitido', 'No se admite contenido comprimido.');
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (declared > 5 * 1024 * 1024) throw new ErrorHttp(413, 'cuerpo-demasiado-grande', 'Máximo 5 MiB.');
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 5 * 1024 * 1024) throw new ErrorHttp(413, 'cuerpo-demasiado-grande', 'Máximo 5 MiB.');
     chunks.push(Buffer.from(chunk));
   }
-  if(size===0)throw new ErrorHttp(400,'datos-invalidos','La imagen está vacía.');
+  if (size === 0) throw new ErrorHttp(400, 'datos-invalidos', 'La imagen está vacía.');
   return Buffer.concat(chunks);
 }
 function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): Solicitud {
@@ -78,9 +81,9 @@ function solicitudPublicacion(data: Record<string, unknown>, accion: Accion): So
   return data as Solicitud;
 }
 
-export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: {subir(uid:string,tiendaId:string,productoId:string,archivoId:string,contentType:string,bytes:Buffer,reemplazarIndice?:number):Promise<string>;leer?:(uid:string,tiendaId:string,productoId:string,indice:number)=>Promise<{bytes:Buffer;contentType:string}>;subirTienda?:(uid:string,tiendaId:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirLogoAsociacion?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>;subirImagenFeria?:(uid:string,archivoId:string,contentType:string,bytes:Buffer)=>Promise<string>}, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>, leerMuestraFeriaPublica?: (feriaId: string) => Promise<unknown>, leerFeriasPublicas?: () => Promise<unknown>, leerPoliticaNavegacionPublica?: () => Promise<unknown>) {
-  if(ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
-  const config=validarConfigHttp(configHttp);
+export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacion>, alta?: ReturnType<typeof crearCuentas>, productos?: ReturnType<typeof crearProductos>, stock?: ReturnType<typeof crearStock>, desactivar?: ReturnType<typeof crearDesactivacion>, ciclo?: ReturnType<typeof crearCicloCuentas>, sesion?: (uid: string, authTime: number) => Promise<boolean>, configHttp: ConfigHttp = httpLocal, catalogos?: ReturnType<typeof crearCatalogos>, asociaciones?: ReturnType<typeof crearAsociaciones>, administracion?: ReturnType<typeof crearAdministracionPlataforma>, ferias?: ReturnType<typeof crearFerias>, editarTiendaEmprendedora?: ReturnType<typeof crearEdicionTiendaEmprendedora>, imagenes?: { subir(uid: string, tiendaId: string, productoId: string, archivoId: string, contentType: string, bytes: Buffer, reemplazarIndice?: number): Promise<string>; leer?: (uid: string, tiendaId: string, productoId: string, indice: number) => Promise<{ bytes: Buffer; contentType: string }>; subirTienda?: (uid: string, tiendaId: string, archivoId: string, contentType: string, bytes: Buffer) => Promise<string>; subirLogoAsociacion?: (uid: string, archivoId: string, contentType: string, bytes: Buffer) => Promise<string>; subirImagenFeria?: (uid: string, archivoId: string, contentType: string, bytes: Buffer) => Promise<string> }, ventas?: ReturnType<typeof crearVentas>, guardarConsulta?: (solicitud: SolicitudConsultaPublica) => Promise<unknown>, leerRespuestaConsulta?: (tiendaId: string, operacionId: string) => Promise<unknown>, responderConsulta?: (uid: string, solicitud: { tiendaId: string; consultaId: string; respuesta: string }) => Promise<unknown>, leerMuestraFeriaPublica?: (feriaId: string) => Promise<unknown>, leerFeriasPublicas?: () => Promise<unknown>, leerPoliticaNavegacionPublica?: () => Promise<unknown>) {
+  if (ciclo && !sesion) throw new Error('El ciclo de cuentas requiere validar el corte de sesión.');
+  const config = validarConfigHttp(configHttp);
   const origins = new Set(config.origenes);
   const enviosConsulta = new Map<string, number[]>();
   const lecturasRespuesta = new Map<string, number[]>();
@@ -162,12 +165,12 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
         const input = await body(req);
         const permitidos = ['tiendaId', 'operacionId', 'nombre', 'correo', 'mensaje', 'producto'];
         if (Object.keys(input).some(k => !permitidos.includes(k)) ||
-            !/^[a-zA-Z0-9_-]{1,128}$/.test(String(input.tiendaId ?? '')) ||
-            !/^[0-9a-fA-F-]{36}$/.test(String(input.operacionId ?? '')) ||
-            typeof input.nombre !== 'string' || input.nombre.trim().length < 2 || input.nombre.length > 100 ||
-            typeof input.correo !== 'string' || input.correo.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.correo) ||
-            typeof input.mensaje !== 'string' || input.mensaje.trim().length < 5 || input.mensaje.length > 2000 ||
-            (input.producto !== undefined && (typeof input.producto !== 'string' || input.producto.length > 160))) {
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(String(input.tiendaId ?? '')) ||
+          !/^[0-9a-fA-F-]{36}$/.test(String(input.operacionId ?? '')) ||
+          typeof input.nombre !== 'string' || input.nombre.trim().length < 2 || input.nombre.length > 100 ||
+          typeof input.correo !== 'string' || input.correo.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.correo) ||
+          typeof input.mensaje !== 'string' || input.mensaje.trim().length < 5 || input.mensaje.length > 2000 ||
+          (input.producto !== undefined && (typeof input.producto !== 'string' || input.producto.length > 160))) {
           throw new ErrorHttp(400, 'datos-invalidos', 'Revisa los datos del formulario.');
         }
         const datos: SolicitudConsultaPublica = { tiendaId: input.tiendaId as string, operacionId: input.operacionId as string, nombre: input.nombre.trim(), correo: input.correo.trim(), mensaje: input.mensaje.trim(), ...(typeof input.producto === 'string' && input.producto.trim() ? { producto: input.producto.trim() } : {}) };
@@ -187,16 +190,16 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       const esEdicionTiendaEmprendedora = req.url === '/api/v1/editarTiendaEmprendedora' && editarTiendaEmprendedora !== undefined;
       const esRespuestaConsulta = req.url === '/api/v1/responderConsulta' && responderConsulta !== undefined;
       const accionVenta = ventas ? accionesVenta.find(a => req.url === `/api/v1/${a}`) as AccionVenta | undefined : undefined;
-      const subidaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes$/);
-      const lecturaImagen=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes\/([0-4])$/);
-      const subidaLogo=req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/logo$/);
-      const subidaLogoAsociacion=req.url==='/api/v1/asociaciones/logo';
-      const subidaImagenFeria=req.url==='/api/v1/ferias/imagen';
-      const esSubidaImagen=Boolean(subidaImagen && imagenes);
-      const esLecturaImagen=Boolean(lecturaImagen && imagenes?.leer);
-      const esSubidaLogo=Boolean(subidaLogo && imagenes?.subirTienda);
-      const esSubidaLogoAsociacion=Boolean(subidaLogoAsociacion && imagenes?.subirLogoAsociacion);
-      const esSubidaImagenFeria=Boolean(subidaImagenFeria && imagenes?.subirImagenFeria);
+      const subidaImagen = req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes$/);
+      const lecturaImagen = req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/productos\/([a-zA-Z0-9_-]{1,128})\/imagenes\/([0-4])$/);
+      const subidaLogo = req.url?.match(/^\/api\/v1\/tiendas\/([a-zA-Z0-9_-]{1,128})\/logo$/);
+      const subidaLogoAsociacion = req.url === '/api/v1/asociaciones/logo';
+      const subidaImagenFeria = req.url === '/api/v1/ferias/imagen';
+      const esSubidaImagen = Boolean(subidaImagen && imagenes);
+      const esLecturaImagen = Boolean(lecturaImagen && imagenes?.leer);
+      const esSubidaLogo = Boolean(subidaLogo && imagenes?.subirTienda);
+      const esSubidaLogoAsociacion = Boolean(subidaLogoAsociacion && imagenes?.subirLogoAsociacion);
+      const esSubidaImagenFeria = Boolean(subidaImagenFeria && imagenes?.subirImagenFeria);
       if (!accionCuenta && !esAlta && !esStock && !esDesactivacion && !accionProducto && !accionCatalogo && !accionAsociacion && !accionAdministracion && !accionFeria && !esEdicionTiendaEmprendedora && !esRespuestaConsulta && !accionVenta && !esSubidaImagen && !esLecturaImagen && !esSubidaLogo && !esSubidaLogoAsociacion && !esSubidaImagenFeria && (!action || !acciones.includes(action))) throw new ErrorHttp(404, 'ruta-no-encontrada', 'Ruta inexistente.');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Archivo-Id, X-Reemplazar-Indice', 'Cache-Control': 'no-store' });
@@ -209,57 +212,57 @@ export function crearApi(auth: Auth, ejecutar: ReturnType<typeof crearPublicacio
       let uid: string, authTime: number;
       try { const token = await auth.verifyIdToken(match[1], true); uid = token.uid; authTime = token.auth_time; }
       catch (error) {
-        const code = (error as {code?: string}).code;
+        const code = (error as { code?: string }).code;
         if (code && ['auth/id-token-expired', 'auth/id-token-revoked', 'auth/argument-error', 'auth/invalid-id-token', 'auth/user-disabled', 'auth/user-not-found'].includes(code)) {
           throw new ErrorHttp(401, 'no-autenticado', 'Sesión inválida, vencida o deshabilitada.');
         }
         throw new ErrorHttp(503, 'autenticacion-no-disponible', 'No se pudo comprobar la sesión.');
       }
-      if(sesion && !await sesion(uid,authTime)) throw new ErrorHttp(401,'no-autenticado','Iniciar una nueva sesión después de la reactivación.');
-      if(esLecturaImagen) {
-        const imagen=await imagenes!.leer!(uid,lecturaImagen![1],lecturaImagen![2],Number(lecturaImagen![3]));
-        res.writeHead(200,{
-          'Content-Type':imagen.contentType,
-          'Content-Length':imagen.bytes.length,
-          'Cache-Control':'private, no-store',
-          'X-Content-Type-Options':'nosniff',
+      if (sesion && !await sesion(uid, authTime)) throw new ErrorHttp(401, 'no-autenticado', 'Iniciar una nueva sesión después de la reactivación.');
+      if (esLecturaImagen) {
+        const imagen = await imagenes!.leer!(uid, lecturaImagen![1], lecturaImagen![2], Number(lecturaImagen![3]));
+        res.writeHead(200, {
+          'Content-Type': imagen.contentType,
+          'Content-Length': imagen.bytes.length,
+          'Cache-Control': 'private, no-store',
+          'X-Content-Type-Options': 'nosniff',
         });
         return res.end(imagen.bytes);
       }
-      if(esSubidaImagen || esSubidaLogo || esSubidaLogoAsociacion || esSubidaImagenFeria) {
-        const archivoId=req.headers['x-archivo-id'];
-        if(typeof archivoId!=='string' || archivoId.length>64)throw new ErrorHttp(400,'datos-invalidos','Enviar un X-Archivo-Id UUID para que el reintento sea idempotente.');
-        const indiceHeader=req.headers['x-reemplazar-indice'];
-        if(indiceHeader!==undefined && (typeof indiceHeader!=='string' || !/^[0-4]$/.test(indiceHeader)))throw new ErrorHttp(400,'datos-invalidos','X-Reemplazar-Indice debe ser una posición entre 0 y 4.');
-        const reemplazarIndice=typeof indiceHeader==='string'?Number(indiceHeader):undefined;
-        const bytes=await cuerpoImagen(req);
-        const contentType=req.headers['content-type']!.split(';')[0].trim();
-        const ruta=esSubidaImagen
-          ? await imagenes!.subir(uid,subidaImagen![1],subidaImagen![2],archivoId,contentType,bytes,reemplazarIndice)
+      if (esSubidaImagen || esSubidaLogo || esSubidaLogoAsociacion || esSubidaImagenFeria) {
+        const archivoId = req.headers['x-archivo-id'];
+        if (typeof archivoId !== 'string' || archivoId.length > 64) throw new ErrorHttp(400, 'datos-invalidos', 'Enviar un X-Archivo-Id UUID para que el reintento sea idempotente.');
+        const indiceHeader = req.headers['x-reemplazar-indice'];
+        if (indiceHeader !== undefined && (typeof indiceHeader !== 'string' || !/^[0-4]$/.test(indiceHeader))) throw new ErrorHttp(400, 'datos-invalidos', 'X-Reemplazar-Indice debe ser una posición entre 0 y 4.');
+        const reemplazarIndice = typeof indiceHeader === 'string' ? Number(indiceHeader) : undefined;
+        const bytes = await cuerpoImagen(req);
+        const contentType = req.headers['content-type']!.split(';')[0].trim();
+        const ruta = esSubidaImagen
+          ? await imagenes!.subir(uid, subidaImagen![1], subidaImagen![2], archivoId, contentType, bytes, reemplazarIndice)
           : esSubidaLogoAsociacion
-            ? await imagenes!.subirLogoAsociacion!(uid,archivoId,contentType,bytes)
+            ? await imagenes!.subirLogoAsociacion!(uid, archivoId, contentType, bytes)
             : esSubidaImagenFeria
-              ? await imagenes!.subirImagenFeria!(uid,archivoId,contentType,bytes)
-              : await imagenes!.subirTienda!(uid,subidaLogo![1],archivoId,contentType,bytes);
-        return json(res,200,{datos:{ruta}});
+              ? await imagenes!.subirImagenFeria!(uid, archivoId, contentType, bytes)
+              : await imagenes!.subirTienda!(uid, subidaLogo![1], archivoId, contentType, bytes);
+        return json(res, 200, { datos: { ruta } });
       }
       const input = await body(req);
       if (esRespuestaConsulta) {
         if (Object.keys(input).some(k => !['tiendaId', 'consultaId', 'respuesta'].includes(k)) ||
-            typeof input.tiendaId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.tiendaId) ||
-            typeof input.consultaId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(input.consultaId) ||
-            typeof input.respuesta !== 'string' || input.respuesta.trim().length < 1 || input.respuesta.length > 2000) {
+          typeof input.tiendaId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.tiendaId) ||
+          typeof input.consultaId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(input.consultaId) ||
+          typeof input.respuesta !== 'string' || input.respuesta.trim().length < 1 || input.respuesta.length > 2000) {
           throw new ErrorHttp(400, 'datos-invalidos', 'Revisa el texto de la respuesta.');
         }
         const result = await responderConsulta!(uid, { tiendaId: input.tiendaId, consultaId: input.consultaId, respuesta: input.respuesta });
         return json(res, 200, { datos: result });
       }
-      const result = accionCuenta ? await ciclo!(accionCuenta,{uid},input) : accionCatalogo ? await catalogos!(accionCatalogo,{uid},input) : accionAsociacion ? await asociaciones!(accionAsociacion,{uid},input) : accionAdministracion ? await administracion!(accionAdministracion,{uid},input) : accionFeria ? await ferias!(accionFeria,{uid},input) : esEdicionTiendaEmprendedora ? await editarTiendaEmprendedora!({uid},input) : esAlta ? await alta!({uid}, input)
-        : esDesactivacion ? await desactivar!({uid}, input)
-        : accionVenta ? await ventas!(accionVenta, {uid}, input)
-        : esStock ? await stock!({uid}, input)
-        : accionProducto ? await productos!(accionProducto, {uid}, input)
-        : await ejecutar(action!, { uid }, solicitudPublicacion(input, action!));
+      const result = accionCuenta ? await ciclo!(accionCuenta, { uid }, input) : accionCatalogo ? await catalogos!(accionCatalogo, { uid }, input) : accionAsociacion ? await asociaciones!(accionAsociacion, { uid }, input) : accionAdministracion ? await administracion!(accionAdministracion, { uid }, input) : accionFeria ? await ferias!(accionFeria, { uid }, input) : esEdicionTiendaEmprendedora ? await editarTiendaEmprendedora!({ uid }, input) : esAlta ? await alta!({ uid }, input)
+        : esDesactivacion ? await desactivar!({ uid }, input)
+          : accionVenta ? await ventas!(accionVenta, { uid }, input)
+            : esStock ? await stock!({ uid }, input)
+              : accionProducto ? await productos!(accionProducto, { uid }, input)
+                : await ejecutar(action!, { uid }, solicitudPublicacion(input, action!));
       json(res, 200, { datos: result });
     } catch (error) {
       if (res.destroyed) return;
