@@ -133,6 +133,7 @@ fun HomeScreen(
     onVerVentas: () -> Unit = onVerFerias,
     onVerMiTienda: () -> Unit = onVerCatalogo,
     invitacionesDisponibles: Boolean = true,
+    invitacionesCargando: Boolean = false,
     tiendaVisible: Boolean = false,
     nombreEmprendedora: String = "artesana",
     productosRecientes: List<Product> = emptyList(),
@@ -197,7 +198,16 @@ fun HomeScreen(
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Invitaciones a ferias", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wine)
-                        Text(if (!invitacionesDisponibles) "Consulta de invitaciones no disponible" else if (invitacionesPendientes > 0) "$invitacionesPendientes por responder" else "Sin invitaciones pendientes", fontSize = 13.sp, color = Muted)
+                        Text(
+                            when {
+                                invitacionesCargando -> "Consultando invitaciones…"
+                                !invitacionesDisponibles -> "No se pudieron consultar las invitaciones"
+                                invitacionesPendientes > 0 -> "$invitacionesPendientes por responder"
+                                else -> "Sin invitaciones pendientes"
+                            },
+                            fontSize = 13.sp,
+                            color = Muted
+                        )
                     }
                     Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Wine, modifier = Modifier.size(26.dp))
                 }
@@ -292,15 +302,35 @@ private fun CheckDot(done: Boolean) {
 fun FeriasScreen(
     invitaciones: List<FeriaInvitation>,
     onVerDetalle: (FeriaInvitation) -> Unit,
-    onVolver: () -> Unit
+    onVolver: () -> Unit,
+    cargando: Boolean = false,
+    error: String? = null,
+    onActualizar: () -> Unit = {}
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
         Text("FERIAS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-        Text("Invitaciones a ferias", fontSize = 30.sp, color = Dark)
-        Text("Acepta o rechaza cada invitación.", fontSize = 15.sp, color = Muted)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Invitaciones a ferias", fontSize = 30.sp, color = Dark)
+                Text("Acepta o rechaza cada invitación.", fontSize = 15.sp, color = Muted)
+            }
+            TextButton(onClick = onActualizar, enabled = !cargando) {
+                if (cargando) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Actualizar", color = Wine, fontWeight = FontWeight.Bold)
+            }
+        }
         Spacer(Modifier.height(14.dp))
-        if (invitaciones.none { it.estado == "pendiente" }) {
+        if (cargando && invitaciones.isEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Wine)
+                Text("Cargando invitaciones…", fontSize = 14.sp, color = Muted)
+            }
+            Spacer(Modifier.height(8.dp))
+        } else if (error != null) {
+            Text(error, fontSize = 14.sp, color = Color(0xFFB3261E))
+            Spacer(Modifier.height(8.dp))
+        } else if (invitaciones.none { it.estado == "pendiente" }) {
             Text("Sin invitaciones pendientes.", fontSize = 14.sp, color = Muted)
             Spacer(Modifier.height(8.dp))
         }
@@ -335,7 +365,8 @@ fun FeriaDetalleScreen(
     invitacion: FeriaInvitation?,
     onAceptar: (FeriaInvitation) -> Unit,
     onRechazar: (FeriaInvitation) -> Unit,
-    onVolver: () -> Unit
+    onVolver: () -> Unit,
+    enviando: Boolean = false
 ) {
     if (invitacion == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -395,10 +426,14 @@ fun FeriaDetalleScreen(
         }
         Spacer(Modifier.height(14.dp))
         if (invitacion.estado == "pendiente") {
+            if (enviando) {
+                Text("Guardando tu respuesta…", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Muted)
+                Spacer(Modifier.height(8.dp))
+            }
             var confirmar by remember { mutableStateOf<String?>(null) }
-            PrimaryButton("Participo", { confirmar = "si" })
+            PrimaryButton("Participo", { confirmar = "si" }, enabled = !enviando)
             Spacer(Modifier.height(10.dp))
-            OutlineButton("No participo", { confirmar = "no" })
+            OutlineButton("No participo", { confirmar = "no" }, enabled = !enviando)
             confirmar?.let { r ->
                 AlertDialog(
                     onDismissRequest = { confirmar = null },
@@ -419,7 +454,8 @@ fun FeriaDetalleScreen(
                                     {
                                         if (r == "si") onAceptar(invitacion) else onRechazar(invitacion)
                                         confirmar = null
-                                    }
+                                    },
+                                    enabled = !enviando
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 OutlineButton("Volver", { confirmar = null })
@@ -1057,6 +1093,9 @@ fun PreviewCatalogScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("📷", fontSize = 36.sp)
                         Text("No se pudo mostrar la imagen guardada", color = Muted, fontSize = 13.sp)
+                        if (com.example.amancay.BuildConfig.DEBUG) {
+                            privateImageError?.let { Text(it, color = Muted, fontSize = 12.sp) }
+                        }
                         if (privateImageError != null) TextButton(onClick = onRetryPrivateImage) { Text("Reintentar", color = Wine) }
                     }
                 } else {

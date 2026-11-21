@@ -4,7 +4,7 @@ import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { ErrorOperacion, version } from './publicacion.ts';
 
 export const accionesFeria = [
-  'listarFeriasAdmin', 'crearFeria', 'editarFeria', 'cambiarEstadoFeria',
+  'listarFeriasAdmin', 'listarInvitacionesFeria', 'crearFeria', 'editarFeria', 'cambiarEstadoFeria',
   'leerParticipantesFeria', 'invitarParticipanteFeria', 'agregarParticipanteFeria',
   'cancelarInvitacionFeria', 'retirarParticipanteFeria', 'registrarAsistenciaFeria', 'responderInvitacionFeria',
 ] as const;
@@ -64,7 +64,7 @@ function parsearDatosFeria(data: Record<string, unknown>): DatosFeria {
 }
 function parsear(accion: AccionFeria, input: unknown) {
   const data = objeto(input);
-  if (accion === 'listarFeriasAdmin') { exactos(data, []); return { accion } as const; }
+  if (accion === 'listarFeriasAdmin' || accion === 'listarInvitacionesFeria') { exactos(data, []); return { accion } as const; }
   if (accion === 'crearFeria') {
     exactos(data, ['operacionId', 'nombre', 'descripcion', 'imagenUrl', 'organizador', 'direccion', 'fechaInicio', 'fechaFin'], ['latitud', 'longitud']);
     exigir(operationId(data.operacionId), 'datos-invalidos', 'ID de operación inválido.');
@@ -127,6 +127,32 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
     exigir(accionesFeria.includes(accion) && id(identidad?.uid), 'no-autenticado', 'Identidad verificada requerida.');
     const request = parsear(accion, input);
     const actorRef = db.doc(`accesos/${identidad.uid}`);
+    if (request.accion === 'listarInvitacionesFeria') {
+      const access = await actorRef.get();
+      const accessData = access.data();
+      exigir(accessData?.estado === 'activo' && Array.isArray(accessData.roles) && accessData.roles.includes('emprendedora'), 'sin-permiso', 'Solo una cuenta emprendedora activa puede consultar sus invitaciones.');
+      const ferias = await db.collection('ferias').where('estado', '==', 'publicada').limit(101).get();
+      exigir(ferias.size <= 100, 'limite-local', 'Hay más de 100 ferias publicadas; se requiere paginación.');
+      if (!ferias.size) return { invitaciones: [] };
+      const participantes = await db.getAll(...ferias.docs.map(doc => doc.ref.collection('participantes').doc(`emprendedora_${identidad.uid}`)));
+      const invitaciones = participantes.flatMap((participante, indice) => {
+        if (!participante.exists) return [];
+        const data = participante.data()!;
+        if (data.tipo !== 'emprendedora' || data.entidadId !== identidad.uid || !['invitada', 'confirmada', 'rechazada'].includes(String(data.estado))) return [];
+        const feria = ferias.docs[indice];
+        const feriaData = feria.data();
+        return [{
+          id: feria.id,
+          nombre: String(feriaData.nombre ?? ''),
+          donde: String(feriaData.direccion ?? ''),
+          fechaInicio: fechaIso(feriaData, 'fechaInicio'),
+          fechaFin: fechaIso(feriaData, 'fechaFin'),
+          organiza: String(feriaData.organizador ?? ''),
+          estado: String(data.estado),
+        }];
+      }).sort((a, b) => (a.fechaInicio ?? '').localeCompare(b.fechaInicio ?? ''));
+      return { invitaciones };
+    }
     if (request.accion === 'listarFeriasAdmin') {
       await comprobarAdmin(db, identidad.uid);
       const snapshot = await db.collection('ferias').limit(101).get();

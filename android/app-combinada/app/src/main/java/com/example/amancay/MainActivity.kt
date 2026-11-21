@@ -49,6 +49,8 @@ import com.example.amancay.data.CuentaEmprendedora
 import com.example.amancay.data.OpcionCatalogoEmprendedora
 import com.example.amancay.data.ProductoEmprendedora
 import com.example.amancay.data.ProductosEmprendedoraRepository
+import com.example.amancay.data.FeriaInvitation
+import com.example.amancay.data.FeriasEmprendedoraRepository
 import com.example.amancay.data.VentaRegistrada
 import com.example.amancay.data.FeriaParaVenta
 import com.example.amancay.data.PreferenciasCatalogoEmprendedora
@@ -615,6 +617,7 @@ internal fun EmprendedoraAppConectada(
     sectores: List<OpcionCatalogoEmprendedora>,
     tipos: List<OpcionCatalogoEmprendedora>,
     productosRepository: ProductosEmprendedoraRepository,
+    feriasRepository: FeriasEmprendedoraRepository,
     huellaHabilitada: Boolean,
     aviso: String?,
     error: String?,
@@ -640,12 +643,30 @@ internal fun EmprendedoraAppConectada(
     }
     val tiposProducto by productosRepository.tipos.collectAsState()
     val categoriasProducto by productosRepository.categorias.collectAsState()
-    // Las invitaciones de feria siguen siendo un flujo legado de demostración.
-    val local = remember(sesion.uid) { crearRepositorioDemostracion() }
-    val invitaciones by local.invitaciones.collectAsState()
+    var invitaciones by remember(sesion.uid) { mutableStateOf<List<FeriaInvitation>>(emptyList()) }
+    var cargandoInvitaciones by remember(sesion.uid) { mutableStateOf(false) }
+    var errorInvitaciones by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    var ultimaCargaInvitaciones by remember(sesion.uid) { mutableLongStateOf(0L) }
+    var respondiendoInvitacion by remember(sesion.uid) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+    suspend fun cargarInvitacionesFeria(forzar: Boolean = false) {
+        val ahora = System.currentTimeMillis()
+        if (cargandoInvitaciones) return
+        if (!forzar && errorInvitaciones == null && ahora - ultimaCargaInvitaciones < 30_000) return
+        cargandoInvitaciones = true
+        errorInvitaciones = null
+        try {
+            invitaciones = feriasRepository.listarInvitaciones()
+            ultimaCargaInvitaciones = System.currentTimeMillis()
+        } catch (e: Exception) {
+            errorInvitaciones = e.message ?: "No se pudieron consultar las invitaciones a ferias."
+        } finally {
+            cargandoInvitaciones = false
+        }
+    }
+    LaunchedEffect(sesion.uid, feriasRepository) { cargarInvitacionesFeria(forzar = true) }
     var tab by remember(sesion.uid) { mutableStateOf(Tab.INICIO) }
     var screen by remember(sesion.uid) { mutableStateOf<Screen>(Screen.Home) }
     var editandoTienda by remember(sesion.uid) { mutableStateOf(false) }
@@ -1050,6 +1071,8 @@ internal fun EmprendedoraAppConectada(
                         ventasCount = ventasGuardadas.size,
                         linkCompartido = linkCompartido,
                         invitacionesPendientes = invitaciones.count { it.estado == "pendiente" },
+                        invitacionesDisponibles = errorInvitaciones == null,
+                        invitacionesCargando = cargandoInvitaciones,
                         onAgregar = { abrirTab(Tab.AGREGAR) },
                         onContinuarBorrador = { abrirTab(Tab.PRODUCTOS) },
                         onMisProductos = { abrirTab(Tab.PRODUCTOS) },
@@ -1059,7 +1082,10 @@ internal fun EmprendedoraAppConectada(
                         },
                         onVerVentas = { screen = Screen.Ventas },
                         onVerMiTienda = { tab = Tab.MAS; screen = Screen.Settings; editandoTienda = false },
-                        onVerFerias = { screen = Screen.Ferias },
+                        onVerFerias = {
+                            screen = Screen.Ferias
+                            scope.launch { cargarInvitacionesFeria() }
+                        },
                         tiendaVisible = tienda.estadoPublicacion == "publicado",
                         nombreEmprendedora = sesion.nombreMostrar,
                         productosRecientes = productos.take(3).map { productoLegado(it, miniaturasProductosVisibles[it.id]) },
@@ -1428,19 +1454,45 @@ internal fun EmprendedoraAppConectada(
                     Screen.Ferias -> FeriasScreen(
                         invitaciones = invitaciones,
                         onVerDetalle = { screen = Screen.FeriaDetalle(it.id) },
-                        onVolver = { screen = Screen.Home; tab = Tab.INICIO }
+                        onVolver = { screen = Screen.Home; tab = Tab.INICIO },
+                        cargando = cargandoInvitaciones,
+                        error = errorInvitaciones,
+                        onActualizar = { scope.launch { cargarInvitacionesFeria(forzar = true) } }
                     )
                     is Screen.FeriaDetalle -> FeriaDetalleScreen(
                         invitacion = pantalla.invitacionId?.let { id -> invitaciones.firstOrNull { it.id == id } },
                         onAceptar = {
-                            local.responderFeria(it.id, true)
-                            scope.launch { snackbar.showSnackbar("Inscripción confirmada") }
+                            scope.launch {
+                                if (respondiendoInvitacion) return@launch
+                                respondiendoInvitacion = true
+                                try {
+                                    feriasRepository.responder(it.id, true)
+                                    invitaciones = invitaciones.map { actual -> if (actual.id == it.id) actual.copy(estado = "aceptada") else actual }
+                                    snackbar.showSnackbar("Inscripción confirmada")
+                                } catch (e: Exception) {
+                                    snackbar.showSnackbar(e.message ?: "No se pudo confirmar la invitación.")
+                                } finally {
+                                    respondiendoInvitacion = false
+                                }
+                            }
                         },
                         onRechazar = {
-                            local.responderFeria(it.id, false)
-                            scope.launch { snackbar.showSnackbar("Invitación rechazada") }
+                            scope.launch {
+                                if (respondiendoInvitacion) return@launch
+                                respondiendoInvitacion = true
+                                try {
+                                    feriasRepository.responder(it.id, false)
+                                    invitaciones = invitaciones.map { actual -> if (actual.id == it.id) actual.copy(estado = "rechazada") else actual }
+                                    snackbar.showSnackbar("Invitación rechazada")
+                                } catch (e: Exception) {
+                                    snackbar.showSnackbar(e.message ?: "No se pudo rechazar la invitación.")
+                                } finally {
+                                    respondiendoInvitacion = false
+                                }
+                            }
                         },
-                        onVolver = { screen = Screen.Ferias }
+                        onVolver = { screen = Screen.Ferias },
+                        enviando = respondiendoInvitacion
                     )
                     else -> AvisoEmprendedora("Esta sección todavía no está conectada a la cuenta de Firebase.", false)
                     }

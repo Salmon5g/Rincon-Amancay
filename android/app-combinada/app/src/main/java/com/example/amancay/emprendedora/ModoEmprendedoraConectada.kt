@@ -80,6 +80,7 @@ import com.example.amancay.data.CanalesContactoTienda
 import com.example.amancay.data.ContactoEmprendedora
 import com.example.amancay.data.CuentaEmprendedora
 import com.example.amancay.data.CuentaEmprendedoraRepository
+import com.example.amancay.data.FeriasEmprendedoraRepository
 import com.example.amancay.data.FirebaseClientServices
 import com.example.amancay.data.PuntoRetiroTienda
 import com.example.amancay.data.OpcionCatalogoEmprendedora
@@ -141,7 +142,9 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
         uidRecordado?.let { preferenciasAcceso.getBoolean(claveHuella(it), false) } == true
     }
     val repository = remember(firebase) { CuentaEmprendedoraRepository(firebase.auth, firebase.firestore, ApiEmprendedoraClient(firebase.auth)) }
-    val productosRepository = remember(firebase) { ProductosEmprendedoraRepository(firebase.firestore, ApiEmprendedoraClient(firebase.auth)) }
+    val api = remember(firebase) { ApiEmprendedoraClient(firebase.auth) }
+    val productosRepository = remember(firebase) { ProductosEmprendedoraRepository(firebase.firestore, api) }
+    val feriasRepository = remember(firebase) { FeriasEmprendedoraRepository(api) }
     val tienda by repository.tienda.collectAsState()
     val sectores by repository.sectores.collectAsState()
     val tipos by repository.tiposEmprendimiento.collectAsState()
@@ -405,6 +408,7 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
         sectores = sectores,
         tipos = tipos,
         productosRepository = productosRepository,
+        feriasRepository = feriasRepository,
         huellaHabilitada = huellaHabilitada,
         aviso = aviso,
         error = error,
