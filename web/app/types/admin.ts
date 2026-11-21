@@ -170,6 +170,8 @@ export interface ParticipanteFeria {
   nombreTienda: string
   estado: EstadoParticipanteFeria
   asistencia: AsistenciaFeria | null
+  tipoEmprendimiento?: { id: string; nombre: string } | null
+  asociaciones?: { id: string; nombre: string }[]
   versionEsperada: string
 }
 

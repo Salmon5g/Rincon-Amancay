@@ -129,19 +129,28 @@ export function crearFerias(db: Firestore) {
     if (request.accion === 'leerParticipantesFeria') {
       await comprobarAdmin(db, identidad.uid);
       const feriaRef = db.doc(`ferias/${request.feriaId}`);
-      const [feria, participantes, accesos, asociaciones] = await Promise.all([
+      const [feria, participantes, accesos, asociaciones, tipos] = await Promise.all([
         feriaRef.get(), feriaRef.collection('participantes').limit(201).get(),
         db.collection('accesos').where('roles', 'array-contains', 'emprendedora').limit(101).get(),
         db.collection('asociaciones').where('activo', '==', true).limit(101).get(),
+        db.collection('tiposEmprendimiento').limit(201).get(),
       ]);
       exigir(feria.exists, 'no-encontrado', 'La feria no existe.');
       exigir(participantes.size <= 200 && accesos.size <= 100 && asociaciones.size <= 100, 'limite-local', 'La feria o el padrón supera el límite de 100 participantes por tipo.');
+      const nombreTipo = new Map(tipos.docs.map(doc => [doc.id, nombreParticipante(doc.data().nombre, doc.id)]));
+      const tipoPorUid = new Map<string, string>();
+      const integrantes = await Promise.all(asociaciones.docs.map(doc => doc.ref.collection('integrantes').where('estado', '==', 'activa').limit(201).get()));
+      const asociacionesPorUid = new Map<string, { id: string; nombre: string }[]>();
+      asociaciones.docs.forEach((doc, i) => integrantes[i].docs.forEach(relacion => {
+        asociacionesPorUid.set(relacion.id, [...(asociacionesPorUid.get(relacion.id) ?? []), { id: doc.id, nombre: nombreParticipante(doc.data().nombre, doc.id) }]);
+      }));
       const candidatos = await Promise.all(accesos.docs.map(async accessDoc => {
         const uid = accessDoc.id; const access = accessDoc.data();
         const [perfil, user] = await Promise.all([db.doc(`emprendedoras/${uid}`).get(), db.doc(`usuarios/${uid}`).get()]);
         const storeId = perfil.data()?.tiendaId;
         if (access.estado !== 'activo' || !id(storeId) || access.tiendaId !== storeId) return null;
         const store = await db.doc(`tiendasPrivadas/${storeId}`).get();
+        if (typeof store.data()?.tipoEmprendimientoId === 'string') tipoPorUid.set(uid, store.data()!.tipoEmprendimientoId);
         if (store.data()?.propietarioUid !== uid) return null;
         return { tipo: 'emprendedora' as const, entidadId: uid, nombre: nombreParticipante(user.data()?.nombreMostrar, uid), nombreTienda: nombreParticipante(store.data()?.nombre, 'Tienda sin nombre') };
       }));
@@ -149,7 +158,12 @@ export function crearFerias(db: Firestore) {
         const data = doc.data();
         const estado = String(data.estado ?? 'invitada');
         const asistencia = ['confirmada', 'agregada_admin'].includes(estado) ? String(data.asistencia ?? 'pendiente') : null;
-        return { id: doc.id, tipo: data.tipo === 'asociacion' ? 'asociacion' : 'emprendedora', entidadId: String(data.entidadId ?? ''), nombre: String(data.nombre ?? ''), nombreTienda: String(data.nombreTienda ?? ''), estado, asistencia, versionEsperada: version(data) };
+        const tipo = data.tipo === 'asociacion' ? 'asociacion' : 'emprendedora';
+        const entidadId = String(data.entidadId ?? '');
+        const tipoId = tipo === 'emprendedora' ? tipoPorUid.get(entidadId) : undefined;
+        const tipoEmprendimiento = tipoId ? { id: tipoId, nombre: nombreTipo.get(tipoId) ?? tipoId } : null;
+        const asociacionesParticipante = tipo === 'asociacion' ? [{ id: entidadId, nombre: String(data.nombre ?? entidadId) }] : asociacionesPorUid.get(entidadId) ?? [];
+        return { id: doc.id, tipo, entidadId, nombre: String(data.nombre ?? ''), nombreTienda: String(data.nombreTienda ?? ''), estado, asistencia, tipoEmprendimiento, asociaciones: asociacionesParticipante, versionEsperada: version(data) };
       });
       const presentes = new Set(existentes.filter(item => item.estado !== 'retirada').map(item => `${item.tipo}:${item.entidadId}`));
       const emprendedoras = candidatos.filter((item): item is NonNullable<typeof item> => Boolean(item)).filter(item => !presentes.has(`emprendedora:${item.entidadId}`));
