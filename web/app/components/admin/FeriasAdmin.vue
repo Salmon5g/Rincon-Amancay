@@ -394,6 +394,49 @@ function etiquetaAsistencia(asistencia: ParticipanteFeria['asistencia']) {
   return 'Asistencia pendiente'
 }
 
+function prepararRecordatorioFeria(persona: ParticipanteFeria) {
+  const feria = detalle.value?.feria
+
+  if (!feria || feria.estado !== 'publicada') {
+    aviso.value = 'Solo puedes preparar recordatorios de ferias publicadas.'
+    return
+  }
+
+  if (persona.estado !== 'invitada') {
+    aviso.value = 'Este participante ya no tiene una invitación pendiente.'
+    return
+  }
+
+  const destinatario = persona.nombreTienda || persona.nombre
+
+  const asunto = `Recordatorio de invitación: ${feria.nombre}`
+
+  const mensaje = [
+    `Hola, ${destinatario}:`,
+    '',
+    'Te recordamos que tienes una invitación pendiente para participar en nuestra feria.',
+    '',
+    'Información de la feria:',
+    `Nombre: ${feria.nombre}`,
+    `Fecha: ${fechaBonita(feria.fechaInicio)}`,
+    `Lugar: ${feria.direccion}`,
+    '',
+    'Por favor, ingresa a Rincón Amancay para confirmar o rechazar tu participación.',
+    '',
+    'Saludos cordiales,',
+    'Equipo organizador de Rincón Amancay'
+  ].join('\n')
+
+  const enlaceCorreo =
+    `mailto:?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(mensaje)}`
+
+  window.location.href = enlaceCorreo
+
+  aviso.value =
+    'Se solicitó abrir el cliente de correo. Completa el destinatario y envía el recordatorio manualmente.'
+}
+
+
 function marcarAsistencia(item: ParticipanteFeria, asistencia: 'asistio' | 'no_asistio') {
   if (!detalle.value || pendiente.value) return
   pendiente.value = { operacion: 'registrarAsistenciaFeria', solicitud: { operacionId: opId(), feriaId: detalle.value.feria.id, versionFeriaEsperada: detalle.value.feria.versionEsperada, participanteId: item.id, asistencia } }
@@ -410,7 +453,7 @@ onMounted(() => { void cargar() })
 
 <template>
   <section class="ferias-admin">
-    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. La imagen se sube al almacenamiento y queda asociada a la feria. Las invitaciones se registran en Firebase; esta versión todavía no envía correos ni notificaciones. La ubicación de cada feria se puede buscar o marcar en el mapa.</p></div>
+    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. La imagen se sube al almacenamiento y queda asociada a la feria. Las invitaciones se registran en Firebase. Para las invitaciones pendientes puedes preparar recordatorios por correo, que deben enviarse manualmente desde tu aplicación de correo.</p></div>
     <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para administrar ferias.</p>
     <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} registros</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
     <p v-if="cargando" role="status">Leyendo ferias desde Firebase…</p>
@@ -574,6 +617,7 @@ onMounted(() => { void cargar() })
               <span v-if="persona.asistencia" class="estado asistencia">{{ etiquetaAsistencia(persona.asistencia) }}</span>
             </div>
             <div class="acciones" v-if="['confirmada', 'agregada_admin'].includes(persona.estado)"><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'asistio')">Asistió</button><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'no_asistio')">No asistió</button></div>
+            <button v-if="persona.estado === 'invitada' && detalle.feria.estado === 'publicada'" class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="prepararRecordatorioFeria(persona)"> Preparar recordatorio </button>
             <button v-if="persona.estado === 'invitada'" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Cancelar invitación</button>
             <button v-else-if="['confirmada', 'agregada_admin'].includes(persona.estado)" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Retirar</button>
           </li>
