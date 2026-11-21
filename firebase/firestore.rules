@@ -54,6 +54,7 @@ service cloud.firestore {
         && request.resource.data.avisosConsentimientoEn == request.time;
       match /tiendasSeguidas/{tiendaId} {
         allow get: if signedIn() && request.auth.uid == uid;
+        allow list: if signedIn() && request.auth.uid == uid && request.query.limit <= 500;
         allow create: if signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['tiendaId'])
           && request.resource.data.tiendaId == tiendaId
@@ -67,6 +68,7 @@ service cloud.firestore {
       }
       match /asociacionesSeguidas/{asociacionId} {
         allow get: if signedIn() && request.auth.uid == uid;
+        allow list: if signedIn() && request.auth.uid == uid && request.query.limit <= 500;
         allow create: if signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['asociacionId'])
           && request.resource.data.asociacionId == asociacionId
