@@ -188,7 +188,8 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
             formaContacto: formaContactoPublica,
             canalesContacto: canales,
             ...(logo ? {logo:logo.imagen,logoMiniatura:logo.miniatura} : {}),
-            estadoPublicacion: 'publicado', habilitada: true, mostrarPrecios: config.mostrarPrecios, actualizadoEn: now,
+            estadoPublicacion: 'publicado', habilitada: true, mostrarPrecios: config.mostrarPrecios,
+            calificacionesHabilitadas: config.calificacionesHabilitadas === true, actualizadoEn: now,
           } });
         } else {
           const publicStore = (await tx.get(publica)).data();

@@ -40,12 +40,18 @@ service cloud.firestore {
     }
     match /usuarios/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['avisosFerias', 'avisosConsentimientoEn'])
+        && request.resource.data.avisosFerias is bool
+        && request.resource.data.avisosConsentimientoEn == request.time;
       allow update: if signedIn() && request.auth.uid == uid && active(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombreMostrar', 'actualizadoEn'])
-        && request.resource.data.nombreMostrar is string
-        && request.resource.data.nombreMostrar.size() > 0
-        && request.resource.data.nombreMostrar.size() <= 100
-        && request.resource.data.actualizadoEn == request.time;
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['nombreMostrar']) || (request.resource.data.nombreMostrar is string && request.resource.data.nombreMostrar.size() > 0 && request.resource.data.nombreMostrar.size() <= 100))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['actualizadoEn']) || request.resource.data.actualizadoEn == request.time);
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avisosFerias', 'avisosConsentimientoEn'])
+        && request.resource.data.avisosFerias is bool
+        && request.resource.data.avisosConsentimientoEn == request.time;
       match /tiendasSeguidas/{tiendaId} {
         allow get: if signedIn() && request.auth.uid == uid;
         allow create: if signedIn() && request.auth.uid == uid
@@ -120,6 +126,15 @@ service cloud.firestore {
         || (catalogoPublicoHabilitado() && resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true);
       allow list: if admin() || (catalogoPublicoHabilitado() && request.query.limit <= 20
         && resource.data.estadoPublicacion == 'publicado' && resource.data.habilitada == true);
+      match /calificaciones/{compradorUid} {
+        allow get: if signedIn() && request.auth.uid == compradorUid;
+        allow create, update: if signedIn() && request.auth.uid == compradorUid
+          && get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data.calificacionesHabilitadas == true
+          && publicStore(tiendaId)
+          && request.resource.data.keys().hasOnly(['puntuacion', 'actualizadoEn'])
+          && request.resource.data.puntuacion is int && request.resource.data.puntuacion >= 1 && request.resource.data.puntuacion <= 5
+          && request.resource.data.actualizadoEn == request.time;
+      }
       match /productos/{productoId} {
         allow get: if admin() || owner(tiendaId)
           || (catalogoPublicoHabilitado() && resource.data.estadoPublicacion == 'publicado'
@@ -134,6 +149,15 @@ service cloud.firestore {
           allow list: if admin() || owner(tiendaId)
             || (catalogoPublicoHabilitado() && request.query.limit <= 100
               && publicProduct(tiendaId, productoId) && visiblePrices(tiendaId) && resource.data.activa == true);
+        }
+        match /calificaciones/{compradorUid} {
+          allow get: if signedIn() && request.auth.uid == compradorUid;
+          allow create, update: if signedIn() && request.auth.uid == compradorUid
+            && get(/databases/$(database)/documents/tiendasPublicas/$(tiendaId)).data.calificacionesHabilitadas == true
+            && publicProduct(tiendaId, productoId)
+            && request.resource.data.keys().hasOnly(['puntuacion', 'actualizadoEn'])
+            && request.resource.data.puntuacion is int && request.resource.data.puntuacion >= 1 && request.resource.data.puntuacion <= 5
+            && request.resource.data.actualizadoEn == request.time;
         }
       }
       // Vista sin importes construida por la API. Firestore no puede redactar

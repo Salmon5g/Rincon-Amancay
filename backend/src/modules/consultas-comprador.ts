@@ -10,14 +10,27 @@ export type SolicitudConsultaPublica = {
   producto?: string;
 };
 
-export function crearConsultasComprador(db: Firestore) {
+function estaDentroDelHorario(ahora: Date, inicio: string, fin: string, zonaHoraria: string) {
+  try {
+    const partes = new Intl.DateTimeFormat('en-GB', { timeZone: zonaHoraria, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ahora).split(':').map(Number);
+    const minuto = partes[0] * 60 + partes[1];
+    const [horaInicio, minutoInicio] = inicio.split(':').map(Number);
+    const [horaFin, minutoFin] = fin.split(':').map(Number);
+    const desde = horaInicio * 60 + minutoInicio;
+    const hasta = horaFin * 60 + minutoFin;
+    return desde === hasta ? true : desde < hasta ? minuto >= desde && minuto < hasta : minuto >= desde || minuto < hasta;
+  } catch { return false; }
+}
+
+export function crearConsultasComprador(db: Firestore, notificar?: (tiendaId: string, nombreTienda: string) => Promise<void>) {
   const guardar = async (solicitud: SolicitudConsultaPublica) => {
     const tiendaRef = db.collection('tiendasPublicas').doc(solicitud.tiendaId);
     const tiendaPrivadaRef = db.collection('tiendasPrivadas').doc(solicitud.tiendaId);
     const consultaRef = tiendaPrivadaRef.collection('consultas').doc(solicitud.operacionId);
-    return db.runTransaction(async tx => {
-      const [tienda, privada, existente] = await Promise.all([
+    const resultado = await db.runTransaction(async tx => {
+      const [tienda, privada, existente, configuracion] = await Promise.all([
         tx.get(tiendaRef), tx.get(tiendaPrivadaRef), tx.get(consultaRef),
+        tx.get(tiendaPrivadaRef.collection('configuracion').doc('general')),
       ]);
       const canales = tienda.data()?.canalesContacto as { formulario?: { habilitado?: unknown } } | undefined;
       const recibeFormulario = typeof canales?.formulario?.habilitado === 'boolean'
@@ -27,17 +40,23 @@ export function crearConsultasComprador(db: Firestore) {
           tienda.get('habilitada') !== true || !recibeFormulario) {
         throw new ErrorOperacion('no-disponible', 'La tienda no recibe consultas por formulario.');
       }
-      if (existente.exists) return { recibida: true };
+      const horario = configuracion.get('notificacionesContacto') as { habilitado?: unknown; horaInicio?: unknown; horaFin?: unknown; zonaHoraria?: unknown } | undefined;
+      const notificable = horario?.habilitado === true && typeof horario.horaInicio === 'string' && typeof horario.horaFin === 'string' &&
+        typeof horario.zonaHoraria === 'string' && estaDentroDelHorario(new Date(), horario.horaInicio, horario.horaFin, horario.zonaHoraria);
+      if (existente.exists) return { recibida: true, nueva: false, notificable: false, nombreTienda: '' };
       tx.create(consultaRef, {
         nombre: solicitud.nombre,
         correo: solicitud.correo,
         mensaje: solicitud.mensaje,
         ...(solicitud.producto ? { producto: solicitud.producto } : {}),
+        notificable,
         estado: 'nueva',
         creadaEn: FieldValue.serverTimestamp(),
       });
-      return { recibida: true };
+      return { recibida: true, nueva: true, notificable, nombreTienda: String(tienda.get('nombre') ?? 'tu tienda') };
     });
+    if (resultado.nueva && resultado.notificable && notificar) await notificar(solicitud.tiendaId, resultado.nombreTienda ?? 'tu tienda').catch(() => undefined);
+    return { recibida: true };
   };
   const leerRespuesta = async (tiendaId: string, operacionId: string) => {
     const referencia = db.doc(`tiendasPrivadas/${tiendaId}/consultas/${operacionId}`);

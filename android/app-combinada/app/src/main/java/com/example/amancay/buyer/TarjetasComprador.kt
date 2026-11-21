@@ -30,7 +30,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +48,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import coil.compose.AsyncImage
 import com.example.amancay.data.ProductoCatalogoComprador
 import com.example.amancay.ui.Fig
@@ -224,6 +235,9 @@ fun MensajeCatalogo(texto: String) {
 @Composable
 fun DialogoDetalleProducto(
     producto: ProductoCatalogoComprador,
+    calificacionesActivas: Boolean,
+    usuarioId: String?,
+    firestore: FirebaseFirestore,
     alCerrar: () -> Unit,
     alEncargar: (com.example.amancay.data.VarianteCatalogoComprador?) -> Unit
 ) {
@@ -339,6 +353,12 @@ fun DialogoDetalleProducto(
                     producto.nombre,
                     com.example.amancay.ui.EnlacesPublicos.producto(producto.tiendaId, producto.id)
                 )
+                if (calificacionesActivas) {
+                    HorizontalDivider(color = AmancayBorde)
+                    Text("Califica tu experiencia", fontWeight = FontWeight.Bold, color = AmancayBordo)
+                    CalificacionComprador("La tienda", producto.tiendaId, null, usuarioId, firestore)
+                    CalificacionComprador("Este producto", producto.tiendaId, producto.id, usuarioId, firestore)
+                }
             }
         },
         confirmButton = {
@@ -361,6 +381,63 @@ fun DialogoDetalleProducto(
         },
         containerColor = AmancaySuperficie
     )
+}
+
+@Composable
+private fun CalificacionComprador(
+    etiqueta: String,
+    tiendaId: String,
+    productoId: String?,
+    usuarioId: String?,
+    firestore: FirebaseFirestore
+) {
+    var puntuacion by remember(tiendaId, productoId, usuarioId) { mutableIntStateOf(0) }
+    var guardada by remember(tiendaId, productoId, usuarioId) { mutableIntStateOf(0) }
+    var mensaje by remember(tiendaId, productoId, usuarioId) { mutableStateOf<String?>(null) }
+    var enviando by remember(tiendaId, productoId, usuarioId) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(tiendaId, productoId, usuarioId) {
+        if (usuarioId.isNullOrBlank()) return@LaunchedEffect
+        val referencia = if (productoId == null) firestore.collection("tiendasPublicas").document(tiendaId)
+            .collection("calificaciones").document(usuarioId)
+        else firestore.collection("tiendasPublicas").document(tiendaId).collection("productos").document(productoId)
+            .collection("calificaciones").document(usuarioId)
+        guardada = runCatching { referencia.get().await().getLong("puntuacion")?.toInt() ?: 0 }.getOrDefault(0)
+        puntuacion = guardada
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(etiqueta, color = AmancayTinta, fontWeight = FontWeight.SemiBold)
+        if (usuarioId.isNullOrBlank()) {
+            Text("Inicia sesión para dejar una calificación.", color = AmancayTintaSuave, style = MaterialTheme.typography.bodySmall)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                (1..5).forEach { valor ->
+                    TextButton(onClick = { puntuacion = valor }, enabled = !enviando) {
+                        Text(if (valor <= puntuacion) "★" else "☆", color = AmancayBordo, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    val uid = usuarioId
+                    if (uid != null && puntuacion in 1..5) scope.launch {
+                        enviando = true
+                        val referencia = if (productoId == null) firestore.collection("tiendasPublicas").document(tiendaId)
+                            .collection("calificaciones").document(uid)
+                        else firestore.collection("tiendasPublicas").document(tiendaId).collection("productos").document(productoId)
+                            .collection("calificaciones").document(uid)
+                        runCatching { referencia.set(mapOf("puntuacion" to puntuacion, "actualizadoEn" to FieldValue.serverTimestamp())).await() }
+                            .onSuccess { guardada = puntuacion; mensaje = "Calificación guardada." }
+                            .onFailure { mensaje = "No se pudo guardar. Comprueba tu conexión y que las calificaciones sigan activas." }
+                        enviando = false
+                    }
+                },
+                enabled = !enviando && puntuacion in 1..5,
+                colors = ButtonDefaults.buttonColors(containerColor = AmancayBordo)
+            ) { Text(if (guardada > 0) "Actualizar calificación" else "Enviar calificación", color = Color.White) }
+            mensaje?.let { Text(it, color = AmancayTintaSuave, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
 }
 
 /** Texto largo, para el detalle del producto. */

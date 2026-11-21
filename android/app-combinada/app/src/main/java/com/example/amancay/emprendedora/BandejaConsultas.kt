@@ -58,7 +58,7 @@ internal fun BandejaConsultasScreen(
     var seleccionada by remember { mutableStateOf<String?>(null) }
     val detalle = consultas.firstOrNull { it.id == seleccionada }
     var respuesta by remember(seleccionada, detalle?.respuesta) { mutableStateOf(detalle?.respuesta.orEmpty()) }
-    val nuevas = consultas.count { it.estado == "nueva" }
+    val nuevas = consultas.count { it.estado == "nueva" && it.notificable }
     val filtradas = consultas.filter { consulta ->
         val coincideFiltro = when (filtro) {
             "No leídas" -> consulta.estado == "nueva"

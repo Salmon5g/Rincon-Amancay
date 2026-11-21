@@ -1,6 +1,10 @@
 package com.example.amancay.buyer
 
 import android.net.Uri
+import android.os.Build
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
@@ -128,6 +132,8 @@ fun ModoCompradorScreen(
     var formularioContacto by remember { mutableStateOf<Triple<TiendaCatalogoComprador, String?, VarianteCatalogoComprador?>?>(null) }
     var avisoContacto by remember { mutableStateOf<String?>(null) }
     var misConsultas by remember { mutableStateOf(leerConsultasGuardadas(context)) }
+    var avisosFerias by remember(auth.currentUser?.uid) { mutableStateOf(false) }
+    var cargandoAvisos by remember(auth.currentUser?.uid) { mutableStateOf(false) }
     val consultasActualizadas by androidx.compose.runtime.rememberUpdatedState(misConsultas)
     var cargandoRespuestas by remember { mutableStateOf(false) }
     var errorRespuestas by remember { mutableStateOf<String?>(null) }
@@ -178,6 +184,32 @@ fun ModoCompradorScreen(
     }
 
     val uid = uidSesion
+    LaunchedEffect(uid) {
+        avisosFerias = if (uid.isNullOrBlank()) false else runCatching {
+            PreferenciasAvisosComprador.consentimiento(firestore, uid)
+        }.getOrDefault(false)
+    }
+    val guardarAvisos: (Boolean) -> Unit = { habilitados ->
+        val usuarioId = uid
+        if (usuarioId != null && !cargandoAvisos) {
+            cargandoAvisos = true
+            alcance.launch {
+                runCatching { PreferenciasAvisosComprador.cambiar(firestore, usuarioId, habilitados) }
+                    .onSuccess { avisosFerias = habilitados }
+                    .onFailure { mensajeAcceso = "No pudimos actualizar tus preferencias de avisos. Revisa tu conexión e inténtalo de nuevo." }
+                cargandoAvisos = false
+            }
+        }
+    }
+    val permisoAvisosLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) guardarAvisos(true)
+        else mensajeAcceso = "Android no autorizó las notificaciones. Puedes habilitarlas en los ajustes del teléfono."
+    }
+    val solicitarAvisos: (Boolean) -> Unit = { habilitados ->
+        if (!habilitados) guardarAvisos(false)
+        else if (Build.VERSION.SDK_INT >= 33) permisoAvisosLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else guardarAvisos(true)
+    }
     LaunchedEffect(uid, seguimientoPendienteTipo, seguimientoPendienteId, reintentoSeguimientoPendiente) {
         val usuarioId = uid ?: return@LaunchedEffect
         val tipo = seguimientoPendienteTipo ?: return@LaunchedEffect
@@ -190,6 +222,9 @@ fun ModoCompradorScreen(
                 "tienda" -> SeguimientoTiendasComprador(firestore).seguir(usuarioId, id)
                 "asociacion" -> SeguimientoAsociacionesComprador(firestore).seguir(usuarioId, id)
                 else -> error("El tipo de seguimiento pendiente no es válido.")
+            }
+            if (PreferenciasAvisosComprador.consentimiento(firestore, usuarioId)) {
+                PreferenciasAvisosComprador.actualizarTema(usuarioId, tipo, id, true)
             }
 
             mensajeAcceso = "Ahora sigues a $nombre."
@@ -573,6 +608,9 @@ fun ModoCompradorScreen(
             PestanaComprador.CUENTA -> PantallaCuentaComprador(
                 sesion = sesion,
                 auth = auth,
+                avisosFerias = avisosFerias,
+                cargandoAvisos = cargandoAvisos,
+                alCambiarAvisos = solicitarAvisos,
                 googleCargando = ingresando,
                 mensaje = mensajeAcceso,
                 alRefrescarPerfil = {
@@ -581,6 +619,7 @@ fun ModoCompradorScreen(
                 alExplorar = { pestana = PestanaComprador.INICIO },
                 alCerrarSesion = {
                     alcance.launch {
+                        uid?.let { runCatching { PreferenciasAvisosComprador.desuscribirTodos(firestore, it) } }
                         AutenticacionGoogleComprador.cerrarSesion(context, auth)
                     }
                 },
@@ -768,6 +807,9 @@ fun ModoCompradorScreen(
         val producto = productos.firstOrNull { it.id == seleccionado.id && it.tiendaId == seleccionado.tiendaId } ?: seleccionado
         DialogoDetalleProducto(
             producto = producto,
+            calificacionesActivas = directorio.firstOrNull { it.id == producto.tiendaId }?.calificacionesHabilitadas == true,
+            usuarioId = uid,
+            firestore = firestore,
             alCerrar = { productoSeleccionado = null },
             alEncargar = { varianteElegida ->
                 productoSeleccionado = null

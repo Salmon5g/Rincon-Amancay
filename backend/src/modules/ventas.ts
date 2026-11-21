@@ -8,7 +8,7 @@ function exigir(ok: unknown, code: string, message: string): asserts ok { if (!o
 function id(v: unknown): v is string { return typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v); }
 function texto(v: unknown, max: number, label: string): string { exigir(typeof v === 'string' && v.trim().length > 0 && v.trim().length <= max, 'datos-invalidos', `${label} es obligatorio.`); return v.trim(); }
 
-export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto', 'configurarMostrarPrecios'] as const;
+export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto', 'configurarMostrarPrecios', 'configurarAvisosContacto', 'configurarCalificaciones'] as const;
 export type AccionVenta = typeof accionesVenta[number];
 
 async function prepararVistasSinPrecios(db: Firestore, tiendaId: string) {
@@ -54,6 +54,36 @@ export function crearVentas(db: Firestore) {
     const tienda = db.doc(`tiendasPrivadas/${d.tiendaId}`);
     const configuracion = tienda.collection('configuracion').doc('general');
     const accesoRef = db.doc(`accesos/${identidad.uid}`);
+    if (accion === 'configurarAvisosContacto') {
+      exigir(Object.keys(d).length === 5 && typeof d.habilitado === 'boolean' &&
+        typeof d.horaInicio === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(d.horaInicio) &&
+        typeof d.horaFin === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(d.horaFin) &&
+        typeof d.zonaHoraria === 'string' && d.zonaHoraria.length <= 64, 'datos-invalidos', 'Revisa la preferencia y el horario de avisos.');
+      try { new Intl.DateTimeFormat('es-CL', { timeZone: d.zonaHoraria as string }); }
+      catch { throw new ErrorOperacion('datos-invalidos', 'La zona horaria no es válida.'); }
+      return db.runTransaction(async tx => {
+        const [access, shop, config] = await tx.getAll(accesoRef, tienda, configuracion);
+        exigir(access.data()?.estado === 'activo' && access.data()?.roles?.includes('emprendedora') && access.data()?.tiendaId === d.tiendaId && shop.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
+        exigir(config.exists, 'no-encontrado', 'No existe la configuración de la tienda.');
+        const notificacionesContacto = { habilitado: d.habilitado, horaInicio: d.horaInicio, horaFin: d.horaFin, zonaHoraria: d.zonaHoraria };
+        tx.update(configuracion, { notificacionesContacto, actualizadoEn: FieldValue.serverTimestamp() });
+        return notificacionesContacto;
+      });
+    }
+    if (accion === 'configurarCalificaciones') {
+      exigir(Object.keys(d).length === 2 && typeof d.habilitado === 'boolean', 'datos-invalidos', 'Indica si las calificaciones están activas.');
+      const tiendaPublica = db.doc(`tiendasPublicas/${d.tiendaId}`);
+      return db.runTransaction(async tx => {
+        const [access, shop, config, publicShop] = await tx.getAll(accesoRef, tienda, configuracion, tiendaPublica);
+        exigir(access.data()?.estado === 'activo' && access.data()?.roles?.includes('emprendedora') && access.data()?.tiendaId === d.tiendaId && shop.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
+        exigir(config.exists, 'no-encontrado', 'No existe la configuración de la tienda.');
+        tx.update(configuracion, { calificacionesHabilitadas: d.habilitado, actualizadoEn: FieldValue.serverTimestamp() });
+        if (publicShop.exists && publicShop.get('estadoPublicacion') === 'publicado' && publicShop.get('habilitada') === true) {
+          tx.update(tiendaPublica, { calificacionesHabilitadas: d.habilitado, actualizadoEn: FieldValue.serverTimestamp() });
+        }
+        return { calificacionesHabilitadas: d.habilitado };
+      });
+    }
     if (accion === 'configurarMostrarPrecios') {
       exigir(Object.keys(d).length === 2 && typeof d.mostrarPrecios === 'boolean', 'datos-invalidos', 'Se requiere el estado de visibilidad de precios.');
       const tiendaPublica = db.doc(`tiendasPublicas/${d.tiendaId}`);

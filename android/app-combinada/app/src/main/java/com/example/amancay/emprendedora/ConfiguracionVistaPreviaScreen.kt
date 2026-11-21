@@ -1,6 +1,10 @@
 package com.example.amancay.emprendedora
 
+import android.Manifest
+import android.os.Build
 import android.graphics.Bitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -59,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.data.ProductoEmprendedora
+import com.example.amancay.data.PreferenciasInteraccionTienda
 import com.example.amancay.data.ValoresDefectoProducto
 import com.example.amancay.data.etiquetaCatalogoCliente
 import com.example.amancay.data.formatPrice
@@ -79,6 +84,7 @@ internal fun ConfiguracionVistaPreviaScreen(
     mostrarPrecios: Boolean,
     preciosListos: Boolean,
     historialActivo: Boolean,
+    preferenciasInteraccion: PreferenciasInteraccionTienda,
     valoresDefecto: ValoresDefectoProducto,
     catalogoSinConexion: Boolean,
     enviando: Boolean,
@@ -86,6 +92,8 @@ internal fun ConfiguracionVistaPreviaScreen(
     alCambiarMostrarPrecios: (Boolean) -> Unit,
     alGuardarValoresDefecto: (ValoresDefectoProducto) -> Unit,
     alCambiarHistorial: (Boolean) -> Unit,
+    alGuardarAvisosContacto: (Boolean, String, String) -> Unit,
+    alCambiarCalificaciones: (Boolean) -> Unit,
     alCambiarCatalogoSinConexion: (Boolean) -> Unit,
     alVerHistorial: () -> Unit,
     alVerTiendaPublica: () -> Unit,
@@ -93,6 +101,11 @@ internal fun ConfiguracionVistaPreviaScreen(
 ) {
     var defecto by remember(valoresDefecto) { mutableStateOf(valoresDefecto) }
     var editandoDefecto by remember { mutableStateOf(false) }
+    var horaInicioAvisos by remember(preferenciasInteraccion.horaInicioAvisos) { mutableStateOf(preferenciasInteraccion.horaInicioAvisos) }
+    var horaFinAvisos by remember(preferenciasInteraccion.horaFinAvisos) { mutableStateOf(preferenciasInteraccion.horaFinAvisos) }
+    val permisoNotificaciones = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) alGuardarAvisosContacto(true, horaInicioAvisos, horaFinAvisos)
+    }
     val destacado = productos.firstOrNull { visibleEnCatalogoPublico(it) } ?: productos.firstOrNull()
 
     Box(Modifier.fillMaxSize()) {
@@ -129,6 +142,30 @@ internal fun ConfiguracionVistaPreviaScreen(
                             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                             colors = SwitchDefaults.colors(checkedTrackColor = Wine, checkedThumbColor = Color.White)
                         )
+                    }
+                    HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Avisos de nuevas consultas", fontWeight = FontWeight.SemiBold, color = Dark)
+                        Text("Las consultas del formulario se guardan siempre. Recibirás avisos solo dentro del horario elegido.", color = Muted, fontSize = 13.sp)
+                        androidx.compose.material3.Switch(
+                            checked = preferenciasInteraccion.avisosContacto,
+                            onCheckedChange = {
+                                if (it && Build.VERSION.SDK_INT >= 33) permisoNotificaciones.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                else alGuardarAvisosContacto(it, horaInicioAvisos, horaFinAvisos)
+                            },
+                            enabled = !enviando
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.OutlinedTextField(horaInicioAvisos, { horaInicioAvisos = it.take(5) }, label = { Text("Desde (HH:mm)") }, singleLine = true, modifier = Modifier.weight(1f))
+                            androidx.compose.material3.OutlinedTextField(horaFinAvisos, { horaFinAvisos = it.take(5) }, label = { Text("Hasta (HH:mm)") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        Button(onClick = { alGuardarAvisosContacto(preferenciasInteraccion.avisosContacto, horaInicioAvisos, horaFinAvisos) }, enabled = !enviando && horaInicioAvisos.matches(Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")) && horaFinAvisos.matches(Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")), colors = ButtonDefaults.buttonColors(containerColor = Wine), shape = RoundedCornerShape(14.dp)) {
+                            Text("Guardar horario", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
+                    FilaAjuste("Calificaciones de la tienda", if (preferenciasInteraccion.calificacionesHabilitadas) "Tus clientes pueden calificar la tienda y sus productos." else "Las calificaciones están desactivadas.", Icons.Filled.Settings, null) {
+                        androidx.compose.material3.Switch(checked = preferenciasInteraccion.calificacionesHabilitadas, onCheckedChange = alCambiarCalificaciones, enabled = !enviando)
                     }
                     HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
                     FilaAjuste("Valores por defecto", "Modalidad, stock y qué pasa al agotarse en cada producto nuevo.", Icons.Filled.Settings, { editandoDefecto = !editandoDefecto })

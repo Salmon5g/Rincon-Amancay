@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,9 @@ import kotlinx.coroutines.tasks.await
 fun PantallaCuentaComprador(
     sesion: SesionComprador?,
     auth: FirebaseAuth,
+    avisosFerias: Boolean,
+    cargandoAvisos: Boolean,
+    alCambiarAvisos: (Boolean) -> Unit,
     googleCargando: Boolean,
     mensaje: String?,
     alRefrescarPerfil: () -> Unit,
@@ -86,6 +90,9 @@ fun PantallaCuentaComprador(
         PantallaSesionComprador(
             sesion = sesion,
             cerrando = googleCargando,
+            avisosFerias = avisosFerias,
+            cargandoAvisos = cargandoAvisos,
+            alCambiarAvisos = alCambiarAvisos,
             alCerrarSesion = alCerrarSesion,
             alExplorar = alExplorar,
             modifier = modifier
@@ -97,6 +104,9 @@ fun PantallaCuentaComprador(
 private fun PantallaSesionComprador(
     sesion: SesionComprador,
     cerrando: Boolean,
+    avisosFerias: Boolean,
+    cargandoAvisos: Boolean,
+    alCambiarAvisos: (Boolean) -> Unit,
     alCerrarSesion: () -> Unit,
     alExplorar: () -> Unit,
     modifier: Modifier = Modifier
@@ -146,6 +156,21 @@ private fun PantallaSesionComprador(
                 style = MaterialTheme.typography.bodyMedium,
                 color = AmancayTintaSuave
             )
+        }
+        Spacer(Modifier.height(16.dp))
+        TarjetaAmancay {
+            Text("Avisos de ferias", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = AmancayBordo)
+            Spacer(Modifier.height(4.dp))
+            Text("Recibe una notificación cuando una tienda o asociación que sigues confirme su participación.", style = MaterialTheme.typography.bodySmall, color = AmancayTintaSuave)
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(if (avisosFerias) "Avisos activados" else "Avisos desactivados", color = AmancayTinta)
+                Switch(checked = avisosFerias, onCheckedChange = alCambiarAvisos, enabled = !cargandoAvisos)
+            }
+            if (cargandoAvisos) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = AmancayBordo)
         }
         Spacer(Modifier.height(16.dp))
         OutlinedButton(

@@ -90,6 +90,7 @@ internal fun ControlSeguimientoAsociacion(
                 withTimeout(15_000) {
                     repositorio.dejarDeSeguir(uid, asociacionId)
                 }
+                runCatching { PreferenciasAvisosComprador.actualizarTema(uid, "asociacion", asociacionId, false) }
                 estado = EstadoSeguimientoAsociacion.DISPONIBLE
                 aviso = "Dejaste de seguir a $nombreAsociacion."
             } catch (error: CancellationException) {
@@ -115,6 +116,9 @@ internal fun ControlSeguimientoAsociacion(
                             try {
                                 withTimeout(15_000) {
                                     repositorio.seguir(uid, asociacionId)
+                                }
+                                if (PreferenciasAvisosComprador.consentimiento(firestore, uid)) {
+                                    PreferenciasAvisosComprador.actualizarTema(uid, "asociacion", asociacionId, true)
                                 }
                                 estado = EstadoSeguimientoAsociacion.SIGUIENDO
                                 aviso = "Ahora sigues a $nombreAsociacion."

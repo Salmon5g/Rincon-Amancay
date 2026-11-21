@@ -60,6 +60,7 @@ data class TiendaCatalogoComprador(
     val formularioHabilitado: Boolean = true,
     val correoHabilitado: Boolean = false,
     val correoDireccion: String = "",
+    val calificacionesHabilitadas: Boolean = false,
     val puntoRetiro: PuntoRetiroTienda? = null
 )
 
@@ -239,6 +240,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                         correoHabilitado = correo?.get("habilitado") as? Boolean ?: contacto?.tipo == "correo",
                         correoDireccion = (correo?.get("direccion") as? String)
                             ?: contacto?.takeIf { it.tipo == "correo" }?.valor.orEmpty(),
+                        calificacionesHabilitadas = documento.getBoolean("calificacionesHabilitadas") == true,
                         puntoRetiro = (documento.get("puntoRetiro") as? Map<*, *>)?.let { punto ->
                             val latitud = punto["latitud"] as? Number
                             val longitud = punto["longitud"] as? Number

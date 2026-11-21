@@ -676,6 +676,7 @@ internal fun EmprendedoraAppConectada(
     var ventasGuardadas by remember(sesion.uid) { mutableStateOf<List<VentaRegistrada>>(emptyList()) }
     var feriasVenta by remember(sesion.uid) { mutableStateOf<List<FeriaParaVenta>>(emptyList()) }
     var historialVentasActivo by remember(sesion.uid) { mutableStateOf(false) }
+    var preferenciasInteraccion by remember(sesion.tiendaId) { mutableStateOf(com.example.amancay.data.PreferenciasInteraccionTienda()) }
     var abrirHistorialVentas by remember(sesion.uid) { mutableStateOf(false) }
     var valoresDefecto by remember(sesion.tiendaId) {
         mutableStateOf(PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, sesion.tiendaId))
@@ -775,6 +776,7 @@ internal fun EmprendedoraAppConectada(
             }
             try {
                 historialVentasActivo = productosRepository.leerHistorialActivo(sesion.tiendaId)
+                preferenciasInteraccion = productosRepository.leerPreferenciasInteraccion(sesion.tiendaId)
                 valoresDefecto = productosRepository.leerValoresDefecto(sesion.tiendaId)
                 PreferenciasCatalogoEmprendedora.guardarValoresDefecto(context, sesion.tiendaId, valoresDefecto)
                 historialConfiguracionCargada = true
@@ -990,7 +992,7 @@ internal fun EmprendedoraAppConectada(
     }
 
     val productoDeVista = productos.firstOrNull { it.id == productoVista }?.let(::productoLegado)
-    val nuevasConsultas = productosRepository.consultas.collectAsState().value.count { it.estado == "nueva" }
+    val nuevasConsultas = productosRepository.consultas.collectAsState().value.count { it.estado == "nueva" && it.notificable }
 
     Scaffold(
         containerColor = Cream,
@@ -1235,6 +1237,7 @@ internal fun EmprendedoraAppConectada(
                         mostrarPrecios = mostrarPrecios,
                         preciosListos = preciosListos,
                         historialActivo = historialVentasActivo,
+                        preferenciasInteraccion = preferenciasInteraccion,
                         valoresDefecto = valoresDefecto,
                         catalogoSinConexion = catalogoSinConexion,
                         enviando = enviandoProducto,
@@ -1282,6 +1285,26 @@ internal fun EmprendedoraAppConectada(
                                     avisoProducto = if (activo) "Historial de ventas activado." else "Historial de ventas desactivado. El stock seguirá actualizándose al registrar ventas."
                                 } catch (e: Exception) { errorVentas = e.message ?: "No se pudo guardar la configuración del historial." }
                                 finally { enviandoProducto = false }
+                            }
+                        },
+                        alGuardarAvisosContacto = { activo, inicio, fin ->
+                            scope.launch {
+                                try {
+                                    productosRepository.configurarAvisosContacto(sesion.tiendaId, activo, inicio, fin)
+                                    preferenciasInteraccion = preferenciasInteraccion.copy(avisosContacto = activo, horaInicioAvisos = inicio, horaFinAvisos = fin)
+                                    avisoProducto = if (activo) "Avisos de contacto activos entre $inicio y $fin." else "Avisos de contacto desactivados; las consultas seguirán guardándose."
+                                    errorProducto = null
+                                } catch (e: Exception) { errorProducto = e.message ?: "No se pudo guardar el horario de avisos." }
+                            }
+                        },
+                        alCambiarCalificaciones = { activo ->
+                            scope.launch {
+                                try {
+                                    productosRepository.configurarCalificaciones(sesion.tiendaId, activo)
+                                    preferenciasInteraccion = preferenciasInteraccion.copy(calificacionesHabilitadas = activo)
+                                    avisoProducto = if (activo) "Calificaciones activadas." else "Calificaciones desactivadas."
+                                    errorProducto = null
+                                } catch (e: Exception) { errorProducto = e.message ?: "No se pudo actualizar la preferencia de calificaciones." }
                             }
                         },
                         alCambiarCatalogoSinConexion = { activo ->

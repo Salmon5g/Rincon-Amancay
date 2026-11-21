@@ -7,6 +7,7 @@ import com.google.firebase.firestore.Source
 import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -109,10 +110,18 @@ data class ConsultaComprador(
     val fecha: Date,
     val estado: String,
     val respuesta: String? = null,
-    val respondidaEn: Date? = null
+    val respondidaEn: Date? = null,
+    val notificable: Boolean = true
 )
 
 data class FeriaParaVenta(val id: String, val nombre: String, val direccion: String, val fechaInicio: Date?)
+
+data class PreferenciasInteraccionTienda(
+    val avisosContacto: Boolean = false,
+    val horaInicioAvisos: String = "09:00",
+    val horaFinAvisos: String = "18:00",
+    val calificacionesHabilitadas: Boolean = false
+)
 
 data class VarianteProductoSolicitud(
     val id: String,
@@ -192,7 +201,8 @@ class ProductosEmprendedoraRepository(
                     val fecha = doc.getTimestamp("creadaEn")?.toDate() ?: return@mapNotNull null
                     ConsultaComprador(doc.id, doc.getString("nombre").orEmpty(), doc.getString("correo").orEmpty(),
                         doc.getString("mensaje").orEmpty(), doc.getString("producto"), fecha,
-                        doc.getString("estado") ?: "nueva", doc.getString("respuesta"), doc.getTimestamp("respondidaEn")?.toDate())
+                        doc.getString("estado") ?: "nueva", doc.getString("respuesta"), doc.getTimestamp("respondidaEn")?.toDate(),
+                        doc.getBoolean("notificable") ?: true)
                 }
             }
         productSubscription?.remove()
@@ -458,6 +468,46 @@ class ProductosEmprendedoraRepository(
 
     suspend fun configurarMostrarPrecios(tiendaId: String, mostrar: Boolean) {
         api.llamar("configurarMostrarPrecios", mapOf("tiendaId" to tiendaId, "mostrarPrecios" to mostrar))
+    }
+
+    suspend fun leerPreferenciasInteraccion(tiendaId: String): PreferenciasInteraccionTienda = withContext(Dispatchers.IO) {
+        val doc = Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general").get(Source.SERVER))
+        val horario = doc.get("notificacionesContacto") as? Map<*, *>
+        PreferenciasInteraccionTienda(
+            avisosContacto = horario?.get("habilitado") == true,
+            horaInicioAvisos = horario?.get("horaInicio") as? String ?: "09:00",
+            horaFinAvisos = horario?.get("horaFin") as? String ?: "18:00",
+            calificacionesHabilitadas = doc.getBoolean("calificacionesHabilitadas") == true
+        )
+    }
+
+    suspend fun configurarAvisosContacto(tiendaId: String, habilitado: Boolean, horaInicio: String, horaFin: String) {
+        api.llamar("configurarAvisosContacto", mapOf(
+            "tiendaId" to tiendaId, "habilitado" to habilitado,
+            "horaInicio" to horaInicio, "horaFin" to horaFin, "zonaHoraria" to "America/Santiago"
+        ))
+        val tema = "amancay-contacto-$tiendaId"
+        if (habilitado) com.google.firebase.messaging.FirebaseMessaging.getInstance().subscribeToTopic(tema).await()
+        else com.google.firebase.messaging.FirebaseMessaging.getInstance().unsubscribeFromTopic(tema).await()
+    }
+
+    suspend fun restaurarAvisosContacto(tiendaId: String) = withContext(Dispatchers.IO) {
+        val doc = Tasks.await(db.collection("tiendasPrivadas").document(tiendaId).collection("configuracion").document("general").get(Source.SERVER))
+        val tema = "amancay-contacto-$tiendaId"
+        if ((doc.get("notificacionesContacto") as? Map<*, *>)?.get("habilitado") == true) {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().subscribeToTopic(tema).await()
+        } else {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().unsubscribeFromTopic(tema).await()
+        }
+    }
+
+    suspend fun desactivarAvisosContactoEnEsteDispositivo(tiendaId: String) {
+        com.google.firebase.messaging.FirebaseMessaging.getInstance()
+            .unsubscribeFromTopic("amancay-contacto-$tiendaId").await()
+    }
+
+    suspend fun configurarCalificaciones(tiendaId: String, habilitado: Boolean) {
+        api.llamar("configurarCalificaciones", mapOf("tiendaId" to tiendaId, "habilitado" to habilitado))
     }
 
     suspend fun leerMostrarPrecios(tiendaId: String): Boolean = withContext(Dispatchers.IO) {

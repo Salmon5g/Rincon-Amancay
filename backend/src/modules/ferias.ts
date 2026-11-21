@@ -99,9 +99,9 @@ function parsear(accion: AccionFeria, input: unknown) {
     exigir(operationId(data.operacionId) && id(data.feriaId) && id(data.participanteId) && (data.asistencia === 'asistio' || data.asistencia === 'no_asistio'), 'datos-invalidos', 'Datos de asistencia inválidos.');
     return { accion, operacionId: data.operacionId, feriaId: data.feriaId, versionFeriaEsperada: fechaVersión(data.versionFeriaEsperada), participanteId: data.participanteId, asistencia: data.asistencia as Exclude<Asistencia, 'pendiente'> } as const;
   }
-  exactos(data, ['feriaId', 'respuesta']);
-  exigir(id(data.feriaId) && (data.respuesta === 'confirmar' || data.respuesta === 'rechazar'), 'datos-invalidos', 'Respuesta o ID de feria inválido.');
-  return { accion, feriaId: data.feriaId, respuesta: data.respuesta } as const;
+  exactos(data, ['feriaId', 'respuesta'], ['asociacionId']);
+  exigir(id(data.feriaId) && (data.respuesta === 'confirmar' || data.respuesta === 'rechazar') && (data.asociacionId === undefined || id(data.asociacionId)), 'datos-invalidos', 'Respuesta o ID de feria inválido.');
+  return { accion, feriaId: data.feriaId, respuesta: data.respuesta, ...(typeof data.asociacionId === 'string' ? { asociacionId: data.asociacionId } : {}) } as const;
 }
 
 async function comprobarAdmin(db: Firestore, uid: string) {
@@ -110,7 +110,19 @@ async function comprobarAdmin(db: Firestore, uid: string) {
 function nombreParticipante(value: unknown, fallback: string) { return typeof value === 'string' && value.trim() ? value.trim().slice(0, 120) : fallback; }
 function fechaIso(data: DocumentData, campo: string) { const value = data[campo]; return value instanceof Timestamp ? value.toDate().toISOString() : null; }
 
-export function crearFerias(db: Firestore) {
+export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda'|'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<void>) {
+  const avisarSeguidores = async (tipo: 'tienda'|'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
+    if (!notificar) return;
+    const coleccion = tipo === 'tienda' ? 'tiendasSeguidas' : 'asociacionesSeguidas';
+    const campo = tipo === 'tienda' ? 'tiendaId' : 'asociacionId';
+    const seguidores = await db.collectionGroup(coleccion).where(campo, '==', entidadId).limit(500).get();
+    await Promise.all(seguidores.docs.map(async seguimiento => {
+      const uid = seguimiento.ref.parent.parent?.id;
+      if (!uid) return;
+      const usuario = await db.doc(`usuarios/${uid}`).get();
+      if (usuario.get('avisosFerias') === true) await notificar(uid, tipo, entidadId, feriaId, nombreFeria);
+    }));
+  };
   return async (accion: AccionFeria, identidad: { uid: string }, input: unknown) => {
     exigir(accionesFeria.includes(accion) && id(identidad?.uid), 'no-autenticado', 'Identidad verificada requerida.');
     const request = parsear(accion, input);
@@ -173,20 +185,35 @@ export function crearFerias(db: Firestore) {
 
     if (request.accion === 'responderInvitacionFeria') {
       const feriaRef = db.doc(`ferias/${request.feriaId}`);
-      const participantRef = feriaRef.collection('participantes').doc(`emprendedora_${identidad.uid}`);
-      return db.runTransaction(async tx => {
-        const [access, fair, participant] = await tx.getAll(actorRef, feriaRef, participantRef);
+      const associationId = request.asociacionId;
+      const participantRef = feriaRef.collection('participantes').doc(associationId ? `asociacion_${associationId}` : `emprendedora_${identidad.uid}`);
+      const associationRef = associationId ? db.doc(`asociaciones/${associationId}`) : null;
+      const relationRef = associationRef?.collection('integrantes').doc(identidad.uid);
+      const respuesta = await db.runTransaction(async tx => {
+        const refs = [actorRef, db.doc(`emprendedoras/${identidad.uid}`), feriaRef, participantRef, ...(associationRef && relationRef ? [associationRef, relationRef] : [])];
+        const reads = await tx.getAll(...refs);
+        const [access, profile, fair, participant, association, relation] = reads;
         const accessData = access.data();
         exigir(accessData?.estado === 'activo' && Array.isArray(accessData.roles) && accessData.roles.includes('emprendedora'), 'sin-permiso', 'Solo una cuenta emprendedora activa puede responder.');
+        if (associationId) exigir(id(accessData.tiendaId) && profile.data()?.tiendaId === accessData.tiendaId && association?.exists && association.data()?.activo === true && relation?.exists && relation.data()?.estado === 'activa' && relation.data()?.tiendaId === accessData.tiendaId, 'sin-permiso', 'La cuenta ya no representa a esta asociación.');
         exigir(fair.exists && fair.data()?.estado === 'publicada', 'no-encontrado', 'La feria no está publicada o no existe.');
-        exigir(participant.exists && participant.data()?.entidadId === identidad.uid, 'conflicto', 'No tienes una invitación para esta feria.');
+        exigir(participant.exists && participant.data()?.tipo === (associationId ? 'asociacion' : 'emprendedora') && participant.data()?.entidadId === (associationId ?? identidad.uid), 'conflicto', 'No tienes una invitación para esta feria.');
         const estado = request.respuesta === 'confirmar' ? 'confirmada' : 'rechazada';
-        if (participant.data()?.estado === estado) return { feriaId: request.feriaId, estado };
+        if (participant.data()?.estado === estado) return { feriaId: request.feriaId, estado, notificar: false };
         exigir(participant.data()?.estado === 'invitada', 'conflicto', 'La invitación ya fue respondida.');
         const now = FieldValue.serverTimestamp();
         tx.update(participantRef, { estado, ...(estado === 'confirmada' ? { asistencia: 'pendiente' } : { asistencia: FieldValue.delete() }), actualizadoEn: now }); tx.update(feriaRef, { actualizadoEn: now });
-        return { feriaId: request.feriaId, estado };
+        return { feriaId: request.feriaId, estado, notificar: estado === 'confirmada' };
       });
+      if (respuesta.notificar) {
+        const fair = await feriaRef.get();
+        if (fair.exists) {
+          const tipo = associationId ? 'asociacion' : 'tienda';
+          const entidadId = associationId ?? (await db.doc(`emprendedoras/${identidad.uid}`).get()).get('tiendaId');
+          if (typeof entidadId === 'string') await avisarSeguidores(tipo, entidadId, request.feriaId, String(fair.get('nombre') ?? 'una feria')).catch(() => undefined);
+        }
+      }
+      return { feriaId: respuesta.feriaId, estado: respuesta.estado };
     }
 
     const operationId = request.operacionId;
@@ -247,7 +274,7 @@ export function crearFerias(db: Firestore) {
       const entityRef = db.doc(request.tipo === 'asociacion' ? `asociaciones/${request.entidadId}` : `accesos/${request.entidadId}`);
       const profileRef = request.tipo === 'emprendedora' ? db.doc(`emprendedoras/${request.entidadId}`) : null;
       const userRef = request.tipo === 'emprendedora' ? db.doc(`usuarios/${request.entidadId}`) : null;
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const refs = [actorRef, receiptRef, feriaRef, participantRef, entityRef, ...(profileRef ? [profileRef] : []), ...(userRef ? [userRef] : [])];
         const reads = await tx.getAll(...refs); const [actor, receipt, fair, participant, entity, profile, user] = reads;
         exigir(admin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
@@ -278,6 +305,17 @@ export function crearFerias(db: Firestore) {
         tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: participant.exists ? { estado: participant.data()?.estado, asistencia: participant.data()?.asistencia ?? null } : null, despues: { tipo: request.tipo, entidadId: request.entidadId, estado: state, asistencia: state === 'agregada_admin' ? 'pendiente' : null }, creadoEn: now });
         return result;
       });
+      if (request.accion === 'agregarParticipanteFeria' && resultado.estado === 'agregada_admin') {
+        const feria = await feriaRef.get();
+        if (feria.exists) {
+          const tipo = request.tipo === 'asociacion' ? 'asociacion' : 'tienda';
+          const entidadId = tipo === 'asociacion'
+            ? request.entidadId
+            : (await db.doc(`emprendedoras/${request.entidadId}`).get()).get('tiendaId');
+          if (typeof entidadId === 'string') await avisarSeguidores(tipo, entidadId, feriaId, String(feria.get('nombre') ?? 'una feria')).catch(() => undefined);
+        }
+      }
+      return resultado;
     }
 
     if (request.accion === 'cancelarInvitacionFeria') {

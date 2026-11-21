@@ -373,6 +373,9 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
         productosRepository.observar(sesion.tiendaId)
         onDispose { productosRepository.cerrar() }
     }
+    LaunchedEffect(productosRepository, sesion.tiendaId) {
+        runCatching { productosRepository.restaurarAvisosContacto(sesion.tiendaId) }
+    }
 
     if (confirmarRetiroTienda) {
         AlertDialog(
@@ -458,12 +461,15 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
         alSalir = {
             preferenciasAcceso.edit().remove(claveHuella(sesion.uid)).apply()
             huellaHabilitada = false
-            repository.cerrarSesion()
-            cuenta = null
-            huellaValidada = true
-            aviso = null
-            error = null
-            alVolver()
+            scope.launch {
+                runCatching { productosRepository.desactivarAvisosContactoEnEsteDispositivo(sesion.tiendaId) }
+                repository.cerrarSesion()
+                cuenta = null
+                huellaValidada = true
+                aviso = null
+                error = null
+                alVolver()
+            }
         },
         escalaTexto = escalaTexto,
         alCambiarEscalaTexto = alCambiarEscalaTexto
