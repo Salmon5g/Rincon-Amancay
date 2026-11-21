@@ -338,7 +338,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
           const entidadId = tipo === 'asociacion'
             ? request.entidadId
             : (await db.doc(`emprendedoras/${request.entidadId}`).get()).get('tiendaId');
-          if (typeof entidadId === 'string') await avisarSeguidores(tipo, entidadId, feriaId, String(feria.get('nombre') ?? 'una feria')).catch(() => undefined);
+          if (typeof entidadId === 'string') await avisarSeguidores(tipo, entidadId, request.feriaId, String(feria.get('nombre') ?? 'una feria')).catch(() => undefined);
         }
       }
       return resultado;
