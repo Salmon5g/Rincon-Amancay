@@ -438,7 +438,9 @@ private fun EmprendedoraApp(repositorio: AmancayRepository, onExit: () -> Unit) 
                             repositorio.marcarEnlaceCompartido()
                             scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
                         },
-                        onContact = { scope.launch { snackbar.showSnackbar("Te contactarán por WhatsApp") } }
+                        onContact = { scope.launch { snackbar.showSnackbar("Te contactarán por WhatsApp") } },
+                        onBack = { go(Screen.Products) },
+                        nombreTienda = "Tu tienda"
                     )
                 }
                 is Screen.Sale -> RegisterSaleScreen(
@@ -1017,9 +1019,9 @@ internal fun EmprendedoraAppConectada(
 
     Scaffold(
         containerColor = Cream,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
         bottomBar = {
-            if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) {
+            if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen !is Screen.Preview) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
                 NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                     Tab.entries.forEach { item ->
@@ -1444,11 +1446,15 @@ internal fun EmprendedoraAppConectada(
                         privateImageError = errorFotoVista,
                         onRetryPrivateImage = { reintentoFotoVista++ },
                         esVistaPrivada = productoDeVista?.esBorrador == true,
-                        link = EnlacesPublicos.tienda(sesion.tiendaId),
+                        nombreTienda = tienda.nombre,
+                        calificacionesActivas = preferenciasInteraccion.calificacionesHabilitadas,
+                        onBack = { screen = Screen.Products; tab = Tab.PRODUCTOS },
+                        link = productoDeVista?.let { EnlacesPublicos.producto(sesion.tiendaId, it.id) } ?: EnlacesPublicos.tienda(sesion.tiendaId),
                         onShare = {
-                            clipboard.setText(AnnotatedString(EnlacesPublicos.tienda(sesion.tiendaId)))
+                            val enlace = productoDeVista?.let { EnlacesPublicos.producto(sesion.tiendaId, it.id) } ?: EnlacesPublicos.tienda(sesion.tiendaId)
+                            clipboard.setText(AnnotatedString(enlace))
                             linkCompartido = true
-                            scope.launch { snackbar.showSnackbar("Enlace de tu tienda copiado") }
+                            scope.launch { snackbar.showSnackbar("Enlace del producto copiado") }
                         },
                         onContact = { scope.launch { snackbar.showSnackbar("Consulta el contacto disponible en la ficha de la tienda") } }
                     )

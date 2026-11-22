@@ -29,12 +29,16 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -64,6 +68,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.amancay.data.*
 import com.example.amancay.ui.theme.*
 
@@ -1056,112 +1061,144 @@ fun PreviewCatalogScreen(
     privateImageError: String? = null,
     onRetryPrivateImage: () -> Unit = {},
     esVistaPrivada: Boolean = false,
-    link: String = EnlacesPublicos.inicio()
+    link: String = EnlacesPublicos.inicio(),
+    onBack: () -> Unit = {},
+    nombreTienda: String = "Tu tienda",
+    calificacionesActivas: Boolean = true
 ) {
-    val p = producto
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(8.dp))
-        Text("VISTA PÚBLICA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.fillMaxWidth())
-        Text("Así ven tu catálogo", fontSize = 30.sp, color = Dark, fontFamily = FontFamily.Serif, modifier = Modifier.fillMaxWidth())
-        Text("Revisa cómo se muestra tu tienda antes de compartirla.", fontSize = 15.sp, color = Muted, modifier = Modifier.fillMaxWidth())
-        if (esVistaPrivada) {
-            Spacer(Modifier.height(8.dp))
-            Text("VISTA PRIVADA · Solo tú la ves hasta publicar", fontSize = 13.sp, color = Wine, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-        }
-        Spacer(Modifier.height(14.dp))
-        var showShare by remember { mutableStateOf(false) }
-        if (p == null) {
-            Text("Aún no tienes productos publicados.", color = Muted)
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(210.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(CardPink)
-            ) {
-                val bitmap = privateImageBitmap ?: p.photoBitmap
-                if (p.tieneFoto && (bitmap != null || p.photoUri != null)) {
-                    ProductImage(
-                        fallback = Fig.VASE_HERO, size = 210.dp,
-                        uri = p.photoUri, bitmap = bitmap, hasPhoto = true,
-                        modifier = Modifier.fillMaxWidth(), corner = 24.dp
-                    )
-                } else if (p.tieneFoto && privateImageLoading) {
-                    CircularProgressIndicator(color = Wine)
-                } else if (p.tieneFoto) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📷", fontSize = 36.sp)
-                        Text("No se pudo mostrar la imagen guardada", color = Muted, fontSize = 13.sp)
-                        if (com.example.amancay.BuildConfig.DEBUG) {
-                            privateImageError?.let { Text(it, color = Muted, fontSize = 12.sp) }
-                        }
-                        if (privateImageError != null) TextButton(onClick = onRetryPrivateImage) { Text("Reintentar", color = Wine) }
-                    }
-                } else {
-                    Image(
-                        painter = painterResource(Fig.VASE_HERO), contentDescription = null,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "${p.tipo?.label?.uppercase() ?: "DECORACIÓN"} · CASA NATIVA",
-                fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine,
-                modifier = Modifier.fillMaxWidth()
+    var showShare by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize().background(Cream)) {
+        Image(painterResource(Fig.FLORAL_DERECHA), null, Modifier.align(Alignment.TopEnd).padding(top = 115.dp).width(188.dp).height(280.dp), contentScale = ContentScale.Fit, alpha = 0.48f)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            CabeceraFichaProducto(onBack, onShare = { if (producto?.publicado == true) showShare = true })
+            ContenidoFichaProducto(
+                producto = producto,
+                nombreTienda = nombreTienda,
+                esVistaPrivada = esVistaPrivada,
+                calificacionesActivas = calificacionesActivas,
+                privateImageBitmap = privateImageBitmap,
+                privateImageLoading = privateImageLoading,
+                privateImageError = privateImageError,
+                onRetryPrivateImage = onRetryPrivateImage,
+                onContact = onContact,
+                onBack = onBack,
+                onShare = { showShare = true }
             )
-            Text(p.nombre, fontSize = 28.sp, color = Dark, modifier = Modifier.fillMaxWidth())
-            Text(
-                p.material.ifBlank { "Pieza de gres hecha a mano, con textura mate y tonos inspirados en la tierra húmeda." },
-                fontSize = 15.sp, color = Muted, modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(formatPrice(p.precioPrincipal()), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Dark, modifier = Modifier.fillMaxWidth())
-            Text("Disponible para encargo", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GreenText, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(12.dp))
-            PrimaryButton("Contactar a la vendedora", onContact)
-            Spacer(Modifier.height(12.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        if (p.publicado) "Tu producto está visible" else "Tu producto aún no está publicado",
-                        fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Dark
-                    )
-                    Text(
-                        if (p.publicado) "Comparte el enlace cuando quieras." else "Solo tú puedes revisar esta vista. Publícalo cuando esté listo.",
-                        fontSize = 13.sp, color = Muted
-                    )
-                    if (p.publicado) {
-                        Spacer(Modifier.height(10.dp))
-                        OutlineButton("Compartir", { showShare = true })
-                    }
-                }
-            }
-            if (showShare) {
-                ShareDialog(
-                    link = link,
-                    onCopiar = { onShare(); showShare = false },
-                    onCompartir = onShare,
-                    onCerrar = { showShare = false }
-                )
-            }
+            Spacer(Modifier.height(20.dp))
         }
-        Spacer(Modifier.height(16.dp))
+        if (showShare && producto != null) {
+            ShareDialog(link, titulo = producto.nombre, onCopiar = { onShare(); showShare = false }, onCompartir = onShare, onCerrar = { showShare = false })
+        }
     }
 }
 
 @Composable
-private fun ShareDialog(link: String, onCopiar: () -> Unit, onCompartir: () -> Unit, onCerrar: () -> Unit) {
+private fun ContenidoFichaProducto(
+    producto: Product?, nombreTienda: String, esVistaPrivada: Boolean,
+    calificacionesActivas: Boolean, privateImageBitmap: Bitmap?, privateImageLoading: Boolean,
+    privateImageError: String?, onRetryPrivateImage: () -> Unit,
+    onContact: () -> Unit, onBack: () -> Unit, onShare: () -> Unit
+) {
+    Spacer(Modifier.height(18.dp))
+    Text("FICHA DE PRODUCTO", fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = AccentRed, modifier = Modifier.fillMaxWidth())
+    Text(producto?.nombre ?: "Producto", fontSize = 42.sp, lineHeight = 48.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = FontFamily.Serif, modifier = Modifier.fillMaxWidth())
+    Text("Producto de $nombreTienda", fontSize = 21.sp, color = Wine, modifier = Modifier.fillMaxWidth())
+    if (esVistaPrivada || producto?.publicado == false) Text("Vista privada · Solo tú puedes verla hasta publicar", fontSize = 13.sp, color = Muted, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+    Spacer(Modifier.height(22.dp))
+    if (producto == null) {
+        Text("Aún no tienes productos para mostrar.", color = Muted)
+    } else {
+        HeroFichaProducto(producto, privateImageBitmap, privateImageLoading, privateImageError, onRetryPrivateImage)
+        Spacer(Modifier.height(22.dp))
+        Text(formatPrice(producto.precioPrincipal()), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Wine, modifier = Modifier.fillMaxWidth())
+        Text(if (producto.disponibleEncargo) "Disponible para encargo" else "Disponibilidad: consultar", fontSize = 17.sp, color = Muted, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onContact, enabled = producto.publicado && !esVistaPrivada, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(30.dp), border = androidx.compose.foundation.BorderStroke(1.5.dp, Wine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Wine)) { Text("Consulta por formulario", fontSize = 17.sp) }
+        Spacer(Modifier.height(14.dp))
+        OutlinedButton(onClick = onShare, enabled = producto.publicado, modifier = Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(22.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line), colors = ButtonDefaults.outlinedButtonColors(contentColor = Wine)) {
+            Icon(Icons.Filled.Share, null); Spacer(Modifier.width(10.dp)); Text("Compartir producto", fontSize = 17.sp)
+        }
+        Spacer(Modifier.height(18.dp))
+        TarjetaCalificacionPrevia("Califica tu experiencia", calificacionesActivas)
+        Spacer(Modifier.height(14.dp))
+        TarjetaCalificacionPrevia("Califica este producto", calificacionesActivas)
+        Spacer(Modifier.height(18.dp))
+        PrimaryButton("Contactar a la emprendedora", onContact, enabled = producto.publicado && !esVistaPrivada)
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cerrar", color = Wine, fontSize = 17.sp) }
+    }
+}
+
+@Composable
+private fun HeroFichaProducto(producto: Product, privateImageBitmap: Bitmap?, privateImageLoading: Boolean, privateImageError: String?, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFFF5DCCF)), contentAlignment = Alignment.Center) {
+        val bitmap = privateImageBitmap ?: producto.photoBitmap
+        when {
+            producto.tieneFoto && bitmap != null -> Image(bitmap.asImageBitmap(), "Foto de ${producto.nombre}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            producto.tieneFoto && producto.photoUri != null -> AsyncImage(producto.photoUri, "Foto de ${producto.nombre}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            producto.tieneFoto && privateImageLoading -> CircularProgressIndicator(color = Wine)
+            producto.tieneFoto -> ColumnaErrorImagenProducto(privateImageError, onRetry)
+            else -> Image(painterResource(Fig.VASE_HERO), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        }
+    }
+}
+
+@Composable
+private fun ColumnaErrorImagenProducto(error: String?, onRetry: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("📷", fontSize = 36.sp)
+        Text("No se pudo mostrar la imagen guardada", color = Muted, fontSize = 13.sp)
+        if (com.example.amancay.BuildConfig.DEBUG) error?.let { Text(it, color = Muted, fontSize = 12.sp) }
+        if (error != null) TextButton(onClick = onRetry) { Text("Reintentar", color = Wine) }
+    }
+}
+
+@Composable
+private fun CabeceraFichaProducto(onBack: () -> Unit, onShare: () -> Unit) {
+    Box(Modifier.fillMaxWidth().height(76.dp)) {
+        TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart), contentPadding = PaddingValues(horizontal = 0.dp)) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Wine, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(6.dp)); Text("Volver", color = Wine, fontSize = 16.sp)
+        }
+        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(Fig.LOGO), contentDescription = "Rincón Amancay", modifier = Modifier.size(43.dp))
+            Spacer(Modifier.width(7.dp))
+            Column { Text("Rincón", fontSize = 12.sp, color = Muted); Text("Amancay", fontSize = 19.sp, color = Wine, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif) }
+        }
+        IconButton(onClick = onShare, modifier = Modifier.align(Alignment.CenterEnd)) {
+            Icon(Icons.Filled.Share, contentDescription = "Compartir producto", tint = Wine)
+        }
+    }
+}
+
+@Composable
+private fun TarjetaCalificacionPrevia(titulo: String, activa: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE8DC)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF6D0BF))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(titulo, modifier = Modifier.fillMaxWidth(), color = Wine, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                repeat(5) { Icon(Icons.Outlined.StarOutline, contentDescription = null, tint = if (activa) Wine else Muted, modifier = Modifier.size(27.dp)) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(28.dp), colors = ButtonDefaults.buttonColors(disabledContainerColor = Wine.copy(alpha = 0.45f), disabledContentColor = Color.White)) {
+                Text(if (activa) "Disponible para clientes" else "Calificaciones desactivadas", fontSize = 15.sp)
+            }
+            Text("La emprendedora no puede calificar su propio producto.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+@Composable
+private fun ShareDialog(link: String, titulo: String = "Mi tienda", onCopiar: () -> Unit, onCompartir: () -> Unit, onCerrar: () -> Unit) {
     val ctx = LocalContext.current
     var verQR by remember { mutableStateOf(false) }
     fun abrirWhatsApp() {
-        compartirEnlacePublico(ctx, "Mi tienda", link)
+        compartirEnlacePublico(ctx, titulo, link)
         onCompartir()
     }
     AlertDialog(
@@ -1171,7 +1208,7 @@ private fun ShareDialog(link: String, onCopiar: () -> Unit, onCompartir: () -> U
         text = {
             PopIn {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("Compartir tienda", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
+                    Text("Compartir $titulo", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Dark)
                     Text(link, fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(14.dp))
                     PrimaryButton("Compartir enlace", { abrirWhatsApp(); onCerrar() })
