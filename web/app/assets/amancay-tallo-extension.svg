@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1340" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="tallo" x1="808" y1="996" x2="523" y2="1285" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#244A30" />
+      <stop offset="0.48" stop-color="#315E3A" />
+      <stop offset="1" stop-color="#426D43" />
+    </linearGradient>
+    <linearGradient id="brillo" x1="812" y1="1003" x2="526" y2="1278" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8CA568" stop-opacity="0.55" />
+      <stop offset="1" stop-color="#8CA568" stop-opacity="0.05" />
+    </linearGradient>
+  </defs>
+  <path d="M808 992C806 1014 789 1038 766 1056C722 1090 667 1120 625 1159C581 1200 545 1252 523 1285C545 1245 582 1199 625 1163C667 1125 722 1096 766 1063C789 1045 809 1020 824 993L808 992Z" fill="url(#tallo)" />
+  <path d="M814 1004C809 1028 792 1049 771 1067C729 1101 674 1134 634 1170C594 1207 559 1256 526 1278" stroke="url(#brillo)" stroke-width="3" stroke-linecap="round" />
+  <path d="M821 1010C819 1030 802 1055 785 1072C742 1111 690 1140 645 1183" stroke="#173A27" stroke-opacity="0.32" stroke-width="2" stroke-linecap="round" />
+</svg>

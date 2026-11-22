@@ -975,6 +975,7 @@ onBeforeUnmount(() => {
           <Transition name="carrusel" mode="out-in">
             <section v-if="!tiendaCarrusel" key="banner" class="hero" aria-roledescription="diapositiva" :aria-label="`1 de ${totalCarrusel}`">
               <img class="hero-flor" src="/amancay-flor-principal-v3.png" alt="" aria-hidden="true" />
+              <img class="hero-tallo" src="../../assets/amancay-tallo-extension.svg" alt="" aria-hidden="true" />
               <div class="hero-texto">
                 <p class="sobretitulo">EMPRENDIMIENTOS LOCALES</p>
                 <h2>Hecho cerca, elegido con cariño</h2>
@@ -1877,14 +1878,29 @@ h1 {
 }
 
 .enlace {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.45rem 0.85rem;
+    border: 1.5px solid var(--amancay-bordo);
+    border-radius: 999px;
+    background: rgba(255, 251, 242, 0.82);
     font-size: 0.9rem;
     font-weight: 700;
     color: var(--amancay-bordo);
     text-decoration: none;
+    transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
 .enlace:hover {
-    text-decoration: underline;
+    background: var(--amancay-bordo);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(107, 30, 61, 0.18);
+}
+
+.enlace:focus-visible {
+    outline: 3px solid var(--amancay-mostaza);
+    outline-offset: 3px;
 }
 
 /* Hero de explorar */
@@ -1929,6 +1945,16 @@ h1 {
     height: auto;
     object-fit: contain;
     filter: drop-shadow(0 12px 10px rgba(81, 17, 47, 0.14));
+    pointer-events: none;
+}
+
+.hero-tallo {
+    position: absolute;
+    z-index: 0;
+    top: clamp(-140px, -5vw, -70px);
+    right: clamp(150px, 13vw, 260px);
+    width: clamp(360px, 26vw, 500px);
+    height: auto;
     pointer-events: none;
 }
 
@@ -3583,7 +3609,8 @@ article.tarjeta-tienda:hover {
         min-width: 0;
     }
 
-    .hero-flor {
+    .hero-flor,
+    .hero-tallo {
         top: -90px;
         right: 70px;
         width: 360px;
@@ -3641,7 +3668,8 @@ article.tarjeta-tienda:hover {
         max-width: 64%;
     }
 
-    .hero-flor {
+    .hero-flor,
+    .hero-tallo {
         top: -42px;
         right: 0;
         width: min(44vw, 340px);
@@ -3758,7 +3786,8 @@ article.tarjeta-tienda:hover {
         max-width: 70%;
     }
 
-    .hero-flor {
+    .hero-flor,
+    .hero-tallo {
         top: -36px;
         right: 0;
         width: min(58vw, 280px);
