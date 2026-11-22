@@ -265,7 +265,7 @@ async function procesarPendiente() {
     if (current.operacion === 'invitarParticipanteFeria' || current.operacion === 'agregarParticipanteFeria') candidata.value = ''
     pendiente.value = null; formulario.value = false; retiro.value = null
     limpiarArchivoImagen()
-    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'El proveedor aceptó el recordatorio. Esto todavía no confirma su entrega en el buzón' : 'Los cambios de la feria se guardaron en Firebase.'
+    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'El proveedor aceptó el recordatorio. Esto todavía no confirma su entrega en el buzón' : current.operacion === 'enviarAvisoConfirmadasFeria' ? 'El proveedor aceptó el aviso de participación confirmada. La entrega todavía no está confirmada.' : 'Los cambios de la feria se guardaron en Firebase.'
     await cargar()
   } catch (cause) {
     error.value = mensajeError(cause)
@@ -439,6 +439,37 @@ function prepararRecordatorioFeria(persona: ParticipanteFeria) {
     },
   }
 
+  void procesarPendiente()
+}
+
+function enviarAvisoConfirmadas(persona: ParticipanteFeria) {
+  if (!detalle.value || pendiente.value || enviando.value || !habilitado) {return}
+
+  if (
+    detalle.value.feria.estado !== 'publicada' ||
+    persona.estado !== 'confirmada'
+  ) {
+    error.value =
+      'Solo puedes enviar avisos a participantes confirmadas de ferias publicadas.'
+    return
+  }
+
+  const nombre = persona.nombreTienda || persona.nombre
+
+  if (!window.confirm(
+    `¿Enviar un aviso real de participación confirmada a ${nombre}?`
+  )) {
+    return
+  }
+
+  pendiente.value = {
+    operacion: 'enviarAvisoConfirmadasFeria',
+    solicitud: {
+      operacionId: opId(),
+      feriaId: detalle.value.feria.id,
+      participanteId: persona.id
+    }
+  }
   void procesarPendiente()
 }
 
@@ -629,6 +660,9 @@ onMounted(() => { void cargar() })
               <span v-if="persona.asistencia" class="estado asistencia">{{ etiquetaAsistencia(persona.asistencia) }}</span>
             </div>
             <div class="acciones" v-if="['confirmada', 'agregada_admin'].includes(persona.estado)"><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'asistio')">Asistió</button><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'no_asistio')">No asistió</button></div>
+            <button v-if="persona.estado === 'confirmada' && detalle.feria.estado === 'publicada'" class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente || persona.avisoConfirmacion?.estado === 'reservado'" @click="enviarAvisoConfirmadas(persona)">Enviar aviso</button>
+            <small v-if="persona.avisoConfirmacion?.estado === 'aceptado'">Último aviso aceptado: {{ persona.avisoConfirmacion.enviadoEn ? fechaBonita(persona.avisoConfirmacion.enviadoEn) : 'fecha pendiente' }}</small>
+            <small v-else-if="persona.avisoConfirmacion?.estado === 'reservado'">Aviso en proceso o pendiente de verificación</small>
             <button v-if="persona.estado === 'invitada' && detalle.feria.estado === 'publicada'" class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="prepararRecordatorioFeria(persona)"> Enviar recordatorio </button>
             <small v-if="persona.recordatorio?.estado === 'aceptado'"> Último recordatorio aceptado: {{ persona.recordatorio.enviadoEn ? fechaBonita(persona.recordatorio.enviadoEn) : 'fecha pendiente' }} </small>
             <small v-else-if="persona.recordatorio?.estado === 'reservado'"> Recordatorio en proceso o resultado por verificar</small>

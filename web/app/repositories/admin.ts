@@ -382,6 +382,8 @@ export function invitarParticipanteFeria(cliente: ClienteAdminConApi, solicitud:
 export function agregarParticipanteFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; tipo: 'emprendedora' | 'asociacion'; entidadId: string }) { return cliente.llamar('agregarParticipanteFeria', solicitud) }
 export function cancelarInvitacionFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; participanteId: string }) { return cliente.llamar('cancelarInvitacionFeria', solicitud) }
 export function retirarParticipanteFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; participanteId: string }) { return cliente.llamar('retirarParticipanteFeria', solicitud) }
+export function enviarRecordatorioFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; participanteId: string }) { return cliente.llamar('enviarRecordatorioFeria', solicitud) }
+export function enviarAvisoConfirmadasFeria(cliente: ClienteAdminConApi, solicitud: {operacionId: string; feriaId: string; participanteId: string}) {return cliente.llamar('enviarAvisoConfirmadasFeria', solicitud)}
 export function registrarAsistenciaFeria(cliente: ClienteAdminConApi, solicitud: { operacionId: string; feriaId: string; versionFeriaEsperada: string; participanteId: string; asistencia: 'asistio' | 'no_asistio' }) { return cliente.llamar('registrarAsistenciaFeria', solicitud) }
 
 export function responderInvitacionFeria(cliente: ClienteAdminConApi, solicitud: { feriaId: string; respuesta: 'confirmar' | 'rechazar' }) {
