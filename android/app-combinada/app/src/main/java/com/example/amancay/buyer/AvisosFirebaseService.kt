@@ -25,6 +25,18 @@ import kotlinx.coroutines.withTimeout
 
 internal class AvisosFirebaseService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
+        if (message.data["tipo"] == "invitacion_feria") {
+            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+            if (message.data["destinatarioUid"] != uid) return
+            val feriaId = message.data["feriaId"]?.takeIf(String::isNotBlank) ?: return
+            mostrarAviso(
+                message.data["titulo"] ?: "Invitación a feria",
+                message.data["mensaje"] ?: "Te invitaron a participar en una feria.",
+                message.messageId ?: message.data.toString(),
+                invitacionFeriaId = feriaId
+            )
+            return
+        }
         if (message.data["tipo"] == "participacion_feria") {
             if (puedeMostrarAvisoFeria(message)) {
                 mostrarAviso(
@@ -70,7 +82,8 @@ internal class AvisosFirebaseService : FirebaseMessagingService() {
         mensaje: String,
         clave: String,
         feriaId: String? = null,
-        tiendaConsultaId: String? = null
+        tiendaConsultaId: String? = null,
+        invitacionFeriaId: String? = null
     ) {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CANAL) == null) {
@@ -84,6 +97,13 @@ internal class AvisosFirebaseService : FirebaseMessagingService() {
             .setContentText(mensaje)
             .setAutoCancel(true)
         val destino = when {
+            invitacionFeriaId?.isNotBlank() == true -> Intent(this, MainActivity::class.java).apply {
+                action = ACCION_ABRIR_INVITACIONES_FERIA
+                data = Uri.parse("amancay://feria/invitaciones/$invitacionFeriaId")
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(MainActivity.EXTRA_ABRIR_INVITACIONES_FERIA, true)
+                putExtra("tipo", "invitacion_feria")
+            }
             feriaId?.isNotBlank() == true -> Intent(this, MainActivity::class.java).apply {
                 action = ACCION_ABRIR_FERIA
                 data = Uri.parse("amancay://feria/$feriaId")
@@ -101,7 +121,7 @@ internal class AvisosFirebaseService : FirebaseMessagingService() {
         destino?.let {
             val apertura = PendingIntent.getActivity(
                 this,
-                (feriaId ?: tiendaConsultaId).hashCode(),
+                (invitacionFeriaId ?: feriaId ?: tiendaConsultaId).hashCode(),
                 it,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -123,6 +143,7 @@ internal class AvisosFirebaseService : FirebaseMessagingService() {
 
     private companion object {
         const val CANAL = "amancay_avisos"
+        const val ACCION_ABRIR_INVITACIONES_FERIA = "com.example.amancay.ABRIR_INVITACIONES_FERIA"
         const val ACCION_ABRIR_FERIA = "com.example.amancay.ABRIR_FERIA"
         const val ACCION_ABRIR_CONSULTAS = "com.example.amancay.ABRIR_CONSULTAS"
     }

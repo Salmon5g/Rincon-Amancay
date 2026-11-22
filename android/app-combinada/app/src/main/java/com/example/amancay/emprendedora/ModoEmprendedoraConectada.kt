@@ -95,6 +95,7 @@ import com.example.amancay.ui.EnlacesPublicos
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.messaging.FirebaseMessaging
 import com.example.amancay.ui.PrimaryButton
 import com.example.amancay.ui.SelectableChip
 import com.example.amancay.ui.theme.CardPink
@@ -127,6 +128,7 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -138,7 +140,9 @@ fun ModoEmprendedoraConectada(
     alCambiarEscalaTexto: (Float) -> Unit,
     alVolver: () -> Unit,
     consultasTiendaIdPush: String? = null,
-    alConsumirConsultasPush: () -> Unit = {}
+    alConsumirConsultasPush: () -> Unit = {},
+    abrirInvitacionesFeriaPush: Boolean = false,
+    alConsumirInvitacionesFeriaPush: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? FragmentActivity
@@ -380,6 +384,24 @@ fun ModoEmprendedoraConectada(
         return
     }
 
+    val preferenciasAvisosInvitaciones = remember(context) {
+        context.getSharedPreferences("amancay_avisos_invitaciones", Context.MODE_PRIVATE)
+    }
+    LaunchedEffect(sesion.uid) {
+        val uidAnterior = preferenciasAvisosInvitaciones.getString("uid_suscrito", null)
+        try {
+            if (!uidAnterior.isNullOrBlank() && uidAnterior != sesion.uid) {
+                runCatching { FirebaseMessaging.getInstance().unsubscribeFromTopic("amancay-invitacion-$uidAnterior").await() }
+            }
+            FirebaseMessaging.getInstance().subscribeToTopic("amancay-invitacion-${sesion.uid}").await()
+            preferenciasAvisosInvitaciones.edit().putString("uid_suscrito", sesion.uid).apply()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            aviso = "No pudimos activar los avisos de invitaciones a ferias. Revisa tu conexión; las invitaciones seguirán disponibles en la app."
+        }
+    }
+
     DisposableEffect(productosRepository, sesion.tiendaId) {
         productosRepository.observar(sesion.tiendaId)
         onDispose { productosRepository.cerrar() }
@@ -419,6 +441,8 @@ fun ModoEmprendedoraConectada(
         feriasRepository = feriasRepository,
         consultasTiendaIdPush = consultasTiendaIdPush,
         alConsumirConsultasPush = alConsumirConsultasPush,
+        abrirInvitacionesFeriaPush = abrirInvitacionesFeriaPush,
+        alConsumirInvitacionesFeriaPush = alConsumirInvitacionesFeriaPush,
         huellaHabilitada = huellaHabilitada,
         aviso = aviso,
         error = error,

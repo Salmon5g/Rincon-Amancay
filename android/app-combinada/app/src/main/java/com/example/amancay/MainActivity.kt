@@ -108,6 +108,7 @@ private fun mensajeCargaVentas(error: Exception, recurso: String): String {
 class MainActivity : FragmentActivity() {
     private var feriaPushPendiente by mutableStateOf<String?>(null)
     private var consultasPushTiendaPendiente by mutableStateOf<String?>(null)
+    private var abrirInvitacionesFeriaPushPendiente by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -117,14 +118,21 @@ class MainActivity : FragmentActivity() {
             AmancayTheme(darkTheme = false) {
                 val feriaId = feriaPushPendiente
                 val tiendaConsultaId = consultasPushTiendaPendiente
+                val abrirInvitacionesFeria = abrirInvitacionesFeriaPushPendiente
                 AmancayApp(
                     feriaIdPush = feriaId,
                     consultasTiendaIdPush = tiendaConsultaId,
+                    abrirInvitacionesFeriaPush = abrirInvitacionesFeria,
                     alConsumirFeriaPush = {
                         if (feriaPushPendiente == feriaId) feriaPushPendiente = null
                     },
                     alConsumirConsultasPush = {
                         if (consultasPushTiendaPendiente == tiendaConsultaId) consultasPushTiendaPendiente = null
+                    },
+                    alConsumirInvitacionesFeriaPush = {
+                        if (abrirInvitacionesFeriaPushPendiente == abrirInvitacionesFeria) {
+                            abrirInvitacionesFeriaPushPendiente = false
+                        }
                     }
                 )
             }
@@ -141,11 +149,14 @@ class MainActivity : FragmentActivity() {
         feriaPushPendiente = intent.getStringExtra(EXTRA_FERIA_ID)?.takeIf(String::isNotBlank)
         consultasPushTiendaPendiente = intent.getStringExtra(EXTRA_CONSULTAS_TIENDA_ID)?.takeIf(String::isNotBlank)
             ?: intent.getStringExtra("tiendaId")?.takeIf { intent.getStringExtra("tipo") == "consulta" }
+        abrirInvitacionesFeriaPushPendiente = intent.getBooleanExtra(EXTRA_ABRIR_INVITACIONES_FERIA, false)
+            || intent.getStringExtra("tipo") == "invitacion_feria"
     }
 
     companion object {
         const val EXTRA_FERIA_ID = "com.example.amancay.EXTRA_FERIA_ID"
         const val EXTRA_CONSULTAS_TIENDA_ID = "com.example.amancay.EXTRA_CONSULTAS_TIENDA_ID"
+        const val EXTRA_ABRIR_INVITACIONES_FERIA = "com.example.amancay.EXTRA_ABRIR_INVITACIONES_FERIA"
     }
 }
 
@@ -153,8 +164,10 @@ class MainActivity : FragmentActivity() {
 fun AmancayApp(
     feriaIdPush: String? = null,
     consultasTiendaIdPush: String? = null,
+    abrirInvitacionesFeriaPush: Boolean = false,
     alConsumirFeriaPush: () -> Unit = {},
-    alConsumirConsultasPush: () -> Unit = {}
+    alConsumirConsultasPush: () -> Unit = {},
+    alConsumirInvitacionesFeriaPush: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefsTexto = remember(context) { context.getSharedPreferences("amancay_preferencias_visuales", Context.MODE_PRIVATE) }
@@ -165,9 +178,10 @@ fun AmancayApp(
         onDispose { catalogoComprador.cerrar() }
     }
     var espacioEmprendedora by remember { mutableStateOf(false) }
-    LaunchedEffect(feriaIdPush, consultasTiendaIdPush) {
+    LaunchedEffect(feriaIdPush, consultasTiendaIdPush, abrirInvitacionesFeriaPush) {
         when {
             !feriaIdPush.isNullOrBlank() -> espacioEmprendedora = false
+            abrirInvitacionesFeriaPush -> espacioEmprendedora = true
             !consultasTiendaIdPush.isNullOrBlank() -> espacioEmprendedora = true
         }
     }
@@ -187,7 +201,9 @@ fun AmancayApp(
             feriaIdPush = feriaIdPush,
             alConsumirFeriaPush = alConsumirFeriaPush,
             consultasTiendaIdPush = consultasTiendaIdPush,
-            alConsumirConsultasPush = alConsumirConsultasPush
+            alConsumirConsultasPush = alConsumirConsultasPush,
+            abrirInvitacionesFeriaPush = abrirInvitacionesFeriaPush,
+            alConsumirInvitacionesFeriaPush = alConsumirInvitacionesFeriaPush
         )
     }
 }
@@ -203,7 +219,9 @@ private fun ContenidoAmancay(
     feriaIdPush: String?,
     alConsumirFeriaPush: () -> Unit,
     consultasTiendaIdPush: String?,
-    alConsumirConsultasPush: () -> Unit
+    alConsumirConsultasPush: () -> Unit,
+    abrirInvitacionesFeriaPush: Boolean,
+    alConsumirInvitacionesFeriaPush: () -> Unit
 ) {
     var uidConEleccionDeModo by remember { mutableStateOf<String?>(null) }
     DisposableEffect(firebaseServices.auth) {
@@ -222,7 +240,9 @@ private fun ContenidoAmancay(
             alCambiarEscalaTexto = alCambiarEscalaTexto,
             alVolver = { alCambiarEspacio(false) },
             consultasTiendaIdPush = consultasTiendaIdPush,
-            alConsumirConsultasPush = alConsumirConsultasPush
+            alConsumirConsultasPush = alConsumirConsultasPush,
+            abrirInvitacionesFeriaPush = abrirInvitacionesFeriaPush,
+            alConsumirInvitacionesFeriaPush = alConsumirInvitacionesFeriaPush
         )
     } else {
         ModoCompradorScreen(
@@ -679,6 +699,8 @@ internal fun EmprendedoraAppConectada(
     feriasRepository: FeriasEmprendedoraRepository,
     consultasTiendaIdPush: String? = null,
     alConsumirConsultasPush: () -> Unit = {},
+    abrirInvitacionesFeriaPush: Boolean = false,
+    alConsumirInvitacionesFeriaPush: () -> Unit = {},
     huellaHabilitada: Boolean,
     aviso: String?,
     error: String?,
@@ -763,6 +785,13 @@ internal fun EmprendedoraAppConectada(
             avisoProducto = "Esta notificación corresponde a otra tienda y no se abrió su bandeja de consultas."
         }
         alConsumirConsultasPush()
+    }
+    LaunchedEffect(abrirInvitacionesFeriaPush, sesion.uid) {
+        if (!abrirInvitacionesFeriaPush) return@LaunchedEffect
+        tab = Tab.INICIO
+        screen = Screen.Ferias
+        cargarInvitacionesFeria(forzar = true)
+        alConsumirInvitacionesFeriaPush()
     }
     var productoAjustando by remember(sesion.uid) { mutableStateOf<ProductoEmprendedora?>(null) }
     var ventasGuardadas by remember(sesion.uid) { mutableStateOf<List<VentaRegistrada>>(emptyList()) }

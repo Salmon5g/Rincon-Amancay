@@ -34,7 +34,8 @@ class FeriasEmprendedoraRepository(private val api: ApiEmprendedoraClient) {
                     "${inicio.format(DateTimeFormatter.ofPattern("HH:mm"))} a ${fin.format(DateTimeFormatter.ofPattern("HH:mm"))}"
                 } else "Horario por confirmar",
                 organiza = item.texto("organiza").ifBlank { "Equipo organizador" },
-                estado = estado
+                estado = estado,
+                fechaInicio = inicio?.toLocalDate()
             )
         }
     }

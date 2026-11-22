@@ -128,7 +128,7 @@ async function comprobarAdmin(db: Firestore, uid: string) {
 function nombreParticipante(value: unknown, fallback: string) { return typeof value === 'string' && value.trim() ? value.trim().slice(0, 120) : fallback; }
 function fechaIso(data: DocumentData, campo: string) { const value = data[campo]; return value instanceof Timestamp ? value.toDate().toISOString() : null; }
 
-export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>) {
+export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>, notificarInvitacion?: (uid: string, feriaId: string, nombreFeria: string) => Promise<void>) {
   const avisarSeguidores = async (tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
     if (!notificar) return;
     const coleccion = tipo === 'tienda' ? 'tiendasSeguidas' : 'asociacionesSeguidas';
@@ -631,11 +631,14 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       const entityRef = db.doc(request.tipo === 'asociacion' ? `asociaciones/${request.entidadId}` : `accesos/${request.entidadId}`);
       const profileRef = request.tipo === 'emprendedora' ? db.doc(`emprendedoras/${request.entidadId}`) : null;
       const userRef = request.tipo === 'emprendedora' ? db.doc(`usuarios/${request.entidadId}`) : null;
-      const resultado = await db.runTransaction(async tx => {
+      const transaccion = await db.runTransaction(async tx => {
         const refs = [actorRef, receiptRef, feriaRef, participantRef, entityRef, ...(profileRef ? [profileRef] : []), ...(userRef ? [userRef] : [])];
         const reads = await tx.getAll(...refs); const [actor, receipt, fair, participant, entity, profile, user] = reads;
         exigir(admin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
-        if (receipt.exists) { exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'El identificador de operación corresponde a otros datos.'); return receipt.data()!.resultado as Record<string, unknown>; }
+        if (receipt.exists) {
+          exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'El identificador de operación corresponde a otros datos.');
+          return { resultado: receipt.data()!.resultado as Record<string, unknown>, notificarInvitacion: false };
+        }
         exigir(fair.exists && fair.data()?.estado !== 'cancelada', 'conflicto', 'No se puede agregar participantes a una feria cancelada.');
         exigir(version(fair.data()!) === request.versionFeriaEsperada, 'conflicto', 'La feria cambió. Actualiza el listado antes de continuar.');
         exigir(fair.data()!.fechaInicio.toDate() > new Date(), 'conflicto', 'No se agregan participantes después del inicio de la feria.');
@@ -660,8 +663,25 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         const result = { feriaId, participanteId: participantRef.id, estado: state };
         tx.create(receiptRef, { firma: signature, resultado: result, creadaPor: identidad.uid, creadoEn: now });
         tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: participant.exists ? { estado: participant.data()?.estado, asistencia: participant.data()?.asistencia ?? null } : null, despues: { tipo: request.tipo, entidadId: request.entidadId, estado: state, asistencia: state === 'agregada_admin' ? 'pendiente' : null }, creadoEn: now });
-        return result;
+        return {
+          resultado: result,
+          notificarInvitacion: request.accion === 'invitarParticipanteFeria' && request.tipo === 'emprendedora',
+        };
       });
+      const resultado = transaccion.resultado;
+      if (transaccion.notificarInvitacion && typeof request.entidadId === 'string' && typeof feriaId === 'string') {
+        const feria = await feriaRef.get();
+        if (feria.exists) {
+          if (!notificarInvitacion) {
+            console.error('[ferias] Invitación guardada, pero el envío push no está configurado.', { feriaId });
+          } else {
+            await notificarInvitacion(request.entidadId, feriaId, String(feria.get('nombre') ?? 'una feria')).catch(error => {
+              const codigo = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'desconocido';
+              console.error('[ferias] No se pudo enviar el push de invitación.', { feriaId, codigo });
+            });
+          }
+        }
+      }
       if (request.accion === 'agregarParticipanteFeria' && resultado.estado === 'agregada_admin') {
         const feria = await feriaRef.get();
         if (feria.exists) {

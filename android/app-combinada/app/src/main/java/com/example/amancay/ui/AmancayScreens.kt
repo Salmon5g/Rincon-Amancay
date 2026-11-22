@@ -66,11 +66,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.amancay.data.*
 import com.example.amancay.ui.theme.*
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 // ---------- Scaffold de pasos ----------
 
@@ -312,6 +320,28 @@ fun FeriasScreen(
     error: String? = null,
     onActualizar: () -> Unit = {}
 ) {
+    val zonaHorariaFeria = remember { ZoneId.of("America/Santiago") }
+    val hoy = LocalDate.now(zonaHorariaFeria)
+    val localeFeria = remember { Locale.forLanguageTag("es-CL") }
+    val feriasCalendario = remember(invitaciones) {
+        invitaciones
+            .filter { it.estado == "pendiente" || it.estado == "aceptada" }
+            .filter { it.fechaInicio != null }
+            .sortedBy { it.fechaInicio }
+    }
+    var calendarioAbierto by remember { mutableStateOf(false) }
+    var mesCalendario by remember { mutableStateOf(YearMonth.from(hoy)) }
+    var diaCalendarioSeleccionado by remember { mutableStateOf(hoy) }
+    val feriasDelDia = feriasCalendario.filter { it.fechaInicio == diaCalendarioSeleccionado }
+    fun cambiarMesCalendario(nuevoMes: YearMonth) {
+        mesCalendario = nuevoMes
+        val fechaConFeria = feriasCalendario.firstOrNull { feria ->
+            feria.fechaInicio?.let { YearMonth.from(it) == nuevoMes } == true
+        }?.fechaInicio
+        diaCalendarioSeleccionado = fechaConFeria
+            ?: nuevoMes.atDay(diaCalendarioSeleccionado.dayOfMonth.coerceAtMost(nuevoMes.lengthOfMonth()))
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
         Text("FERIAS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
@@ -324,6 +354,42 @@ fun FeriasScreen(
                 if (cargando) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 else Text("Actualizar", color = Wine, fontWeight = FontWeight.Bold)
             }
+        }
+        OutlinedButton(
+            onClick = {
+                if (!calendarioAbierto) {
+                    val primeraFecha = feriasCalendario
+                        .firstOrNull { it.fechaInicio?.isBefore(hoy) == false }
+                        ?.fechaInicio
+                        ?: feriasCalendario.firstOrNull()?.fechaInicio
+                        ?: hoy
+                    diaCalendarioSeleccionado = primeraFecha
+                    mesCalendario = YearMonth.from(primeraFecha)
+                }
+                calendarioAbierto = !calendarioAbierto
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Wine)
+        ) {
+            Text(
+                if (calendarioAbierto) "Ocultar calendario" else "Ver calendario de las ferias",
+                fontWeight = FontWeight.Bold
+            )
+        }
+        if (calendarioAbierto) {
+            Spacer(Modifier.height(10.dp))
+            CalendarioInvitacionesFeria(
+                mes = mesCalendario,
+                fechaSeleccionada = diaCalendarioSeleccionado,
+                hoy = hoy,
+                ferias = feriasCalendario,
+                feriasDelDia = feriasDelDia,
+                locale = localeFeria,
+                alCambiarMes = ::cambiarMesCalendario,
+                alSeleccionarDia = { diaCalendarioSeleccionado = it }
+            )
         }
         Spacer(Modifier.height(14.dp))
         if (cargando && invitaciones.isEmpty()) {
@@ -360,6 +426,190 @@ fun FeriasScreen(
         Spacer(Modifier.height(8.dp))
         GhostButton("Volver", onVolver)
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun CalendarioInvitacionesFeria(
+    mes: YearMonth,
+    fechaSeleccionada: LocalDate,
+    hoy: LocalDate,
+    ferias: List<FeriaInvitation>,
+    feriasDelDia: List<FeriaInvitation>,
+    locale: Locale,
+    alCambiarMes: (YearMonth) -> Unit,
+    alSeleccionarDia: (LocalDate) -> Unit
+) {
+    val fechasConFeria = remember(ferias) { ferias.mapNotNull { it.fechaInicio }.toSet() }
+    val formatoMes = remember(locale) { DateTimeFormatter.ofPattern("MMMM yyyy", locale) }
+    val formatoFechaCompleta = remember(locale) { DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", locale) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { alCambiarMes(mes.minusMonths(1)) }) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Mes anterior", tint = Wine)
+                }
+                Text(
+                    mes.atDay(1).format(formatoMes).replaceFirstChar { it.titlecase(locale) },
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Dark
+                )
+                IconButton(onClick = { alCambiarMes(mes.plusMonths(1)) }) {
+                    Icon(Icons.Default.ArrowForward, contentDescription = "Mes siguiente", tint = Wine)
+                }
+            }
+
+            Row(Modifier.fillMaxWidth()) {
+                listOf("L", "M", "X", "J", "V", "S", "D").forEach { dia ->
+                    Text(
+                        dia,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Muted
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+
+            val espaciosIniciales = mes.atDay(1).dayOfWeek.value - DayOfWeek.MONDAY.value
+            val celdas = buildList<LocalDate?> {
+                repeat(espaciosIniciales) { add(null) }
+                for (dia in 1..mes.lengthOfMonth()) add(mes.atDay(dia))
+            }
+            celdas.chunked(7).forEach { semana ->
+                Row(Modifier.fillMaxWidth()) {
+                    semana.forEach { fecha ->
+                        if (fecha == null) {
+                            Spacer(Modifier.weight(1f).height(48.dp))
+                        } else {
+                            DiaCalendarioFeria(
+                                fecha = fecha,
+                                seleccionada = fecha == fechaSeleccionada,
+                                esHoy = fecha == hoy,
+                                tieneFeria = fecha in fechasConFeria,
+                                modifier = Modifier.weight(1f),
+                                alPulsar = { alSeleccionarDia(fecha) }
+                            )
+                        }
+                    }
+                    repeat(7 - semana.size) { Spacer(Modifier.weight(1f).height(48.dp)) }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = Line)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                fechaSeleccionada.format(formatoFechaCompleta).replaceFirstChar { it.titlecase(locale) },
+                fontWeight = FontWeight.Bold,
+                color = Dark
+            )
+            if (ferias.isEmpty()) {
+                Text(
+                    "Tu calendario aparecerá aquí cuando tengas ferias invitadas o confirmadas con fecha.",
+                    modifier = Modifier.padding(top = 6.dp),
+                    fontSize = 13.sp,
+                    color = Muted
+                )
+            } else if (feriasDelDia.isEmpty()) {
+                Text(
+                    "No tienes ferias invitadas o confirmadas para este día.",
+                    modifier = Modifier.padding(top = 6.dp),
+                    fontSize = 13.sp,
+                    color = Muted
+                )
+            } else {
+                Spacer(Modifier.height(8.dp))
+                feriasDelDia.forEach { feria ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F3)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(feria.nombre, fontWeight = FontWeight.Bold, color = Dark)
+                                Text(feria.horario, fontSize = 13.sp, color = Muted)
+                                Text(
+                                    feria.donde,
+                                    fontSize = 13.sp,
+                                    color = Muted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                if (feria.estado == "aceptada") "Confirmada" else "Invitada",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (feria.estado == "aceptada") GreenText else Wine
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiaCalendarioFeria(
+    fecha: LocalDate,
+    seleccionada: Boolean,
+    esHoy: Boolean,
+    tieneFeria: Boolean,
+    modifier: Modifier = Modifier,
+    alPulsar: () -> Unit
+) {
+    Column(
+        modifier = modifier.height(48.dp).clickable(onClick = alPulsar),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        seleccionada -> Wine
+                        tieneFeria -> Color(0xFFF6E7EE)
+                        else -> Color.Transparent
+                    }
+                )
+                .then(if (esHoy && !seleccionada) Modifier.border(1.dp, Wine, CircleShape) else Modifier),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                fecha.dayOfMonth.toString(),
+                fontSize = 13.sp,
+                fontWeight = if (tieneFeria || esHoy || seleccionada) FontWeight.Bold else FontWeight.Normal,
+                color = if (seleccionada) Color.White else Dark
+            )
+        }
+        if (tieneFeria) {
+            Box(
+                Modifier.padding(top = 2.dp).size(4.dp).background(if (seleccionada) Wine else GreenText, CircleShape)
+            )
+        } else {
+            Spacer(Modifier.height(6.dp))
+        }
     }
 }
 

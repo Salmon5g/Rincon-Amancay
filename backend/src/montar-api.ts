@@ -32,5 +32,18 @@ export function montarApi(auth:Auth,db:Firestore,bucket:ReturnType<ReturnType<ty
   const notificarFeria = enviarPush ? async (uid: string, tipo: 'tienda'|'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
     await enviarPush({ topic: `amancay-${tipo}-${entidadId}-${uid}`, android: { priority: 'high' }, data: { tipo: 'participacion_feria', destinatarioUid: uid, feriaId, entidadId, titulo: 'Participación confirmada', mensaje: `${tipo === 'tienda' ? 'La tienda que sigues' : 'La asociación que sigues'} confirmó su participación en ${nombreFeria}.` } });
   } : undefined;
-  return crearApi(auth,crearPublicacion(db,procesar,imagenes?.limpiar,imagenes?.procesarTienda),crearCuentas(db,auth),crearProductos(db,imagenes?.limpiar,procesar),crearStock(db),crearDesactivacion(db,auth),crearCicloCuentas(db,auth),crearValidadorSesion(db),config,crearCatalogos(db),crearAsociaciones(db),crearAdministracionPlataforma(db,auth),crearFerias(db,notificarFeria,auth,crearEmisorRecordatorios(process.env)),crearEdicionTiendaEmprendedora(db),imagenes?{subir:imagenes.subir,...(imagenes.leer?{leer:imagenes.leer}:{}),...(imagenes.subirTienda?{subirTienda:imagenes.subirTienda}:{}),...(imagenes.subirLogoAsociacion?{subirLogoAsociacion:imagenes.subirLogoAsociacion}:{}),...(imagenes.subirImagenFeria?{subirImagenFeria:imagenes.subirImagenFeria}:{})}:undefined,crearVentas(db),consultas.guardar,consultas.leerRespuesta,consultas.responder,crearLecturaMuestraFeriaPublica(db),crearLecturaFeriasPublicas(db),crearLecturaPoliticaNavegacionPublica(db));
+  const notificarInvitacion = enviarPush ? async (uid: string, feriaId: string, nombreFeria: string) => {
+    await enviarPush({
+      topic: `amancay-invitacion-${uid}`,
+      android: { priority: 'high' },
+      data: {
+        tipo: 'invitacion_feria',
+        destinatarioUid: uid,
+        feriaId,
+        titulo: 'Invitación a feria',
+        mensaje: `Te invitaron a la feria ${nombreFeria}.`,
+      },
+    });
+  } : undefined;
+  return crearApi(auth,crearPublicacion(db,procesar,imagenes?.limpiar,imagenes?.procesarTienda),crearCuentas(db,auth),crearProductos(db,imagenes?.limpiar,procesar),crearStock(db),crearDesactivacion(db,auth),crearCicloCuentas(db,auth),crearValidadorSesion(db),config,crearCatalogos(db),crearAsociaciones(db),crearAdministracionPlataforma(db,auth),crearFerias(db,notificarFeria,auth,crearEmisorRecordatorios(process.env),notificarInvitacion),crearEdicionTiendaEmprendedora(db),imagenes?{subir:imagenes.subir,...(imagenes.leer?{leer:imagenes.leer}:{}),...(imagenes.subirTienda?{subirTienda:imagenes.subirTienda}:{}),...(imagenes.subirLogoAsociacion?{subirLogoAsociacion:imagenes.subirLogoAsociacion}:{}),...(imagenes.subirImagenFeria?{subirImagenFeria:imagenes.subirImagenFeria}:{})}:undefined,crearVentas(db),consultas.guardar,consultas.leerRespuesta,consultas.responder,crearLecturaMuestraFeriaPublica(db),crearLecturaFeriasPublicas(db),crearLecturaPoliticaNavegacionPublica(db));
 }

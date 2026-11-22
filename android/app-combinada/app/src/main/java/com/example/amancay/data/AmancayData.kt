@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
 
@@ -103,7 +104,8 @@ data class FeriaInvitation(
     val cuando: String,
     val horario: String,
     val organiza: String,
-    val estado: String = "pendiente" // pendiente | aceptada | rechazada
+    val estado: String = "pendiente", // pendiente | aceptada | rechazada
+    val fechaInicio: LocalDate? = null
 )
 
 fun formatPrice(value: Long): String {
