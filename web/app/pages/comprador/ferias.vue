@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import '~/assets/amancay-tokens.css';
-import type { FeriaPublica } from '~/types/comprador-publico';
+import type { FeriaPublica, ParticipantePublicoFeria } from '~/types/comprador-publico';
 import { compartirEnlacePublico } from '~/utils/compartir-enlace-publico';
 
 const { $catalogoPublico } = useNuxtApp();
@@ -142,6 +142,18 @@ function seleccionarFeria(id: string) {
     feriaSeleccionadaId.value = id;
 }
 
+function tipoParticipante(participante: ParticipantePublicoFeria) {
+    return participante.tipo === 'asociacion' ? 'Asociación' : 'Emprendimiento';
+}
+
+function enlaceParticipante(participante: ParticipantePublicoFeria) {
+    if (participante.tipo === 'asociacion' && participante.asociacionId) {
+        return { path: '/comprador/directorio', query: { vista: 'asociaciones', asociacion: participante.asociacionId } };
+    }
+    const tiendaId = participante.tiendaIds?.[0];
+    return tiendaId ? { path: '/comprador', query: { tienda: tiendaId } } : null;
+}
+
 async function abrirMapa() {
     await navigateTo({ path: '/comprador/ferias', query: { mapa: '1' } });
 }
@@ -240,6 +252,49 @@ useHead({
           </div>
         </dl>
         <p v-if="feria.descripcion" class="descripcion">{{ feria.descripcion }}</p>
+        <section class="participantes-feria" aria-labelledby="titulo-participantes-feria">
+          <div class="participantes-cabecera">
+            <div>
+              <h2 id="titulo-participantes-feria">Emprendimientos confirmados</h2>
+              <p>Tiendas y asociaciones que ya confirmaron su participación en esta feria.</p>
+            </div>
+            <span v-if="feria.participantes" class="participantes-total">{{ feria.participantes.length }}</span>
+          </div>
+          <p v-if="!feria.participantes" class="participantes-vacio" role="status">
+            La lista de participantes aún se está preparando.
+          </p>
+          <p v-else-if="feria.participantes.length === 0" class="participantes-vacio" role="status">
+            Aún no hay participaciones confirmadas para esta feria.
+          </p>
+          <ul v-else class="participantes-lista">
+            <li
+              v-for="(participante, indice) in feria.participantes"
+              :key="`${participante.tipo}-${participante.nombre}-${indice}`"
+            >
+              <article class="participante">
+                <span class="participante-tipo">{{ tipoParticipante(participante) }}</span>
+                <h3>{{ participante.nombre }}</h3>
+                <div v-if="participante.catalogo.length" class="participante-catalogo">
+                  <p class="participante-catalogo-titulo">
+                    Muestra de catálogo · {{ participante.catalogo[0]?.nombreTienda }}
+                  </p>
+                  <ul>
+                    <li v-for="producto in (participante.catalogo[0]?.productos ?? [])" :key="producto">{{ producto }}</li>
+                  </ul>
+                </div>
+                <p v-else-if="enlaceParticipante(participante)" class="participante-sin-catalogo">Su catálogo se puede ver al visitar la tienda.</p>
+                <p v-else class="participante-sin-catalogo">Su catálogo aún no está disponible públicamente.</p>
+                <NuxtLink
+                  v-if="enlaceParticipante(participante)"
+                  class="participante-enlace"
+                  :to="enlaceParticipante(participante) ?? '/comprador'"
+                >
+                  Visitar {{ participante.tipo === 'asociacion' ? 'asociación' : 'tienda' }} →
+                </NuxtLink>
+              </article>
+            </li>
+          </ul>
+        </section>
         <section class="detalle-ubicacion" aria-labelledby="titulo-mapa-feria">
           <div class="detalle-ubicacion-cabecera">
             <div>
@@ -272,6 +327,7 @@ useHead({
           <h1>{{ mapaAbierto ? 'Mapa de ferias' : 'Ferias' }}</h1>
           <p class="sub">{{ mapaAbierto ? 'Selecciona una feria para centrarla en el mapa.' : 'Ferias publicadas de los emprendimientos Amancay.' }}</p>
         </header>
+        <CalendarioFerias v-if="!mapaAbierto && ferias.length" :ferias="ferias" />
         <section v-if="ferias.length === 0" class="proximo" aria-label="Sin ferias">
           <span class="proximo-arte" aria-hidden="true">🎪</span>
           <div>
@@ -671,6 +727,136 @@ h1 {
     line-height: 1.6;
     white-space: pre-line;
     color: var(--amancay-tinta);
+}
+
+.participantes-feria {
+    margin: 0 0 1.5rem;
+    padding: 1.15rem 1.2rem 1.25rem;
+    border: 1px solid var(--amancay-borde);
+    border-radius: 20px;
+    background: var(--amancay-fondo);
+}
+
+.participantes-cabecera {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.participantes-cabecera h2 {
+    margin: 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 1.3rem;
+    font-weight: 400;
+    color: var(--amancay-bordo);
+}
+
+.participantes-cabecera p {
+    margin: 0.28rem 0 0;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.participantes-total {
+    flex: none;
+    min-width: 2rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    background: var(--amancay-bordo);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.participantes-vacio {
+    margin: 0;
+    color: var(--amancay-tinta-suave);
+    line-height: 1.5;
+}
+
+.participantes-lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 225px), 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.participante {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--amancay-borde);
+    border-radius: 16px;
+    background: var(--amancay-superficie);
+}
+
+.participante-tipo {
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: var(--amancay-naranja-fondo);
+    color: var(--amancay-bordo);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.participante h3 {
+    margin: 0;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 1.08rem;
+    font-weight: 400;
+    line-height: 1.25;
+    color: var(--amancay-bordo);
+}
+
+.participante-catalogo {
+    width: 100%;
+}
+
+.participante-catalogo-titulo {
+    margin: 0 0 0.25rem;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.participante-catalogo ul {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--amancay-tinta);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.participante-sin-catalogo {
+    margin: 0;
+    color: var(--amancay-tinta-suave);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.participante-enlace {
+    margin-top: auto;
+    padding-top: 0.35rem;
+    color: var(--amancay-bordo);
+    font-size: 0.83rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.participante-enlace:hover {
+    text-decoration: underline;
 }
 
 .lista {

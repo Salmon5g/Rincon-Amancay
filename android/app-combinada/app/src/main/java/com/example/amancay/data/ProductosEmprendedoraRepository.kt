@@ -114,7 +114,15 @@ data class ConsultaComprador(
     val notificable: Boolean = true
 )
 
-data class FeriaParaVenta(val id: String, val nombre: String, val direccion: String, val fechaInicio: Date?)
+data class FeriaParaVenta(
+    val id: String,
+    val nombre: String,
+    val direccion: String,
+    val fechaInicio: Date?,
+    val fechaFin: Date? = null,
+    val latitud: Double? = null,
+    val longitud: Double? = null
+)
 
 data class PreferenciasInteraccionTienda(
     val avisosContacto: Boolean = false,
@@ -578,7 +586,15 @@ class ProductosEmprendedoraRepository(
 
     suspend fun listarFeriasPublicadas(): List<FeriaParaVenta> = withContext(Dispatchers.IO) {
         Tasks.await(db.collection("ferias").whereEqualTo("estado", "publicada").limit(100).get()).documents.map { doc ->
-            FeriaParaVenta(doc.id, doc.getString("nombre").orEmpty(), doc.getString("direccion").orEmpty(), doc.getTimestamp("fechaInicio")?.toDate())
+            FeriaParaVenta(
+                id = doc.id,
+                nombre = doc.getString("nombre").orEmpty(),
+                direccion = doc.getString("direccion").orEmpty(),
+                fechaInicio = doc.getTimestamp("fechaInicio")?.toDate(),
+                fechaFin = doc.getTimestamp("fechaFin")?.toDate(),
+                latitud = doc.getDouble("latitud"),
+                longitud = doc.getDouble("longitud")
+            )
         }
     }
 

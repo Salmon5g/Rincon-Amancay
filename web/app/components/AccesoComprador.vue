@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { mensajeErrorAcceso } from '~/lib/acceso-comprador'
+import { solicitudAccesoComprador, vistaSolicitudAccesoComprador } from '~/lib/acceso-comprador-ui'
 import type { AccesoComprador, ResultadoAcceso, SesionComprador } from '~/lib/acceso-comprador'
 
 // Botón de acceso del comprador + diálogo. Navegar el catálogo nunca depende de esto.
@@ -126,6 +127,12 @@ async function salir() {
     error.value = mensajeErrorAcceso(causa)
   }
 }
+
+// Otros componentes (por ejemplo, seguir una tienda) piden abrir el ingreso.
+watch(solicitudAccesoComprador, () => {
+  if (!solicitudAccesoComprador.value) return
+  abrir(vistaSolicitudAccesoComprador.value)
+})
 
 onMounted(() => {
   desconectar = servicio().observar(nueva => {

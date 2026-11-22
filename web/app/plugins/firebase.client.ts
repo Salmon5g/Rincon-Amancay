@@ -1,4 +1,5 @@
 import { crearAccesoComprador } from '~/lib/acceso-comprador';
+import { crearSeguimientosComprador } from '~/lib/seguimientos-comprador';
 import { obtenerFirebaseLocal } from '~/lib/firebase-local';
 import { obtenerFirebaseCliente } from '~/lib/firebase';
 import { crearClienteLocal } from '~/lib/cliente-local';
@@ -32,5 +33,6 @@ export default defineNuxtPlugin(() => {
       : undefined;
   const amancay = clienteApi ? { ...clienteApi, ...lecturas } : lecturas;
   const accesoComprador = crearAccesoComprador(firebase, clienteApi?.llamar);
-  return { provide: { amancay, catalogoPublico, accesoComprador, firebaseModo: modo } };
+  const seguimientosComprador = crearSeguimientosComprador(firebase);
+  return { provide: { amancay, catalogoPublico, accesoComprador, seguimientosComprador, firebaseModo: modo } };
 });

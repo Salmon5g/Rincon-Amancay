@@ -4,6 +4,8 @@
 
 A09 permite que una persona con sesión de Firebase siga una tienda publicada desde el detalle de la tienda en la app Android unificada. El control consulta el estado actual y muestra «Siguiendo» después de guardar. A12 conserva el destino elegido al abrir Mi sesión y, tras autenticar con Google, crea el seguimiento automáticamente y vuelve al detalle sin pedir que se pulse «Seguir» otra vez; el flujo y sus límites están en el contrato 22.
 
+La web del comprador reutiliza el mismo camino en el detalle de la tienda (`/comprador?tienda=...`): el botón «Seguir tienda» consulta y alterna el documento propio, y sin sesión abre el ingreso del comprador.
+
 ## Datos y permisos
 
 Cada seguimiento se guarda en usuarios/{uid}/tiendasSeguidas/{tiendaId} con el campo tiendaId. La persona solo puede consultar sus propios documentos. Puede crear un seguimiento si la tienda tiene una proyección pública publicada y habilitada. Los reintentos idénticos son idempotentes; el documento no admite cambios de contenido. La persona puede eliminar sus propios documentos, aunque la interfaz para dejar de seguir corresponde a A11.

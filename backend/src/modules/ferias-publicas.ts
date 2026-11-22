@@ -8,10 +8,12 @@ const MAX_PRODUCTOS = 1;
 
 type TipoParticipante = 'emprendedora' | 'asociacion';
 type MuestraCatalogo = { nombreTienda: string; productos: string[] };
-type SemillaParticipante = {
+export type ParticipantePublicoFeria = {
   tipo: TipoParticipante;
   nombre: string;
   tiendaIds: string[];
+  /** Solo para asociaciones: identificador público de su ficha en el directorio. */
+  asociacionId?: string;
 };
 
 function cadena(value: unknown, fallback = ''): string {
@@ -20,6 +22,82 @@ function cadena(value: unknown, fallback = ''): string {
 
 function idValido(value: unknown): value is string {
   return typeof value === 'string' && ID_VALIDO.test(value);
+}
+
+/**
+ * Lee participantes confirmadas o agregadas por administración y resuelve solo
+ * datos publicables: nombre visible y tiendas públicas de su catálogo.
+ */
+async function leerSemillasParticipantes(db: Firestore, feriaId: string): Promise<ParticipantePublicoFeria[]> {
+  const feriaRef = db.doc('ferias/' + feriaId);
+  const participantes = await feriaRef.collection('participantes')
+    .where('estado', 'in', ['confirmada', 'agregada_admin'])
+    .limit(MAX_PARTICIPANTES)
+    .get();
+
+  const candidatas = participantes.docs.map(documento => {
+    const data = documento.data();
+    const tipo = data.tipo === 'asociacion' ? 'asociacion' : data.tipo === 'emprendedora' ? 'emprendedora' : null;
+    const entidadId = cadena(data.entidadId);
+    return tipo && idValido(entidadId) ? { tipo, entidadId, data } : null;
+  }).filter((item): item is NonNullable<typeof item> => item !== null);
+
+  const uids = [...new Set(candidatas.filter(item => item.tipo === 'emprendedora').map(item => item.entidadId))];
+  const asociacionesIds = [...new Set(candidatas.filter(item => item.tipo === 'asociacion').map(item => item.entidadId))];
+  const [perfiles, asociaciones] = await Promise.all([
+    uids.length ? db.getAll(...uids.map(uid => db.doc('emprendedoras/' + uid))) : Promise.resolve([]),
+    asociacionesIds.length ? db.getAll(...asociacionesIds.map(id => db.doc('asociacionesPublicas/' + id))) : Promise.resolve([]),
+  ]);
+  const perfilPorUid = new Map(uids.map((uid, index) => [uid, perfiles[index]]));
+  const asociacionPorId = new Map(asociacionesIds.map((id, index) => [id, asociaciones[index]]));
+
+  const semillas: ParticipantePublicoFeria[] = [];
+  for (const participante of candidatas) {
+    if (participante.tipo === 'emprendedora') {
+      const perfil = perfilPorUid.get(participante.entidadId);
+      const tiendaId = perfil?.get('tiendaId');
+      semillas.push({
+        tipo: 'emprendedora',
+        nombre: cadena(participante.data.nombreTienda, 'Emprendimiento confirmado'),
+        tiendaIds: idValido(tiendaId) ? [tiendaId] : [],
+      });
+      continue;
+    }
+
+    const asociacion = asociacionPorId.get(participante.entidadId);
+    if (!asociacion?.exists || asociacion.get('activo') !== true) continue;
+    const integrantes = (asociacion.get('integrantes') as unknown[] | undefined) ?? [];
+    const tiendaIds = [...new Set(integrantes.flatMap(item => {
+      if (!item || typeof item !== 'object' || !('tiendaId' in item)) return [];
+      const tiendaId = (item as { tiendaId?: unknown }).tiendaId;
+      return idValido(tiendaId) ? [tiendaId] : [];
+    }))].slice(0, MAX_TIENDAS_ASOCIACION);
+    semillas.push({
+      tipo: 'asociacion',
+      nombre: cadena(asociacion.get('nombre'), 'Asociación confirmada'),
+      tiendaIds,
+      asociacionId: participante.entidadId,
+    });
+  }
+
+  const tiendaIds = [...new Set(semillas.flatMap(item => item.tiendaIds))];
+  const tiendas = tiendaIds.length
+    ? await db.getAll(...tiendaIds.map(id => db.doc('tiendasPublicas/' + id)))
+    : [];
+  const tiendaPorId = new Map(tiendaIds.map((id, index) => [id, tiendas[index]]));
+
+  return semillas.map(item => {
+    if (item.tipo !== 'emprendedora') return item;
+    const tienda = item.tiendaIds.length ? tiendaPorId.get(item.tiendaIds[0]) : undefined;
+    const publicada = tienda?.exists
+      && tienda.get('estadoPublicacion') === 'publicado'
+      && tienda.get('habilitada') === true;
+    return {
+      ...item,
+      nombre: publicada ? cadena(tienda.get('nombre'), item.nombre) : item.nombre,
+      tiendaIds: publicada ? item.tiendaIds : [],
+    };
+  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'));
 }
 
 /** Devuelve nombres de tiendas y productos publicados; nunca UID ni campos administrativos. */
@@ -33,55 +111,7 @@ export function crearLecturaMuestraFeriaPublica(db: Firestore) {
       throw new ErrorOperacion('no-encontrado', 'La feria no está publicada o ya no existe.');
     }
 
-    const participantes = await feriaRef.collection('participantes')
-      .where('estado', 'in', ['confirmada', 'agregada_admin'])
-      .limit(MAX_PARTICIPANTES)
-      .get();
-
-    const candidatas = participantes.docs.map(documento => {
-      const data = documento.data();
-      const tipo = data.tipo === 'asociacion' ? 'asociacion' : data.tipo === 'emprendedora' ? 'emprendedora' : null;
-      const entidadId = cadena(data.entidadId);
-      return tipo && idValido(entidadId) ? { tipo, entidadId, data } : null;
-    }).filter((item): item is NonNullable<typeof item> => item !== null);
-
-    const uids = [...new Set(candidatas.filter(item => item.tipo === 'emprendedora').map(item => item.entidadId))];
-    const asociacionesIds = [...new Set(candidatas.filter(item => item.tipo === 'asociacion').map(item => item.entidadId))];
-    const [perfiles, asociaciones] = await Promise.all([
-      uids.length ? db.getAll(...uids.map(uid => db.doc('emprendedoras/' + uid))) : Promise.resolve([]),
-      asociacionesIds.length ? db.getAll(...asociacionesIds.map(id => db.doc('asociacionesPublicas/' + id))) : Promise.resolve([]),
-    ]);
-    const perfilPorUid = new Map(uids.map((uid, index) => [uid, perfiles[index]]));
-    const asociacionPorId = new Map(asociacionesIds.map((id, index) => [id, asociaciones[index]]));
-
-    const semillas: SemillaParticipante[] = [];
-    for (const participante of candidatas) {
-      if (participante.tipo === 'emprendedora') {
-        const perfil = perfilPorUid.get(participante.entidadId);
-        const tiendaId = perfil?.get('tiendaId');
-        semillas.push({
-          tipo: 'emprendedora',
-          nombre: cadena(participante.data.nombreTienda, 'Emprendimiento confirmado'),
-          tiendaIds: idValido(tiendaId) ? [tiendaId] : [],
-        });
-        continue;
-      }
-
-      const asociacion = asociacionPorId.get(participante.entidadId);
-      if (!asociacion?.exists || asociacion.get('activo') !== true) continue;
-      const integrantes = (asociacion.get('integrantes') as unknown[] | undefined) ?? [];
-      const tiendaIds = [...new Set(integrantes.flatMap(item => {
-        if (!item || typeof item !== 'object' || !('tiendaId' in item)) return [];
-        const tiendaId = (item as { tiendaId?: unknown }).tiendaId;
-        return idValido(tiendaId) ? [tiendaId] : [];
-      }))].slice(0, MAX_TIENDAS_ASOCIACION);
-      semillas.push({
-        tipo: 'asociacion',
-        nombre: cadena(asociacion.get('nombre'), 'Asociación confirmada'),
-        tiendaIds,
-      });
-    }
-
+    const semillas = await leerSemillasParticipantes(db, feriaId);
     const tiendaIds = [...new Set(semillas.flatMap(item => item.tiendaIds))];
     const tiendas = tiendaIds.length
       ? await db.getAll(...tiendaIds.map(id => db.doc('tiendasPublicas/' + id)))
@@ -114,16 +144,29 @@ export function crearLecturaMuestraFeriaPublica(db: Firestore) {
 
     const resultado = semillas.map(item => ({
       tipo: item.tipo,
-      nombre: item.tipo === 'emprendedora'
-        ? item.tiendaIds.map(id => muestrasPorTienda.get(id)?.nombreTienda).find(Boolean) ?? item.nombre
-        : item.nombre,
+      nombre: item.nombre,
       catalogo: item.tiendaIds.flatMap(id => {
         const muestra = muestrasPorTienda.get(id);
         return muestra ? [muestra] : [];
       }).slice(0, 1),
-    })).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'));
+    }));
 
     return { feriaId, participantes: resultado };
+  };
+}
+
+/**
+ * Mantiene dentro de la feria publicada una lista sin UID para que la ficha web
+ * pueda mostrar participantes sin leer la subcolección privada.
+ */
+export function crearActualizacionParticipantesPublicosFeria(db: Firestore) {
+  return async (feriaId: string): Promise<void> => {
+    if (!idValido(feriaId)) return;
+    const feriaRef = db.doc('ferias/' + feriaId);
+    const feria = await feriaRef.get();
+    if (!feria.exists || feria.get('estado') !== 'publicada') return;
+    const participantes = await leerSemillasParticipantes(db, feriaId);
+    await feriaRef.update({ participantesPublicos: participantes });
   };
 }
  

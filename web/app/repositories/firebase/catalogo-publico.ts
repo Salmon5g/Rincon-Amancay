@@ -3,7 +3,7 @@ import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, DocumentSnapshot, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
-import type { AsociacionPublica, FeriaPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
+import type { AsociacionPublica, FeriaPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, MuestraCatalogoFeria, ParticipantePublicoFeria, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
 const MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024
@@ -51,9 +51,34 @@ function fecha(valor: unknown): Date | null {
   return valor && typeof (valor as { toDate?: unknown }).toDate === 'function' ? (valor as { toDate(): Date }).toDate() : null
 }
 
+function mapearParticipantesFeria(valor: unknown): ParticipantePublicoFeria[] | undefined {
+  if (!Array.isArray(valor)) return undefined
+  return valor.flatMap((elemento): ParticipantePublicoFeria[] => {
+    if (!elemento || typeof elemento !== 'object' || Array.isArray(elemento)) return []
+    const item = elemento as Record<string, unknown>
+    const nombre = texto(item.nombre).trim()
+    const tipo = texto(item.tipo).trim()
+    if (!nombre || (tipo !== 'emprendedora' && tipo !== 'asociacion')) return []
+    const tiendaIds = Array.isArray(item.tiendaIds)
+      ? item.tiendaIds
+        .filter((tiendaId): tiendaId is string => typeof tiendaId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(tiendaId))
+        .slice(0, 3)
+      : []
+    const asociacionId = texto(item.asociacionId).trim()
+    return [{
+      tipo,
+      nombre,
+      tiendaIds,
+      ...(tipo === 'asociacion' && /^[a-zA-Z0-9_-]{1,128}$/.test(asociacionId) ? { asociacionId } : {}),
+      catalogo: [],
+    }]
+  })
+}
+
 function mapearFeria(documento: DocumentSnapshot<DocumentData>): FeriaPublica {
   const datos = documento.data() ?? {}
   const imagenUrl = texto(datos.imagenUrl)
+  const participantes = mapearParticipantesFeria(datos.participantesPublicos)
   return {
     id: documento.id,
     nombre: texto(datos.nombre, 'Feria'),
@@ -65,6 +90,7 @@ function mapearFeria(documento: DocumentSnapshot<DocumentData>): FeriaPublica {
     imagenUrl: imagenUrl.startsWith('https://') ? imagenUrl : '',
     latitud: numero(datos.latitud),
     longitud: numero(datos.longitud),
+    ...(participantes ? { participantes } : {}),
   }
 }
 
@@ -235,6 +261,39 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
     return tienda.data().mostrarPrecios === true ? 'productos' : 'productosConsulta'
   }
 
+  async function leerMuestraCatalogo(tiendaId: string): Promise<MuestraCatalogoFeria | null> {
+    try {
+      const tienda = await getDoc(doc(db, 'tiendasPublicas', validarId(tiendaId)))
+      if (!tienda.exists() || tienda.data().estadoPublicacion !== 'publicado' || tienda.data().habilitada !== true) return null
+      const coleccion = tienda.data().mostrarPrecios === true ? 'productos' : 'productosConsulta'
+      const resultado = await getDocs(query(
+        collection(db, 'tiendasPublicas', tiendaId, coleccion),
+        where('estadoPublicacion', '==', 'publicado'),
+        limit(2),
+      ))
+      const productos = resultado.docs
+        .map((producto) => texto(producto.data().nombre).trim())
+        .filter(Boolean)
+      if (!productos.length) return null
+      return { nombreTienda: texto(tienda.data().nombre, 'Tienda participante'), productos }
+    } catch {
+      return null
+    }
+  }
+
+  async function cargarCatalogoParticipantes(participantes: ParticipantePublicoFeria[]): Promise<ParticipantePublicoFeria[]> {
+    return Promise.all(participantes.map(async (participante) => {
+      const catalogo: MuestraCatalogoFeria[] = []
+      for (const tiendaId of participante.tiendaIds ?? []) {
+        const muestra = await leerMuestraCatalogo(tiendaId)
+        if (!muestra) continue
+        catalogo.push(muestra)
+        break
+      }
+      return { ...participante, catalogo }
+    }))
+  }
+
   return {
     async listarTiendas(cursor = null) {
       return ejecutarConErrorNormalizado(async () => {
@@ -393,7 +452,9 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
         if (!documento.exists() || documento.data().estado !== 'publicada') {
           throw Object.assign(new Error('La feria solicitada ya no está disponible.'), { code: 'no-encontrado' })
         }
-        return mapearFeria(documento)
+        const feria = mapearFeria(documento)
+        if (feria.participantes) feria.participantes = await cargarCatalogoParticipantes(feria.participantes)
+        return feria
       })
     },
 

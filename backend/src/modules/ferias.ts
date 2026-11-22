@@ -3,6 +3,7 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import type { Auth } from 'firebase-admin/auth';
 import type { SolicitudCorreoFeria } from './correo-ferias.ts';
+import { crearActualizacionParticipantesPublicosFeria } from './ferias-publicas.ts';
 import { ErrorOperacion, version } from './publicacion.ts';
 
 export const accionesFeria = [
@@ -141,6 +142,17 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       if (usuario.get('avisosFerias') === true) await notificar(uid, tipo, entidadId, feriaId, nombreFeria);
     }));
   };
+  const actualizarParticipantesPublicos = crearActualizacionParticipantesPublicosFeria(db);
+  const refrescarParticipantesPublicos = async (feriaId: string) => {
+    try {
+      await actualizarParticipantesPublicos(feriaId);
+    } catch (error) {
+      console.error('[ferias] No se pudo actualizar la lista pública de participantes.', {
+        feriaId,
+        error: error instanceof Error ? error.message : 'error desconocido',
+      });
+    }
+  };
   return async (accion: AccionFeria, identidad: { uid: string }, input: unknown) => {
     exigir(accionesFeria.includes(accion) && id(identidad?.uid), 'no-autenticado', 'Identidad verificada requerida.');
     const request = parsear(accion, input);
@@ -263,6 +275,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
           if (typeof entidadId === 'string') await avisarSeguidores(tipo, entidadId, request.feriaId, String(fair.get('nombre') ?? 'una feria')).catch(() => undefined);
         }
       }
+      await refrescarParticipantesPublicos(request.feriaId);
       return { feriaId: respuesta.feriaId, estado: respuesta.estado };
     }
 
@@ -596,7 +609,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
 
     if (request.accion === 'editarFeria' || request.accion === 'cambiarEstadoFeria') {
       const feriaRef = db.doc(`ferias/${request.feriaId}`);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, fair] = await tx.getAll(actorRef, receiptRef, feriaRef);
         exigir(admin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) { exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'El identificador de operación corresponde a otros datos.'); return receipt.data()!.resultado as Record<string, unknown>; }
@@ -622,6 +635,10 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: feriaRef.id, antes: before, despues: result, creadoEn: now });
         return result;
       });
+      if (request.accion === 'cambiarEstadoFeria' && request.estado === 'publicada') {
+        await refrescarParticipantesPublicos(request.feriaId);
+      }
+      return resultado;
     }
 
     const feriaId = request.feriaId; const feriaRef = db.doc(`ferias/${feriaId}`);
@@ -691,13 +708,14 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
             : (await db.doc(`emprendedoras/${request.entidadId}`).get()).get('tiendaId');
           if (typeof entidadId === 'string') await avisarSeguidores(tipo, entidadId, request.feriaId, String(feria.get('nombre') ?? 'una feria')).catch(() => undefined);
         }
+        await refrescarParticipantesPublicos(request.feriaId);
       }
       return resultado;
     }
 
     if (request.accion === 'cancelarInvitacionFeria') {
       const participantRef = feriaRef.collection('participantes').doc(request.participanteId);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, fair, participant] = await tx.getAll(actorRef, receiptRef, feriaRef, participantRef);
         exigir(admin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) { exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'El identificador de operación corresponde a otros datos.'); return receipt.data()!.resultado as Record<string, unknown>; }
@@ -715,11 +733,13 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: before, despues: after, creadoEn: now });
         return result;
       });
+      await refrescarParticipantesPublicos(request.feriaId);
+      return resultado;
     }
 
     if (request.accion === 'retirarParticipanteFeria' || request.accion === 'registrarAsistenciaFeria') {
       const participantRef = feriaRef.collection('participantes').doc(request.participanteId);
-      return db.runTransaction(async tx => {
+      const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, fair, participant] = await tx.getAll(actorRef, receiptRef, feriaRef, participantRef);
         exigir(admin(actor.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
         if (receipt.exists) { exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'El identificador de operación corresponde a otros datos.'); return receipt.data()!.resultado as Record<string, unknown>; }
@@ -746,6 +766,8 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: `${feriaId}/participantes/${participantRef.id}`, antes: { estado: participantData.estado, asistencia: participantData.asistencia ?? 'pendiente' }, despues: after, creadoEn: now });
         return result;
       });
+      if (request.accion === 'retirarParticipanteFeria') await refrescarParticipantesPublicos(request.feriaId);
+      return resultado;
     }
     throw new ErrorOperacion('datos-invalidos', 'Acción de feria no reconocida.');
   };
