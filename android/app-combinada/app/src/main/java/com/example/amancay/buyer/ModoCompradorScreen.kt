@@ -698,109 +698,33 @@ fun ModoCompradorScreen(
         )
     }
     directorio.firstOrNull { it.id == tiendaSeleccionada }?.let { tienda ->
-        if (productoSeleccionado == null) AlertDialog(
-            onDismissRequest = { tiendaSeleccionada = null },
-            title = { Text(tienda.nombre) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    val catalogo = productos.filter { it.tiendaId == tienda.id }
-                    ControlSeguimientoTienda(
-                        tiendaId = tienda.id,
-                        nombreTienda = tienda.nombre,
-                        usuarioId = uid,
-                        firestore = firestore,
-                        alPedirInicioSesion = {
-                            pedirInicioSesionParaSeguir("tienda", tienda.id, tienda.nombre)
-                        }
+        if (productoSeleccionado == null) FichaTiendaComprador(
+            tienda = tienda,
+            tipo = tiposEmprendimiento[tienda.tipoId].orEmpty(),
+            sector = sectores[tienda.sectorId].orEmpty(),
+            productos = productos.filter { it.tiendaId == tienda.id },
+            usuarioId = uid,
+            firestore = firestore,
+            alPedirInicioSesion = { pedirInicioSesionParaSeguir("tienda", tienda.id, tienda.nombre) },
+            alConsultar = { contactar(tienda) },
+            alCompartir = {
+                com.example.amancay.ui.BotonCompartirEnlace("Compartir tienda", tienda.nombre, com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id))
+            },
+            alMostrarQr = {
+                com.example.amancay.ui.BotonCodigoQr("Código QR", tienda.nombre, com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id))
+            },
+            alComoLlegar = {
+                tienda.puntoRetiro?.let { punto ->
+                    val destino = FeriaComprador(
+                        id = tienda.id, nombre = tienda.nombre, descripcion = "", organizador = "",
+                        direccion = punto.descripcion, fechaInicio = null, fechaFin = null,
+                        latitud = punto.latitud, longitud = punto.longitud
                     )
-                    Spacer(Modifier.height(8.dp))
-                    if (tienda.formaContacto != "ninguno") {
-                        Text("Contacto configurado: ${tienda.formaContacto}", color = AmancayTintaSuave)
-                        if ((tienda.formaContacto == "whatsapp" || tienda.formaContacto == "ambos") && tienda.contacto?.tipo == "whatsapp") {
-                            TextButton(onClick = { abrirWhatsApp(tienda, "Hola, me interesa conocer tu emprendimiento.") }) {
-                                Text("Contactar por WhatsApp", color = AmancayBordo)
-                            }
-                        }
-                        if (tienda.formaContacto == "formulario" || tienda.formaContacto == "ambos") {
-                            TextButton(onClick = { abrirFormularioContacto(tienda) }) {
-                                Text("Enviar consulta", color = AmancayBordo)
-                            }
-                        }
-                    }
-                    com.example.amancay.ui.BotonCodigoQr(
-                        "Código QR de la tienda",
-                        tienda.nombre,
-                        com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
-                    )
-                    com.example.amancay.ui.BotonCompartirEnlace(
-                        "Compartir tienda",
-                        tienda.nombre,
-                        com.example.amancay.ui.EnlacesPublicos.tienda(tienda.id)
-                    )
-                    tienda.puntoRetiro?.let { punto ->
-                        Text(
-                            "Punto de venta o retiro",
-                            fontWeight = FontWeight.SemiBold,
-                            color = AmancayTinta,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                        if (punto.descripcion.isNotBlank()) Text(
-                            punto.descripcion,
-                            color = AmancayTintaSuave
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(170.dp)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
-                                .padding(top = 6.dp)
-                        ) {
-                            MapaOsmdroid(
-                                ferias = listOf(
-                                    FeriaComprador(
-                                        id = tienda.id,
-                                        nombre = tienda.nombre,
-                                        descripcion = "",
-                                        organizador = "",
-                                        direccion = punto.descripcion,
-                                        fechaInicio = null,
-                                        fechaFin = null,
-                                        latitud = punto.latitud,
-                                        longitud = punto.longitud
-                                    )
-                                ),
-                                ubicacionUsuario = null,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        TextButton(onClick = {
-                            val feria = FeriaComprador(
-                                id = tienda.id,
-                                nombre = tienda.nombre,
-                                descripcion = "",
-                                organizador = "",
-                                direccion = punto.descripcion,
-                                fechaInicio = null,
-                                fechaFin = null,
-                                latitud = punto.latitud,
-                                longitud = punto.longitud
-                            )
-                            if (!abrirComoLlegar(context, feria)) {
-                                avisoContacto = "No se pudo abrir la aplicación de mapas."
-                            }
-                        }) {
-                            Text("Cómo llegar al punto", color = AmancayBordo)
-                        }
-                    }
-                    if (catalogo.isEmpty()) Text("No hay productos públicos disponibles para mostrar.")
-                    catalogo.forEach { producto ->
-                        TextButton(onClick = { productoSeleccionado = producto }) {
-                            Text("${producto.nombre} · ${precioProducto(producto)}")
-                        }
-                    }
+                    if (!abrirComoLlegar(context, destino)) avisoContacto = "No se pudo abrir la aplicación de mapas."
                 }
             },
-            confirmButton = { TextButton(onClick = { tiendaSeleccionada = null; mostrarDirectorio = true }) { Text("Volver al directorio") } }
+            alAbrirProducto = { productoSeleccionado = it },
+            alVolver = { tiendaSeleccionada = null; mostrarDirectorio = true }
         )
     }
     productoSeleccionado?.let { seleccionado ->
