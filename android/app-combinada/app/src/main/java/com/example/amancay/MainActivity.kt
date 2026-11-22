@@ -1017,7 +1017,7 @@ internal fun EmprendedoraAppConectada(
 
     Scaffold(
         containerColor = Cream,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -1434,7 +1434,8 @@ internal fun EmprendedoraAppConectada(
                                     .onFailure { errorProducto = it.message ?: "No se pudo enviar la respuesta." }
                             }
                         },
-                        alVolver = { screen = Screen.Home; tab = Tab.INICIO }
+                        alVolver = { screen = Screen.Home; tab = Tab.INICIO },
+                        alAyuda = { showHelp = true }
                     )
                     is Screen.Preview -> PreviewCatalogScreen(
                         producto = productoDeVista,

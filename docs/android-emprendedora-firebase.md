@@ -9,6 +9,10 @@ La app Android unificada usa Firebase Authentication y Firestore. Las escrituras
 - La cuenta de prueba debe existir en Authentication y contar con documentos coherentes `accesos/{uid}`, `emprendedoras/{uid}` y `tiendasPrivadas/{tiendaId}`. `accesos` debe tener `estado: "activo"`, `roles` con `emprendedora` y `tiendaId`; el perfil debe apuntar al mismo `tiendaId`, y la ficha privada debe tener `propietarioUid` igual al UID.
 - Firestore debe tener las reglas desplegadas desde `firebase/firestore.rules`. No conceder escrituras al cliente para reemplazar la API.
 
+## Ejecutar manualmente en el emulador Pixel 4
+
+En Android Studio, abre la carpeta `android/app-combinada` y espera la sincronización de Gradle. En **Tools → Device Manager**, inicia `Pixel_4` (Android 10, API 29; la app admite desde API 28). Luego selecciona ese dispositivo en el selector superior, elige la configuración `app` y pulsa **Run** para instalar y abrir la versión debug. Si Android Studio no detecta el SDK automáticamente, comprueba que `android/app-combinada/local.properties` tenga la línea `sdk.dir` de la instalación local. Ese archivo no se sube a Git.
+
 ## Google y recuperación de contraseña
 
 Firebase Authentication debe tener habilitados **Google** y **Correo electrónico/contraseña**. Cada integrante registra su propia huella SHA-1 `debug` en la app Android `com.example.amancay` de Firebase y descarga un `google-services.json` actualizado en `android/app-combinada/app/`; las huellas debug varían por computador y el archivo no se sube a Git. Se obtiene la huella con `.\gradlew.bat :app:signingReport` desde `android/app-combinada`. Después se sincroniza Gradle y se vuelve a ejecutar la app. Credential Manager usa el cliente OAuth web incluido en el archivo descargado.
