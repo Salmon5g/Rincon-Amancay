@@ -131,7 +131,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: String, escalaTexto: Float, alCambiarEscalaTexto: (Float) -> Unit, alVolver: () -> Unit) {
+fun ModoEmprendedoraConectada(
+    firebase: FirebaseClientServices,
+    webClientId: String,
+    escalaTexto: Float,
+    alCambiarEscalaTexto: (Float) -> Unit,
+    alVolver: () -> Unit,
+    consultasTiendaIdPush: String? = null,
+    alConsumirConsultasPush: () -> Unit = {}
+) {
     val context = LocalContext.current
     val activity = context as? FragmentActivity
     val preferenciasAcceso = remember(context) {
@@ -409,6 +417,8 @@ fun ModoEmprendedoraConectada(firebase: FirebaseClientServices, webClientId: Str
         tipos = tipos,
         productosRepository = productosRepository,
         feriasRepository = feriasRepository,
+        consultasTiendaIdPush = consultasTiendaIdPush,
+        alConsumirConsultasPush = alConsumirConsultasPush,
         huellaHabilitada = huellaHabilitada,
         aviso = aviso,
         error = error,

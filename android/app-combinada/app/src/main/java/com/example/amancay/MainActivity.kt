@@ -1,6 +1,7 @@
 package com.example.amancay
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.compose.foundation.BorderStroke
@@ -105,19 +106,56 @@ private fun mensajeCargaVentas(error: Exception, recurso: String): String {
 }
 
 class MainActivity : FragmentActivity() {
+    private var feriaPushPendiente by mutableStateOf<String?>(null)
+    private var consultasPushTiendaPendiente by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        recibirDestinoPush(intent)
         enableEdgeToEdge()
         setContent {
             AmancayTheme(darkTheme = false) {
-                AmancayApp()
+                val feriaId = feriaPushPendiente
+                val tiendaConsultaId = consultasPushTiendaPendiente
+                AmancayApp(
+                    feriaIdPush = feriaId,
+                    consultasTiendaIdPush = tiendaConsultaId,
+                    alConsumirFeriaPush = {
+                        if (feriaPushPendiente == feriaId) feriaPushPendiente = null
+                    },
+                    alConsumirConsultasPush = {
+                        if (consultasPushTiendaPendiente == tiendaConsultaId) consultasPushTiendaPendiente = null
+                    }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recibirDestinoPush(intent)
+    }
+
+    private fun recibirDestinoPush(intent: Intent) {
+        feriaPushPendiente = intent.getStringExtra(EXTRA_FERIA_ID)?.takeIf(String::isNotBlank)
+        consultasPushTiendaPendiente = intent.getStringExtra(EXTRA_CONSULTAS_TIENDA_ID)?.takeIf(String::isNotBlank)
+            ?: intent.getStringExtra("tiendaId")?.takeIf { intent.getStringExtra("tipo") == "consulta" }
+    }
+
+    companion object {
+        const val EXTRA_FERIA_ID = "com.example.amancay.EXTRA_FERIA_ID"
+        const val EXTRA_CONSULTAS_TIENDA_ID = "com.example.amancay.EXTRA_CONSULTAS_TIENDA_ID"
     }
 }
 
 @Composable
-fun AmancayApp() {
+fun AmancayApp(
+    feriaIdPush: String? = null,
+    consultasTiendaIdPush: String? = null,
+    alConsumirFeriaPush: () -> Unit = {},
+    alConsumirConsultasPush: () -> Unit = {}
+) {
     val context = LocalContext.current
     val prefsTexto = remember(context) { context.getSharedPreferences("amancay_preferencias_visuales", Context.MODE_PRIVATE) }
     var escalaTexto by remember { mutableFloatStateOf(prefsTexto.getFloat("escala_texto", 1f)) }
@@ -127,6 +165,12 @@ fun AmancayApp() {
         onDispose { catalogoComprador.cerrar() }
     }
     var espacioEmprendedora by remember { mutableStateOf(false) }
+    LaunchedEffect(feriaIdPush, consultasTiendaIdPush) {
+        when {
+            !feriaIdPush.isNullOrBlank() -> espacioEmprendedora = false
+            !consultasTiendaIdPush.isNullOrBlank() -> espacioEmprendedora = true
+        }
+    }
     val densidad = LocalDensity.current
     val cambiarEscalaTexto: (Float) -> Unit = { escala ->
         escalaTexto = escala
@@ -139,7 +183,11 @@ fun AmancayApp() {
             catalogoComprador = catalogoComprador,
             escalaTexto = escalaTexto,
             alCambiarEscalaTexto = cambiarEscalaTexto,
-            alCambiarEspacio = { espacioEmprendedora = it }
+            alCambiarEspacio = { espacioEmprendedora = it },
+            feriaIdPush = feriaIdPush,
+            alConsumirFeriaPush = alConsumirFeriaPush,
+            consultasTiendaIdPush = consultasTiendaIdPush,
+            alConsumirConsultasPush = alConsumirConsultasPush
         )
     }
 }
@@ -151,7 +199,11 @@ private fun ContenidoAmancay(
     catalogoComprador: CatalogoCompradorRepository,
     escalaTexto: Float,
     alCambiarEscalaTexto: (Float) -> Unit,
-    alCambiarEspacio: (Boolean) -> Unit
+    alCambiarEspacio: (Boolean) -> Unit,
+    feriaIdPush: String?,
+    alConsumirFeriaPush: () -> Unit,
+    consultasTiendaIdPush: String?,
+    alConsumirConsultasPush: () -> Unit
 ) {
     var uidConEleccionDeModo by remember { mutableStateOf<String?>(null) }
     DisposableEffect(firebaseServices.auth) {
@@ -164,11 +216,14 @@ private fun ContenidoAmancay(
 
     if (espacioEmprendedora) {
         ModoEmprendedoraConectada(
-            firebaseServices,
-            BuildConfig.WEB_CLIENT_ID,
-            escalaTexto,
-            alCambiarEscalaTexto
-        ) { alCambiarEspacio(false) }
+            firebase = firebaseServices,
+            webClientId = BuildConfig.WEB_CLIENT_ID,
+            escalaTexto = escalaTexto,
+            alCambiarEscalaTexto = alCambiarEscalaTexto,
+            alVolver = { alCambiarEspacio(false) },
+            consultasTiendaIdPush = consultasTiendaIdPush,
+            alConsumirConsultasPush = alConsumirConsultasPush
+        )
     } else {
         ModoCompradorScreen(
             repositorio = catalogoComprador,
@@ -177,7 +232,9 @@ private fun ContenidoAmancay(
             webClientId = BuildConfig.WEB_CLIENT_ID,
             uidConEleccionDeModo = uidConEleccionDeModo,
             alRegistrarEleccionDeModo = { uidConEleccionDeModo = it },
-            alAbrirEspacioEmprendedora = { alCambiarEspacio(true) }
+            alAbrirEspacioEmprendedora = { alCambiarEspacio(true) },
+            feriaIdPush = feriaIdPush,
+            alConsumirFeriaPush = alConsumirFeriaPush
         )
     }
 }
@@ -620,6 +677,8 @@ internal fun EmprendedoraAppConectada(
     tipos: List<OpcionCatalogoEmprendedora>,
     productosRepository: ProductosEmprendedoraRepository,
     feriasRepository: FeriasEmprendedoraRepository,
+    consultasTiendaIdPush: String? = null,
+    alConsumirConsultasPush: () -> Unit = {},
     huellaHabilitada: Boolean,
     aviso: String?,
     error: String?,
@@ -695,6 +754,16 @@ internal fun EmprendedoraAppConectada(
     var enviandoProducto by remember(sesion.uid) { mutableStateOf(false) }
     var avisoProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var errorProducto by remember(sesion.uid) { mutableStateOf<String?>(null) }
+    LaunchedEffect(consultasTiendaIdPush, sesion.tiendaId) {
+        val tiendaId = consultasTiendaIdPush?.takeIf(String::isNotBlank) ?: return@LaunchedEffect
+        if (tiendaId == sesion.tiendaId) {
+            tab = Tab.INICIO
+            screen = Screen.Consultas
+        } else {
+            avisoProducto = "Esta notificación corresponde a otra tienda y no se abrió su bandeja de consultas."
+        }
+        alConsumirConsultasPush()
+    }
     var productoAjustando by remember(sesion.uid) { mutableStateOf<ProductoEmprendedora?>(null) }
     var ventasGuardadas by remember(sesion.uid) { mutableStateOf<List<VentaRegistrada>>(emptyList()) }
     var feriasVenta by remember(sesion.uid) { mutableStateOf<List<FeriaParaVenta>>(emptyList()) }

@@ -4,7 +4,7 @@ import { ErrorOperacion } from './publicacion.ts';
 const ID_VALIDO = /^[a-zA-Z0-9_-]{1,128}$/;
 const MAX_PARTICIPANTES = 200;
 const MAX_TIENDAS_ASOCIACION = 3;
-const MAX_PRODUCTOS = 3;
+const MAX_PRODUCTOS = 1;
 
 type TipoParticipante = 'emprendedora' | 'asociacion';
 type MuestraCatalogo = { nombreTienda: string; productos: string[] };
@@ -34,7 +34,7 @@ export function crearLecturaMuestraFeriaPublica(db: Firestore) {
     }
 
     const participantes = await feriaRef.collection('participantes')
-      .where('estado', '==', 'confirmada')
+      .where('estado', 'in', ['confirmada', 'agregada_admin'])
       .limit(MAX_PARTICIPANTES)
       .get();
 
@@ -120,7 +120,7 @@ export function crearLecturaMuestraFeriaPublica(db: Firestore) {
       catalogo: item.tiendaIds.flatMap(id => {
         const muestra = muestrasPorTienda.get(id);
         return muestra ? [muestra] : [];
-      }),
+      }).slice(0, 1),
     })).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'));
 
     return { feriaId, participantes: resultado };

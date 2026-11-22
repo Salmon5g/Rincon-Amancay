@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,6 +79,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.first
 
 /**
  * Modo comprador con cuatro pestañas: Inicio (hero + selección + feria),
@@ -93,7 +95,9 @@ fun ModoCompradorScreen(
     webClientId: String,
     uidConEleccionDeModo: String?,
     alRegistrarEleccionDeModo: (String) -> Unit,
-    alAbrirEspacioEmprendedora: () -> Unit
+    alAbrirEspacioEmprendedora: () -> Unit,
+    feriaIdPush: String? = null,
+    alConsumirFeriaPush: () -> Unit = {}
 ) {
     val productos by repositorio.productos.collectAsState()
     val cargando by repositorio.cargando.collectAsState()
@@ -128,6 +132,7 @@ fun ModoCompradorScreen(
     var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
     var productoSeleccionado by remember { mutableStateOf<ProductoCatalogoComprador?>(null) }
     var feriaSeleccionada by remember { mutableStateOf<FeriaComprador?>(null) }
+    var feriaIdPendientePush by remember { mutableStateOf<String?>(null) }
     var mapaFeriasVisible by remember { mutableStateOf(false) }
     var formularioContacto by remember { mutableStateOf<Triple<TiendaCatalogoComprador, String?, VarianteCatalogoComprador?>?>(null) }
     var avisoContacto by remember { mutableStateOf<String?>(null) }
@@ -174,6 +179,56 @@ fun ModoCompradorScreen(
     val feriasCargando by ferias.cargando.collectAsState()
     val feriasError by ferias.error.collectAsState()
 
+    LaunchedEffect(feriaIdPush) {
+        feriaIdPush?.takeIf(String::isNotBlank)?.let { id ->
+            pestana = PestanaComprador.FERIAS
+            mapaFeriasVisible = false
+            feriaSeleccionada = null
+            feriaIdPendientePush = id
+        }
+    }
+
+    LaunchedEffect(feriaIdPendientePush) {
+        val id = feriaIdPendientePush ?: return@LaunchedEffect
+        val (feriasActuales, _) = snapshotFlow { listaFerias to feriasCargando }
+            .first { (_, cargando) -> !cargando }
+        val feriaEnLista = feriasActuales.firstOrNull { it.id == id }
+        if (feriaEnLista != null) {
+            feriaSeleccionada = feriaEnLista
+            feriaIdPendientePush = null
+            alConsumirFeriaPush()
+            return@LaunchedEffect
+        }
+        if (!feriasCargando) {
+            runCatching {
+                val documento = firestore.collection("ferias").document(id).get().await()
+                if (!documento.exists() || documento.getString("estado") != "publicada") null
+                else FeriaComprador(
+                    id = documento.id,
+                    nombre = documento.getString("nombre")?.takeIf(String::isNotBlank) ?: "Feria",
+                    descripcion = documento.getString("descripcion").orEmpty(),
+                    organizador = documento.getString("organizador").orEmpty(),
+                    direccion = documento.getString("direccion").orEmpty(),
+                    fechaInicio = documento.getTimestamp("fechaInicio")?.toDate(),
+                    fechaFin = documento.getTimestamp("fechaFin")?.toDate(),
+                    latitud = documento.getDouble("latitud"),
+                    longitud = documento.getDouble("longitud")
+                )
+            }
+                .onSuccess { feria ->
+                    if (feria != null) feriaSeleccionada = feria
+                    else mensajeAcceso = "Esta feria ya no está publicada o no se pudo encontrar."
+                    feriaIdPendientePush = null
+                    alConsumirFeriaPush()
+                }
+                .onFailure {
+                    mensajeAcceso = "No se pudo abrir el detalle de la feria. Comprueba tu conexión e inténtalo de nuevo."
+                    feriaIdPendientePush = null
+                    alConsumirFeriaPush()
+                }
+        }
+    }
+
     DisposableEffect(auth) {
         val escucha = FirebaseAuth.AuthStateListener { estado ->
             uidSesion = estado.currentUser?.uid
@@ -185,9 +240,29 @@ fun ModoCompradorScreen(
 
     val uid = uidSesion
     LaunchedEffect(uid) {
-        avisosFerias = if (uid.isNullOrBlank()) false else runCatching {
-            PreferenciasAvisosComprador.consentimiento(firestore, uid)
-        }.getOrDefault(false)
+        if (uid.isNullOrBlank()) {
+            avisosFerias = false
+            cargandoAvisos = false
+            return@LaunchedEffect
+        }
+        cargandoAvisos = true
+        mensajeAcceso = null
+        runCatching {
+            val habilitados = PreferenciasAvisosComprador.consentimiento(firestore, uid)
+            val temasSincronizados = !habilitados || PreferenciasAvisosComprador.sincronizarTemas(firestore, uid, true)
+            habilitados to temasSincronizados
+        }
+            .onSuccess { (habilitados, temasSincronizados) ->
+                avisosFerias = habilitados
+                if (habilitados && !temasSincronizados) {
+                    mensajeAcceso = "Tus avisos están activados, pero no pudimos sincronizar todas tus tiendas y asociaciones. Revisa tu conexión e inténtalo de nuevo."
+                }
+            }
+            .onFailure {
+                avisosFerias = false
+                mensajeAcceso = "No pudimos comprobar tus preferencias de avisos. Revisa tu conexión e inténtalo de nuevo."
+            }
+        cargandoAvisos = false
     }
     val guardarAvisos: (Boolean) -> Unit = { habilitados ->
         val usuarioId = uid
@@ -195,7 +270,10 @@ fun ModoCompradorScreen(
             cargandoAvisos = true
             alcance.launch {
                 runCatching { PreferenciasAvisosComprador.cambiar(firestore, usuarioId, habilitados) }
-                    .onSuccess { avisosFerias = habilitados }
+                    .onSuccess { temasSincronizados ->
+                        avisosFerias = habilitados
+                        if (!temasSincronizados) mensajeAcceso = "Guardamos tu preferencia, pero no pudimos sincronizar todos los avisos. Revisa tu conexión e inténtalo de nuevo."
+                    }
                     .onFailure { mensajeAcceso = "No pudimos actualizar tus preferencias de avisos. Revisa tu conexión e inténtalo de nuevo." }
                 cargandoAvisos = false
             }
@@ -773,7 +851,10 @@ fun ModoCompradorScreen(
         )
     }
     feriaSeleccionada?.let { feria ->
-        DialogoDetalleFeria(feria) { feriaSeleccionada = null }
+        DialogoDetalleFeria(
+            feria = feria,
+            alCerrar = { feriaSeleccionada = null }
+        )
     }
 }
 

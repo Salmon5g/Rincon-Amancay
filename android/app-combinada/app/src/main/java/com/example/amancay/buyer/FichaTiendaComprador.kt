@@ -152,7 +152,7 @@ internal fun FichaTiendaComprador(
                         }
                     }
                     if (visibles.isEmpty()) item { Text("No hay productos que coincidan con la búsqueda.", color = AmancayTintaSuave) }
-                    items(visibles.size.chunked(2).size) { fila ->
+                    items(visibles.chunked(2).size) { fila ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             visibles.chunked(2)[fila].forEach { producto -> TarjetaProductoTienda(producto, tienda.mostrarPrecios, Modifier.weight(1f), onClick = { alAbrirProducto(producto) }) }
                             if (visibles.size % 2 == 1 && fila == visibles.chunked(2).lastIndex) Spacer(Modifier.weight(1f))
