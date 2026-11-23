@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,7 +59,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Storefront
 import com.example.amancay.data.AutenticacionGoogleComprador
@@ -147,6 +150,7 @@ fun ModoCompradorScreen(
     var errorRespuestas by remember { mutableStateOf<String?>(null) }
     var guiaActiva by rememberSaveable { mutableStateOf(false) }
     var pasoGuia by rememberSaveable { mutableIntStateOf(0) }
+    var guiaSoloTutorial by rememberSaveable { mutableStateOf(false) }
     var mostrarAyuda by remember { mutableStateOf(false) }
     val objetivosGuia = remember { mutableStateMapOf<PestanaComprador, Rect>() }
 
@@ -534,19 +538,40 @@ fun ModoCompradorScreen(
     LaunchedEffect(perfilGuia, catalogoRestringido) {
         if (!catalogoRestringido) {
             pasoGuia = 0
+            guiaSoloTutorial = false
             guiaActiva = !preferenciasGuia.getBoolean("completa:$perfilGuia", false)
         }
     }
 
-    fun terminarGuia() {
+    fun terminarGuia(completarRecorrido: Boolean) {
         guiaActiva = false
-        preferenciasGuia.edit().putBoolean("completa:$perfilGuia", true).apply()
+        if (completarRecorrido) {
+            preferenciasGuia.edit().putBoolean("completa:$perfilGuia", true).apply()
+        }
+        guiaSoloTutorial = false
+    }
+
+    fun iniciarTutorialComprador(seccion: PestanaComprador?) {
+        if (catalogoRestringido && seccion != PestanaComprador.CUENTA) return
+        val indice = if (seccion == null) 0 else pasosGuia.indexOfFirst { it.first == seccion }
+        if (indice < 0) return
+        pasoGuia = indice
+        guiaSoloTutorial = seccion != null
+        pestana = seccion ?: PestanaComprador.INICIO
+        guiaActiva = true
+        mostrarAyuda = false
     }
 
     fun avanzarGuia() {
         val destino = pasosGuia.getOrNull(pasoGuia)?.first ?: return
         pestana = destino
-        if (pasoGuia >= pasosGuia.lastIndex) terminarGuia() else pasoGuia += 1
+        if (guiaSoloTutorial) {
+            terminarGuia(completarRecorrido = false)
+        } else if (pasoGuia >= pasosGuia.lastIndex) {
+            terminarGuia(completarRecorrido = true)
+        } else {
+            pasoGuia += 1
+        }
     }
     if (catalogoRestringido && pestana != PestanaComprador.CUENTA) {
         AlertDialog(
@@ -761,12 +786,12 @@ fun ModoCompradorScreen(
             com.example.amancay.ui.GuiaInterfazSpotlight(
                 objetivo = objetivo,
                 nombreObjetivo = paso.first.etiqueta,
-                paso = pasoGuia + 1,
-                total = pasosGuia.size,
+                paso = if (guiaSoloTutorial) 1 else pasoGuia + 1,
+                total = if (guiaSoloTutorial) 1 else pasosGuia.size,
                 titulo = paso.second.first,
                 explicacion = paso.second.second,
                 alTocarObjetivo = ::avanzarGuia,
-                alSaltar = ::terminarGuia
+                alSaltar = { terminarGuia(completarRecorrido = !guiaSoloTutorial) }
             )
         }
     }
@@ -780,17 +805,44 @@ fun ModoCompradorScreen(
             PestanaComprador.RESPUESTAS -> "Aquí aparecen las respuestas de las tiendas a tus consultas."
             PestanaComprador.CUENTA -> if (sesion == null) "Desde Mi sesión puedes ingresar con Google y seguir tiendas o asociaciones." else "Desde Mi sesión puedes revisar tus avisos, respuestas y opciones de cuenta."
         }
+        val seccionesDisponibles = if (catalogoRestringido) emptyList() else pasosGuia.map { it.first }
+        fun etiquetaTutorial(seccion: PestanaComprador) = when (seccion) {
+            PestanaComprador.INICIO -> "Inicio y portada"
+            PestanaComprador.EXPLORAR -> "Buscar productos"
+            PestanaComprador.FERIAS -> "Ferias"
+            PestanaComprador.RESPUESTAS -> "Respuestas de tiendas"
+            PestanaComprador.CUENTA -> "Mi sesión y avisos"
+        }
         AlertDialog(
             onDismissRequest = { mostrarAyuda = false },
             title = { Text("Ayuda de ${pestana.etiqueta}") },
-            text = { Text(ayuda) },
-            confirmButton = {
-                TextButton(onClick = {
-                    mostrarAyuda = false
-                    pasoGuia = 0
-                    guiaActiva = true
-                }) { Text("Repetir la guía") }
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text(ayuda)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Elige qué tutorial quieres repetir:", color = AmancayBordo, fontWeight = FontWeight.Bold)
+                    if (catalogoRestringido) {
+                        Text("Para recorrer las otras secciones, primero continúa con el acceso al catálogo.", modifier = Modifier.padding(top = 8.dp))
+                    }
+                    seccionesDisponibles.forEach { seccion ->
+                        TextButton(
+                            onClick = { iniciarTutorialComprador(seccion) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                        ) {
+                            Text(etiquetaTutorial(seccion), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, fontSize = 16.sp)
+                        }
+                    }
+                    if (!catalogoRestringido) {
+                        TextButton(
+                            onClick = { iniciarTutorialComprador(null) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                        ) {
+                            Text("Recorrido completo", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, fontSize = 16.sp)
+                        }
+                    }
+                }
             },
+            confirmButton = {},
             dismissButton = { TextButton(onClick = { mostrarAyuda = false }) { Text("Cerrar") } }
         )
     }

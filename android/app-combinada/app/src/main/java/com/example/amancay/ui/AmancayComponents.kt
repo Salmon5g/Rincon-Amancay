@@ -139,7 +139,7 @@ fun BotanicalBackdrop(modifier: Modifier = Modifier, lowerAreaCompleta: Boolean 
 
 @Composable
 fun AmancayTopBar(
-    onHelp: () -> Unit,
+    onHelp: (() -> Unit)?,
     onExit: (() -> Unit)? = null,
     etiquetaEspacio: Boolean = false,
     onNotifications: (() -> Unit)? = null,
@@ -150,12 +150,12 @@ fun AmancayTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = if (etiquetaEspacio) 14.dp else 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(if (etiquetaEspacio) 50.dp else 44.dp)
+                .size(if (etiquetaEspacio) 46.dp else 44.dp)
                 .clip(CircleShape)
                 .background(Color(0xFFFFF8F2))
                 .border(1.dp, Color(0xFFF7DED0), CircleShape),
@@ -164,10 +164,10 @@ fun AmancayTopBar(
             Image(
                 painter = painterResource(Fig.LOGO),
                 contentDescription = "Rincón Amancay",
-                modifier = Modifier.size(if (etiquetaEspacio) 42.dp else 38.dp)
+                modifier = Modifier.size(if (etiquetaEspacio) 40.dp else 38.dp)
             )
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         Column {
             Text("Rincón", fontSize = if (etiquetaEspacio) 14.sp else 13.sp, color = Muted)
             Text("Amancay", fontSize = if (etiquetaEspacio) 22.sp else 19.sp, fontWeight = FontWeight.Bold, color = Wine, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
@@ -177,9 +177,9 @@ fun AmancayTopBar(
             TextButton(
                 onClick = onExit,
                 modifier = Modifier.heightIn(min = 48.dp).background(if (etiquetaEspacio) Color(0xFFF8E9EA) else Color.Transparent, RoundedCornerShape(24.dp)),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Text("Salir", fontWeight = FontWeight.Bold, color = Wine)
+                Text("Salir", fontSize = 14.sp, maxLines = 1, softWrap = false, fontWeight = FontWeight.Bold, color = Wine)
             }
         }
         if (onNotifications != null) {
@@ -198,12 +198,14 @@ fun AmancayTopBar(
                 }
             }
         }
-        TextButton(
-            onClick = onHelp,
-            modifier = Modifier.heightIn(min = 48.dp).background(Color(0xFFF8E9EA), RoundedCornerShape(24.dp)),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-        ) {
-            Text("? Ayuda", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Wine)
+        if (onHelp != null) {
+            TextButton(
+                onClick = onHelp,
+                modifier = Modifier.heightIn(min = 48.dp).background(Color(0xFFF8E9EA), RoundedCornerShape(24.dp)),
+                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 4.dp)
+            ) {
+                Text("? Ayuda", fontSize = 13.sp, maxLines = 1, softWrap = false, fontWeight = FontWeight.Bold, color = Wine)
+            }
         }
     }
 }

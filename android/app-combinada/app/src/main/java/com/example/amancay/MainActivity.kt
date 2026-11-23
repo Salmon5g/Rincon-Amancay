@@ -787,6 +787,7 @@ internal fun EmprendedoraAppConectada(
     val preferenciasGuia = remember(context) { context.getSharedPreferences("amancay_guias", Context.MODE_PRIVATE) }
     var guiaActiva by remember(sesion.uid) { mutableStateOf(false) }
     var pasoGuia by remember(sesion.uid) { mutableIntStateOf(0) }
+    var guiaSoloPaso by remember(sesion.uid) { mutableStateOf(false) }
     val objetivosGuia = remember(sesion.uid) { mutableStateMapOf<Tab, Rect>() }
     val objetivosInicioGuia = remember(sesion.uid) { mutableStateMapOf<String, Rect>() }
     var objetivoConsultasGuia by remember(sesion.uid) { mutableStateOf<Rect?>(null) }
@@ -805,6 +806,7 @@ internal fun EmprendedoraAppConectada(
     }
     LaunchedEffect(sesion.uid) {
         pasoGuia = 0
+        guiaSoloPaso = false
         guiaActiva = !preferenciasGuia.getBoolean("completa:emprendedora_${sesion.uid}", false)
     }
     var linkCompartido by remember(sesion.uid) { mutableStateOf(false) }
@@ -1105,9 +1107,33 @@ internal fun EmprendedoraAppConectada(
         if (nuevoTab != Tab.MAS) editandoTienda = false
     }
 
-    fun terminarGuiaInicial() {
+    fun terminarGuiaInicial(completarRecorrido: Boolean) {
         guiaActiva = false
-        preferenciasGuia.edit().putBoolean("completa:emprendedora_${sesion.uid}", true).apply()
+        if (completarRecorrido) {
+            preferenciasGuia.edit().putBoolean("completa:emprendedora_${sesion.uid}", true).apply()
+        }
+        guiaSoloPaso = false
+    }
+
+    fun iniciarTutorialEmprendedora(idObjetivo: String?) {
+        val indice = if (idObjetivo == null) 0 else pasosGuia.indexOfFirst { it.idObjetivo == idObjetivo }
+        if (indice < 0) return
+        pasoGuia = indice
+        guiaSoloPaso = idObjetivo != null
+        guiaActiva = true
+        showHelp = false
+        editandoTienda = false
+        editandoProducto = false
+        when (idObjetivo) {
+            "texto_grande" -> {
+                tab = Tab.MAS
+                screen = Screen.Settings
+            }
+            else -> {
+                tab = Tab.INICIO
+                screen = Screen.Home
+            }
+        }
     }
 
     fun avanzarGuiaInicial() {
@@ -1135,14 +1161,18 @@ internal fun EmprendedoraAppConectada(
             }
             "texto_grande" -> alCambiarEscalaTexto(1.1f)
             "agregar" -> {
-                terminarGuiaInicial()
                 abrirTab(Tab.AGREGAR)
+                terminarGuiaInicial(completarRecorrido = !guiaSoloPaso)
                 return
             }
         }
+        if (guiaSoloPaso) {
+            terminarGuiaInicial(completarRecorrido = false)
+            return
+        }
         val siguiente = pasoGuia + 1
         if (siguiente > pasosGuia.lastIndex) {
-            terminarGuiaInicial()
+            terminarGuiaInicial(completarRecorrido = true)
         } else {
             pasoGuia = siguiente
             when (pasosGuia[siguiente].idObjetivo) {
@@ -1220,7 +1250,7 @@ internal fun EmprendedoraAppConectada(
     Scaffold(
         containerColor = Cream,
         contentWindowInsets = if (editandoProducto) WindowInsets.safeDrawing.only(WindowInsetsSides.Top) else ScaffoldDefaults.contentWindowInsets,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas, onNotificationsBounds = { objetivoConsultasGuia = it }) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = if (editandoTienda) null else ({ showHelp = true }), onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas, onNotificationsBounds = { objetivoConsultasGuia = it }) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen !is Screen.Preview) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -1732,12 +1762,12 @@ internal fun EmprendedoraAppConectada(
             GuiaInterfazSpotlight(
                 objetivo = objetivo,
                 nombreObjetivo = paso.nombreObjetivo,
-                paso = pasoGuia + 1,
-                total = pasosGuia.size,
+                paso = if (guiaSoloPaso) 1 else pasoGuia + 1,
+                total = if (guiaSoloPaso) 1 else pasosGuia.size,
                 titulo = paso.titulo,
                 explicacion = paso.explicacion,
                 alTocarObjetivo = ::avanzarGuiaInicial,
-                alSaltar = ::terminarGuiaInicial
+                alSaltar = { terminarGuiaInicial(completarRecorrido = !guiaSoloPaso) }
             )
         }
     }
@@ -1783,6 +1813,17 @@ internal fun EmprendedoraAppConectada(
     }
 
     if (showHelp) {
+        val opcionesTutorial: List<Pair<String?, String>> = listOf(
+            "inicio" to "Inicio",
+            "invitaciones" to "Ferias e invitaciones",
+            "consultas" to "Responder consultas",
+            "productos" to "Productos",
+            "encargos" to "Encargos y ventas",
+            "mi_tienda" to "Mi tienda",
+            "texto_grande" to "Tamaño de texto",
+            "agregar" to "Agregar un producto",
+            null to "Recorrido completo"
+        )
         AlertDialog(
             onDismissRequest = { showHelp = false },
             title = { Text("Ayuda de ${when (screen) {
@@ -1794,24 +1835,33 @@ internal fun EmprendedoraAppConectada(
                 is Screen.Ferias, is Screen.FeriaDetalle -> "Ferias"
                 is Screen.Settings, is Screen.ConfiguracionCatalogo -> "Más"
             }}") },
-            text = { Text(when (screen) {
-                is Screen.Home -> "En Inicio tienes accesos directos a tus productos, encargos, tienda e invitaciones a ferias. El timbre de arriba abre Consultas."
-                is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "En Productos puedes revisar, editar y organizar los artículos de tu tienda."
-                is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Sigue los pasos en pantalla para agregar un producto o registrar una venta."
-                is Screen.History, is Screen.Ventas -> "Aquí puedes revisar tus ventas y buscar por fecha o feria."
-                is Screen.Consultas -> "Abre una consulta para leer el mensaje y responder a la persona. El estado te ayuda a distinguir las nuevas de las atendidas."
-                is Screen.Ferias -> "Aquí puedes consultar fechas y estados, abrir cada invitación y responder si participarás. Usa el calendario para ubicar las ferias por día."
-                is Screen.FeriaDetalle -> "Revisa la fecha, el lugar y las condiciones de la feria. Desde esta ficha puedes aceptar o rechazar la invitación."
-                is Screen.Settings -> "En esta configuración puedes cambiar el tamaño de letra y editar la información de tu tienda."
-                is Screen.ConfiguracionCatalogo -> "Aquí puedes ajustar las opciones que se aplican a los productos nuevos."
-            }) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showHelp = false
-                    pasoGuia = 0
-                    guiaActiva = true
-                }) { Text("Repetir la guía", color = Wine) }
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text(when (screen) {
+                        is Screen.Home -> "En Inicio tienes accesos directos a tus productos, encargos, tienda e invitaciones a ferias. El timbre de arriba abre Consultas."
+                        is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "En Productos puedes revisar, editar y organizar los artículos de tu tienda."
+                        is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Sigue los pasos en pantalla para agregar un producto o registrar una venta."
+                        is Screen.History, is Screen.Ventas -> "Aquí puedes revisar tus ventas y buscar por fecha o feria."
+                        is Screen.Consultas -> "Abre una consulta para leer el mensaje y responder a la persona. El estado te ayuda a distinguir las nuevas de las atendidas."
+                        is Screen.Ferias -> "Aquí puedes consultar fechas y estados, abrir cada invitación y responder si participarás. Usa el calendario para ubicar las ferias por día."
+                        is Screen.FeriaDetalle -> "Revisa la fecha, el lugar y las condiciones de la feria. Desde esta ficha puedes aceptar o rechazar la invitación."
+                        is Screen.Settings -> "En esta configuración puedes cambiar el tamaño de letra y editar la información de tu tienda."
+                        is Screen.ConfiguracionCatalogo -> "Aquí puedes ajustar las opciones que se aplican a los productos nuevos."
+                    })
+                    Spacer(Modifier.height(12.dp))
+                    Text("Elige qué tutorial quieres repetir:", color = Wine, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    opcionesTutorial.forEach { (id, etiqueta) ->
+                        TextButton(
+                            onClick = { iniciarTutorialEmprendedora(id) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Text(etiqueta, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, fontSize = 16.sp, maxLines = 1)
+                        }
+                    }
+                }
             },
+            confirmButton = {},
             dismissButton = { TextButton(onClick = { showHelp = false }) { Text("Cerrar", color = Wine) } }
         )
     }

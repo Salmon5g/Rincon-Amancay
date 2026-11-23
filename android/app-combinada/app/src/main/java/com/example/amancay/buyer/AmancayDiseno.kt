@@ -135,8 +135,12 @@ fun BarraSuperiorAmancay(
         },
         actions = {
             if (alAyuda != null) {
-                TextButton(onClick = alAyuda, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("? Ayuda", color = AmancayBordo, fontWeight = FontWeight.Bold)
+                TextButton(
+                    onClick = alAyuda,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                ) {
+                    Text("? Ayuda", color = AmancayBordo, fontSize = 13.sp, maxLines = 1, softWrap = false, fontWeight = FontWeight.Bold)
                 }
             }
             if (alVerRespuestas != null) {
@@ -429,7 +433,13 @@ fun BarraInferiorComprador(
                     )
                 },
                 label = {
-                    Text(pestana.etiqueta, style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        pestana.etiqueta,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = AmancayBordo,
