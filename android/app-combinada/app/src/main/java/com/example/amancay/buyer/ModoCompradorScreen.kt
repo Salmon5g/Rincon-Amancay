@@ -818,6 +818,10 @@ fun ModoCompradorScreen(
                 val tienda = directorio.firstOrNull { it.id == producto.tiendaId }
                 if (tienda == null) avisoContacto = "No encontramos los datos públicos de contacto de esta tienda."
                 else contactar(tienda, producto.nombre, varianteElegida)
+            },
+            alVerProductoCompleto = {
+                productoSeleccionado = null
+                abrirEnlace(Uri.parse(com.example.amancay.ui.EnlacesPublicos.producto(producto.tiendaId, producto.id)))
             }
         )
     }

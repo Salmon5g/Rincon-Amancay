@@ -48,6 +48,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
@@ -239,7 +241,8 @@ fun DialogoDetalleProducto(
     usuarioId: String?,
     firestore: FirebaseFirestore,
     alCerrar: () -> Unit,
-    alEncargar: (com.example.amancay.data.VarianteCatalogoComprador?) -> Unit
+    alEncargar: (com.example.amancay.data.VarianteCatalogoComprador?) -> Unit,
+    alVerProductoCompleto: () -> Unit
 ) {
     val varianteSeleccionada = androidx.compose.runtime.remember(producto.tiendaId, producto.id) {
         androidx.compose.runtime.mutableStateOf<String?>(null)
@@ -247,140 +250,208 @@ fun DialogoDetalleProducto(
     val varianteActual = producto.variantes.firstOrNull { it.id == varianteSeleccionada.value }
         ?: producto.variantes.firstOrNull()
     val imagenActual = varianteActual?.imagenUrl ?: producto.imagenUrl
-    AlertDialog(
+    val atributos = producto.atributosEspecificos.entries
+        .filter { it.value.isNotBlank() }
+    val modalidad = when (producto.modalidad.lowercase(Locale.ROOT)) {
+        "a_pedido" -> "A pedido"
+        "pieza_unica" -> "Pieza única"
+        "regular" -> "Regular"
+        else -> producto.modalidad.replace('_', ' ').replaceFirstChar { it.uppercase() }
+    }
+    val datos = listOfNotNull(
+        producto.unidadVenta.takeIf(String::isNotBlank)?.let { "Venta" to it.replaceFirstChar { letra -> letra.uppercase() } },
+        modalidad.takeIf(String::isNotBlank)?.let { "Modalidad" to it }
+    )
+
+    Dialog(
         onDismissRequest = alCerrar,
-        title = {
-            Text(
-                producto.nombre,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = AmancayTinta,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (imagenActual != null) {
-                    AsyncImage(
-                        model = imagenActual,
-                        contentDescription = producto.nombre,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(4f / 3f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(AmancayNaranjaFondo)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 14.dp),
+            shape = RoundedCornerShape(34.dp),
+            color = AmancaySuperficie,
+            shadowElevation = 8.dp
+        ) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        producto.tiendaNombre,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = AmancayBordo,
-                        maxLines = 1,
+                        producto.nombre,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = AmancayBordoOscuro,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    Spacer(Modifier.width(8.dp))
-                    BadgeProducto(estado = producto.estadoDisponibilidad)
+                    TextButton(onClick = alCerrar, modifier = Modifier.size(48.dp), contentPadding = PaddingValues(0.dp)) {
+                        Text("×", color = AmancayBordo, style = MaterialTheme.typography.headlineLarge)
+                    }
                 }
-                val categoria = producto.categoriaNombre.ifBlank { producto.tipoProductoNombre }
-                if (categoria.isNotBlank()) {
-                    Text(categoria, style = MaterialTheme.typography.bodySmall, color = AmancayTintaSuave)
-                }
-                if (producto.descripcion.isNotBlank()) {
-                    Text(
-                        producto.descripcion,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AmancayTinta
-                    )
-                }
-                producto.atributosEspecificos.forEach { (nombre, valor) ->
-                    Text(
-                        "$nombre: $valor",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AmancayTintaSuave
-                    )
-                }
-                val datos = listOfNotNull(
-                    producto.unidadVenta.takeIf(String::isNotBlank)?.let { "Venta: $it" },
-                    producto.modalidad.takeIf(String::isNotBlank)?.let { "Modalidad: $it" }
-                )
-                if (datos.isNotEmpty()) {
-                    Text(
-                        datos.joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AmancayTintaSuave
-                    )
-                }
-                HorizontalDivider(color = AmancayBorde)
-                if (producto.variantes.isNotEmpty()) {
-                    Text(
-                        "Variantes",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = AmancayBordo
-                    )
-                    producto.variantes.forEach { variante ->
-                        androidx.compose.material3.FilterChip(
-                            selected = variante.id == varianteActual?.id,
-                            onClick = { varianteSeleccionada.value = variante.id },
-                            label = {
-                                Text(variante.opciones.values.joinToString(" · ").ifBlank { "Opción" })
+                Column(
+                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    if (imagenActual != null) {
+                        Box(
+                            Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(26.dp))
+                                .background(AmancayNaranjaFondo),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AsyncImage(
+                                model = imagenActual,
+                                contentDescription = producto.nombre,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            producto.tiendaNombre,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AmancayBordo,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        BadgeProducto(estado = producto.estadoDisponibilidad)
+                    }
+                    val categoria = producto.categoriaNombre.ifBlank { producto.tipoProductoNombre }
+                    if (categoria.isNotBlank()) {
+                        Text(categoria, style = MaterialTheme.typography.bodyLarge, color = AmancayTintaSuave)
+                    }
+                    if (producto.descripcion.isNotBlank()) {
+                        Text(producto.descripcion, style = MaterialTheme.typography.bodyLarge, color = AmancayTinta)
+                    }
+                    if (atributos.isNotEmpty() || datos.isNotEmpty()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color.White,
+                            border = BorderStroke(1.dp, AmancayBorde)
+                        ) {
+                            Column {
+                                Text(
+                                    "Detalles del producto",
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AmancayBordo
+                                )
+                                HorizontalDivider(color = AmancayBorde)
+                                atributos.forEachIndexed { index, atributo ->
+                                    Row(
+                                        Modifier.fillMaxWidth().background(if (index % 2 == 0) Color.White else AmancayChipDurazno)
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            etiquetaAtributoProducto(atributo.key) + ":",
+                                            modifier = Modifier.weight(0.48f),
+                                            color = AmancayBordo,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            atributo.value,
+                                            modifier = Modifier.weight(0.52f),
+                                            color = AmancayTinta,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+                                if (datos.isNotEmpty()) {
+                                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        datos.forEach { dato ->
+                                            Row(Modifier.weight(1f)) {
+                                                Text(dato.first + ": ", color = AmancayBordo, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                                Text(dato.second, color = AmancayTinta, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                    if (producto.variantes.isNotEmpty()) {
+                        Text("Variantes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AmancayBordo)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            producto.variantes.forEach { variante ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = variante.id == varianteActual?.id,
+                                    onClick = { varianteSeleccionada.value = variante.id },
+                                    label = { Text(variante.opciones.values.joinToString(" · ").ifBlank { "Opción" }) },
+                                    colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = AmancayChipDurazno,
+                                        selectedLabelColor = AmancayBordo,
+                                        containerColor = Color.White,
+                                        labelColor = AmancayTinta
+                                    )
+                                )
+                            }
+                        }
+                        Text(varianteActual?.precio?.let(::formatoPrecio) ?: "Consultar precio", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = AmancayBordo)
+                    } else {
+                        Text(
+                            producto.precioBase?.let(::formatoPrecio) ?: "Consultar precio",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = AmancayBordo
                         )
                     }
-                    Text(varianteActual?.precio?.let(::formatoPrecio) ?: "Consultar precio", color = AmancayBordo)
-                } else {
-                    Text(
-                        producto.precioBase?.let(::formatoPrecio) ?: "Consultar precio",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = AmancayBordo
+                    com.example.amancay.ui.BotonCompartirEnlace(
+                        "Compartir producto",
+                        producto.nombre,
+                        com.example.amancay.ui.EnlacesPublicos.producto(producto.tiendaId, producto.id)
                     )
+                    if (calificacionesActivas) {
+                        HorizontalDivider(color = AmancayBorde)
+                        Text("Califica tu experiencia", fontWeight = FontWeight.Bold, color = AmancayBordo)
+                        CalificacionComprador("La tienda", producto.tiendaId, null, usuarioId, firestore)
+                        CalificacionComprador("Este producto", producto.tiendaId, producto.id, usuarioId, firestore)
+                    }
+                    Spacer(Modifier.height(4.dp))
                 }
-                com.example.amancay.ui.BotonCompartirEnlace(
-                    "Compartir producto",
-                    producto.nombre,
-                    com.example.amancay.ui.EnlacesPublicos.producto(producto.tiendaId, producto.id)
-                )
-                if (calificacionesActivas) {
-                    HorizontalDivider(color = AmancayBorde)
-                    Text("Califica tu experiencia", fontWeight = FontWeight.Bold, color = AmancayBordo)
-                    CalificacionComprador("La tienda", producto.tiendaId, null, usuarioId, firestore)
-                    CalificacionComprador("Este producto", producto.tiendaId, producto.id, usuarioId, firestore)
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { alEncargar(varianteActual) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AmancayBordo, contentColor = Color.White)
+                ) { Text("Contactar a la emprendedora", fontWeight = FontWeight.SemiBold) }
+                TextButton(onClick = alVerProductoCompleto, modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
+                    Text("Ver producto completo", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = alCerrar, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                    Text("Cerrar", color = AmancayTintaSuave)
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { alEncargar(varianteActual) },
-                shape = RoundedCornerShape(50.dp),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AmancayBordo,
-                    contentColor = Color.White
-                )
-            ) {
-                Text("Contactar a la emprendedora", fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = alCerrar) {
-                Text("Cerrar", color = AmancayTintaSuave)
-            }
-        },
-        containerColor = AmancaySuperficie
-    )
+        }
+    }
+}
+
+private fun etiquetaAtributoProducto(clave: String): String {
+    val separada = clave
+        .replace(Regex("([a-z0-9])([A-Z])"), "$1 $2")
+        .replace('_', ' ')
+        .trim()
+        .replace(Regex("\\s+"), " ")
+    return when (separada.lowercase(Locale.ROOT)) {
+        "alergenos" -> "Alérgenos"
+        "fecha elaboracion" -> "Fecha de elaboración"
+        "fecha vencimiento" -> "Fecha de vencimiento"
+        else -> separada.split(' ').joinToString(" ") { palabra ->
+            palabra.replaceFirstChar { if (it.isLowerCase()) it.uppercase() else it.toString() }
+        }
+    }
 }
 
 @Composable
