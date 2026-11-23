@@ -1483,7 +1483,6 @@ internal fun EmprendedoraAppConectada(
                         productos = productos,
                         ventas = ventasGuardadas,
                         ferias = feriasVenta,
-                        invitacionesConfirmadas = invitaciones.filter { it.estado == "aceptada" }.map { it.id }.toSet(),
                         historialActivo = historialVentasActivo,
                         historialConfiguracionCargada = historialConfiguracionCargada,
                         abrirHistorial = abrirHistorialVentas,
