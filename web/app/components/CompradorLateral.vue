@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ activo?: 'explorar' | 'directorio' | 'ferias' }>(), { activo: 'explorar' })
+withDefaults(defineProps<{ activo?: 'explorar' | 'productos' | 'tiendas' | 'directorio' | 'ferias' }>(), { activo: 'explorar' })
 
 const ruta = useRoute()
 
@@ -8,13 +8,6 @@ async function irExplorar() {
   else await navigateTo('/comprador')
 }
 
-async function irSeccion(id: string) {
-  if (ruta.path !== '/comprador') {
-    await navigateTo({ path: '/comprador', hash: `#${id}` })
-    return
-  }
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-}
 </script>
 
 <template>
@@ -31,14 +24,14 @@ async function irSeccion(id: string) {
         <span class="mi" aria-hidden="true">🏠</span>
         Explorar
       </button>
-      <button type="button" @click="irSeccion('destacados')">
+      <NuxtLink class="menu-enlace" :class="{ on: activo === 'productos' }" to="/comprador/productos">
         <span class="mi" aria-hidden="true">🛍️</span>
         Productos
-      </button>
-      <button type="button" @click="irSeccion('catalogo')">
+      </NuxtLink>
+      <NuxtLink class="menu-enlace" :class="{ on: activo === 'tiendas' }" to="/comprador/tiendas">
         <span class="mi" aria-hidden="true">🏪</span>
         Tiendas
-      </button>
+      </NuxtLink>
       <NuxtLink class="menu-enlace" :class="{ on: activo === 'directorio' }" to="/comprador/directorio">
         <span class="mi" aria-hidden="true">👥</span>
         Directorio
