@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -67,6 +68,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +97,7 @@ fun BarraSuperiorAmancay(
     alVolver: (() -> Unit)? = null,
     respuestasNuevas: Int = 0,
     alVerRespuestas: (() -> Unit)? = null,
+    alAyuda: (() -> Unit)? = null,
     contenidoSesion: (@Composable RowScope.() -> Unit)? = null
 ) {
     TopAppBar(
@@ -130,6 +134,11 @@ fun BarraSuperiorAmancay(
             }
         },
         actions = {
+            if (alAyuda != null) {
+                TextButton(onClick = alAyuda, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("? Ayuda", color = AmancayBordo, fontWeight = FontWeight.Bold)
+                }
+            }
             if (alVerRespuestas != null) {
                 BadgedBox(badge = {
                     if (respuestasNuevas > 0) Badge(containerColor = AmancayNaranjaIcono) {
@@ -402,11 +411,15 @@ enum class PestanaComprador(val etiqueta: String) {
 @Composable
 fun BarraInferiorComprador(
     actual: PestanaComprador,
-    alSeleccionar: (PestanaComprador) -> Unit
+    alSeleccionar: (PestanaComprador) -> Unit,
+    alUbicarPestana: ((PestanaComprador, androidx.compose.ui.geometry.Rect) -> Unit)? = null
 ) {
     NavigationBar(containerColor = AmancaySuperficie) {
         PestanaComprador.entries.forEach { pestana ->
             NavigationBarItem(
+                modifier = androidx.compose.ui.Modifier.onGloballyPositioned { coordenadas ->
+                    alUbicarPestana?.invoke(pestana, coordenadas.boundsInRoot())
+                },
                 selected = pestana == actual,
                 onClick = { alSeleccionar(pestana) },
                 icon = {

@@ -43,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.outlined.Groups
@@ -114,6 +116,7 @@ fun ModoCompradorScreen(
     var omitioInvitacion by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val alcance = rememberCoroutineScope()
+    val preferenciasGuia = remember(context) { context.getSharedPreferences("amancay_guias", android.content.Context.MODE_PRIVATE) }
     var sesion by remember(auth) { mutableStateOf(auth.currentUser?.let(::sesionDesdeUsuario)) }
     var uidSesion by remember(auth) { mutableStateOf(auth.currentUser?.uid) }
     var ingresando by remember { mutableStateOf(false) }
@@ -142,6 +145,10 @@ fun ModoCompradorScreen(
     val consultasActualizadas by androidx.compose.runtime.rememberUpdatedState(misConsultas)
     var cargandoRespuestas by remember { mutableStateOf(false) }
     var errorRespuestas by remember { mutableStateOf<String?>(null) }
+    var guiaActiva by rememberSaveable { mutableStateOf(false) }
+    var pasoGuia by rememberSaveable { mutableIntStateOf(0) }
+    var mostrarAyuda by remember { mutableStateOf(false) }
+    val objetivosGuia = remember { mutableStateMapOf<PestanaComprador, Rect>() }
 
     suspend fun actualizarRespuestas(consultas: List<ConsultaSeguida>, maximo: Int? = null): List<ConsultaSeguida> {
         val pendientes = consultas.filter { it.respuesta == null }.let { if (maximo == null) it else it.take(maximo) }
@@ -508,6 +515,39 @@ fun ModoCompradorScreen(
     val exigeGoogle = modoNavegacion == "exigir" && estadoPolitica.bloqueaCatalogo
     val invitaGoogle = estadoPolitica.muestraInvitacion
     val catalogoRestringido = estadoPolitica.bloqueaCatalogo || invitaGoogle
+    val perfilGuia = if (sesion == null) "compradora_sin_sesion" else "compradora_con_sesion_${uidSesion ?: "cuenta"}"
+    val pasosGuia = remember(perfilGuia) {
+        buildList<Pair<PestanaComprador, Pair<String, String>>> {
+            add(PestanaComprador.INICIO to ("Tu inicio" to "Esta es la portada: aquí puedes descubrir tiendas, productos destacados y próximas ferias."))
+            add(PestanaComprador.EXPLORAR to ("Busca productos" to "En Explorar puedes buscar y filtrar por categoría o tienda. Abre una ficha para ver sus detalles; con sesión también puedes seguir la tienda."))
+            add(PestanaComprador.FERIAS to ("Conoce las ferias" to "En Ferias puedes revisar fechas, lugares y detalles para planificar una visita."))
+            if (sesion != null) {
+                add(PestanaComprador.RESPUESTAS to ("Revisa tus respuestas" to "Aquí aparecen las respuestas que las tiendas enviaron a tus consultas."))
+            }
+            add(PestanaComprador.CUENTA to if (sesion == null) {
+                "Tu sesión" to "Puedes recorrer el catálogo sin iniciar sesión. Para seguir tiendas o asociaciones y recibir avisos, entra desde aquí con Google."
+            } else {
+                "Tu cuenta" to "Desde Mi sesión puedes revisar tiendas y asociaciones que sigues, administrar avisos y cerrar sesión."
+            })
+        }
+    }
+    LaunchedEffect(perfilGuia, catalogoRestringido) {
+        if (!catalogoRestringido) {
+            pasoGuia = 0
+            guiaActiva = !preferenciasGuia.getBoolean("completa:$perfilGuia", false)
+        }
+    }
+
+    fun terminarGuia() {
+        guiaActiva = false
+        preferenciasGuia.edit().putBoolean("completa:$perfilGuia", true).apply()
+    }
+
+    fun avanzarGuia() {
+        val destino = pasosGuia.getOrNull(pasoGuia)?.first ?: return
+        pestana = destino
+        if (pasoGuia >= pasosGuia.lastIndex) terminarGuia() else pasoGuia += 1
+    }
     if (catalogoRestringido && pestana != PestanaComprador.CUENTA) {
         AlertDialog(
             onDismissRequest = {},
@@ -536,6 +576,7 @@ fun ModoCompradorScreen(
         return
     }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = AmancayFondo,
@@ -546,7 +587,8 @@ fun ModoCompradorScreen(
                 else pestana = PestanaComprador.INICIO
             }) else null,
                 respuestasNuevas = misConsultas.count { it.respuesta != null && !it.respuestaVista },
-                alVerRespuestas = { pestana = PestanaComprador.RESPUESTAS }
+                alVerRespuestas = { pestana = PestanaComprador.RESPUESTAS },
+                alAyuda = { mostrarAyuda = true }
             ) {
                 val sesionActual = sesion
                 if (sesionActual == null) {
@@ -585,7 +627,11 @@ fun ModoCompradorScreen(
             }
         },
         bottomBar = {
-            if (!catalogoRestringido) BarraInferiorComprador(actual = pestana) { pestana = it }
+            if (!catalogoRestringido) BarraInferiorComprador(
+                actual = pestana,
+                alSeleccionar = { pestana = it },
+                alUbicarPestana = { item, rect -> if (objetivosGuia[item] != rect) objetivosGuia[item] = rect }
+            )
         }
     ) { inset ->
         when (pestana) {
@@ -707,6 +753,46 @@ fun ModoCompradorScreen(
                     .padding(inset)
             )
         }
+    }
+    if (guiaActiva) {
+        val paso = pasosGuia.getOrNull(pasoGuia)
+        val objetivo = paso?.let { objetivosGuia[it.first] }
+        if (paso != null && objetivo != null) {
+            com.example.amancay.ui.GuiaInterfazSpotlight(
+                objetivo = objetivo,
+                nombreObjetivo = paso.first.etiqueta,
+                paso = pasoGuia + 1,
+                total = pasosGuia.size,
+                titulo = paso.second.first,
+                explicacion = paso.second.second,
+                alTocarObjetivo = ::avanzarGuia,
+                alSaltar = ::terminarGuia
+            )
+        }
+    }
+    }
+
+    if (mostrarAyuda) {
+        val ayuda = when (pestana) {
+            PestanaComprador.INICIO -> "En Inicio puedes descubrir productos, tiendas y próximas ferias."
+            PestanaComprador.EXPLORAR -> "En Explorar puedes buscar productos y filtrar por categoría o tienda."
+            PestanaComprador.FERIAS -> "En Ferias puedes consultar fechas, lugares y detalles de cada feria."
+            PestanaComprador.RESPUESTAS -> "Aquí aparecen las respuestas de las tiendas a tus consultas."
+            PestanaComprador.CUENTA -> if (sesion == null) "Desde Mi sesión puedes ingresar con Google y seguir tiendas o asociaciones." else "Desde Mi sesión puedes revisar tus avisos, respuestas y opciones de cuenta."
+        }
+        AlertDialog(
+            onDismissRequest = { mostrarAyuda = false },
+            title = { Text("Ayuda de ${pestana.etiqueta}") },
+            text = { Text(ayuda) },
+            confirmButton = {
+                TextButton(onClick = {
+                    mostrarAyuda = false
+                    pasoGuia = 0
+                    guiaActiva = true
+                }) { Text("Repetir la guía") }
+            },
+            dismissButton = { TextButton(onClick = { mostrarAyuda = false }) { Text("Cerrar") } }
+        )
     }
 
     if (errorRol) {

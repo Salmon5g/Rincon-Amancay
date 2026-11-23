@@ -3,6 +3,7 @@ package com.example.amancay.ui
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
@@ -36,6 +39,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -135,6 +141,7 @@ fun StepScaffold(
 // ---------- HOME ----------
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun HomeScreen(
     borrador: Product?,
     publicados: Int,
@@ -154,8 +161,14 @@ fun HomeScreen(
     tiendaVisible: Boolean = false,
     nombreEmprendedora: String = "artesana",
     productosRecientes: List<Product> = emptyList(),
+    objetivoGuiaActivo: String? = null,
+    alUbicarObjetivoGuia: ((String, Rect) -> Unit)? = null,
     contenidoAdicional: @Composable ColumnScope.() -> Unit = {}
 ) {
+    val objetivoInvitaciones = remember { BringIntoViewRequester() }
+    LaunchedEffect(objetivoGuiaActivo) {
+        if (objetivoGuiaActivo == "invitaciones") objetivoInvitaciones.bringIntoView()
+    }
     Box(Modifier.fillMaxSize()) {
         BotanicalBackdrop()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
@@ -172,8 +185,20 @@ fun HomeScreen(
             Text("¿Qué quieres hacer hoy?", fontSize = 20.sp, color = Muted, modifier = Modifier.padding(top = 10.dp, bottom = 14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TarjetaAccionInicio(Icons.Filled.ShoppingBag, "Mis productos", "Edita y organiza tu catálogo.", Modifier.weight(1f), onMisProductos)
-                TarjetaAccionInicio(Icons.Filled.ReceiptLong, "Encargos", "Revisa y gestiona tus ventas.", Modifier.weight(1f), onVerVentas)
-                TarjetaAccionInicio(Icons.Filled.Storefront, "Mi tienda", "Personaliza tu espacio online.", Modifier.weight(1f), onVerMiTienda)
+                TarjetaAccionInicio(
+                    Icons.Filled.ReceiptLong,
+                    "Encargos",
+                    "Revisa y gestiona tus ventas.",
+                    Modifier.weight(1f).onGloballyPositioned { alUbicarObjetivoGuia?.invoke("encargos", it.boundsInRoot()) },
+                    onVerVentas
+                )
+                TarjetaAccionInicio(
+                    Icons.Filled.Storefront,
+                    "Mi tienda",
+                    "Personaliza tu espacio online.",
+                    Modifier.weight(1f).onGloballyPositioned { alUbicarObjetivoGuia?.invoke("mi_tienda", it.boundsInRoot()) },
+                    onVerMiTienda
+                )
             }
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -211,7 +236,16 @@ fun HomeScreen(
             Spacer(Modifier.height(8.dp))
             PrimaryButton("＋  Agregar producto", onAgregar, fontSize = 17.sp)
             Spacer(Modifier.height(16.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line), modifier = Modifier.fillMaxWidth().clickable { onVerFerias() }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(22.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(objetivoInvitaciones)
+                    .onGloballyPositioned { alUbicarObjetivoGuia?.invoke("invitaciones", it.boundsInRoot()) }
+                    .clickable { onVerFerias() }
+            ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Invitaciones a ferias", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wine)
@@ -1734,7 +1768,8 @@ fun SettingsScreen(
     errorAcceso: String? = null,
     onCerrarSesion: (() -> Unit)? = null,
     escalaTexto: Float = 1f,
-    onCambiarEscalaTexto: (Float) -> Unit = {}
+    onCambiarEscalaTexto: (Float) -> Unit = {},
+    alUbicarOpcionTextoGrande: ((Rect) -> Unit)? = null
 ) {
     var s = settings
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -1755,7 +1790,10 @@ fun SettingsScreen(
             Column(Modifier.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(1f to "Normal", 1.1f to "Grande", 1.2f to "Más grande").forEach { (valor, etiqueta) ->
-                        SelectableChip(etiqueta, escalaTexto == valor, modifier = Modifier.weight(1f)) { onCambiarEscalaTexto(valor) }
+                        val observador = if (etiqueta == "Grande" && alUbicarOpcionTextoGrande != null) {
+                            Modifier.onGloballyPositioned { coordenadas -> alUbicarOpcionTextoGrande?.invoke(coordenadas.boundsInRoot()) }
+                        } else Modifier
+                        SelectableChip(etiqueta, escalaTexto == valor, modifier = Modifier.weight(1f).then(observador)) { onCambiarEscalaTexto(valor) }
                     }
                 }
                 Spacer(Modifier.height(8.dp))

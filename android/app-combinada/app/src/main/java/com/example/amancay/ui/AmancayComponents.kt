@@ -35,7 +35,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -135,7 +138,14 @@ fun BotanicalBackdrop(modifier: Modifier = Modifier, lowerAreaCompleta: Boolean 
 }
 
 @Composable
-fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null, etiquetaEspacio: Boolean = false, onNotifications: (() -> Unit)? = null, notificationsCount: Int = 0) {
+fun AmancayTopBar(
+    onHelp: () -> Unit,
+    onExit: (() -> Unit)? = null,
+    etiquetaEspacio: Boolean = false,
+    onNotifications: (() -> Unit)? = null,
+    notificationsCount: Int = 0,
+    onNotificationsBounds: ((Rect) -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -178,20 +188,22 @@ fun AmancayTopBar(onHelp: () -> Unit, onExit: (() -> Unit)? = null, etiquetaEspa
                     Text(if (notificationsCount > 99) "99+" else notificationsCount.toString())
                 }
             }) {
-                IconButton(onClick = onNotifications, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                IconButton(
+                    onClick = onNotifications,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).onGloballyPositioned {
+                        onNotificationsBounds?.invoke(it.boundsInRoot())
+                    }
+                ) {
                     Icon(Icons.Outlined.Notifications, contentDescription = "Consultas nuevas", tint = Wine)
                 }
             }
         }
-        Box(
-            modifier = Modifier
-                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                .clip(CircleShape)
-                .background(Color(0xFFF8E9EA))
-                .clickable { onHelp() },
-            contentAlignment = Alignment.Center
+        TextButton(
+            onClick = onHelp,
+            modifier = Modifier.heightIn(min = 48.dp).background(Color(0xFFF8E9EA), RoundedCornerShape(24.dp)),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("?", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Wine)
+            Text("? Ayuda", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Wine)
         }
     }
 }

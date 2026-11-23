@@ -40,6 +40,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.amancay.buyer.ModoCompradorScreen
 import com.example.amancay.emprendedora.ModoEmprendedoraConectada
 import com.example.amancay.emprendedora.BandejaConsultasScreen
@@ -89,6 +92,13 @@ import com.example.amancay.ui.theme.Wine
 import kotlinx.coroutines.launch
 
 private data class MiniaturaProductoCache(val firmaImagenes: String, val bitmap: Bitmap)
+
+private data class PasoGuiaEmprendedora(
+    val idObjetivo: String,
+    val nombreObjetivo: String,
+    val titulo: String,
+    val explicacion: String
+)
 
 private fun firmaImagenes(producto: ProductoEmprendedora) = producto.imagenes.joinToString(",")
 
@@ -774,6 +784,29 @@ internal fun EmprendedoraAppConectada(
     var editandoProducto by remember(sesion.uid) { mutableStateOf(false) }
     var productoInicialId by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var showHelp by remember { mutableStateOf(false) }
+    val preferenciasGuia = remember(context) { context.getSharedPreferences("amancay_guias", Context.MODE_PRIVATE) }
+    var guiaActiva by remember(sesion.uid) { mutableStateOf(false) }
+    var pasoGuia by remember(sesion.uid) { mutableIntStateOf(0) }
+    val objetivosGuia = remember(sesion.uid) { mutableStateMapOf<Tab, Rect>() }
+    val objetivosInicioGuia = remember(sesion.uid) { mutableStateMapOf<String, Rect>() }
+    var objetivoConsultasGuia by remember(sesion.uid) { mutableStateOf<Rect?>(null) }
+    var objetivoTextoGrande by remember(sesion.uid) { mutableStateOf<Rect?>(null) }
+    val pasosGuia = remember(sesion.uid) {
+        listOf(
+            PasoGuiaEmprendedora("inicio", "Inicio", "Este es tu espacio", "En Inicio tienes un resumen de tu tienda y accesos directos a las tareas más comunes."),
+            PasoGuiaEmprendedora("invitaciones", "Invitaciones a ferias", "Ferias e invitaciones", "Desde esta tarjeta abres Ferias. Allí puedes revisar cada invitación, conocer los datos de la feria y aceptar o rechazar la participación."),
+            PasoGuiaEmprendedora("consultas", "Consultas", "Responde a tus clientas", "Toca el timbre para abrir Consultas. Aquí puedes leer las preguntas que llegan por tus productos o tienda y enviar una respuesta."),
+            PasoGuiaEmprendedora("productos", "Productos", "Administra tu catálogo", "En Productos puedes revisar lo publicado, editar información y disponibilidad, y organizar tu catálogo."),
+            PasoGuiaEmprendedora("encargos", "Encargos", "Revisa ventas y encargos", "Desde esta tarjeta consultas tus ventas y el historial de encargos. También puedes registrar una venta."),
+            PasoGuiaEmprendedora("mi_tienda", "Mi tienda", "Mantén tu tienda al día", "Aquí puedes revisar y personalizar la información de tu tienda, como su nombre, descripción e imagen."),
+            PasoGuiaEmprendedora("texto_grande", "Grande", "Haz más cómoda la lectura", "Toca Grande para aumentar el tamaño del texto y elegir una lectura más cómoda."),
+            PasoGuiaEmprendedora("agregar", "Agregar", "Agrega un producto", "Este botón inicia el formulario para cargar un producto paso por paso.")
+        )
+    }
+    LaunchedEffect(sesion.uid) {
+        pasoGuia = 0
+        guiaActiva = !preferenciasGuia.getBoolean("completa:emprendedora_${sesion.uid}", false)
+    }
     var linkCompartido by remember(sesion.uid) { mutableStateOf(false) }
     var productoVista by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var fotoVistaProducto by remember(sesion.uid) { mutableStateOf<Bitmap?>(null) }
@@ -1072,6 +1105,55 @@ internal fun EmprendedoraAppConectada(
         if (nuevoTab != Tab.MAS) editandoTienda = false
     }
 
+    fun terminarGuiaInicial() {
+        guiaActiva = false
+        preferenciasGuia.edit().putBoolean("completa:emprendedora_${sesion.uid}", true).apply()
+    }
+
+    fun avanzarGuiaInicial() {
+        val paso = pasosGuia.getOrNull(pasoGuia) ?: return
+        when (paso.idObjetivo) {
+            "inicio" -> abrirTab(Tab.INICIO)
+            "invitaciones" -> {
+                tab = Tab.INICIO
+                screen = Screen.Ferias
+                scope.launch { cargarInvitacionesFeria() }
+            }
+            "consultas" -> {
+                tab = Tab.INICIO
+                screen = Screen.Consultas
+            }
+            "productos" -> abrirTab(Tab.PRODUCTOS)
+            "encargos" -> {
+                tab = Tab.INICIO
+                screen = Screen.Ventas
+            }
+            "mi_tienda" -> {
+                tab = Tab.MAS
+                screen = Screen.Settings
+                editandoTienda = false
+            }
+            "texto_grande" -> alCambiarEscalaTexto(1.1f)
+            "agregar" -> {
+                terminarGuiaInicial()
+                abrirTab(Tab.AGREGAR)
+                return
+            }
+        }
+        val siguiente = pasoGuia + 1
+        if (siguiente > pasosGuia.lastIndex) {
+            terminarGuiaInicial()
+        } else {
+            pasoGuia = siguiente
+            when (pasosGuia[siguiente].idObjetivo) {
+                "encargos", "mi_tienda" -> {
+                    tab = Tab.INICIO
+                    screen = Screen.Home
+                }
+            }
+        }
+    }
+
     LaunchedEffect(valoresDefectoListos, altaNuevaPendiente) {
         if (valoresDefectoListos && altaNuevaPendiente) {
             altaNuevaPendiente = false
@@ -1134,10 +1216,11 @@ internal fun EmprendedoraAppConectada(
     val productoDeVista = productos.firstOrNull { it.id == productoVista }?.let(::productoLegado)
     val nuevasConsultas = productosRepository.consultas.collectAsState().value.count { it.estado == "nueva" && it.notificable }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = Cream,
         contentWindowInsets = if (editandoProducto) WindowInsets.safeDrawing.only(WindowInsetsSides.Top) else ScaffoldDefaults.contentWindowInsets,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas, onNotificationsBounds = { objetivoConsultasGuia = it }) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen !is Screen.Preview) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -1145,6 +1228,10 @@ internal fun EmprendedoraAppConectada(
                     Tab.entries.forEach { item ->
                         val selected = tab == item
                         NavigationBarItem(
+                            modifier = Modifier.onGloballyPositioned { coordenadas ->
+                                val limite = coordenadas.boundsInRoot()
+                                if (objetivosGuia[item] != limite) objetivosGuia[item] = limite
+                            },
                             selected = selected,
                             onClick = { abrirTab(item) },
                             icon = {
@@ -1209,6 +1296,8 @@ internal fun EmprendedoraAppConectada(
                         tiendaVisible = tienda.estadoPublicacion == "publicado",
                         nombreEmprendedora = sesion.nombreMostrar,
                         productosRecientes = productos.take(3).map { productoLegado(it, miniaturasProductosVisibles[it.id]) },
+                        objetivoGuiaActivo = if (guiaActiva) pasosGuia.getOrNull(pasoGuia)?.idObjetivo else null,
+                        alUbicarObjetivoGuia = { id, rect -> objetivosInicioGuia[id] = rect },
                         contenidoAdicional = {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1496,7 +1585,8 @@ internal fun EmprendedoraAppConectada(
                             errorAcceso = errorHuella,
                             onCerrarSesion = alSalir,
                             escalaTexto = escalaTexto,
-                            onCambiarEscalaTexto = alCambiarEscalaTexto
+                            onCambiarEscalaTexto = alCambiarEscalaTexto,
+                            alUbicarOpcionTextoGrande = { rect -> if (objetivoTextoGrande != rect) objetivoTextoGrande = rect }
                         )
                     }
                     Screen.Ventas -> VentasEmprendedoraScreen(
@@ -1627,6 +1717,32 @@ internal fun EmprendedoraAppConectada(
         }
     }
 
+    if (guiaActiva && !editandoTienda && !editandoProducto && screen !is Screen.Sell && screen !is Screen.Camara) {
+        val paso = pasosGuia.getOrNull(pasoGuia)
+        val objetivo = when (paso?.idObjetivo) {
+            "invitaciones", "encargos", "mi_tienda" -> objetivosInicioGuia[paso.idObjetivo]
+            "consultas" -> objetivoConsultasGuia
+            "texto_grande" -> objetivoTextoGrande
+            "inicio" -> objetivosGuia[Tab.INICIO]
+            "productos" -> objetivosGuia[Tab.PRODUCTOS]
+            "agregar" -> objetivosGuia[Tab.AGREGAR]
+            else -> null
+        }
+        if (paso != null && objetivo != null) {
+            GuiaInterfazSpotlight(
+                objetivo = objetivo,
+                nombreObjetivo = paso.nombreObjetivo,
+                paso = pasoGuia + 1,
+                total = pasosGuia.size,
+                titulo = paso.titulo,
+                explicacion = paso.explicacion,
+                alTocarObjetivo = ::avanzarGuiaInicial,
+                alSaltar = ::terminarGuiaInicial
+            )
+        }
+    }
+    }
+
     productoAjustando?.let { producto ->
         DialogoAjusteStock(
             producto = producto,
@@ -1669,9 +1785,34 @@ internal fun EmprendedoraAppConectada(
     if (showHelp) {
         AlertDialog(
             onDismissRequest = { showHelp = false },
-            title = { Text("¿Necesitas ayuda?") },
-            text = { Text("Desde Inicio puedes abrir tu tienda y catálogo. En Más encontrarás la ficha y el acceso con huella.") },
-            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Entendido", color = Wine) } }
+            title = { Text("Ayuda de ${when (screen) {
+                is Screen.Home -> "Inicio"
+                is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "Productos"
+                is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Agregar"
+                is Screen.History, is Screen.Ventas -> "Ventas"
+                is Screen.Consultas -> "Consultas"
+                is Screen.Ferias, is Screen.FeriaDetalle -> "Ferias"
+                is Screen.Settings, is Screen.ConfiguracionCatalogo -> "Más"
+            }}") },
+            text = { Text(when (screen) {
+                is Screen.Home -> "En Inicio tienes accesos directos a tus productos, encargos, tienda e invitaciones a ferias. El timbre de arriba abre Consultas."
+                is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "En Productos puedes revisar, editar y organizar los artículos de tu tienda."
+                is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Sigue los pasos en pantalla para agregar un producto o registrar una venta."
+                is Screen.History, is Screen.Ventas -> "Aquí puedes revisar tus ventas y buscar por fecha o feria."
+                is Screen.Consultas -> "Abre una consulta para leer el mensaje y responder a la persona. El estado te ayuda a distinguir las nuevas de las atendidas."
+                is Screen.Ferias -> "Aquí puedes consultar fechas y estados, abrir cada invitación y responder si participarás. Usa el calendario para ubicar las ferias por día."
+                is Screen.FeriaDetalle -> "Revisa la fecha, el lugar y las condiciones de la feria. Desde esta ficha puedes aceptar o rechazar la invitación."
+                is Screen.Settings -> "En esta configuración puedes cambiar el tamaño de letra y editar la información de tu tienda."
+                is Screen.ConfiguracionCatalogo -> "Aquí puedes ajustar las opciones que se aplican a los productos nuevos."
+            }) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showHelp = false
+                    pasoGuia = 0
+                    guiaActiva = true
+                }) { Text("Repetir la guía", color = Wine) }
+            },
+            dismissButton = { TextButton(onClick = { showHelp = false }) { Text("Cerrar", color = Wine) } }
         )
     }
 }
