@@ -30,7 +30,33 @@ export function montarApi(auth:Auth,db:Firestore,bucket:ReturnType<ReturnType<ty
     await enviarPush({ topic: `amancay-contacto-${tiendaId}`, android: { priority: 'high' }, data: { tipo: 'consulta', tiendaId, titulo: 'Nueva consulta', mensaje: `Tienes una nueva consulta en ${nombreTienda}.` } });
   } : undefined);
   const notificarFeria = enviarPush ? async (uid: string, tipo: 'tienda'|'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
-    await enviarPush({ topic: `amancay-${tipo}-${entidadId}-${uid}`, android: { priority: 'high' }, data: { tipo: 'participacion_feria', destinatarioUid: uid, feriaId, entidadId, titulo: 'Participación confirmada', mensaje: `${tipo === 'tienda' ? 'La tienda que sigues' : 'La asociación que sigues'} confirmó su participación en ${nombreFeria}.` } });
+    const titulo = 'Participación confirmada';
+    const mensaje = `${tipo === 'tienda' ? 'La tienda que sigues' : 'La asociación que sigues'} confirmó su participación en ${nombreFeria}.`;
+    await enviarPush({ topic: `amancay-${tipo}-${entidadId}-${uid}`, android: { priority: 'high' }, data: { tipo: 'participacion_feria', destinatarioUid: uid, feriaId, entidadId, titulo, mensaje } });
+    // Aviso web: solo los tokens del propio comprador; si no hay ninguno, el
+    // módulo de ferias envía el respaldo por correo.
+    const dispositivos = await db.collection('usuarios').doc(uid).collection('dispositivosWeb').limit(20).get();
+    if (!dispositivos.size) return false;
+    const resultados = await Promise.allSettled(dispositivos.docs.map(dispositivo => {
+      const token = dispositivo.get('token');
+      if (typeof token !== 'string' || token.length < 20) return Promise.reject(new Error('token-invalido'));
+      return enviarPush({
+        token,
+        data: { tipo: 'participacion_feria', feriaId, entidadId, titulo, mensaje },
+        webpush: {
+          notification: { title: titulo, body: mensaje, icon: '/logo-amancay.png' },
+          fcmOptions: { link: `/comprador/ferias?feria=${encodeURIComponent(feriaId)}` },
+        },
+      });
+    }));
+    await Promise.all(resultados.map(async (resultado, indice) => {
+      if (resultado.status === 'fulfilled') return;
+      const codigo = (resultado.reason as { code?: string } | undefined)?.code;
+      if (codigo === 'messaging/registration-token-not-registered' || codigo === 'messaging/invalid-registration-token' || codigo === 'messaging/invalid-argument') {
+        await dispositivos.docs[indice]?.ref.delete().catch(() => undefined);
+      }
+    }));
+    return resultados.some(resultado => resultado.status === 'fulfilled');
   } : undefined;
   const notificarInvitacion = enviarPush ? async (uid: string, feriaId: string, nombreFeria: string) => {
     await enviarPush({

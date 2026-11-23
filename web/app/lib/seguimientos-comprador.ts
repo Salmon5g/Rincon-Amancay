@@ -56,6 +56,14 @@ export function crearSeguimientosComprador(
             );
         },
 
+        /** Deja el seguimiento creado sin alternar; sirve para completar una intención pendiente. */
+        async seguir(tipo: TipoSeguimiento, entidadId: string): Promise<boolean> {
+            const usuario = auth.currentUser;
+            if (!usuario) throw new ErrorSeguimiento('no-autenticado', 'Inicia sesión para seguir.');
+            await sdk.setDoc(referencia(usuario.uid, tipo, entidadId), { [campo(tipo)]: entidadId });
+            return true;
+        },
+
         /** Crea o elimina el seguimiento y devuelve el estado final. */
         async alternar(tipo: TipoSeguimiento, entidadId: string): Promise<boolean> {
             const usuario = auth.currentUser;

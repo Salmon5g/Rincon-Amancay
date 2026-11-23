@@ -1074,6 +1074,8 @@ onBeforeUnmount(() => {
           >{{ nombre }}</button>
         </div>
 
+        <AvisosFerias />
+
         <div v-if="error" class="aviso-error" role="alert">
           {{ error }}
           <button class="editar" :disabled="cargando" @click="reintentar">Reintentar</button>
@@ -1369,6 +1371,7 @@ onBeforeUnmount(() => {
             <div class="sobre-seguir">
               <BotonSeguir tipo="tienda" :entidad-id="tienda.id" :nombre="tienda.datos.nombre" />
             </div>
+            <AvisosFerias />
             <div v-if="etiquetaTipo" class="dato-tienda">
               <span class="dato-icono" aria-hidden="true">🏪</span>
               <div>

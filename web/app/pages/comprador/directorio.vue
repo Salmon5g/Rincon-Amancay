@@ -187,6 +187,8 @@ onMounted(() => void cargarDirectorio())
         </div>
       </header>
 
+      <AvisosFerias />
+
       <div v-if="!asociacionId" class="directorio-pestanas" role="tablist" aria-label="Secciones del directorio">
         <button
           id="pestana-emprendedoras"

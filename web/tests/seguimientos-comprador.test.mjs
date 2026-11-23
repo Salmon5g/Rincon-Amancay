@@ -50,6 +50,20 @@ test('seguir una tienda crea solo el documento propio con tiendaId', async () =>
     assert.deepEqual(llamadas, ['leer:usuarios/u1/tiendasSeguidas/tienda-1', 'crear:usuarios/u1/tiendasSeguidas/tienda-1']);
 });
 
+test('seguir deja el documento creado sin alternar', async () => {
+    const { servicio, documentos } = escenario();
+    assert.equal(await servicio.seguir('tienda', 'tienda-1'), true);
+    assert.deepEqual(documentos.get('usuarios/u1/tiendasSeguidas/tienda-1'), { tiendaId: 'tienda-1' });
+    assert.equal(await servicio.seguir('tienda', 'tienda-1'), true);
+    assert.deepEqual(documentos.get('usuarios/u1/tiendasSeguidas/tienda-1'), { tiendaId: 'tienda-1' });
+});
+
+test('seguir sin sesión pide iniciar sesión y no escribe', async () => {
+    const { servicio, llamadas } = escenario({ conSesion: false });
+    await assert.rejects(servicio.seguir('tienda', 'tienda-1'), { code: 'no-autenticado' });
+    assert.deepEqual(llamadas, []);
+});
+
 test('volver a tocar el botón elimina el seguimiento', async () => {
     const { servicio, documentos } = escenario();
     await servicio.alternar('tienda', 'tienda-1');

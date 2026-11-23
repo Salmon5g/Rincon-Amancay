@@ -11,6 +11,7 @@ export default defineNuxtConfig({
       firebaseStorageBucket: '',
       firebaseMessagingSenderId: '',
       firebaseAppId: '',
+      firebaseVapidKey: '',
       apiUrl: '',
       supabaseUrl: 'https://supabase-fixmol.codepulse.cl',
     },

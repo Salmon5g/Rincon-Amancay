@@ -1,4 +1,5 @@
 import { crearAccesoComprador } from '~/lib/acceso-comprador';
+import { crearAvisosFerias } from '~/lib/avisos-ferias';
 import { crearSeguimientosComprador } from '~/lib/seguimientos-comprador';
 import { obtenerFirebaseLocal } from '~/lib/firebase-local';
 import { obtenerFirebaseCliente } from '~/lib/firebase';
@@ -34,5 +35,12 @@ export default defineNuxtPlugin(() => {
   const amancay = clienteApi ? { ...clienteApi, ...lecturas } : lecturas;
   const accesoComprador = crearAccesoComprador(firebase, clienteApi?.llamar);
   const seguimientosComprador = crearSeguimientosComprador(firebase);
-  return { provide: { amancay, catalogoPublico, accesoComprador, seguimientosComprador, firebaseModo: modo } };
+  const avisosFerias = crearAvisosFerias(firebase, {
+    vapidKey: config.firebaseVapidKey,
+    apiKey: config.firebaseApiKey,
+    projectId: config.firebaseProjectId,
+    messagingSenderId: config.firebaseMessagingSenderId,
+    appId: config.firebaseAppId,
+  });
+  return { provide: { amancay, catalogoPublico, accesoComprador, seguimientosComprador, avisosFerias, firebaseModo: modo } };
 });

@@ -52,6 +52,17 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avisosFerias', 'avisosConsentimientoEn'])
         && request.resource.data.avisosFerias is bool
         && request.resource.data.avisosConsentimientoEn == request.time;
+      match /dispositivosWeb/{tokenId} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow list: if signedIn() && request.auth.uid == uid && request.query.limit <= 50;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['token', 'plataforma', 'actualizadoEn'])
+          && request.resource.data.token is string
+          && request.resource.data.token == tokenId
+          && request.resource.data.plataforma == 'web'
+          && request.resource.data.actualizadoEn == request.time;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
       match /tiendasSeguidas/{tiendaId} {
         allow get: if signedIn() && request.auth.uid == uid;
         allow list: if signedIn() && request.auth.uid == uid && request.query.limit <= 500;

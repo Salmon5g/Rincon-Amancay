@@ -129,7 +129,26 @@ async function comprobarAdmin(db: Firestore, uid: string) {
 function nombreParticipante(value: unknown, fallback: string) { return typeof value === 'string' && value.trim() ? value.trim().slice(0, 120) : fallback; }
 function fechaIso(data: DocumentData, campo: string) { const value = data[campo]; return value instanceof Timestamp ? value.toDate().toISOString() : null; }
 
-export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>, notificarInvitacion?: (uid: string, feriaId: string, nombreFeria: string) => Promise<void>) {
+export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<boolean | void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>, notificarInvitacion?: (uid: string, feriaId: string, nombreFeria: string) => Promise<void>) {
+  const origenWeb = (process.env.AMANCAY_WEB_URL?.trim() || 'https://rincon-amancay.web.app').replace(/\/+$/, '');
+  const avisarPorCorreo = async (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
+    if (!auth || !enviarCorreo) return;
+    try {
+      const correo = (await auth.getUser(uid)).email?.trim();
+      if (!correo) return;
+      await enviarCorreo({
+        para: correo,
+        asunto: `Participación confirmada en ${nombreFeria}`,
+        texto: `${tipo === 'tienda' ? 'La tienda que sigues' : 'La asociación que sigues'} confirmó su participación en la feria ${nombreFeria}.\n\nRevisa la ficha: ${origenWeb}/comprador/ferias?feria=${encodeURIComponent(feriaId)}`,
+        claveIdempotencia: `seguidor-feria-${feriaId}-${tipo}-${entidadId}-${uid}`,
+      });
+    } catch (error) {
+      console.error('[ferias] No se pudo enviar el aviso por correo al seguidor.', {
+        feriaId,
+        error: error instanceof Error ? error.message : 'error desconocido',
+      });
+    }
+  };
   const avisarSeguidores = async (tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
     if (!notificar) return;
     const coleccion = tipo === 'tienda' ? 'tiendasSeguidas' : 'asociacionesSeguidas';
@@ -139,7 +158,17 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       const uid = seguimiento.ref.parent.parent?.id;
       if (!uid) return;
       const usuario = await db.doc(`usuarios/${uid}`).get();
-      if (usuario.get('avisosFerias') === true) await notificar(uid, tipo, entidadId, feriaId, nombreFeria);
+      if (usuario.get('avisosFerias') !== true) return;
+      const avisoNavegador = await notificar(uid, tipo, entidadId, feriaId, nombreFeria)
+        .then(valor => valor === true)
+        .catch(error => {
+          console.error('[ferias] No se pudo enviar el aviso push al seguidor.', {
+            feriaId,
+            error: error instanceof Error ? error.message : 'error desconocido',
+          });
+          return false;
+        });
+      if (!avisoNavegador) await avisarPorCorreo(uid, tipo, entidadId, feriaId, nombreFeria);
     }));
   };
   const actualizarParticipantesPublicos = crearActualizacionParticipantesPublicosFeria(db);

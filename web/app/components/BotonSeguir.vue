@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AccesoComprador, SesionComprador } from '~/lib/acceso-comprador'
-import { pedirAccesoComprador } from '~/lib/acceso-comprador-ui'
+import { pedirAccesoParaSeguir, tomarIntencionSeguimiento } from '~/lib/acceso-comprador-ui'
 import type { SeguimientosComprador, TipoSeguimiento } from '~/lib/seguimientos-comprador'
 
 const props = withDefaults(defineProps<{
@@ -42,6 +42,7 @@ onMounted(() => {
     sesion.value = nueva
     listo.value = true
     observarSeguimiento()
+    if (nueva) void completarIntencion()
   })
 })
 
@@ -50,10 +51,38 @@ onBeforeUnmount(() => {
   dejarDeObservarSeguimiento?.()
 })
 
+function mensajeError(error: unknown) {
+  const codigo = (error as { code?: string })?.code
+  return codigo === 'no-autenticado'
+    ? 'Inicia sesión para seguir.'
+    : codigo === 'permission-denied'
+      ? 'No se pudo guardar el seguimiento. La tienda o asociación debe estar publicada.'
+      : codigo === 'unavailable'
+        ? 'No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.'
+        : (error as Error).message || 'No se pudo guardar el seguimiento.'
+}
+
+/* Al volver del ingreso, completa el seguimiento que se pidió sin sesión. */
+async function completarIntencion() {
+  if (!sesion.value || guardando.value) return
+  const intencion = tomarIntencionSeguimiento({ tipo: props.tipo, entidadId: props.entidadId })
+  if (!intencion) return
+  guardando.value = true
+  try {
+    siguiendo.value = await seguimientos().seguir(intencion.tipo, intencion.entidadId)
+    const referencia = props.nombre ? `a ${props.nombre}` : `esta ${etiquetaEntidad.value}`
+    aviso.value = `Ahora sigues ${referencia}.`
+  } catch (error) {
+    aviso.value = mensajeError(error)
+  } finally {
+    guardando.value = false
+  }
+}
+
 async function alternar() {
   aviso.value = ''
   if (!sesion.value) {
-    pedirAccesoComprador()
+    pedirAccesoParaSeguir(props.tipo, props.entidadId)
     return
   }
   if (guardando.value) return
@@ -65,14 +94,7 @@ async function alternar() {
       ? `Ahora sigues ${referencia}.`
       : `Dejaste de seguir ${referencia}.`
   } catch (error) {
-    const codigo = (error as { code?: string })?.code
-    aviso.value = codigo === 'no-autenticado'
-      ? 'Inicia sesión para seguir.'
-      : codigo === 'permission-denied'
-        ? 'No se pudo guardar el seguimiento. La tienda o asociación debe estar publicada.'
-        : codigo === 'unavailable'
-          ? 'No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.'
-          : (error as Error).message || 'No se pudo guardar el seguimiento.'
+    aviso.value = mensajeError(error)
   } finally {
     guardando.value = false
   }
