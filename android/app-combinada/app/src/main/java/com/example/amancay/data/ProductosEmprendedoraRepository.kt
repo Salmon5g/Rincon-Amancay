@@ -25,7 +25,7 @@ data class TipoProductoEmprendedora(
     val activo: Boolean = true
 )
 
-data class CategoriaEmprendedora(val id: String, val nombre: String, val activo: Boolean = true)
+data class CategoriaEmprendedora(val id: String, val nombre: String, val activo: Boolean = true, val tipoProductoId: String = "")
 
 data class VarianteProductoEmprendedora(
     val id: String,
@@ -266,7 +266,9 @@ class ProductosEmprendedoraRepository(
                     return@addSnapshotListener
                 }
                 _categorias.value = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    doc.getString("nombre")?.let { CategoriaEmprendedora(doc.id, it, doc.getBoolean("activo") == true) }
+                    doc.getString("nombre")?.let {
+                        CategoriaEmprendedora(doc.id, it, doc.getBoolean("activo") == true, doc.getString("tipoProductoId").orEmpty())
+                    }
                 }.sortedBy { it.nombre.lowercase() }
                 _error.value = null
             }

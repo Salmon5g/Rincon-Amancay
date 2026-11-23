@@ -30,6 +30,16 @@ const aviso = ref('');
 const sectores = ref<Record<string, string>>({});
 const tiposEmprendimiento = ref<Record<string, string>>({});
 const categorias = ref<Record<string, string>>({});
+const categoriaTipoProducto = ref<Record<string, string>>({});
+const tiposProductoConCategoriasActuales = new Set([
+    'alimento_reposteria', 'artesania_manualidad', 'plantas', 'producto_agricola',
+    'vestuario', 'accesorio', 'cosmetica_natural',
+]);
+const categoriasFiltro = computed(() => Object.fromEntries(
+    Object.entries(categorias.value)
+        .filter(([id]) => tiposProductoConCategoriasActuales.has(categoriaTipoProducto.value[id] ?? ''))
+        .sort(([, nombreA], [, nombreB]) => nombreA.localeCompare(nombreB, 'es-CL')),
+));
 const categoriaSeleccionada = ref('');
 const filtroVisible = ref(true);
 let cursores: (string | null)[] = [null];
@@ -604,10 +614,12 @@ async function cargarCatalogos() {
         sectores.value = Object.fromEntries(catalogos.sectores.map(e => [e.id, e.nombre]));
         tiposEmprendimiento.value = Object.fromEntries(catalogos.tiposEmprendimiento.map(e => [e.id, e.nombre]));
         categorias.value = Object.fromEntries((catalogos.categorias ?? []).map(e => [e.id, e.nombre]));
+        categoriaTipoProducto.value = Object.fromEntries((catalogos.categorias ?? []).map(e => [e.id, e.tipoProductoId ?? '']));
     } catch {
         sectores.value = {};
         tiposEmprendimiento.value = {};
         categorias.value = {};
+        categoriaTipoProducto.value = {};
     }
 }
 
@@ -1056,7 +1068,7 @@ onBeforeUnmount(() => {
           </button>
         </label>
 
-        <div v-if="filtroVisible && Object.keys(categorias).length" class="filtros" role="group" aria-label="Filtrar por categoría">
+        <div v-if="filtroVisible && Object.keys(categoriasFiltro).length" class="filtros" role="group" aria-label="Filtrar por categoría">
           <span class="filtros-etiqueta">Filtrar por categoría:</span>
           <button
             class="chip-filtro"
@@ -1065,7 +1077,7 @@ onBeforeUnmount(() => {
             @click="categoriaSeleccionada = ''"
           >Todos</button>
           <button
-            v-for="(nombre, id) in categorias"
+            v-for="(nombre, id) in categoriasFiltro"
             :key="id"
             class="chip-filtro"
             :class="{ on: categoriaSeleccionada === id }"
@@ -1309,7 +1321,7 @@ onBeforeUnmount(() => {
               <h2 class="titulo-bloque">Productos de {{ tienda.datos.nombre }}</h2>
               <span class="cuenta">Página {{ pagina }} · {{ visibles.length }} resultados</span>
             </div>
-            <div v-if="filtroVisible && Object.keys(categorias).length" class="filtros" role="group" aria-label="Filtrar por categoría">
+            <div v-if="filtroVisible && Object.keys(categoriasFiltro).length" class="filtros" role="group" aria-label="Filtrar por categoría">
               <span class="filtros-etiqueta">Filtrar por categoría:</span>
               <button
                 class="chip-filtro"
@@ -1318,7 +1330,7 @@ onBeforeUnmount(() => {
                 @click="categoriaSeleccionada = ''"
               >Todos</button>
               <button
-                v-for="(nombre, id) in categorias"
+                v-for="(nombre, id) in categoriasFiltro"
                 :key="id"
                 class="chip-filtro"
                 :class="{ on: categoriaSeleccionada === id }"

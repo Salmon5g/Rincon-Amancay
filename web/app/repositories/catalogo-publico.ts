@@ -8,6 +8,7 @@ export interface PaginaRepositorio<T> {
 export interface ElementoEtiqueta {
   id: string
   nombre: string
+  tipoProductoId?: string
 }
 
 export interface CatalogosPublicos {

@@ -403,7 +403,14 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
           const consulta = query(collection(db, coleccion), where('activo', '==', true), orderBy(documentId()), limit(200))
           const resultado = await getDocs(consulta)
           return resultado.docs
-            .map((documento) => ({ id: documento.id, nombre: texto(documento.data().nombre, documento.id) }))
+            .map((documento) => {
+              const datos = documento.data()
+              return {
+                id: documento.id,
+                nombre: texto(datos.nombre, documento.id),
+                ...(coleccion === 'categorias' ? { tipoProductoId: texto(datos.tipoProductoId) } : {}),
+              }
+            })
             .filter((elemento) => elemento.nombre.trim() !== '')
         }
         const [sectores, tiposEmprendimiento, categorias] = await Promise.all([

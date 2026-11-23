@@ -91,19 +91,23 @@ fun StepScaffold(
     showBackButton: Boolean = true,
     onExit: () -> Unit = onSaveExit,
     onDiscardDraft: (() -> Unit)? = null,
+    totalPasos: Int = 5,
+    dibujarBajoBarraSistema: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
-        BotanicalBackdrop()
+        BotanicalBackdrop(lowerAreaCompleta = dibujarBajoBarraSistema)
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxSize()
+                .then(if (dibujarBajoBarraSistema) Modifier.navigationBarsPadding() else Modifier)
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ProductWizardTopBar(onExit)
             Spacer(Modifier.height(8.dp))
             StepHeader(paso, titulo, subtitulo)
             Spacer(Modifier.height(12.dp))
-            StepProgressBar(actual = pasoActual)
+            StepProgressBar(actual = pasoActual, total = totalPasos)
             Spacer(Modifier.height(14.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), content = content)
             Spacer(Modifier.height(12.dp))
@@ -883,12 +887,14 @@ fun PhotoStep(
     onTakePhoto: () -> Unit, onPickPhoto: () -> Unit,
     onNext: () -> Unit, onBack: () -> Unit, onSaveExit: () -> Unit,
     showSaveExit: Boolean = true,
+    totalPasos: Int = 5,
+    dibujarBajoBarraSistema: Boolean = false,
     imagenExistente: Boolean = false,
     imagenPrevia: Bitmap? = null,
     mensajeImagenExistente: String? = null,
     onDiscardDraft: (() -> Unit)? = null
 ) {
-    StepScaffold("Paso 1 de 5", "Agrega una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft) {
+    StepScaffold("Paso 1 de $totalPasos", "Agrega una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft, totalPasos = totalPasos, dibujarBajoBarraSistema = dibujarBajoBarraSistema) {
         Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
             if (lista) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {

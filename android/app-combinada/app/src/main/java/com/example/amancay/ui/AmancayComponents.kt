@@ -103,28 +103,33 @@ fun ProductWizardTopBar(onBack: () -> Unit) {
 }
 
 @Composable
-fun BotanicalBackdrop(modifier: Modifier = Modifier) {
+fun BotanicalBackdrop(modifier: Modifier = Modifier, lowerAreaCompleta: Boolean = false) {
     Box(modifier.fillMaxSize().background(Color(0xFFFFFAF5))) {
         Image(
             painter = painterResource(Fig.FLORAL_DERECHA),
             contentDescription = null,
-            modifier = Modifier.align(Alignment.TopEnd).width(230.dp).height(390.dp),
+            modifier = Modifier.align(Alignment.TopEnd)
+                .width(if (lowerAreaCompleta) 290.dp else 230.dp)
+                .height(if (lowerAreaCompleta) 520.dp else 390.dp),
             contentScale = ContentScale.Fit,
-            alpha = 0.74f
+            alpha = if (lowerAreaCompleta) 0.62f else 0.74f
         )
         Image(
             painter = painterResource(Fig.HOJAS_INFERIORES),
             contentDescription = null,
-            modifier = Modifier.align(Alignment.BottomStart).width(150.dp).height(100.dp),
+            modifier = Modifier.align(Alignment.BottomStart)
+                .width(if (lowerAreaCompleta) 180.dp else 150.dp)
+                .height(if (lowerAreaCompleta) 155.dp else 100.dp),
             contentScale = ContentScale.Fit,
             alpha = 0.82f
         )
         Image(
             painter = painterResource(Fig.FLORES_INFERIORES),
             contentDescription = null,
-            modifier = Modifier.align(Alignment.BottomEnd).width(160.dp).height(95.dp),
-            contentScale = ContentScale.Fit,
-            alpha = 0.78f
+            modifier = if (lowerAreaCompleta) Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(225.dp)
+                else Modifier.align(Alignment.BottomEnd).width(160.dp).height(95.dp),
+            contentScale = if (lowerAreaCompleta) ContentScale.FillBounds else ContentScale.Fit,
+            alpha = if (lowerAreaCompleta) 0.76f else 0.78f
         )
     }
 }
@@ -286,7 +291,7 @@ fun StepHeader(paso: String, titulo: String, subtitulo: String) {
             fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
             fontWeight = FontWeight.Bold
         )
-        Text(subtitulo, fontSize = 16.sp, lineHeight = 21.sp, color = Muted)
+        Text(subtitulo, fontSize = 16.sp, lineHeight = 21.sp, color = Color(0xFF62515A))
         Spacer(Modifier.height(8.dp))
         Text(paso, fontSize = 14.sp, color = Wine, fontWeight = FontWeight.SemiBold)
     }

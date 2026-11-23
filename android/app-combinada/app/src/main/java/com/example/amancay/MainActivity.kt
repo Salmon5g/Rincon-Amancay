@@ -1117,6 +1117,7 @@ internal fun EmprendedoraAppConectada(
 
     Scaffold(
         containerColor = Cream,
+        contentWindowInsets = if (editandoProducto) WindowInsets.safeDrawing.only(WindowInsetsSides.Top) else ScaffoldDefaults.contentWindowInsets,
         topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = { showHelp = true }, onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen !is Screen.Preview) {

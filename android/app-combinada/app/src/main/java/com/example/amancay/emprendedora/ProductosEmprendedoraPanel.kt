@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -163,6 +164,11 @@ private data class BorradorAlta(
     val firmaSolicitud: String = ""
 )
 
+private val TIPOS_PRODUCTO_APP = setOf(
+    "alimento_reposteria", "artesania_manualidad", "plantas", "producto_agricola",
+    "vestuario", "accesorio", "cosmetica_natural"
+)
+
 private fun firmaSolicitudProducto(tiendaId: String, productoId: String, solicitud: ProductoSolicitud): String {
     val estable = solicitud.copy(
         atributos = solicitud.atributos.toSortedMap(),
@@ -224,7 +230,14 @@ private fun campoObligatorioFaltante(entrada: EntradaEditorProducto): CampoTipoP
 private fun errorDatosProducto(entrada: EntradaEditorProducto): String? = when {
     entrada.nombre.isBlank() -> "Ingresa el nombre del producto."
     entrada.descripcion.isBlank() -> "Ingresa la descripción del producto."
-    entrada.categorias.none { it.id == entrada.categoriaId } -> "Selecciona una categoría."
+    else -> null
+}
+
+private fun errorCategoriaProducto(entrada: EntradaEditorProducto): String? = when {
+    entrada.categorias.isEmpty() -> "No hay categorías activas para este tipo de producto."
+    entrada.categorias.none {
+        it.id == entrada.categoriaId && (it.tipoProductoId == entrada.tipoId || it.id == entrada.original?.categoriaId)
+    } -> "Selecciona una categoría para este tipo de producto."
     else -> null
 }
 
@@ -263,6 +276,7 @@ private fun validarEntradaEditorProducto(entrada: EntradaEditorProducto, publica
     return when {
         tipo == null -> "Espera a que se carguen los tipos de producto."
         errorDatosProducto(entrada) != null -> errorDatosProducto(entrada)
+        errorCategoriaProducto(entrada) != null -> errorCategoriaProducto(entrada)
         entrada.original == null && entrada.tipos.none { it.id == entrada.tipoId && it.activo } -> "Selecciona un tipo habilitado."
         invalidField != null -> "Completa el campo ${invalidField.etiqueta}."
         errorPrecioStockProducto(entrada) != null -> errorPrecioStockProducto(entrada)
@@ -334,12 +348,20 @@ private suspend fun guardarConVersionVigente(
 private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? = runCatching {
     val raw = context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).getString(tiendaId, null) ?: return null
     val json = JSONObject(raw)
+    val versionFlujo = json.optInt("versionFlujo", 1)
+    val pasoGuardado = json.optInt("paso", 1)
+    val pasoMigrado = if (versionFlujo < 2) when (pasoGuardado) {
+        3 -> 4 // El paso 3 anterior también contenía los detalles del tipo.
+        in 4..5 -> pasoGuardado + 1
+        6 -> 7
+        else -> pasoGuardado
+    } else pasoGuardado
     val atributosJson = json.optJSONObject("atributos") ?: JSONObject()
     val variantesJson = json.optJSONArray("variantes") ?: JSONArray()
     BorradorAlta(
         json.optString("tipoId"), json.optString("categoriaId"), json.optString("nombre"), json.optString("descripcion"),
         json.optString("modalidad", "regular"), json.optBoolean("manejaStock", true), json.optString("alAgotarse", "mostrar_agotado"),
-        json.optString("precio"), json.optString("stock"), json.optInt("paso", 1), json.optString("foto").takeIf(String::isNotBlank),
+        json.optString("precio"), json.optString("stock"), pasoMigrado, json.optString("foto").takeIf(String::isNotBlank),
         json.optString("archivoId", UUID.randomUUID().toString()), atributosJson.keys().asSequence().associateWith { atributosJson.optString(it) },
         (0 until variantesJson.length()).map { i ->
             val v = variantesJson.getJSONObject(i)
@@ -362,6 +384,7 @@ private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: Bo
         })
     } }
     val json = JSONObject().apply {
+        put("versionFlujo", 2)
         put("tipoId", borrador.tipoId); put("categoriaId", borrador.categoriaId); put("nombre", borrador.nombre); put("descripcion", borrador.descripcion)
         put("modalidad", borrador.modalidad); put("manejaStock", borrador.manejaStock); put("alAgotarse", borrador.alAgotarse)
         put("precio", borrador.precio); put("stock", borrador.stock); put("paso", borrador.paso); put("foto", borrador.foto.orEmpty())
@@ -850,12 +873,22 @@ private fun EditorProductoEmprendedora(
     val context = LocalContext.current
     val borradorGuardado = remember(context, tiendaId, original?.id) { if (original == null) leerBorradorAlta(context, tiendaId) else null }
     val valoresDefecto = remember(context, tiendaId, original?.id) { PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, tiendaId) }
-    val tiposNuevos = tipos.filter { it.activo }
+    val ordenTiposApp = listOf(
+        "alimento_reposteria", "artesania_manualidad", "plantas", "producto_agricola",
+        "vestuario", "accesorio", "cosmetica_natural"
+    )
+    val tiposNuevos = tipos.filter { it.activo && it.id in TIPOS_PRODUCTO_APP }
+        .sortedBy { ordenTiposApp.indexOf(it.id) }
     val tiposDisponibles = if (original == null) tiposNuevos else tipos.filter { it.activo || it.id == original.tipoProductoId }
-    val initialTipo = original?.tipoProductoId ?: tiposNuevos.firstOrNull()?.id.orEmpty()
-    val initialCategory = original?.categoriaId ?: categorias.firstOrNull { it.activo }?.id.orEmpty()
-    var tipoId by remember(original?.id) { mutableStateOf(borradorGuardado?.tipoId?.takeIf(String::isNotBlank) ?: initialTipo) }
-    var categoriaId by remember(original?.id) { mutableStateOf(borradorGuardado?.categoriaId?.takeIf(String::isNotBlank) ?: initialCategory) }
+    val initialTipo = original?.tipoProductoId
+        ?: borradorGuardado?.tipoId?.takeIf { id -> tiposNuevos.any { it.id == id } }
+        ?: tiposNuevos.firstOrNull()?.id.orEmpty()
+    val categoriaInicialPorTipo = categorias.firstOrNull { it.activo && it.tipoProductoId == initialTipo }?.id.orEmpty()
+    val initialCategory = original?.categoriaId
+        ?: borradorGuardado?.categoriaId?.takeIf { id -> categorias.any { it.id == id && it.activo && it.tipoProductoId == initialTipo } }
+        ?: categoriaInicialPorTipo
+    var tipoId by remember(original?.id) { mutableStateOf(initialTipo) }
+    var categoriaId by remember(original?.id) { mutableStateOf(initialCategory) }
     var nombre by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.nombre ?: original?.nombre.orEmpty()) }
     var descripcion by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.descripcion ?: original?.descripcion.orEmpty()) }
     var modalidad by remember(original?.id) { mutableStateOf(borradorGuardado?.modalidad ?: original?.modalidad ?: valoresDefecto.modalidad) }
@@ -993,7 +1026,14 @@ private fun EditorProductoEmprendedora(
     var conVariantes by remember(original?.id) {
         mutableStateOf(borradorGuardado?.conVariantes ?: original?.tieneVariantes ?: (tipos.firstOrNull { it.id == tipoId }?.opcionesVariante?.isNotEmpty() ?: false))
     }
-    val categoriasDisponibles = categorias.filter { it.activo || it.id == original?.categoriaId }
+    val categoriasDisponibles = categorias.filter {
+        (it.activo && it.tipoProductoId == tipoId) || it.id == original?.categoriaId
+    }
+    LaunchedEffect(tipoId, categorias, original?.categoriaId) {
+        if (original == null && categoriasDisponibles.none { it.id == categoriaId }) {
+            categoriaId = categoriasDisponibles.firstOrNull()?.id.orEmpty()
+        }
+    }
     var identidadAlta by remember(original?.id) { mutableStateOf(identidadAltaInicial(borradorGuardado)) }
     val operacionIdEdicion = remember(original?.id, original?.versionEsperada, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) {
         UUID.randomUUID().toString()
@@ -1044,6 +1084,7 @@ private fun EditorProductoEmprendedora(
     )
     val invalidField = campoObligatorioFaltante(entradaEditor)
     val errorDatos = errorDatosProducto(entradaEditor)
+    val errorCategoria = errorCategoriaProducto(entradaEditor)
     val errorPreciosYStock = errorPrecioStockProducto(entradaEditor)
     fun guardarBorrador(publicar: Boolean = false) {
         val mensajeError = validarEntradaEditorProducto(entradaEditor, publicar)
@@ -1072,10 +1113,17 @@ private fun EditorProductoEmprendedora(
         }.toMap()
         onSave(solicitudFinal, imagen, fotosVariantes, publicar)
     }
+    fun elegirTipoProducto(item: TipoProductoEmprendedora) {
+        tipoId = item.id
+        categoriaId = categorias.firstOrNull { it.activo && it.tipoProductoId == item.id }?.id.orEmpty()
+        conVariantes = item.opcionesVariante.isNotEmpty()
+        error = null
+    }
     if (paso == 1) {
         PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ abrirCamaraParaFoto() },
             onPickPhoto={ abrirGaleriaParaFoto() }, onNext={ paso=2 },
             onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true, onDiscardDraft=onDiscardDraft,
+            totalPasos=6, dibujarBajoBarraSistema=true,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
             mensajeImagenExistente=when {
@@ -1085,9 +1133,9 @@ private fun EditorProductoEmprendedora(
                 else -> "La foto actual está guardada de forma privada. Si eliges otra, reemplazará la imagen principal y conservará las demás."
             })
     } else if (paso == 2) {
-        StepScaffold("Paso 2 de 5", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
+        StepScaffold("Paso 2 de 6", "Datos del producto", "Completa la información para que más personas encuentren tu producto.",
             onNext={ paso=3 }, onBack={ paso=1 }, onSaveExit=::cancelarEditor,
-            nextEnabled=errorDatos == null, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
+            nextEnabled=errorDatos == null, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
             Column(Modifier.padding(16.dp)) {
             AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres")
@@ -1095,11 +1143,6 @@ private fun EditorProductoEmprendedora(
             AmancayField(descripcion, { descripcion=it.take(500) }, "Descripción *", "Cuenta sus características, materiales y medidas.", singleLine=false, minLines=4)
             Text("${descripcion.length}/500", modifier=Modifier.fillMaxWidth(), textAlign=TextAlign.End, color=Muted, fontSize=12.sp)
             Spacer(Modifier.height(16.dp))
-            if (categoriasDisponibles.isNotEmpty()) {
-                SelectorProducto("Categoría", categoriasDisponibles.map { it.id to it.nombre }, categoriaId) { categoriaId=it }
-            } else {
-                Text("No hay categorías activas. Pide a administración que habilite una para tu tienda.", color=Wine, fontSize=14.sp)
-            }
             Spacer(Modifier.height(14.dp))
             AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base", "Ej.: 6.990", keyboardType=KeyboardType.Number)
             Text("Si agregas variantes, el precio se define para cada una. Si no, completa aquí el precio del producto.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=6.dp))
@@ -1110,21 +1153,17 @@ private fun EditorProductoEmprendedora(
             AvisoEmprendedora("Guardaremos lo que ya escribiste. Puedes continuar más tarde desde donde quedaste.", false)
         }
     } else if (paso == 3) {
-        StepScaffold("Paso 3 de 5", "Tipo de producto",
+        StepScaffold("Paso 3 de 6", "Tipo de producto",
             "Elige el tipo para mostrar los campos que necesitas.",
             onNext={ paso=4 }, onBack={ paso=2 }, onSaveExit=::cancelarEditor,
-            nextEnabled=invalidField == null && tipo != null, pasoActual=3, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
+            nextEnabled=tipo != null, pasoActual=3, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             if (tiposDisponibles.isEmpty()) {
                 AvisoEmprendedora("No hay tipos de producto activos. Pide a administración que habilite uno para continuar.", true)
             }
             tiposDisponibles.forEach { item ->
                 val seleccionado = tipoId == item.id
                 Card(
-                    modifier=Modifier.fillMaxWidth().padding(bottom=8.dp).clickable {
-                        tipoId=item.id
-                        conVariantes=item.opcionesVariante.isNotEmpty()
-                        error=null
-                    },
+                    modifier=Modifier.fillMaxWidth().padding(bottom=8.dp).clickable { elegirTipoProducto(item) },
                     colors=CardDefaults.cardColors(containerColor=if (seleccionado) Color(0xFFFFF0EB) else Color.White),
                     shape=RoundedCornerShape(18.dp),
                     border=BorderStroke(if (seleccionado) 2.dp else 1.dp, if (seleccionado) Wine else Line)
@@ -1132,44 +1171,57 @@ private fun EditorProductoEmprendedora(
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
                         Box(Modifier.size(46.dp).background(Color(0xFFFFE5D9), RoundedCornerShape(50)), contentAlignment=Alignment.Center) {
                             val icono = when {
-                                item.nombre.contains("ropa", true) || item.nombre.contains("textil", true) -> Icons.Filled.Checkroom
-                                item.nombre.contains("alimento", true) -> Icons.Filled.Restaurant
-                                item.nombre.contains("artesanía", true) || item.nombre.contains("artesania", true) -> Icons.Filled.Palette
+                                item.id == "vestuario" -> Icons.Filled.Checkroom
+                                item.id == "alimento_reposteria" || item.id == "producto_agricola" -> Icons.Filled.Restaurant
+                                item.id == "artesania_manualidad" -> Icons.Filled.Palette
+                                item.id == "plantas" -> Icons.Filled.Star
+                                item.id == "cosmetica_natural" -> Icons.Filled.Star
+                                item.id == "accesorio" -> Icons.Filled.Star
                                 else -> Icons.Filled.MoreHoriz
                             }
                             Icon(icono, contentDescription=null, tint=Color(0xFFEA7459), modifier=Modifier.size(24.dp))
                         }
                         Text(item.nombre, modifier=Modifier.weight(1f).padding(start=12.dp), color=Wine, fontSize=17.sp, fontWeight=FontWeight.Bold)
                         RadioButton(selected=seleccionado, onClick={
-                            tipoId=item.id
-                            conVariantes=item.opcionesVariante.isNotEmpty()
-                            error=null
+                            elegirTipoProducto(item)
                         })
                     }
                 }
             }
             if (tipo == null && tiposDisponibles.isNotEmpty()) AvisoEmprendedora(falloTipoHistorico ?: "Cargando la definición de este tipo…", falloTipoHistorico != null)
+            error?.let { AvisoEmprendedora(it, true) }
+        }
+    } else if (paso == 4) {
+        StepScaffold("Paso 4 de 6", "Categoría y detalles", "Elige una categoría de ${tipo?.nombre ?: "este tipo"} y completa sus detalles.",
+            onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=::cancelarEditor,
+            nextEnabled=errorCategoria == null && invalidField == null && tipo != null,
+            pasoActual=4, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
+            if (categoriasDisponibles.isEmpty()) {
+                AvisoEmprendedora("No hay categorías activas para este tipo de producto. Pide a administración que revise su vínculo en Firebase.", true)
+            } else {
+                SelectorProducto("Categoría *", categoriasDisponibles.map { it.id to it.nombre }, categoriaId, estiloPanelInferior = true) { categoriaId = it; error = null }
+            }
+            errorCategoria?.let { AvisoEmprendedora(it, true) }
+            Spacer(Modifier.height(14.dp))
             if (campos.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
                 Text("Detalles de ${tipo?.nombre.orEmpty()}", fontWeight=FontWeight.Bold, color=Wine, fontSize=19.sp)
                 Text("Completa los campos específicos para este producto.", color=Muted, fontSize=14.sp)
                 Spacer(Modifier.height(8.dp))
-            }
-            if (campos.isEmpty()) Text("Este tipo no requiere detalles adicionales. Puedes continuar.", fontSize=15.sp, color=Muted)
-            campos.forEach { f ->
-                AmancayField(atributos[f.clave].orEmpty(),
-                    { v -> atributos=atributos + (f.clave to v.take(500)) },
-                    f.etiqueta + if (f.obligatorio) " *" else "", "Ingresa ${f.etiqueta.lowercase()}", singleLine=false, minLines=2)
-                Spacer(Modifier.height(12.dp))
-            }
-            error?.let { AvisoEmprendedora(it, true) }
-            Text("No necesitas escribir mucho. Puedes completar o editar estos datos más adelante.", fontSize=13.sp, color=Muted)
+                campos.forEach { f ->
+                    AmancayField(atributos[f.clave].orEmpty(),
+                        { v -> atributos=atributos + (f.clave to v.take(500)) },
+                        f.etiqueta + if (f.obligatorio) " *" else "", "Ingresa ${f.etiqueta.lowercase()}", singleLine=false, minLines=2)
+                    Spacer(Modifier.height(12.dp))
+                }
+            } else Text("Este tipo no requiere detalles adicionales. Puedes continuar.", fontSize=15.sp, color=Muted)
+            if (invalidField != null) AvisoEmprendedora("Completa el campo ${invalidField.etiqueta}.", true)
+            Text("Puedes completar o editar estos datos más adelante.", fontSize=13.sp, color=Muted)
         }
-    } else if (paso == 4) {
-        StepScaffold("Paso 4 de 5", "Variantes", "Cada variante puede tener su propio precio, foto y stock.",
-            onNext={ paso=5 }, onBack={ paso=3 }, onSaveExit=::cancelarEditor,
+    } else if (paso == 5) {
+        StepScaffold("Paso 5 de 6", "Variantes", "Cada variante puede tener su propio precio, foto y stock.",
+            onNext={ paso=6 }, onBack={ paso=4 }, onSaveExit=::cancelarEditor,
             nextEnabled=errorPreciosYStock == null,
-            pasoActual=4, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
+            pasoActual=5, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Card(colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(18.dp), border=BorderStroke(1.dp,Line), modifier=Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp), verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=!conVariantes, enabled=original==null, onCheckedChange={ sinVariantes ->
@@ -1225,10 +1277,10 @@ private fun EditorProductoEmprendedora(
             (errorPreciosYStock ?: error)?.let { AvisoEmprendedora(it, true) }
             if (original != null && manejaStock) Text("El stock existente se modifica desde el catálogo para conservar el historial.", fontSize=13.sp, color=Muted)
         }
-    } else if (paso == 5) {
-        StepScaffold("Paso 5 de 5", "Disponibilidad", "Cuéntanos cómo quieres vender este producto.",
-            onNext={ paso=6 }, onBack={ paso=4 }, onSaveExit=::cancelarEditor,
-            nextEnabled=!enviando, pasoActual=5, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
+    } else if (paso == 6) {
+        StepScaffold("Paso 6 de 6", "Disponibilidad", "Cuéntanos cómo quieres vender este producto.",
+            onNext={ paso=7 }, onBack={ paso=5 }, onSaveExit=::cancelarEditor,
+            nextEnabled=!enviando, pasoActual=6, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Text("Tipo de disponibilidad", color=Dark, fontWeight=FontWeight.Bold, fontSize=18.sp)
             Text("Selecciona cómo estará disponible este producto.", color=Muted, fontSize=14.sp)
             Spacer(Modifier.height(10.dp))
@@ -1262,9 +1314,9 @@ private fun EditorProductoEmprendedora(
         }
     } else {
         StepScaffold("Último paso", "Revisa tu producto", "Verifica que toda la información esté correcta antes de publicarlo.",
-            onNext={ guardarBorrador(publicar = original == null && tiendaPublicada) }, onBack={ paso=5 }, onSaveExit={ guardarBorrador(false) },
+            onNext={ guardarBorrador(publicar = original == null && tiendaPublicada) }, onBack={ paso=6 }, onSaveExit={ guardarBorrador(false) },
             nextLabel=when { original != null -> "Guardar cambios"; tiendaPublicada -> "Publicar producto"; else -> "Guardar borrador" }, nextEnabled=!enviando,
-            pasoActual=5, showSaveExit=original==null, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft) {
+            pasoActual=6, showSaveExit=original==null, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
                 Column(Modifier.padding(16.dp)) {
                     if (identidadAlta.avisoIntentoAnterior) {
@@ -1488,7 +1540,13 @@ private fun ejemploOpcionVariante(clave: String): String = when {
 }
 
 @Composable
-private fun SelectorProducto(label: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+private fun SelectorProducto(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    estiloPanelInferior: Boolean = false,
+    onSelect: (String) -> Unit
+) {
     var expanded by remember(label, options) { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: "Seleccionar"
     Column(Modifier.fillMaxWidth()) {
@@ -1499,12 +1557,55 @@ private fun SelectorProducto(label: String, options: List<Pair<String, String>>,
                 enabled = options.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(2.dp, Wine),
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = androidx.compose.ui.graphics.Color.White, contentColor = Wine),
-                contentPadding = PaddingValues(vertical = 16.dp)
-            ) { Text(selectedLabel, color = Wine, fontWeight = FontWeight.Bold) }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                options.forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(id); expanded = false }) }
+                border = BorderStroke(if (estiloPanelInferior) 1.dp else 2.dp, if (estiloPanelInferior) Line else Wine),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = androidx.compose.ui.graphics.Color.White, contentColor = if (estiloPanelInferior) Dark else Wine),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                if (estiloPanelInferior) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(selectedLabel, modifier = Modifier.weight(1f), color = Dark, textAlign = TextAlign.Start, fontWeight = FontWeight.Medium)
+                        Text("⌄", color = Wine, fontSize = 22.sp)
+                    }
+                } else Text(selectedLabel, color = Wine, fontWeight = FontWeight.Bold)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(),
+                shape = if (estiloPanelInferior) RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 18.dp, bottomEnd = 18.dp) else RoundedCornerShape(8.dp),
+                containerColor = androidx.compose.ui.graphics.Color.White,
+                tonalElevation = if (estiloPanelInferior) 2.dp else 8.dp
+            ) {
+                if (estiloPanelInferior) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
+                        Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp).width(38.dp).height(4.dp).clip(RoundedCornerShape(50)).background(Line))
+                        Text("Elige una categoría", color = Wine, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+                        Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                            options.forEachIndexed { index, (id, name) ->
+                                val marcado = id == selected
+                                Box(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                        .border(if (marcado) 1.dp else 0.dp, if (marcado) Wine else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                                        .background(if (marcado) Color(0xFFF7F1F8) else androidx.compose.ui.graphics.Color.White)
+                                        .clickable { onSelect(id) }
+                                        .padding(horizontal = 10.dp, vertical = 9.dp)
+                                ) {
+                                    Text(name, color = Dark, fontSize = 13.sp)
+                                }
+                                if (index < options.lastIndex) Box(Modifier.fillMaxWidth().padding(vertical = 3.dp).height(1.dp).background(Line.copy(alpha = 0.55f)))
+                            }
+                        }
+                        Button(
+                            onClick = { expanded = false },
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).heightIn(min = 42.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Wine, contentColor = Color.White),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) { Text("Listo", fontWeight = FontWeight.Bold) }
+                    }
+                } else {
+                    options.forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(id); expanded = false }) }
+                }
             }
         }
     }
