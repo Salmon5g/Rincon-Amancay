@@ -1366,6 +1366,9 @@ onBeforeUnmount(() => {
               <span aria-hidden="true">🍂</span>
               Sobre la tienda
             </h2>
+            <div class="sobre-seguir">
+              <BotonSeguir tipo="tienda" :entidad-id="tienda.id" :nombre="tienda.datos.nombre" />
+            </div>
             <div v-if="etiquetaTipo" class="dato-tienda">
               <span class="dato-icono" aria-hidden="true">🏪</span>
               <div>
@@ -2822,6 +2825,10 @@ article.tarjeta-tienda:hover {
     border: 1.5px solid var(--amancay-borde);
     border-radius: 22px;
     box-shadow: 0 8px 24px rgba(107, 30, 61, 0.06);
+}
+
+.sobre-seguir {
+    margin: 0 0 1rem;
 }
 
 .titulo-sobre {

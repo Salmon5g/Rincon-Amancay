@@ -42,6 +42,21 @@ export interface AsociacionPublica {
   integrantes: IntegranteAsociacionPublica[];
 }
 
+export interface MuestraCatalogoFeria {
+  nombreTienda: string;
+  productos: string[];
+}
+
+export interface ParticipantePublicoFeria {
+  tipo: 'emprendedora' | 'asociacion' | string;
+  nombre: string;
+  /** Tiendas públicas usadas para preparar la muestra del catálogo. */
+  tiendaIds?: string[];
+  /** Solo asociaciones: ficha pública para visitar su directorio. */
+  asociacionId?: string;
+  catalogo: MuestraCatalogoFeria[];
+}
+
 export interface FeriaPublica {
   id: string;
   nombre: string;
@@ -53,6 +68,8 @@ export interface FeriaPublica {
   imagenUrl: string;
   latitud: number | null;
   longitud: number | null;
+  /** Proyección pública mantenida por la API; undefined si aún no existe. */
+  participantes?: ParticipantePublicoFeria[];
 }
 
 export interface ContactoPublico {

@@ -181,7 +181,10 @@ onMounted(() => void cargarDirectorio())
           <h1>Directorio local</h1>
           <p class="directorio-bajada">Conoce a las emprendedoras y asociaciones de tu territorio.</p>
         </div>
-        <img class="directorio-emblema" src="/logo-amancay.png" alt="" aria-hidden="true" />
+        <div class="directorio-encabezado-lateral">
+          <AccesoComprador />
+          <img class="directorio-emblema" src="/logo-amancay.png" alt="" aria-hidden="true" />
+        </div>
       </header>
 
       <div v-if="!asociacionId" class="directorio-pestanas" role="tablist" aria-label="Secciones del directorio">
@@ -228,6 +231,7 @@ onMounted(() => void cargarDirectorio())
             </div>
             <div class="asociacion-compartir">
               <button class="directorio-boton" type="button" @click="compartirAsociacion(asociacionActual)">Compartir asociación</button>
+              <BotonSeguir tipo="asociacion" :entidad-id="asociacionActual.id" :nombre="asociacionActual.nombre" />
               <p v-if="mensajeCompartir" role="status" aria-live="polite">{{ mensajeCompartir }}</p>
             </div>
           </div>
@@ -525,6 +529,15 @@ onMounted(() => void cargarDirectorio())
   background: var(--amancay-naranja-fondo);
   border: 1px solid var(--amancay-borde);
   object-fit: contain;
+}
+
+.directorio-encabezado-lateral {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  max-width: 220px;
 }
 
 .directorio-pestanas {
@@ -1128,6 +1141,10 @@ onMounted(() => void cargarDirectorio())
     width: 52px;
     height: 52px;
     padding: 5px;
+  }
+
+  .directorio-encabezado-lateral {
+    max-width: 150px;
   }
 
   .directorio-pestanas {
