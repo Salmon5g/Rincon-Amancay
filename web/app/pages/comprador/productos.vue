@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import '~/assets/amancay-tokens.css'
 import type { ProductoPublico, TiendaPublica } from '~/types/comprador-publico'
+import { categoriasProductoVigentes } from '~/repositories/catalogo-publico'
 import type { CatalogosPublicos, ElementoEtiqueta } from '~/repositories/catalogo-publico'
 
 type ProductoCatalogo = { producto: ProductoPublico; tienda: TiendaPublica }
@@ -18,6 +19,7 @@ const { $catalogoPublico } = useNuxtApp()
 const productos = ref<ProductoCatalogo[]>([])
 const tiendas = ref<TiendaPublica[]>([])
 const catalogos = ref<CatalogosPublicos>({ sectores: [], tiposEmprendimiento: [], categorias: [] })
+const categoriasFiltro = computed(() => categoriasProductoVigentes(catalogos.value.categorias))
 const busqueda = ref('')
 const categoriaSeleccionada = ref('')
 const tiendaSeleccionada = ref('')
@@ -163,7 +165,7 @@ onMounted(() => void cargar())
           <span>Categoría</span>
           <select v-model="categoriaSeleccionada" aria-label="Filtrar por categoría">
             <option value="">Todas las categorías</option>
-            <option v-for="categoria in catalogos.categorias" :key="categoria.id" :value="categoria.id">{{ categoria.nombre }}</option>
+            <option v-for="categoria in categoriasFiltro" :key="categoria.id" :value="categoria.id">{{ categoria.nombre }}</option>
           </select>
         </label>
         <label class="campo-filtro">

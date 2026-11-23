@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import '~/assets/amancay-tokens.css';
 import type { FichaComprador, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico';
+import { categoriasProductoVigentes } from '~/repositories/catalogo-publico';
 import { compartirEnlacePublico } from '~/utils/compartir-enlace-publico';
 useHead({
     title: 'Comprar local — Rincón Amancay',
@@ -31,14 +32,12 @@ const sectores = ref<Record<string, string>>({});
 const tiposEmprendimiento = ref<Record<string, string>>({});
 const categorias = ref<Record<string, string>>({});
 const categoriaTipoProducto = ref<Record<string, string>>({});
-const tiposProductoConCategoriasActuales = new Set([
-    'alimento_reposteria', 'artesania_manualidad', 'plantas', 'producto_agricola',
-    'vestuario', 'accesorio', 'cosmetica_natural',
-]);
 const categoriasFiltro = computed(() => Object.fromEntries(
-    Object.entries(categorias.value)
-        .filter(([id]) => tiposProductoConCategoriasActuales.has(categoriaTipoProducto.value[id] ?? ''))
-        .sort(([, nombreA], [, nombreB]) => nombreA.localeCompare(nombreB, 'es-CL')),
+    categoriasProductoVigentes(Object.entries(categorias.value).map(([id, nombre]) => ({
+        id,
+        nombre,
+        tipoProductoId: categoriaTipoProducto.value[id] ?? '',
+    }))).map((categoria) => [categoria.id, categoria.nombre]),
 ));
 const categoriaSeleccionada = ref('');
 const filtroVisible = ref(true);
@@ -975,11 +974,11 @@ onBeforeUnmount(() => {
       <template v-if="!tienda">
         <div class="escena-explorar">
         <header class="encabezado-fila">
-          <div>
+          <div class="encabezado-titulo">
             <h1>Descubre productos hechos cerca</h1>
             <p class="sub">Conoce a nuestras emprendedoras y encuentra algo especial.</p>
           </div>
-          <div class="encabezado-sesion">
+          <div class="encabezado-cuenta">
             <AccesoComprador />
           </div>
         </header>
@@ -1816,27 +1815,40 @@ select:focus-visible {
 .encabezado-fila {
     position: relative;
     z-index: 2;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
+    column-gap: 1rem;
     margin-bottom: 1.4rem;
 }
 
-.encabezado-sesion :deep(.acceso) {
-    margin-top: 0.4rem;
+.encabezado-titulo {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
 }
 
-.encabezado-sesion :deep(.acceso-abrir) {
+.encabezado-cuenta {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    min-width: 0;
+}
+
+.encabezado-cuenta :deep(.acceso) {
+    margin-top: 0;
+}
+
+.encabezado-cuenta :deep(.acceso-abrir) {
     width: auto;
     white-space: nowrap;
     padding: 0.7rem 1.5rem;
 }
 
-.encabezado-sesion :deep(.acceso-sesion) {
-    min-width: 220px;
-    max-width: 280px;
+.encabezado-cuenta :deep(.acceso-sesion) {
+    width: min(330px, 100%);
+    min-width: 0;
+    max-width: 330px;
 }
 
 h1 {
@@ -3797,6 +3809,23 @@ article.tarjeta-tienda:hover {
 }
 
 @media (max-width: 560px) {
+    .encabezado-fila {
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 0.7rem;
+        margin-bottom: 1.2rem;
+    }
+
+    .encabezado-cuenta {
+        grid-column: 1;
+        grid-row: 1;
+        justify-self: end;
+    }
+
+    .encabezado-titulo {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
     .comprador.modo-tienda > * {
         min-width: 0;
     }

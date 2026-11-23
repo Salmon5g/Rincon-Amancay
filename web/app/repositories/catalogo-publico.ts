@@ -17,6 +17,17 @@ export interface CatalogosPublicos {
   categorias: ElementoEtiqueta[]
 }
 
+const TIPOS_PRODUCTO_CON_CATEGORIAS_VIGENTES = new Set([
+  'alimento_reposteria', 'artesania_manualidad', 'plantas', 'producto_agricola',
+  'vestuario', 'accesorio', 'cosmetica_natural',
+])
+
+export function categoriasProductoVigentes(categorias: ElementoEtiqueta[]): ElementoEtiqueta[] {
+  return categorias
+    .filter((categoria) => TIPOS_PRODUCTO_CON_CATEGORIAS_VIGENTES.has(categoria.tipoProductoId ?? ''))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'))
+}
+
 export type PoliticaNavegacion = 'permitir' | 'invitar' | 'exigir'
 
 export interface CatalogoPublicoRepository {

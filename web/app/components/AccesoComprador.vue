@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { mensajeErrorAcceso } from '~/lib/acceso-comprador'
 import { solicitudAccesoComprador, vistaSolicitudAccesoComprador } from '~/lib/acceso-comprador-ui'
 import type { AccesoComprador, ResultadoAcceso, SesionComprador } from '~/lib/acceso-comprador'
@@ -14,6 +14,7 @@ const servicio = () => nuxt.$accesoComprador as AccesoComprador
 
 const listo = ref(false)
 const sesion = ref<SesionComprador | null>(null)
+const inicialCuenta = computed(() => (sesion.value?.nombre || sesion.value?.correo || 'C').trim().slice(0, 1).toLocaleUpperCase('es-CL'))
 const vista = ref<Vista>('ingreso')
 const dialogo = ref<HTMLDialogElement | null>(null)
 
@@ -151,10 +152,13 @@ onBeforeUnmount(() => desconectar?.())
       Iniciar sesión
     </button>
 
-    <div v-else class="acceso-sesion">
-      <p class="acceso-nombre">{{ sesion.nombre }}</p>
-      <p v-if="!sesion.verificado" class="acceso-nota">Falta confirmar tu correo</p>
-      <p v-else class="acceso-nota">{{ sesion.correo }}</p>
+    <div v-else class="acceso-sesion" :class="{ 'sin-verificar': !sesion.verificado }">
+      <span class="acceso-avatar" aria-hidden="true">{{ inicialCuenta }}</span>
+      <div class="acceso-identidad">
+        <p class="acceso-nombre">{{ sesion.nombre || 'Cuenta de comprador' }}</p>
+        <p v-if="!sesion.verificado" class="acceso-nota">Falta confirmar tu correo</p>
+        <p v-else class="acceso-nota">{{ sesion.correo }}</p>
+      </div>
       <div class="acceso-acciones">
         <button v-if="!sesion.verificado" class="acceso-secundario" type="button" @click="abrir('verificacion')">Confirmar correo</button>
         <button class="acceso-secundario" type="button" @click="salir">Cerrar sesión</button>
@@ -257,11 +261,16 @@ onBeforeUnmount(() => desconectar?.())
 </template>
 
 <style scoped>
-.acceso { margin-top: 0.7rem; font-family: inherit; }
-.acceso-nota { margin: 0; font-size: 0.78rem; color: var(--amancay-tinta-suave, #7c6a6e); overflow-wrap: anywhere; }
-.acceso-nombre { margin: 0; font-weight: 700; font-size: 0.9rem; color: var(--amancay-tinta, #2e1b20); overflow-wrap: anywhere; }
-.acceso-sesion { padding: 0.7rem; background: var(--amancay-superficie, #fffbf2); border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 16px; }
-.acceso-acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
+.acceso { margin-top: 0.4rem; font-family: inherit; }
+.acceso-nota { min-width: 0; margin: 0; overflow: hidden; color: var(--amancay-tinta-suave, #7c6a6e); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.acceso-nombre { min-width: 0; margin: 0; overflow: hidden; color: var(--amancay-tinta, #2e1b20); font-size: 0.84rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.acceso-sesion { display: grid; width: min(330px, 100%); box-sizing: border-box; grid-template-columns: 2.25rem minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; padding: 0.5rem 0.6rem; border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 999px; background: rgba(255, 251, 242, 0.86); box-shadow: 0 5px 18px rgba(63, 34, 44, 0.06); transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+.acceso-sesion:hover, .acceso-sesion:focus-within { border-color: rgba(116, 36, 78, 0.34); background: rgba(255, 251, 242, 0.97); box-shadow: 0 9px 24px rgba(63, 34, 44, 0.14); transform: translateY(-1px); }
+.acceso-avatar { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border: 1px solid rgba(116, 36, 78, 0.12); border-radius: 50%; background: var(--amancay-bordo-suave, #f3dee3); color: var(--amancay-bordo, #6b1e3d); font-size: 0.95rem; font-weight: 800; }
+.acceso-identidad { min-width: 0; }
+.acceso-acciones { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; margin: 0; }
+.acceso-sesion.sin-verificar { grid-template-columns: 2.25rem minmax(0, 1fr); border-radius: 18px; }
+.acceso-sesion.sin-verificar .acceso-acciones { grid-column: 2; justify-content: flex-start; }
 
 .acceso button { font-family: inherit; cursor: pointer; }
 .acceso button:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -273,8 +282,8 @@ onBeforeUnmount(() => desconectar?.())
 }
 .acceso-abrir:hover, .acceso-primario:hover:not(:disabled) { background: var(--amancay-bordo-oscuro, #4e142c); }
 .acceso-secundario {
-  border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 999px; padding: 0.45rem 0.8rem;
-  background: #fff; color: var(--amancay-bordo, #6b1e3d); font-size: 0.8rem; font-weight: 600;
+  border: 1px solid var(--amancay-borde, #e7d5be); border-radius: 999px; padding: 0.42rem 0.66rem;
+  background: #fff; color: var(--amancay-bordo, #6b1e3d); font-size: 0.72rem; font-weight: 700; white-space: nowrap;
 }
 
 .acceso-dialogo {
@@ -314,5 +323,14 @@ input {
 
 @media (prefers-reduced-motion: no-preference) {
   .acceso-abrir, .acceso-primario, .acceso-google { transition: background 0.15s; }
+}
+
+@media (max-width: 640px) {
+  .acceso-sesion { width: 100%; max-width: 100%; border-radius: 18px; }
+  .acceso-sesion:not(.sin-verificar) { grid-template-columns: 2.25rem minmax(0, 1fr) auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acceso-sesion { transition: none; }
 }
 </style>
