@@ -945,7 +945,8 @@ onBeforeUnmount(() => {
       </button>
       <nav class="barra-nav" aria-label="Principal">
         <button type="button" @click="navegar(null)">Explorar</button>
-        <button type="button" @click="irSeccion('catalogo')">Tiendas</button>
+        <NuxtLink class="barra-enlace" to="/comprador/tiendas">Tiendas</NuxtLink>
+        <NuxtLink class="barra-enlace" to="/comprador/productos">Productos</NuxtLink>
         <NuxtLink class="barra-enlace" to="/comprador/ferias">Ferias</NuxtLink>
         <span class="barra-actual">{{ tienda.datos.nombre }}</span>
       </nav>
@@ -992,7 +993,7 @@ onBeforeUnmount(() => {
                 <p class="sobretitulo">EMPRENDIMIENTOS LOCALES</p>
                 <h2>Hecho cerca, elegido con cariño</h2>
                 <p>Productos con historia, manos locales y un impacto real.</p>
-                <a class="boton boton-mostaza" href="#destacados">Explorar productos →</a>
+                <NuxtLink class="boton boton-mostaza" to="/comprador/productos">Explorar productos →</NuxtLink>
               </div>
               <p class="hero-frase">Lo local<br />también florece</p>
               <div class="hero-arte" aria-hidden="true">
@@ -1099,7 +1100,7 @@ onBeforeUnmount(() => {
         <section v-if="destacadosVisibles.length" id="destacados" aria-labelledby="tit-destacados">
           <div class="fila-titulo">
             <h2 id="tit-destacados" class="titulo-bloque">Productos destacados</h2>
-            <a class="enlace" href="#catalogo">Ver todos →</a>
+            <NuxtLink class="enlace" to="/comprador/productos">Ver todos →</NuxtLink>
           </div>
           <div class="rejilla-productos">
             <button
@@ -1131,6 +1132,7 @@ onBeforeUnmount(() => {
         <section id="catalogo" :aria-busy="cargando">
           <div class="fila-titulo">
             <h2 class="titulo-bloque">Nuestras tiendas</h2>
+            <NuxtLink class="enlace" to="/comprador/tiendas">Ver todas →</NuxtLink>
             <span class="cuenta">Página {{ pagina }} · {{ visibles.length }} resultados</span>
           </div>
           <div v-if="!cargando && !error && !visibles.length" class="vacio">
