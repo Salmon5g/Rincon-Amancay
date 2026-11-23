@@ -101,6 +101,7 @@ async function leerCatalogo(cliente: ClienteAmancay, coleccion: string): Promise
       id: doc.id,
       nombre: texto(datos.nombre, doc.id),
       activo: datos.activo === true,
+      ...(typeof datos.tipoProductoId === 'string' ? { tipoProductoId: datos.tipoProductoId } : {}),
       ...(versionDe(datos) ? { versionEsperada: versionDe(datos) } : {}),
     }
   })
@@ -126,6 +127,7 @@ async function leerCatalogoAdmin(cliente: ClienteAmancay, nombreColeccion: strin
       id: snapshot.id,
       nombre: texto(datos.nombre, snapshot.id),
       activo: datos.activo === true,
+      ...(typeof datos.tipoProductoId === 'string' ? { tipoProductoId: datos.tipoProductoId } : {}),
       ...(versionDe(datos) ? { versionEsperada: versionDe(datos) } : {}),
     }
   })
@@ -396,6 +398,7 @@ export type DefinicionCatalogoProducto = { campos: CampoTipoProducto[]; opciones
 export function crearValorCatalogo(cliente: ClienteAdminConApi, solicitud: {
   operacionId: string; coleccion: ColeccionCatalogoEditable; nombre: string
   definicion?: DefinicionCatalogoProducto
+  tipoProductoId?: string
 }) {
   return cliente.llamar('crearElementoCatalogo', solicitud)
 }
@@ -403,6 +406,7 @@ export function crearValorCatalogo(cliente: ClienteAdminConApi, solicitud: {
 export function editarValorCatalogo(cliente: ClienteAdminConApi, solicitud: {
   operacionId: string; coleccion: ColeccionCatalogoEditable; documentoId: string
   versionEsperada: string; nombre: string; definicion?: DefinicionCatalogoProducto
+  tipoProductoId?: string
 }) {
   return cliente.llamar('editarElementoCatalogo', solicitud)
 }

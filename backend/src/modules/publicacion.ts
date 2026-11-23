@@ -204,10 +204,16 @@ export function crearPublicacion(db: Firestore, imagenAutorizada: (ruta: string,
           const type = await tx.get(db.doc(`tiposProducto/${data.tipoProductoId}`));
           const definition = await tx.get(db.doc(`tiposProducto/${data.tipoProductoId}/versiones/${data.versionTipoProducto}`));
           const category = await tx.get(db.doc(`categorias/${data.categoriaId}`));
+          const categoriaTipoId = category.data()?.tipoProductoId;
+          const categoriasDelTipo = typeof categoriaTipoId === 'string'
+            ? null : await tx.get(db.collection('categorias').where('tipoProductoId', '==', data.tipoProductoId).limit(1));
+          const categoriaCompatible = typeof categoriaTipoId === 'string'
+            ? categoriaTipoId === data.tipoProductoId
+            : categoriasDelTipo?.empty === true;
           const conservaReferenciasHistoricas=data.tipoProductoId===type.id
             && data.categoriaId===category.id
             && data.versionTipoProducto===Number(definition.id);
-          const referenciasVigentes=type.data()?.activo===true && category.data()?.activo===true;
+          const referenciasVigentes=type.data()?.activo===true && category.data()?.activo===true && categoriaCompatible;
           exigir(type.exists && definition.exists && category.exists && (referenciasVigentes || conservaReferenciasHistoricas), 'datos-invalidos', 'Tipo, versión o categoría inexistentes o incompatibles con esta ficha.');
           exigir(Array.isArray(data.imagenes) && data.imagenes.length >= 1 && data.imagenes.length <= 5, 'imagen-requerida', 'Se requiere entre una y cinco imágenes autorizadas.');
           exigir(new Set(data.imagenes).size === data.imagenes.length, 'datos-invalidos', 'No repetir imágenes.');

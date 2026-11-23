@@ -95,7 +95,7 @@ let temporizador: ReturnType<typeof setTimeout>
 const borrador = ref({
   nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
   tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
-  tipoCatalogo: 'sectores', valor: '', clave: '', contactoValor: '', logoUrl: '',
+  tipoCatalogo: 'sectores', tipoProductoCatalogoId: '', valor: '', clave: '', contactoValor: '', logoUrl: '',
 })
 const tiposCatalogo = [
   { id: 'sectores', nombre: 'Sectores' },
@@ -563,7 +563,7 @@ async function abrirFormulario() {
   borrador.value = {
     nombre: '', correo: '', nombreTienda: '', descripcion: '', sectorId: '',
     tipoEmprendimientoId: '', ubicacion: '', fechaInicio: '', fechaFin: '',
-    tipoCatalogo: 'sectores', valor: '', clave: '', contactoValor: '', logoUrl: '',
+    tipoCatalogo: 'sectores', tipoProductoCatalogoId: '', valor: '', clave: '', contactoValor: '', logoUrl: '',
   }
   limpiarSeleccionLogoAsociacion()
   logoAsociacionPreviewError.value = false
@@ -576,6 +576,7 @@ async function abrirFormulario() {
   catalogoEnEdicion.value = null
   catalogoCampos.value = []
   catalogoOpcionesVarianteTexto.value = ''
+  borrador.value.tipoProductoCatalogoId = ''
   catalogoOperacionPendiente.value = null
   catalogoReintentoObligatorio.value = false
   asociacionEnEdicion.value = null
@@ -818,9 +819,11 @@ function prepararNuevoCatalogo() {
   catalogoEnEdicion.value = null
   catalogoCampos.value = []
   catalogoOpcionesVarianteTexto.value = ''
+  borrador.value.tipoProductoCatalogoId = ''
   catalogoOperacionPendiente.value = null
   catalogoReintentoObligatorio.value = false
   borrador.value.tipoCatalogo = 'sectores'
+  borrador.value.tipoProductoCatalogoId = ''
   borrador.value.valor = ''
   errorOperacion.value = ''
   formularioAbierto.value = true
@@ -861,9 +864,12 @@ function itemCatalogo(coleccion: ColeccionCatalogoEditable, elemento: ElementoCa
   const definicion = coleccion === 'tiposProducto'
     ? ` · versión ${elemento.versionActual ?? '?'} · ${elemento.campos?.length ?? 0} campos · ${elemento.opcionesVariante?.length ?? 0} opciones`
     : ''
+  const tipoProducto = coleccion === 'categorias' && elemento.tipoProductoId
+    ? datos.value.catalogos.tiposProducto.find((tipo) => tipo.id === elemento.tipoProductoId)?.nombre ?? elemento.tipoProductoId
+    : ''
   return {
     titulo: elemento.nombre,
-    detalle: `${tituloColeccion} · ID: ${elemento.id}${definicion}`,
+    detalle: `${tituloColeccion} · ID: ${elemento.id}${tipoProducto ? ` · Tipo: ${tipoProducto}` : ''}${definicion}`,
     estado: elemento.activo ? 'Activo' : 'Inactivo',
     catalogo: coleccion,
     catalogoId: elemento.id,
@@ -881,6 +887,7 @@ function prepararEdicionCatalogo(item: Item) {
   catalogoEnEdicion.value = { coleccion: item.catalogo, elemento: item.elementoCatalogo }
   borrador.value.tipoCatalogo = item.catalogo
   borrador.value.valor = item.elementoCatalogo.nombre
+  borrador.value.tipoProductoCatalogoId = item.elementoCatalogo.tipoProductoId ?? ''
   catalogoCampos.value = item.elementoCatalogo.campos?.map((campo) => ({ ...campo })) ?? []
   catalogoOpcionesVarianteTexto.value = item.elementoCatalogo.opcionesVariante?.join(', ') ?? ''
   catalogoOperacionPendiente.value = null
@@ -944,6 +951,8 @@ async function guardarCatalogo() {
   const solicitud = {
     coleccion,
     nombre,
+    ...(coleccion === 'categorias' && borrador.value.tipoProductoCatalogoId.trim()
+      ? { tipoProductoId: borrador.value.tipoProductoCatalogoId.trim() } : {}),
     ...(catalogoEnEdicion.value ? {
       documentoId: catalogoEnEdicion.value.elemento.id,
       versionEsperada: catalogoEnEdicion.value.elemento.versionEsperada,
@@ -971,7 +980,11 @@ async function guardarCatalogo() {
         operacionId,
       })
     } else {
-      await crearValorCatalogo($amancay, { coleccion, nombre, ...(definicion ? { definicion } : {}), operacionId })
+      await crearValorCatalogo($amancay, {
+        coleccion, nombre,
+        ...(coleccion === 'categorias' ? { tipoProductoId: borrador.value.tipoProductoCatalogoId.trim() } : {}),
+        ...(definicion ? { definicion } : {}), operacionId,
+      })
     }
     const estado = catalogoEnEdicion.value ? 'actualizado' : 'creado'
     catalogoEnEdicion.value = null
@@ -1491,6 +1504,16 @@ async function guardarEdicionCuentaEmprendedora() {
                 </select>
               </label>
               <label>Nombre<input v-model="borrador.valor" maxlength="100" required :disabled="enviando || catalogoReintentoObligatorio" /></label>
+              <label v-if="borrador.tipoCatalogo === 'categorias'">Tipo de producto
+                <select v-model="borrador.tipoProductoCatalogoId" :required="!catalogoEnEdicion" :disabled="enviando || catalogoReintentoObligatorio">
+                  <option v-if="catalogoEnEdicion && !catalogoEnEdicion.elemento.tipoProductoId" value="">Categoría antigua sin vínculo</option>
+                  <option v-else-if="!catalogoEnEdicion" value="">Seleccionar tipo de producto</option>
+                  <option v-for="tipo in activos(datos.catalogos.tiposProducto)" :key="tipo.id" :value="tipo.id">{{ tipo.nombre }}</option>
+                </select>
+              </label>
+              <p v-if="borrador.tipoCatalogo === 'categorias'" class="campo-completo aviso-carga">
+                Las categorías nuevas quedan asociadas a un tipo. Las categorías antiguas sin vínculo se conservan para productos existentes.
+              </p>
               <div v-if="borrador.tipoCatalogo === 'tiposProducto'" class="campo-completo editor-tipo-producto">
                 <h3>Datos que tendrá la ficha de este tipo de producto</h3>
                 <p>Al cambiar estos campos se crea una nueva versión. Los productos existentes conservan la definición con que fueron creados.</p>

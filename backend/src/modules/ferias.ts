@@ -129,7 +129,7 @@ async function comprobarAdmin(db: Firestore, uid: string) {
 function nombreParticipante(value: unknown, fallback: string) { return typeof value === 'string' && value.trim() ? value.trim().slice(0, 120) : fallback; }
 function fechaIso(data: DocumentData, campo: string) { const value = data[campo]; return value instanceof Timestamp ? value.toDate().toISOString() : null; }
 
-export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<boolean | void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>, notificarInvitacion?: (uid: string, feriaId: string, nombreFeria: string) => Promise<void>) {
+export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<boolean | void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>, notificarInvitacion?: (uid: string, feriaId: string, nombreFeria: string) => Promise<void>, notificarRecordatorio?: (uid: string, feriaId: string, nombreFeria: string, operacionId: string) => Promise<string>, notificarAvisoConfirmadas?: (uid: string, feriaId: string, datos: { nombre: string; fechaInicio: string; direccion: string; organizador: string }, operacionId: string) => Promise<string>) {
   const origenWeb = (process.env.AMANCAY_WEB_URL?.trim() || 'https://rincon-amancay.web.app').replace(/\/+$/, '');
   const avisarPorCorreo = async (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
     if (!auth || !enviarCorreo) return;
@@ -190,14 +190,14 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       const access = await actorRef.get();
       const accessData = access.data();
       exigir(accessData?.estado === 'activo' && Array.isArray(accessData.roles) && accessData.roles.includes('emprendedora'), 'sin-permiso', 'Solo una cuenta emprendedora activa puede consultar sus invitaciones.');
-      const ferias = await db.collection('ferias').where('estado', '==', 'publicada').limit(101).get();
-      exigir(ferias.size <= 100, 'limite-local', 'Hay más de 100 ferias publicadas; se requiere paginación.');
+      const ferias = await db.collection('ferias').where('estado', 'in', ['borrador', 'publicada']).limit(101).get();
+      exigir(ferias.size <= 100, 'limite-local', 'Hay más de 100 ferias en preparación o publicadas; se requiere paginación.');
       if (!ferias.size) return { invitaciones: [] };
       const participantes = await db.getAll(...ferias.docs.map(doc => doc.ref.collection('participantes').doc(`emprendedora_${identidad.uid}`)));
       const invitaciones = participantes.flatMap((participante, indice) => {
         if (!participante.exists) return [];
         const data = participante.data()!;
-        if (data.tipo !== 'emprendedora' || data.entidadId !== identidad.uid || !['invitada', 'confirmada', 'rechazada'].includes(String(data.estado))) return [];
+        if (data.tipo !== 'emprendedora' || data.entidadId !== identidad.uid || !['invitada', 'confirmada', 'rechazada', 'agregada_admin'].includes(String(data.estado))) return [];
         const feria = ferias.docs[indice];
         const feriaData = feria.data();
         return [{
@@ -252,7 +252,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         return { tipo: 'emprendedora' as const, entidadId: uid, nombre: nombreParticipante(user.data()?.nombreMostrar, uid), nombreTienda: nombreParticipante(store.data()?.nombre, 'Tienda sin nombre') };
       }));
       const controles = await Promise.all(participantes.docs.map(doc => doc.ref.collection('controlRecordatorios').doc('actual').get()))
-      const controlesAvisos = await Promise.all(participantes.docs.map(doc => doc.ref.collection('controlesAvisos').doc('actual').get()))
+      const controlesAvisos = await Promise.all(participantes.docs.map(doc => doc.ref.collection('controlAvisos').doc('actual').get()))
       const existentes = participantes.docs.map((doc, indice) => {
         const data = doc.data();
         const estado = String(data.estado ?? 'invitada');
@@ -264,14 +264,14 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         const asociacionesParticipante = tipo === 'asociacion' ? [{ id: entidadId, nombre: String(data.nombre ?? entidadId) }] : asociacionesPorUid.get(entidadId) ?? [];
         return {
           id: doc.id, tipo, entidadId, nombre: String(data.nombre ?? ''), nombreTienda: String(data.nombreTienda ?? ''), estado, asistencia, tipoEmprendimiento, asociaciones: asociacionesParticipante, versionEsperada: version(data),
-          recordatorio: controles[indice].exists ? { estado: controles[indice].get('estado') === 'aceptado' ? 'aceptado' : 'reservado', enviadoEn: controles[indice].data()?.enviadoEn instanceof Timestamp ? controles[indice].data()!.enviadoEn.toDate().toISOString() : null, } : null,
-          avisoConfirmacion: controlesAvisos[indice].exists ? { estado: controlesAvisos[indice].get('estado') === 'aceptado' ? 'aceptado' : 'reservado', enviadoEn: controlesAvisos[indice].data()?.enviadoEn instanceof Timestamp ? controlesAvisos[indice].data()!.enviadoEn.toDate().toISOString() : null, } : null
+          recordatorio: controles[indice].exists ? { estado: controles[indice].get('estado') === 'aceptado' ? 'aceptado' : 'reservado', enviadoEn: controles[indice].data()?.enviadoEn instanceof Timestamp ? controles[indice].data()!.enviadoEn.toDate().toISOString() : null, ...(controles[indice].get('canal') === 'push' || controles[indice].get('canal') === 'correo' ? { canal: controles[indice].get('canal') } : {}) } : null,
+          avisoConfirmacion: controlesAvisos[indice].exists ? { estado: controlesAvisos[indice].get('estado') === 'aceptado' ? 'aceptado' : 'reservado', enviadoEn: controlesAvisos[indice].data()?.enviadoEn instanceof Timestamp ? controlesAvisos[indice].data()!.enviadoEn.toDate().toISOString() : null, iniciadoEn: fechaIso(controlesAvisos[indice].data()!, 'creadoEn'), ...(controlesAvisos[indice].get('canal') === 'push' || controlesAvisos[indice].get('canal') === 'correo' ? { canal: controlesAvisos[indice].get('canal') } : {}) } : null
         };
       });
       const presentes = new Set(existentes.filter(item => item.estado !== 'retirada').map(item => `${item.tipo}:${item.entidadId}`));
       const emprendedoras = candidatos.filter((item): item is NonNullable<typeof item> => Boolean(item)).filter(item => !presentes.has(`emprendedora:${item.entidadId}`));
       const disponiblesAsociaciones = asociaciones.docs.map(doc => ({ tipo: 'asociacion' as const, entidadId: doc.id, nombre: nombreParticipante(doc.data().nombre, doc.id) })).filter(item => !presentes.has(`asociacion:${item.entidadId}`));
-      return { feria: { id: feria.id, estado: String(feria.data()?.estado ?? 'borrador'), versionEsperada: version(feria.data()!) }, participantes: existentes, disponibles: [...emprendedoras, ...disponiblesAsociaciones] };
+      return { feria: { id: feria.id, estado: String(feria.data()?.estado ?? 'borrador'), fechaInicio: fechaIso(feria.data()!, 'fechaInicio'), fechaFin: fechaIso(feria.data()!, 'fechaFin'), versionEsperada: version(feria.data()!) }, participantes: existentes, disponibles: [...emprendedoras, ...disponiblesAsociaciones] };
     }
 
     if (request.accion === 'responderInvitacionFeria') {
@@ -309,19 +309,22 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
     }
 
     if (request.accion === 'enviarRecordatorioFeria' || request.accion === 'enviarAvisoConfirmadasFeria') {
+      const esAviso = request.accion === 'enviarAvisoConfirmadasFeria'
       exigir(
-        Boolean(auth && enviarCorreo),
+        Boolean(auth && (esAviso ? notificarAvisoConfirmadas : notificarRecordatorio)),
         'servicio-no-configurado',
-        'El envío de recordatorios no está configurado en el servidor.'
+        esAviso
+          ? 'El envío de avisos push para participantes confirmadas no está configurado en el servidor.'
+          : 'El envío de recordatorios push no está configurado en el servidor.'
       )
 
-      const esAviso = request.accion === 'enviarAvisoConfirmadasFeria'
       const estadoDestinatario = esAviso ? 'confirmada' : 'invitada'
 
       const feriaRef = db.doc(`ferias/${request.feriaId}`)
       const participanteRef = feriaRef.collection('participantes').doc(request.participanteId)
       const controlRef = participanteRef.collection(esAviso ? 'controlAvisos' : 'controlRecordatorios').doc('actual')
       const intentoRef = participanteRef.collection(esAviso ? 'avisosConfirmacion' : 'recordatorios').doc(request.operacionId)
+      const canal = 'push'
 
 
       const [actor, feria, participante] = await db.getAll(
@@ -366,86 +369,33 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         'Participante inconsistente.'
       )
 
-      let email: string | undefined
+      const titulo = String(feriaData.nombre ?? 'Feria').slice(0, 120)
+      let destinatarioUid: string | undefined
 
-      if (participanteData.tipo === 'emprendedora') {
-        try {
-          const usuario = await auth!.getUser(participanteData.entidadId)
-          if (!usuario.disabled && usuario.emailVerified) {
-            email = usuario.email
-          }
-        } catch {
-          // Sin destinatario válido.
-        }
+      if (esAviso) {
+        exigir(participanteData.tipo === 'emprendedora', 'sin-destinatario', 'Los avisos push de W10 están disponibles para emprendedoras con acceso a la app.')
+        destinatarioUid = participanteData.entidadId
       } else {
-        const asociacion = await db.doc(
-          `asociaciones/${participanteData.entidadId}`
-        ).get()
-
-        const contacto = asociacion.data()?.contacto
-
-        if (
-          asociacion.data()?.activo === true &&
-          contacto?.tipo === 'correo' &&
-          typeof contacto.valor === 'string'
-        ) {
-          email = contacto.valor
+        exigir(participanteData.tipo === 'emprendedora', 'sin-destinatario', 'Los recordatorios push están disponibles para invitaciones de emprendedoras con acceso a la app.')
+        destinatarioUid = participanteData.entidadId
+        try {
+          const usuario = await auth!.getUser(destinatarioUid)
+          exigir(!usuario.disabled, 'sin-destinatario', 'La cuenta de la emprendedora está desactivada.')
+        } catch (error) {
+          if (error instanceof ErrorOperacion) throw error
+          throw new ErrorOperacion('sin-destinatario', 'No se encontró una cuenta activa para recibir el recordatorio push.')
         }
       }
 
-      exigir(
-        typeof email === 'string' &&
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
-        'sin-destinatario',
-        'No hay correo verificado para esta participante o contacto de correo activo para la asociación.'
-      )
+      try {
+        const usuario = await auth!.getUser(destinatarioUid!)
+        exigir(!usuario.disabled, 'sin-destinatario', 'La cuenta de la emprendedora está desactivada.')
+      } catch (error) {
+        if (error instanceof ErrorOperacion) throw error
+        throw new ErrorOperacion('sin-destinatario', 'No se encontró una cuenta activa para recibir el aviso push.')
+      }
 
-      const correo = email.trim().toLowerCase()
-      const destinoHash = firma(correo)
-
-      const inicio = feriaData.fechaInicio.toDate().toLocaleString(
-        'es-CL',
-        {
-          timeZone: 'America/Santiago',
-          dateStyle: 'full',
-          timeStyle: 'short',
-        }
-      )
-
-      const titulo = String(feriaData.nombre ?? 'Feria').slice(0, 120)
-      const asunto = `esAviso ? 'Aviso de participación confirmada en ${titulo}' : 'Recordatorio de invitación: ${titulo}'`
-
-      const nombreDestinatario = nombreParticipante(participanteData.nombreTienda || participanteData.nombre, 'participante')
-
-      const texto = esAviso ? [
-        `Hola, ${nombreDestinatario}:`,
-        '',
-        'Te informamos desde Rincón Amancay que tu participación en la siguiente feria está confirmada.',
-        '',
-        `Feria: ${titulo}`,
-        `Fecha de inicio: ${inicio}`,
-        `Lugar: ${String(feriaData.direccion ?? '').slice(0, 300)}`,
-        `Organiza: ${String(feriaData.organizador ?? '').slice(0, 120)}`,
-        '',
-        'Te recomendamos preparar tus materiales y presentarte con anticipación.',
-        '',
-        '¡Esperamos contar con tu presencia!',
-        '',
-        'Equipo organizador de Rincón Amancay'
-      ].join('\n')
-        : [
-          `Hola, ${nombreDestinatario}:`,
-          '',
-          'Tienes pendiente responder a una invitación para participar en una feria de Rincón Amancay.',
-          '',
-          `Feria: ${titulo}`,
-          `Fecha: ${inicio}`,
-          `Lugar: ${String(feriaData.direccion ?? '').slice(0, 300)}`,
-          '',
-          'Ingresa a Rincón Amancay para confirmar o rechazar tu invitación.',
-          '',
-          'Equipo organizador de Rincón Amancay'
-        ].join('\n')
+      const destinoHash = firma(destinatarioUid!)
 
       const claveIdempotencia = `${esAviso ? 'w10' : 'w09'}-${firma([
         request.feriaId,
@@ -508,7 +458,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
           return { tipo: 'reservado' as const }
         }
 
-        if (control.exists) {
+        if (control.exists && (control.get('canal') ?? 'correo') === canal) {
           const anterior = control.data()!
 
           exigir(
@@ -528,6 +478,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
 
         const registro = {
           estado: 'reservado',
+          canal,
           creadoMs: ahora,
           destinoHash,
           actorUid: identidad.uid,
@@ -556,16 +507,20 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       let mensajeId: string
 
       try {
-        mensajeId = await enviarCorreo!({
-          para: correo,
-          asunto,
-          texto,
-          claveIdempotencia,
-        })
+        mensajeId = esAviso
+          ? await notificarAvisoConfirmadas!(destinatarioUid!, request.feriaId, {
+              nombre: titulo,
+              fechaInicio: feriaData.fechaInicio.toDate().toISOString(),
+              direccion: String(feriaData.direccion ?? '').slice(0, 300),
+              organizador: String(feriaData.organizador ?? '').slice(0, 120),
+            }, request.operacionId)
+          : await notificarRecordatorio!(destinatarioUid!, request.feriaId, titulo, request.operacionId)
       } catch {
         throw new ErrorOperacion(
           'envio-incierto',
-          'No se pudo confirmar el envío. Reintenta con la misma solicitud, sin crear otra.'
+            esAviso
+            ? 'No se pudo confirmar el envío del aviso push. Reintenta con la misma solicitud, sin crear otra.'
+            : 'No se pudo confirmar el envío del recordatorio push. Reintenta con la misma solicitud, sin crear otra.'
         )
       }
 
@@ -785,7 +740,13 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         } else {
           exigir(['confirmada', 'agregada_admin'].includes(String(participantData.estado)), 'conflicto', 'Solo se registra asistencia de participantes confirmados o agregados por administración.');
           exigir(fairData.estado === 'publicada', 'conflicto', 'La asistencia solo se registra en una feria publicada.');
-          exigir(fairData.fechaInicio.toDate() <= new Date(), 'conflicto', 'La asistencia se registra desde la hora de inicio de la feria.');
+          exigir(fairData.fechaInicio instanceof Timestamp && fairData.fechaFin instanceof Timestamp, 'conflicto', 'La feria no tiene un horario válido para registrar asistencia.');
+          const ahora = Date.now();
+          exigir(
+            fairData.fechaInicio.toMillis() <= ahora && ahora < fairData.fechaFin.toMillis(),
+            'conflicto',
+            'La asistencia solo se puede registrar durante el horario de la feria.'
+          );
           after = { estado: participantData.estado, asistencia: request.asistencia };
           tx.update(participantRef, { asistencia: request.asistencia, actualizadoEn: now });
         }

@@ -95,7 +95,15 @@ test('ventas manuales descuentan stock y guardan el historial configurado', asyn
     });
 
     await t.test('guarda el nombre de una feria publicada como dato histórico', async () => {
-      await db.doc('ferias/feria_ventas_prueba').set({ estado: 'publicada', nombre: 'Feria Amancay' });
+      const feria = db.doc('ferias/feria_ventas_prueba');
+      await feria.set({
+        estado: 'publicada', nombre: 'Feria Amancay',
+        fechaInicio: Timestamp.fromDate(new Date('2025-03-13T12:00:00.000Z')),
+        fechaFin: Timestamp.fromDate(new Date('2025-03-13T16:00:00.000Z')),
+      });
+      await feria.collection('participantes').doc(`emprendedora_${uid}`).set({
+        tipo: 'emprendedora', entidadId: uid, estado: 'confirmada',
+      });
       const operacionId = randomUUID();
       await ventas('registrarVenta', { uid }, { tiendaId, operacionId, productoId: 'producto', varianteId: 'azul', cantidad: 1, lugarTipo: 'feria', feriaId: 'feria_ventas_prueba', fecha: '2025-03-13T15:00:00.000Z' });
       const venta = (await tienda.collection('ventas').doc(operacionId).get()).data()!;
@@ -170,7 +178,7 @@ test('ventas manuales descuentan stock y guardan el historial configurado', asyn
     await db.recursiveDelete(tienda);
     await db.recursiveDelete(db.doc(`tiendasPublicas/${tiendaId}`));
     await db.doc(`accesos/${uid}`).delete();
-    await db.doc('ferias/feria_ventas_prueba').delete();
+    await db.recursiveDelete(db.doc('ferias/feria_ventas_prueba'));
     await db.terminate();
   }
 });

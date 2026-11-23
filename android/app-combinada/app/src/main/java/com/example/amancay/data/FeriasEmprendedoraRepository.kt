@@ -19,6 +19,7 @@ class FeriasEmprendedoraRepository(private val api: ApiEmprendedoraClient) {
                 "invitada" -> "pendiente"
                 "confirmada" -> "aceptada"
                 "rechazada" -> "rechazada"
+                "agregada_admin" -> "agregada_admin"
                 else -> return@mapNotNull null
             }
             val inicio = item.texto("fechaInicio").fechaLocal()

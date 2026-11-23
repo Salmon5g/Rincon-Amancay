@@ -11,6 +11,8 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
+import java.time.Instant
 import java.util.UUID
 import java.util.Date
 
@@ -25,7 +27,12 @@ data class TipoProductoEmprendedora(
     val activo: Boolean = true
 )
 
-data class CategoriaEmprendedora(val id: String, val nombre: String, val activo: Boolean = true, val tipoProductoId: String = "")
+data class CategoriaEmprendedora(
+    val id: String,
+    val nombre: String,
+    val activo: Boolean = true,
+    val tipoProductoId: String? = null
+)
 
 data class VarianteProductoEmprendedora(
     val id: String,
@@ -98,6 +105,7 @@ data class VentaRegistrada(
     val fecha: Date,
     val lugarTipo: String,
     val feriaId: String?,
+    val feriaNombre: String?,
     val lugarTexto: String?
 )
 
@@ -118,10 +126,11 @@ data class FeriaParaVenta(
     val id: String,
     val nombre: String,
     val direccion: String,
-    val fechaInicio: Date?,
-    val fechaFin: Date? = null,
+    val fechaInicio: Date,
+    val fechaFin: Date,
     val latitud: Double? = null,
-    val longitud: Double? = null
+    val longitud: Double? = null,
+    val estadoParticipacion: String = "confirmada"
 )
 
 data class PreferenciasInteraccionTienda(
@@ -267,7 +276,7 @@ class ProductosEmprendedoraRepository(
                 }
                 _categorias.value = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     doc.getString("nombre")?.let {
-                        CategoriaEmprendedora(doc.id, it, doc.getBoolean("activo") == true, doc.getString("tipoProductoId").orEmpty())
+                        CategoriaEmprendedora(doc.id, it, doc.getBoolean("activo") == true, doc.getString("tipoProductoId"))
                     }
                 }.sortedBy { it.nombre.lowercase() }
                 _error.value = null
@@ -581,21 +590,29 @@ class ProductosEmprendedoraRepository(
                     varianteNombre=(doc.get("opcionesVariante") as? Map<*, *>)?.values?.filterIsInstance<String>()?.joinToString(" · ")?.takeIf(String::isNotBlank),
                     precioUnitario=doc.getLong("precioUnitario") ?: 0L,
                     cantidad=doc.getLong("cantidad")?.toInt() ?: 0, total=doc.getLong("total") ?: 0L, fecha=fecha,
-                    lugarTipo=doc.getString("lugarTipo") ?: "otro", feriaId=doc.getString("feriaId"), lugarTexto=doc.getString("lugarTexto") ?: doc.getString("feriaNombre")
+                    lugarTipo=doc.getString("lugarTipo") ?: "otro", feriaId=doc.getString("feriaId"),
+                    feriaNombre=doc.getString("feriaNombre"), lugarTexto=doc.getString("lugarTexto")
                 )
             }
     }
 
-    suspend fun listarFeriasPublicadas(): List<FeriaParaVenta> = withContext(Dispatchers.IO) {
-        Tasks.await(db.collection("ferias").whereEqualTo("estado", "publicada").limit(100).get()).documents.map { doc ->
+    suspend fun listarFeriasParaVenta(tiendaId: String): List<FeriaParaVenta> = withContext(Dispatchers.IO) {
+        val elementos = api.llamar("listarFeriasVenta", mapOf("tiendaId" to tiendaId)).optJSONArray("ferias")
+            ?: return@withContext emptyList()
+        (0 until elementos.length()).mapNotNull { indice ->
+            val feria = elementos.optJSONObject(indice) ?: return@mapNotNull null
+            val id = feria.optString("id").trim().takeIf(String::isNotEmpty) ?: return@mapNotNull null
+            val fechaInicio = feria.fecha("fechaInicio") ?: return@mapNotNull null
+            val fechaFin = feria.fecha("fechaFin") ?: return@mapNotNull null
             FeriaParaVenta(
-                id = doc.id,
-                nombre = doc.getString("nombre").orEmpty(),
-                direccion = doc.getString("direccion").orEmpty(),
-                fechaInicio = doc.getTimestamp("fechaInicio")?.toDate(),
-                fechaFin = doc.getTimestamp("fechaFin")?.toDate(),
-                latitud = doc.getDouble("latitud"),
-                longitud = doc.getDouble("longitud")
+                id = id,
+                nombre = feria.optString("nombre").trim().ifBlank { "Feria" },
+                direccion = feria.optString("direccion").trim(),
+                fechaInicio = fechaInicio,
+                fechaFin = fechaFin,
+                latitud = feria.optDouble("latitud", Double.NaN).takeIf { it.isFinite() && it in -90.0..90.0 },
+                longitud = feria.optDouble("longitud", Double.NaN).takeIf { it.isFinite() && it in -180.0..180.0 },
+                estadoParticipacion = feria.optString("estadoParticipacion").trim()
             )
         }
     }
@@ -647,6 +664,9 @@ class ProductosEmprendedoraRepository(
         (get(campo) as? Map<*, *>)?.mapNotNull { (key, value) ->
             if (key is String && value is String) key to value else null
         }?.toMap().orEmpty()
+
+    private fun JSONObject.fecha(clave: String): Date? =
+        if (isNull(clave)) null else runCatching { Date.from(Instant.parse(optString(clave))) }.getOrNull()
 
     private fun DocumentSnapshot.versionEsperada(): String {
         val timestamp = getTimestamp("actualizadoEn")

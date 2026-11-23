@@ -316,7 +316,13 @@ export function crearProductos(db: Firestore, limpiarImagenesPublicas?: (rutas: 
         }
         exigir(!old.piezaUnicaVendida, 'conflicto', 'No se edita una pieza única vendida.');
       }
-      const referenciasVigentes = type.data()?.activo === true && category.data()?.activo === true;
+      const categoriaTipoId = category.data()?.tipoProductoId;
+      const categoriasDelTipo = typeof categoriaTipoId === 'string'
+        ? null : await tx.get(db.collection('categorias').where('tipoProductoId', '==', p.tipoProductoId).limit(1));
+      const categoriaCompatible = typeof categoriaTipoId === 'string'
+        ? categoriaTipoId === p.tipoProductoId
+        : categoriasDelTipo?.empty === true;
+      const referenciasVigentes = type.data()?.activo === true && category.data()?.activo === true && categoriaCompatible;
       const conservaReferenciasHistoricas = !crear && old?.tipoProductoId === p.tipoProductoId
         && old?.categoriaId === p.categoriaId && old?.versionTipoProducto === p.versionTipoProducto;
       exigir(definition.exists && (referenciasVigentes || conservaReferenciasHistoricas), 'datos-invalidos', 'Tipo, versión o categoría inexistente/inactiva para una ficha nueva.');

@@ -71,5 +71,39 @@ export function montarApi(auth:Auth,db:Firestore,bucket:ReturnType<ReturnType<ty
       },
     });
   } : undefined;
-  return crearApi(auth,crearPublicacion(db,procesar,imagenes?.limpiar,imagenes?.procesarTienda),crearCuentas(db,auth),crearProductos(db,imagenes?.limpiar,procesar),crearStock(db),crearDesactivacion(db,auth),crearCicloCuentas(db,auth),crearValidadorSesion(db),config,crearCatalogos(db),crearAsociaciones(db),crearAdministracionPlataforma(db,auth),crearFerias(db,notificarFeria,auth,crearEmisorRecordatorios(process.env),notificarInvitacion),crearEdicionTiendaEmprendedora(db),imagenes?{subir:imagenes.subir,...(imagenes.leer?{leer:imagenes.leer}:{}),...(imagenes.subirTienda?{subirTienda:imagenes.subirTienda}:{}),...(imagenes.subirLogoAsociacion?{subirLogoAsociacion:imagenes.subirLogoAsociacion}:{}),...(imagenes.subirImagenFeria?{subirImagenFeria:imagenes.subirImagenFeria}:{})}:undefined,crearVentas(db),consultas.guardar,consultas.leerRespuesta,consultas.responder,crearLecturaMuestraFeriaPublica(db),crearLecturaFeriasPublicas(db),crearLecturaPoliticaNavegacionPublica(db));
+  const notificarRecordatorio = enviarPush ? async (uid: string, feriaId: string, nombreFeria: string, operacionId: string) => enviarPush({
+    topic: `amancay-invitacion-${uid}`,
+    android: { priority: 'high' },
+    data: {
+      tipo: 'recordatorio_invitacion_feria',
+      destinatarioUid: uid,
+      feriaId,
+      recordatorioId: operacionId,
+      titulo: 'Recordatorio de feria',
+      mensaje: `Aún tienes pendiente responder a la invitación de la feria ${nombreFeria}.`,
+    },
+  }) : undefined;
+  const notificarAvisoConfirmadas = enviarPush ? async (uid: string, feriaId: string, feria: { nombre: string; fechaInicio: string; direccion: string; organizador: string }, operacionId: string) => {
+    const fecha = new Intl.DateTimeFormat('es-CL', {
+      timeZone: 'America/Santiago', dateStyle: 'full', timeStyle: 'short',
+    }).format(new Date(feria.fechaInicio));
+    const mensaje = `Tu participación en ${feria.nombre} está confirmada. Fecha: ${fecha}. Lugar: ${feria.direccion}. Organiza: ${feria.organizador}.`;
+    return enviarPush({
+      topic: `amancay-invitacion-${uid}`,
+      android: { priority: 'high' },
+      data: {
+        tipo: 'aviso_confirmacion_feria',
+        destinatarioUid: uid,
+        feriaId,
+        avisoId: operacionId,
+        nombreFeria: feria.nombre,
+        fechaInicio: fecha,
+        direccion: feria.direccion,
+        organizador: feria.organizador,
+        titulo: 'Detalles de tu feria',
+        mensaje,
+      },
+    });
+  } : undefined;
+  return crearApi(auth,crearPublicacion(db,procesar,imagenes?.limpiar,imagenes?.procesarTienda),crearCuentas(db,auth),crearProductos(db,imagenes?.limpiar,procesar),crearStock(db),crearDesactivacion(db,auth),crearCicloCuentas(db,auth),crearValidadorSesion(db),config,crearCatalogos(db),crearAsociaciones(db),crearAdministracionPlataforma(db,auth),crearFerias(db,notificarFeria,auth,crearEmisorRecordatorios(process.env),notificarInvitacion,notificarRecordatorio,notificarAvisoConfirmadas),crearEdicionTiendaEmprendedora(db),imagenes?{subir:imagenes.subir,...(imagenes.leer?{leer:imagenes.leer}:{}),...(imagenes.subirTienda?{subirTienda:imagenes.subirTienda}:{}),...(imagenes.subirLogoAsociacion?{subirLogoAsociacion:imagenes.subirLogoAsociacion}:{}),...(imagenes.subirImagenFeria?{subirImagenFeria:imagenes.subirImagenFeria}:{})}:undefined,crearVentas(db),consultas.guardar,consultas.leerRespuesta,consultas.responder,crearLecturaMuestraFeriaPublica(db),crearLecturaFeriasPublicas(db),crearLecturaPoliticaNavegacionPublica(db));
 }

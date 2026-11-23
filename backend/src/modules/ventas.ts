@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { FieldPath, FieldValue } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DocumentSnapshot, Firestore, QueryDocumentSnapshot, QuerySnapshot } from 'firebase-admin/firestore';
 import { ErrorOperacion, estado } from './publicacion.ts';
 import { crearProductoSinPrecios, crearVarianteSinPrecio } from './vista-sin-precios.ts';
@@ -8,8 +8,22 @@ function exigir(ok: unknown, code: string, message: string): asserts ok { if (!o
 function id(v: unknown): v is string { return typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v); }
 function texto(v: unknown, max: number, label: string): string { exigir(typeof v === 'string' && v.trim().length > 0 && v.trim().length <= max, 'datos-invalidos', `${label} es obligatorio.`); return v.trim(); }
 
-export const accionesVenta = ['registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto', 'configurarMostrarPrecios', 'configurarAvisosContacto', 'configurarCalificaciones'] as const;
+export const accionesVenta = ['listarFeriasVenta', 'registrarVenta', 'configurarHistorialVentas', 'configurarValoresDefecto', 'configurarMostrarPrecios', 'configurarAvisosContacto', 'configurarCalificaciones'] as const;
 export type AccionVenta = typeof accionesVenta[number];
+
+const formatoDiaChile = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+function diaChile(fecha: Date): string {
+  const partes = Object.fromEntries(formatoDiaChile.formatToParts(fecha).map(({type, value}) => [type, value]));
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
+
+function fechaDentroDeFeria(fecha: Date, inicio: Timestamp, fin: Timestamp): boolean {
+  const dia = diaChile(fecha);
+  return dia >= diaChile(inicio.toDate()) && dia <= diaChile(fin.toDate());
+}
 
 async function prepararVistasSinPrecios(db: Firestore, tiendaId: string) {
   const tiendaPublica = db.doc(`tiendasPublicas/${tiendaId}`);
@@ -54,6 +68,42 @@ export function crearVentas(db: Firestore) {
     const tienda = db.doc(`tiendasPrivadas/${d.tiendaId}`);
     const configuracion = tienda.collection('configuracion').doc('general');
     const accesoRef = db.doc(`accesos/${identidad.uid}`);
+    if (accion === 'listarFeriasVenta') {
+      exigir(Object.keys(d).length === 1, 'datos-invalidos', 'La solicitud contiene campos no permitidos.');
+      const [acceso, ficha] = await Promise.all([accesoRef.get(), tienda.get()]);
+      exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && ficha.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
+      const participaciones = await db.collectionGroup('participantes')
+        .where('entidadId', '==', identidad.uid)
+        .where('estado', 'in', ['confirmada', 'agregada_admin'])
+        .limit(101).get();
+      exigir(participaciones.size <= 100, 'limite-local', 'Hay demasiadas participaciones de ferias para cargar en una sola consulta.');
+      const elegibles = participaciones.docs.flatMap(participante => {
+        const data = participante.data();
+        const segmentos = participante.ref.path.split('/');
+        if (segmentos.length !== 4 || segmentos[0] !== 'ferias' || segmentos[2] !== 'participantes' ||
+          data.tipo !== 'emprendedora' || data.entidadId !== identidad.uid ||
+          !['confirmada', 'agregada_admin'].includes(String(data.estado))) return [];
+        return [{feriaId: segmentos[1], estadoParticipacion: String(data.estado)}];
+      });
+      if (!elegibles.length) return { ferias: [] };
+      const ferias = await db.getAll(...elegibles.map(item => db.doc(`ferias/${item.feriaId}`)));
+      return {
+        ferias: ferias.flatMap((feria, indice) => {
+          const data = feria.data();
+          if (!feria.exists || data?.estado !== 'publicada' || !(data.fechaInicio instanceof Timestamp) || !(data.fechaFin instanceof Timestamp)) return [];
+          return [{
+            id: feria.id,
+            nombre: typeof data.nombre === 'string' ? data.nombre : feria.id,
+            direccion: typeof data.direccion === 'string' ? data.direccion : '',
+            fechaInicio: data.fechaInicio.toDate().toISOString(),
+            fechaFin: data.fechaFin.toDate().toISOString(),
+            latitud: typeof data.latitud === 'number' && Number.isFinite(data.latitud) ? data.latitud : null,
+            longitud: typeof data.longitud === 'number' && Number.isFinite(data.longitud) ? data.longitud : null,
+            estadoParticipacion: elegibles[indice].estadoParticipacion,
+          }];
+        }),
+      };
+    }
     if (accion === 'configurarAvisosContacto') {
       exigir(Object.keys(d).length === 5 && typeof d.habilitado === 'boolean' &&
         typeof d.horaInicio === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(d.horaInicio) &&
@@ -143,13 +193,14 @@ export function crearVentas(db: Firestore) {
     const operacion = tienda.collection('operacionesVentas').doc(d.operacionId as string);
     const venta = tienda.collection('ventas').doc(d.operacionId as string);
     const feria = d.lugarTipo === 'feria' && id(d.feriaId) ? db.doc(`ferias/${d.feriaId}`) : undefined;
+    const participanteFeria = feria?.collection('participantes').doc(`emprendedora_${identidad.uid}`);
     const firma = createHash('sha256').update(JSON.stringify([identidad.uid,d.tiendaId,d.operacionId,d.productoId,d.varianteId ?? null,d.cantidad,d.lugarTipo,d.feriaId ?? null,d.lugarTexto ?? null,fecha.toISOString()])).digest('hex');
     const publicProduct = db.doc(`tiendasPublicas/${d.tiendaId}/productos/${d.productoId}`);
     const publicProductConsulta = db.doc(`tiendasPublicas/${d.tiendaId}/productosConsulta/${d.productoId}`);
     const publicShop = db.doc(`tiendasPublicas/${d.tiendaId}`);
     const aprobacion = producto.collection('publicacion').doc('vigente');
     return db.runTransaction(async tx => {
-      const refs = [accesoRef, tienda, configuracion, producto, operacion, ...(variante ? [variante] : []), publicProduct, aprobacion, publicShop, publicProductConsulta, ...(feria ? [feria] : [])];
+      const refs = [accesoRef, tienda, configuracion, producto, operacion, ...(variante ? [variante] : []), publicProduct, aprobacion, publicShop, publicProductConsulta, ...(feria && participanteFeria ? [feria, participanteFeria] : [])];
       const snapshots = await tx.getAll(...refs);
       const [acceso, shop, config, p, previous] = snapshots;
       exigir(acceso.data()?.estado === 'activo' && acceso.data()?.roles?.includes('emprendedora') && acceso.data()?.tiendaId === d.tiendaId && shop.data()?.propietarioUid === identidad.uid, 'sin-permiso', 'Se requiere propietaria activa asignada.');
@@ -161,7 +212,17 @@ export function crearVentas(db: Firestore) {
       const historialRegistrado = config.data()?.historialVentasActivo === true;
       if (historialRegistrado) {
         exigir(d.lugarTipo === 'feria' ? id(d.feriaId) : d.lugarTipo === 'otro' && typeof d.lugarTexto === 'string' && d.lugarTexto.trim().length > 0 && d.lugarTexto.length <= 200, 'datos-invalidos', 'Indica una feria o un lugar.');
-        if (feria) exigir(snapshots[snapshots.length - 1].exists && snapshots[snapshots.length - 1].data()?.estado === 'publicada', 'no-encontrado', 'La feria debe estar publicada en la plataforma.');
+        if (feria) {
+          const feriaSnapshot = snapshots[snapshots.length - 2];
+          const participanteSnapshot = snapshots[snapshots.length - 1];
+          const feriaData = feriaSnapshot.data();
+          const participanteData = participanteSnapshot.data();
+          exigir(feriaSnapshot.exists && feriaData?.estado === 'publicada', 'no-encontrado', 'La feria debe estar publicada en la plataforma.');
+          exigir(participanteData?.tipo === 'emprendedora' && participanteData.entidadId === identidad.uid &&
+            ['confirmada', 'agregada_admin'].includes(String(participanteData.estado)), 'sin-permiso', 'Solo puedes asociar la venta a una feria en la que participas.');
+          exigir(feriaData.fechaInicio instanceof Timestamp && feriaData.fechaFin instanceof Timestamp &&
+            fechaDentroDeFeria(fecha, feriaData.fechaInicio, feriaData.fechaFin), 'datos-invalidos', 'La feria seleccionada no corresponde al día de la venta.');
+        }
       }
       exigir(p.exists && p.data()?.estadoPublicacion !== 'eliminado', 'no-encontrado', 'Producto inexistente.');
       const data = p.data()!;

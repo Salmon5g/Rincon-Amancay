@@ -57,6 +57,7 @@ export interface ElementoCatalogo {
   id: string
   nombre: string
   activo: boolean
+  tipoProductoId?: string
   versionEsperada?: string
   versionActual?: number
   campos?: CampoTipoProducto[]
@@ -173,12 +174,15 @@ export interface ParticipanteFeria {
   tipoEmprendimiento?: { id: string; nombre: string } | null
   asociaciones?: { id: string; nombre: string }[]
   versionEsperada: string
-  recordatorio?: { estado: 'reservado' | 'aceptado' 
-    enviadoEn: string | null 
+  recordatorio?: { estado: 'reservado' | 'aceptado'
+    enviadoEn: string | null
+    canal?: 'push' | 'correo'
   } | null
   avisoConfirmacion?: { 
     estado: 'reservado' | 'aceptado' 
     enviadoEn: string | null 
+    iniciadoEn?: string | null
+    canal?: 'push' | 'correo'
   } | null
 }
 
@@ -190,7 +194,7 @@ export interface DisponibleFeria {
 }
 
 export interface ParticipantesFeria {
-  feria: { id: string; estado: EstadoFeria; versionEsperada: string }
+  feria: { id: string; estado: EstadoFeria; fechaInicio: string | null; fechaFin: string | null; versionEsperada: string }
   participantes: ParticipanteFeria[]
   disponibles: DisponibleFeria[]
 }

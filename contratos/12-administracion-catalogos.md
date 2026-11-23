@@ -15,7 +15,7 @@ Este contrato cubre el mantenimiento administrativo de sectores, categorías, ti
 
 Los sectores usan el mismo esquema común (`nombre`, `nombreNormalizado`, `activo`, `creadoEn` y `actualizadoEn`) y las mismas operaciones administrativas. Se consultan por todas las personas solo cuando están activos; el administrador puede leer también los inactivos para reactivarlos.
 
-Documentos nuevos guardan `nombre`, `nombreNormalizado`, `activo`, `creadoEn` y `actualizadoEn`. El ID se genera desde el nombre al crear y no cambia al editarlo. Los nombres normalizados son únicos dentro de cada colección. El estado inactivo conserva el documento y todas sus referencias. Los autores de las operaciones se registran en la auditoría, no se publican en los catálogos.
+Documentos nuevos guardan `nombre`, `nombreNormalizado`, `activo`, `creadoEn` y `actualizadoEn`. Las categorías nuevas también requieren `tipoProductoId` y deben apuntar a un tipo de producto activo; los registros antiguos sin ese campo se conservan como categorías heredadas. El ID se genera desde el nombre al crear y no cambia al editarlo. Los nombres normalizados son únicos dentro de cada colección. El estado inactivo conserva el documento y todas sus referencias. Los autores de las operaciones se registran en la auditoría, no se publican en los catálogos.
 
 ### Tipos de producto versionados
 
@@ -25,6 +25,8 @@ Documentos nuevos guardan `nombre`, `nombreNormalizado`, `activo`, `creadoEn` y 
 
 Editar solamente el nombre mantiene la versión actual. Cambiar los campos u opciones de variante crea una versión nueva; las versiones anteriores no se modifican ni se eliminan. Los productos ya creados siguen apuntando a su versión original. El backend de productos permite mantener una ficha con referencias históricas inactivas, pero solo acepta catálogos activos al crear un producto. Al republicar una ficha existente también conserva sus referencias históricas si el tipo, la versión y la categoría siguen existiendo y coinciden con las guardadas en el producto.
 
+Al crear un producto nuevo, si el tipo ya tiene categorías vinculadas, solo se acepta una categoría activa cuyo `tipoProductoId` coincida. Los tipos todavía sin categorías vinculadas pueden seguir usando categorías heredadas sin `tipoProductoId`; una ficha existente conserva su categoría antigua mientras mantenga las referencias con que fue creada.
+
 Por ahora se admiten hasta 20 campos de texto y 10 opciones de variante por definición. No se admiten claves repetidas ni claves que no comiencen con minúscula o incluyan símbolos distintos de letras, números y guion bajo.
 
 ## Operaciones HTTP
@@ -33,8 +35,8 @@ Todas son `POST /api/v1/{operacion}`, requieren `Authorization: Bearer <ID_TOKEN
 
 | Operación | Propósito | Campos principales |
 | --- | --- | --- |
-| `crearElementoCatalogo` | Crear un sector, categoría, tipo de emprendimiento o tipo de producto | `operacionId`, `coleccion`, `nombre`; los tipos de producto además requieren `definicion` |
-| `editarElementoCatalogo` | Cambiar el nombre o la definición | `operacionId`, `coleccion`, `documentoId`, `versionEsperada`, `nombre`; tipos de producto además requieren `definicion` |
+| `crearElementoCatalogo` | Crear un sector, categoría, tipo de emprendimiento o tipo de producto | `operacionId`, `coleccion`, `nombre`; las categorías requieren `tipoProductoId` y los tipos de producto requieren `definicion` |
+| `editarElementoCatalogo` | Cambiar el nombre, el tipo de una categoría o la definición | `operacionId`, `coleccion`, `documentoId`, `versionEsperada`, `nombre`; las categorías admiten `tipoProductoId` y los tipos de producto requieren `definicion` |
 | `cambiarEstadoCatalogo` | Activar o desactivar sin borrar | `operacionId`, `coleccion`, `documentoId`, `versionEsperada`, `activo` |
 
 `coleccion` solo admite `sectores`, `categorias`, `tiposEmprendimiento` o `tiposProducto`. Los valores `operacionId` se conservan en los reintentos. Cada escritura guarda un comprobante idempotente en `operacionesAdministracion/{uid}_{operacionId}` y una entrada en `auditoriaAdministracion/{uid}_{operacionId}` con actor, operación, colección, ID, estado anterior/nuevo y fecha. Reutilizar la misma operación con contenido distinto se rechaza. Editar o cambiar estado exige la versión leída desde `actualizadoEn`; una versión antigua se rechaza sin sobrescribir cambios ajenos.

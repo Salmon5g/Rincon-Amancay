@@ -1,6 +1,11 @@
 package com.example.amancay.emprendedora
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.location.Location
+import android.location.LocationManager
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -22,6 +27,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
@@ -45,9 +51,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.buyer.distanciaMetros
 import com.example.amancay.buyer.formatoDistancia
-import com.example.amancay.buyer.obtenerUbicacionActual
+import com.example.amancay.buyer.obtenerUbicacionActualNueva
 import com.example.amancay.buyer.tienePermisoUbicacion
-import com.example.amancay.buyer.ultimaUbicacionConocida
 import com.example.amancay.data.FeriaParaVenta
 import com.example.amancay.data.ProductoEmprendedora
 import com.example.amancay.data.VentaRegistrada
@@ -60,15 +65,19 @@ import com.example.amancay.ui.theme.Muted
 import com.example.amancay.ui.theme.Wine
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 
+private val zonaHorariaVentas = ZoneId.of("America/Santiago")
+private const val RADIO_DETECCION_FERIA_METROS = 500f
 private data class FiltrosVentas(val desde: String = "", val hasta: String = "", val productoId: String = "", val lugarId: String = "")
 
-private const val RADIO_FERIA_METROS = 500f
+private fun ubicacionDelDispositivoActiva(contexto: Context): Boolean {
+    val servicio = contexto.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+    return runCatching { servicio.isLocationEnabled }.getOrDefault(false)
+}
 
 @Composable
 internal fun VentasEmprendedoraScreen(
@@ -78,7 +87,6 @@ internal fun VentasEmprendedoraScreen(
     cargando: Boolean, error: String?, errorCarga: String?, enviando: Boolean,
     cargandoHistorial: Boolean = false, errorHistorial: String? = null,
     cargandoFerias: Boolean = false, errorFerias: String? = null,
-    invitacionesConfirmadas: Set<String> = emptySet(),
     alCambiarSeccionHistorial: (Boolean) -> Unit = {},
     alReintentarHistorial: () -> Unit = {},
     alRegistrar: (ProductoEmprendedora, String?, Int, String, String?, String?, String, String, () -> Unit) -> Unit,
@@ -100,83 +108,131 @@ internal fun VentasEmprendedoraScreen(
     var operacionId by remember(productoId, varianteId, cantidad, lugarTipo, feriaId, lugarOtro) { mutableStateOf(java.util.UUID.randomUUID().toString()) }
     var fechaVenta by remember(operacionId) { mutableStateOf<String?>(null) }
     val contexto = LocalContext.current
-    var permisoUbicacion by remember { mutableStateOf(tienePermisoUbicacion(contexto)) }
-    var ubicacionActual by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var permisoUbicacion by remember(contexto) { mutableStateOf(tienePermisoUbicacion(contexto)) }
+    var ubicacionSistemaActiva by remember(contexto) { mutableStateOf(ubicacionDelDispositivoActiva(contexto)) }
+    var ubicacionActual by remember { mutableStateOf<Location?>(null) }
     var buscandoUbicacion by remember { mutableStateOf(false) }
     var feriaPorUbicacionId by remember { mutableStateOf<String?>(null) }
-    var sugerenciaAplicada by remember { mutableStateOf<String?>(null) }
     var intentoUbicacion by remember { mutableIntStateOf(0) }
-    val lanzadorPermisoUbicacion = rememberLauncherForActivityResult(
+    var permisoSolicitadoAutomaticamente by remember { mutableStateOf(false) }
+    var mostrarDialogoActivarUbicacion by remember { mutableStateOf(false) }
+    val pedirPermisoUbicacion = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permisos ->
-        permisoUbicacion = permisos.values.any { it } || tienePermisoUbicacion(contexto)
+    ) {
+        permisoUbicacion = tienePermisoUbicacion(contexto)
+        ubicacionSistemaActiva = ubicacionDelDispositivoActiva(contexto)
         if (permisoUbicacion) intentoUbicacion++
     }
-    val zonaHorariaFeria = remember { ZoneId.of("America/Santiago") }
-    val feriasConfirmadas = remember(ferias, invitacionesConfirmadas) {
-        ferias.filter { it.id in invitacionesConfirmadas }
+    val abrirAjustesUbicacion = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        permisoUbicacion = tienePermisoUbicacion(contexto)
+        ubicacionSistemaActiva = ubicacionDelDispositivoActiva(contexto)
+        if (permisoUbicacion && ubicacionSistemaActiva) intentoUbicacion++
     }
-    val feriaPorFecha = remember(feriasConfirmadas, zonaHorariaFeria) {
-        val hoy = LocalDate.now(zonaHorariaFeria)
-        feriasConfirmadas.firstOrNull { feria ->
-            val inicio = feria.fechaInicio?.toInstant()?.atZone(zonaHorariaFeria)?.toLocalDate()
-                ?: return@firstOrNull false
-            val fin = feria.fechaFin?.toInstant()?.atZone(zonaHorariaFeria)?.toLocalDate() ?: inicio
-            !hoy.isBefore(inicio) && !hoy.isAfter(fin)
+    val producto = productos.firstOrNull { it.id == productoId } ?: productos.firstOrNull()
+    val variantes = producto?.variantes?.filter { it.activa }.orEmpty()
+    val hoyEnChile = LocalDate.now(zonaHorariaVentas)
+    val feriasDeHoy = ferias.filter { feria ->
+        val inicio = feria.fechaInicio.toInstant().atZone(zonaHorariaVentas).toLocalDate()
+        val termino = feria.fechaFin.toInstant().atZone(zonaHorariaVentas).toLocalDate()
+        !hoyEnChile.isBefore(inicio) && !hoyEnChile.isAfter(termino)
+    }.sortedBy { it.fechaInicio }
+    val feriasConUbicacion = remember(ferias) {
+        ferias.filter { feria ->
+            feria.latitud?.let { it.isFinite() && it in -90.0..90.0 } == true &&
+                feria.longitud?.let { it.isFinite() && it in -180.0..180.0 } == true
         }
     }
-    LaunchedEffect(permisoUbicacion, feriasConfirmadas, intentoUbicacion) {
-        if (!permisoUbicacion || feriasConfirmadas.none { it.latitud != null && it.longitud != null }) {
+    val feriaConfirmadaConUbicacionHoy = feriasDeHoy.any { feria ->
+        feria.estadoParticipacion == "confirmada" && feria in feriasConUbicacion
+    }
+    LaunchedEffect(seccion, historialActivo, permisoUbicacion, ubicacionSistemaActiva, intentoUbicacion, feriasConUbicacion, feriaConfirmadaConUbicacionHoy) {
+        if (seccion != "Registrar" || !historialActivo || !feriaConfirmadaConUbicacionHoy) {
             ubicacionActual = null
             feriaPorUbicacionId = null
             return@LaunchedEffect
         }
+        if (!permisoUbicacion) {
+            ubicacionActual = null
+            feriaPorUbicacionId = null
+            if (!permisoSolicitadoAutomaticamente) {
+                permisoSolicitadoAutomaticamente = true
+                pedirPermisoUbicacion.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
+            return@LaunchedEffect
+        }
+        if (!ubicacionSistemaActiva) {
+            ubicacionActual = null
+            feriaPorUbicacionId = null
+            mostrarDialogoActivarUbicacion = true
+            return@LaunchedEffect
+        }
         buscandoUbicacion = true
         try {
-            val posicion = ultimaUbicacionConocida(contexto) ?: obtenerUbicacionActual(contexto, 10_000)
+            val posicion = obtenerUbicacionActualNueva(contexto)
             ubicacionActual = posicion
-            val ahora = Instant.now()
-            feriaPorUbicacionId = posicion?.let { punto ->
-                feriasConfirmadas.firstOrNull { feria ->
-                    val inicio = feria.fechaInicio?.toInstant()
-                    val fin = feria.fechaFin?.toInstant()
-                    val enCurso = inicio != null && !ahora.isBefore(inicio) && (fin == null || !ahora.isAfter(fin))
-                    val latitud = feria.latitud
-                    val longitud = feria.longitud
-                    enCurso && latitud != null && longitud != null &&
-                        distanciaMetros(punto, latitud, longitud) <= RADIO_FERIA_METROS
-                }?.id
+            val ahora = System.currentTimeMillis()
+            feriaPorUbicacionId = posicion?.let { ubicacion ->
+                val edadMs = ahora - ubicacion.time
+                if (edadMs !in 0..60_000 || !ubicacion.hasAccuracy() || ubicacion.accuracy >= RADIO_DETECCION_FERIA_METROS) {
+                    null
+                } else {
+                    feriasConUbicacion.asSequence()
+                        .filter { feria ->
+                            feria.estadoParticipacion == "confirmada" &&
+                                feria.fechaInicio.time <= ahora && ahora <= feria.fechaFin.time
+                        }
+                        .mapNotNull { feria ->
+                            val latitud = feria.latitud ?: return@mapNotNull null
+                            val longitud = feria.longitud ?: return@mapNotNull null
+                            val distancia = distanciaMetros(ubicacion.latitude to ubicacion.longitude, latitud, longitud)
+                            if (distancia + ubicacion.accuracy <= RADIO_DETECCION_FERIA_METROS) feria to distancia else null
+                        }
+                        .minByOrNull { it.second }
+                        ?.first
+                        ?.id
+                }
             }
+        } catch (_: SecurityException) {
+            ubicacionActual = null
+            feriaPorUbicacionId = null
         } finally {
             buscandoUbicacion = false
         }
     }
-    val feriaSugerida = remember(feriasConfirmadas, feriaPorFecha, feriaPorUbicacionId) {
-        feriasConfirmadas.firstOrNull { it.id == feriaPorUbicacionId } ?: feriaPorFecha
+    val feriaSugeridaPorUbicacion = feriasDeHoy.firstOrNull { it.id == feriaPorUbicacionId }
+    val feriaSugerida = feriaSugeridaPorUbicacion ?: feriasDeHoy.singleOrNull()
+    val distanciaAferiaSugerida = feriaSugeridaPorUbicacion?.let { feria ->
+        val ubicacion = ubicacionActual
+        val latitud = feria.latitud
+        val longitud = feria.longitud
+        if (ubicacion != null && latitud != null && longitud != null) {
+            distanciaMetros(ubicacion.latitude to ubicacion.longitude, latitud, longitud)
+        } else null
     }
-    val sugerenciaPorUbicacion = feriaSugerida != null && feriaSugerida.id == feriaPorUbicacionId
-    val distanciaSugerida = remember(feriaSugerida, ubicacionActual) {
-        val punto = ubicacionActual
-        val feria = feriaSugerida
-        val latitud = feria?.latitud
-        val longitud = feria?.longitud
-        if (punto == null || latitud == null || longitud == null) null
-        else distanciaMetros(punto, latitud, longitud)
-    }
-    val feriasOrdenadas = remember(ferias, feriaSugerida) {
-        val sugerida = feriaSugerida ?: return@remember ferias
-        listOf(sugerida) + ferias.filter { it.id != sugerida.id }
-    }
-    LaunchedEffect(feriaSugerida?.id, historialActivo) {
-        val sugerida = feriaSugerida ?: return@LaunchedEffect
-        if (!historialActivo || lugarTipo != "feria") return@LaunchedEffect
-        if (feriaId.isBlank() || feriaId == sugerenciaAplicada) {
-            feriaId = sugerida.id
-            sugerenciaAplicada = sugerida.id
+    fun reintentarDeteccionUbicacion() {
+        permisoUbicacion = tienePermisoUbicacion(contexto)
+        ubicacionSistemaActiva = ubicacionDelDispositivoActiva(contexto)
+        when {
+            !permisoUbicacion -> pedirPermisoUbicacion.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+            !ubicacionSistemaActiva -> mostrarDialogoActivarUbicacion = true
+            else -> intentoUbicacion++
         }
     }
-    val producto = productos.firstOrNull { it.id == productoId } ?: productos.firstOrNull()
-    val variantes = producto?.variantes?.filter { it.activa }.orEmpty()
+    val feriaSeleccionadaId = feriaId.takeIf { id -> feriasDeHoy.any { it.id == id } }
+        ?: feriaSugerida?.id.orEmpty()
+    val lugarTipoVenta = if (lugarTipo == "feria" && feriasDeHoy.isEmpty() && historialConfiguracionCargada && !cargandoFerias && errorFerias == null) "otro" else lugarTipo
     if (producto != null && producto.id != productoId) productoId = producto.id
     if (variantes.none { it.id == varianteId }) varianteId = variantes.firstOrNull()?.id.orEmpty()
     val ventasFiltradas = ventas.filter { venta ->
@@ -184,7 +240,8 @@ internal fun VentasEmprendedoraScreen(
         val desdeOk = filtrosAplicados.desde.isBlank() || runCatching { !fechaVenta.isBefore(LocalDate.parse(filtrosAplicados.desde)) }.getOrDefault(false)
         val hastaOk = filtrosAplicados.hasta.isBlank() || runCatching { !fechaVenta.isAfter(LocalDate.parse(filtrosAplicados.hasta)) }.getOrDefault(false)
         (filtrosAplicados.productoId.isBlank() || venta.productoId == filtrosAplicados.productoId) &&
-            (filtrosAplicados.lugarId.isBlank() || venta.feriaId == filtrosAplicados.lugarId || venta.lugarTexto == filtrosAplicados.lugarId) && desdeOk && hastaOk
+            (filtrosAplicados.lugarId.isBlank() || venta.feriaId == filtrosAplicados.lugarId ||
+                (venta.lugarTipo != "feria" && venta.lugarTexto == filtrosAplicados.lugarId)) && desdeOk && hastaOk
     }
     val desdeInvalido = desde.isNotBlank() && runCatching { LocalDate.parse(desde) }.isFailure
     val hastaInvalido = hasta.isNotBlank() && runCatching { LocalDate.parse(hasta) }.isFailure
@@ -194,8 +251,14 @@ internal fun VentasEmprendedoraScreen(
     val productosFiltro = (ventas.map { it.productoId to it.productoNombre } + productos.map { it.id to it.nombre })
         .distinctBy { it.first }
     val lugaresFiltro = (ferias.map { it.id to it.nombre } + ventas.mapNotNull { venta ->
-        venta.feriaId?.let { id -> id to (venta.lugarTexto ?: ferias.firstOrNull { feria -> feria.id == id }?.nombre ?: "Feria anterior") }
-    } + ventas.mapNotNull { venta -> venta.lugarTexto?.let { it to it } }).distinctBy { it.first }
+        venta.feriaId?.let { id -> id to (ferias.firstOrNull { feria -> feria.id == id }?.nombre ?: venta.feriaNombre ?: "Feria anterior") }
+    } + ventas.mapNotNull { venta -> venta.lugarTexto?.takeIf { venta.lugarTipo != "feria" }?.let { it to it } }).distinctBy { it.first }
+    fun nombreLugarVenta(venta: VentaRegistrada): String = if (venta.lugarTipo == "feria") {
+        venta.feriaId?.let { id -> ferias.firstOrNull { it.id == id }?.nombre }
+            ?: venta.feriaNombre
+            ?: venta.lugarTexto
+            ?: "Feria"
+    } else venta.lugarTexto.orEmpty()
     Box(Modifier.fillMaxSize()) {
         BotanicalBackdrop()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp, vertical=8.dp)) {
@@ -255,90 +318,87 @@ internal fun VentasEmprendedoraScreen(
                         Text("Stock insuficiente. Hay $stockDisponible unidades disponibles para esta selección.", color=Wine, fontSize=13.sp)
                     }
                     if (historialActivo) {
-                        feriaSugerida?.let { feria ->
+                        feriaSugeridaPorUbicacion?.let { feria ->
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF4EE)),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE2F4E4)),
                                 shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, Wine.copy(alpha = 0.35f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(
-                                        if (sugerenciaPorUbicacion) "Estás en una feria en curso" else "Hoy participas en una feria",
-                                        color = Wine,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text("Feria en curso detectada", color = Color(0xFF17643B), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     Text(feria.nombre, color = Dark, fontWeight = FontWeight.SemiBold)
                                     Text(
-                                        if (sugerenciaPorUbicacion) {
-                                            "La sugerimos como lugar de la venta porque estás dentro del recinto."
-                                        } else {
-                                            "La dejamos seleccionada como lugar de la venta."
-                                        },
+                                        "La seleccionamos como lugar de la venta porque estás dentro del recinto.",
                                         color = Muted,
                                         fontSize = 13.sp
                                     )
-                                    if (sugerenciaPorUbicacion && distanciaSugerida != null) {
-                                        Text(
-                                            "Estás a ${formatoDistancia(distanciaSugerida)} del punto de la feria.",
-                                            color = Muted,
-                                            fontSize = 12.sp
-                                        )
+                                    distanciaAferiaSugerida?.let { distancia ->
+                                        Text("Distancia al punto: ${formatoDistancia(distancia)}", color = Muted, fontSize = 12.sp)
                                     }
                                 }
                             }
                         }
-                        if (buscandoUbicacion) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Wine)
-                                Text("Comprobando tu ubicación…", color = Muted, fontSize = 12.sp)
-                            }
-                        } else if (!permisoUbicacion && feriasConfirmadas.isNotEmpty()) {
-                            TextButton(onClick = {
-                                lanzadorPermisoUbicacion.launch(
-                                    arrayOf(
-                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                        if (feriaConfirmadaConUbicacionHoy) {
+                            when {
+                                buscandoUbicacion -> Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Wine)
+                                    Text("Comprobando si estás en una feria en curso…", color = Muted, fontSize = 12.sp)
+                                }
+                                !permisoUbicacion -> TextButton(onClick = { reintentarDeteccionUbicacion() }) {
+                                    Text("Permitir ubicación para sugerir la feria en curso", color = Wine, fontSize = 13.sp)
+                                }
+                                !ubicacionSistemaActiva -> TextButton(onClick = { reintentarDeteccionUbicacion() }) {
+                                    Text("Activar ubicación del dispositivo", color = Wine, fontSize = 13.sp)
+                                }
+                                feriaPorUbicacionId == null -> TextButton(onClick = { reintentarDeteccionUbicacion() }) {
+                                    Text(
+                                        if (ubicacionActual == null) "No pudimos obtener tu ubicación. Reintentar"
+                                        else "No detectamos una feria cercana. Actualizar ubicación",
+                                        color = Wine,
+                                        fontSize = 13.sp
                                     )
-                                )
-                            }) {
-                                Text("Usar mi ubicación para detectar la feria", color = Wine, fontSize = 13.sp)
-                            }
-                        } else if (permisoUbicacion && ubicacionActual == null &&
-                            feriasConfirmadas.any { it.latitud != null && it.longitud != null }
-                        ) {
-                            TextButton(onClick = { intentoUbicacion++ }) {
-                                Text("No pudimos obtener tu ubicación. Reintentar", color = Wine, fontSize = 13.sp)
+                                }
                             }
                         }
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            SelectableChip("Feria", lugarTipo == "feria", enabled=!enviando) { lugarTipo="feria" }
-                            SelectableChip("Otro lugar", lugarTipo == "otro", enabled=!enviando) { lugarTipo="otro" }
+                            SelectableChip("Feria", lugarTipoVenta == "feria", enabled=!enviando && feriasDeHoy.isNotEmpty()) { lugarTipo="feria" }
+                            SelectableChip("Otro lugar", lugarTipoVenta == "otro", enabled=!enviando) { lugarTipo="otro" }
                         }
-                        if (lugarTipo == "feria") {
-                            if (errorFerias != null) {
-                                Text("No se pudieron consultar las ferias. Elige «Otro lugar» o vuelve a cargar la información.", color=Wine, fontSize=13.sp)
+                        when {
+                            errorFerias != null -> {
+                                Text("No se pudieron consultar tus ferias. Elige «Otro lugar» o vuelve a cargar la información.", color=Wine, fontSize=13.sp)
                                 OutlinedButton(onClick=alReintentarCarga, enabled=!cargando && !cargandoFerias, modifier=Modifier.fillMaxWidth()) {
                                     Text("Reintentar ferias", color=Wine)
                                 }
                             }
-                            else if (cargandoFerias) Text("Cargando ferias publicadas…", color=Muted, fontSize=13.sp)
-                            else if (ferias.isEmpty()) Text("No hay ferias publicadas disponibles. Elige «Otro lugar» para registrar dónde fue la venta.", color=Muted, fontSize=13.sp)
-                            SelectorVentas("Feria", feriasOrdenadas.map { it.id to it.nombre }, feriaId, enabled=!enviando && ferias.isNotEmpty()) { feriaId=it }
-                        } else OutlinedTextField(lugarOtro, { lugarOtro=it.take(200) }, label={Text("Lugar")}, placeholder={Text("Ej.: Feria Plaza Ñuñoa", color=Muted)}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
+                            cargandoFerias -> Text("Cargando tus ferias…", color=Muted, fontSize=13.sp)
+                            feriasDeHoy.isEmpty() -> Text("No tienes una feria confirmada para hoy. Puedes registrar el lugar manualmente.", color=Muted, fontSize=13.sp)
+                            lugarTipoVenta == "feria" -> {
+                                Text(
+                                    if (feriaSugeridaPorUbicacion != null) "Feria en curso sugerida por ubicación: ${feriaSugeridaPorUbicacion.nombre}"
+                                    else if (feriaSugerida != null) "Feria sugerida para hoy: ${feriaSugerida.nombre}"
+                                    else "Tienes ${feriasDeHoy.size} ferias confirmadas para hoy. Selecciona dónde fue la venta.",
+                                    color=Wine, fontWeight=FontWeight.Bold, fontSize=14.sp
+                                )
+                                SelectorVentas("Feria de hoy", feriasDeHoy.map { it.id to it.nombre }, feriaSeleccionadaId, enabled=!enviando) { feriaId=it }
+                            }
+                        }
+                        if (lugarTipoVenta == "otro") OutlinedTextField(lugarOtro, { lugarOtro=it.take(200) }, label={Text("Lugar")}, placeholder={Text("Ej.: Feria Plaza Ñuñoa", color=Muted)}, modifier=Modifier.fillMaxWidth(), enabled=!enviando)
                     }
                     val puedeRegistrarVenta = if (producto == null) false else {
                         val seleccionValida = !producto.tieneVariantes || varianteId.isNotBlank()
                         val cantidadValida = cantidadSolicitada != null && cantidadSolicitada > 0
                         val stockValido = !producto.manejaStock || (stockDisponible ?: 0) >= (cantidadSolicitada ?: Int.MAX_VALUE)
-                        val lugarValido = !historialActivo || if (lugarTipo == "feria") feriaId.isNotBlank() else lugarOtro.isNotBlank()
+                        val lugarValido = !historialActivo || if (lugarTipoVenta == "feria") feriaSeleccionadaId.isNotBlank() else lugarOtro.isNotBlank()
                         !enviando && historialConfiguracionCargada && seleccionValida && cantidadValida && stockValido && lugarValido
                     }
                     Button(
                         onClick={
                             val fechaOperacion = fechaVenta ?: java.time.Instant.now().toString().also { fechaVenta=it }
-                            if (producto != null) alRegistrar(producto, if (producto.tieneVariantes) varianteId else null, cantidad.toIntOrNull() ?: 0, lugarTipo, feriaId.takeIf { lugarTipo == "feria" }, lugarOtro.takeIf { lugarTipo == "otro" }, operacionId, fechaOperacion) {
+                            if (producto != null) alRegistrar(producto, if (producto.tieneVariantes) varianteId else null, cantidad.toIntOrNull() ?: 0, lugarTipoVenta, feriaSeleccionadaId.takeIf { lugarTipoVenta == "feria" }, lugarOtro.takeIf { lugarTipoVenta == "otro" }, operacionId, fechaOperacion) {
                                 operacionId=java.util.UUID.randomUUID().toString()
                             }
                         },
@@ -383,7 +443,7 @@ internal fun VentasEmprendedoraScreen(
                             Text(venta.productoNombre, color=Dark, fontWeight=FontWeight.Bold)
                             venta.varianteNombre?.let { Text("Variante: $it", color=Muted, fontSize=13.sp) }
                             Text("${venta.cantidad} × ${pesosVenta(venta.precioUnitario)}", color=Muted)
-                            Text("${SimpleDateFormat("d 'de' MMMM yyyy", Locale("es", "CL")).format(venta.fecha)} · ${venta.lugarTexto ?: ferias.firstOrNull { it.id == venta.feriaId }?.nombre.orEmpty()}", color=Muted, fontSize=13.sp)
+                            Text("${SimpleDateFormat("d 'de' MMMM yyyy", Locale("es", "CL")).format(venta.fecha)} · ${nombreLugarVenta(venta)}", color=Muted, fontSize=13.sp)
                         }
                         Text(pesosVenta(venta.total), color=Wine, fontWeight=FontWeight.Bold)
                     }
@@ -397,6 +457,30 @@ internal fun VentasEmprendedoraScreen(
         }
         error?.let { Text(it, color=Wine, modifier=Modifier.padding(top=8.dp)) }
         if (cargando) Text("Cargando información…", color=Muted, modifier=Modifier.padding(top=10.dp))
+        }
+        if (mostrarDialogoActivarUbicacion) {
+            AlertDialog(
+                onDismissRequest = { mostrarDialogoActivarUbicacion = false },
+                title = { Text("Activa la ubicación", color = Dark, fontWeight = FontWeight.Bold) },
+                text = {
+                    Text(
+                        "El permiso de ubicación está concedido, pero la ubicación del teléfono está apagada. Actívala para comprobar si estás cerca de una feria en curso.",
+                        color = Muted
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        mostrarDialogoActivarUbicacion = false
+                        abrirAjustesUbicacion.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    }) { Text("Abrir ajustes", color = Wine, fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { mostrarDialogoActivarUbicacion = false }) {
+                        Text("Ahora no", color = Muted)
+                    }
+                },
+                containerColor = Color(0xFFFFFAF4)
+            )
         }
     }
 }

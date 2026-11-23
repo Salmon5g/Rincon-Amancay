@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Operacion } from '~/lib/cliente-base'
 import SelectorUbicacionFeria from './MapaUbicacionFeria.client.vue'
-import { leerParticipantesFeria, listarFeriasAdmin } from '~/repositories/admin'
+import { enviarAvisoConfirmadasFeria, leerParticipantesFeria, listarFeriasAdmin } from '~/repositories/admin'
 import type { FeriaAdmin, ParticipanteFeria, ParticipantesFeria, TipoParticipanteFeria } from '~/types/admin'
 
 const { $amancay } = useNuxtApp()
@@ -14,11 +14,20 @@ const detalle = ref<ParticipantesFeria | null>(null)
 const cargando = ref(false)
 const cargandoDetalle = ref(false)
 const enviando = ref(false)
+const relojAsistencia = ref(Date.now())
+let intervaloRelojAsistencia: ReturnType<typeof setInterval> | undefined
 const confirmacionEstado = ref<{ item: FeriaAdmin; estado: 'publicada' | 'cancelada' } | null>(null)
+const confirmacionRecordatorio = ref<{ persona: ParticipanteFeria; feria: FeriaAdmin } | null>(null)
+const confirmacionAvisos = ref<{ feria: FeriaAdmin; participantes: ParticipanteFeria[] } | null>(null)
+const participantesAvisoSeleccionados = ref<string[]>([])
 const dialogoConfirmacionRef = ref<HTMLElement | null>(null)
 const volverConfirmacionRef = ref<HTMLButtonElement | null>(null)
 const ejecutarConfirmacionRef = ref<HTMLButtonElement | null>(null)
+const dialogoAvisosRef = ref<HTMLElement | null>(null)
+const primeraAccionAvisosRef = ref<HTMLButtonElement | null>(null)
+const enviarAvisosRef = ref<HTMLButtonElement | null>(null)
 let focoAnteriorConfirmacion: HTMLElement | null = null
+let focoAnteriorAvisos: HTMLElement | null = null
 const error = ref('')
 const aviso = ref('')
 const formulario = ref(false)
@@ -39,6 +48,9 @@ const filtroAsociacion = ref('todas')
 const tipoGestion = ref<'invitarParticipanteFeria' | 'agregarParticipanteFeria'>('invitarParticipanteFeria')
 const retiro = ref<ParticipanteFeria | null>(null)
 const pendiente = ref<{ operacion: Operacion; solicitud: Record<string, unknown> } | null>(null)
+type DestinatariaAviso = { id: string; nombre: string; operacionId: string }
+type LoteAvisosConfirmadas = { feriaId: string; feriaNombre: string; destinatarias: DestinatariaAviso[]; indice: number; aceptadas: number; fallidas: string[] }
+const loteAvisosConfirmadas = ref<LoteAvisosConfirmadas | null>(null)
 const borrador = ref({ nombre: '', descripcion: '', organizador: '', direccion: '', fecha: '', horaInicio: '', horaFin: '', imagenUrl: '', latitud: '', longitud: '' })
 const archivoImagen = ref<File | null>(null)
 const archivoIdImagen = ref('')
@@ -104,6 +116,26 @@ function opcionesUnicas(lista: { id: string; nombre: string }[]) {
 }
 const tiposEmprendimientoParticipantes = computed(() => opcionesUnicas((detalle.value?.participantes ?? []).flatMap((item) => item.tipoEmprendimiento ? [item.tipoEmprendimiento] : [])))
 const asociacionesParticipantes = computed(() => opcionesUnicas((detalle.value?.participantes ?? []).flatMap((item) => item.asociaciones ?? [])))
+const feriaSeleccionada = computed(() => ferias.value.find((item) => item.id === selectedId.value) ?? null)
+const ventanaAsistencia = computed(() => {
+  const feria = detalle.value?.feria
+  if (!feria || feria.estado !== 'publicada' || !feria.fechaInicio || !feria.fechaFin) return 'no_disponible'
+  const inicio = Date.parse(feria.fechaInicio)
+  const termino = Date.parse(feria.fechaFin)
+  if (!Number.isFinite(inicio) || !Number.isFinite(termino) || termino <= inicio) return 'no_disponible'
+  if (relojAsistencia.value < inicio) return 'antes'
+  if (relojAsistencia.value >= termino) return 'finalizada'
+  return 'en_curso'
+})
+const asistenciaHabilitada = computed(() => ventanaAsistencia.value === 'en_curso')
+const emprendedorasConfirmadas = computed(() => (detalle.value?.participantes ?? []).filter((item) => item.tipo === 'emprendedora' && item.estado === 'confirmada'))
+const puedeAvisarConfirmadas = computed(() => Boolean(feriaSeleccionada.value?.estado === 'publicada'
+  && feriaSeleccionada.value.fechaInicio
+  && new Date(feriaSeleccionada.value.fechaInicio).getTime() > Date.now()
+  && emprendedorasConfirmadas.value.length))
+const destinatariasAvisoDisponibles = computed(() => confirmacionAvisos.value?.participantes ?? [])
+const destinatariasAvisoSeleccionables = computed(() => destinatariasAvisoDisponibles.value.filter((persona) => !avisoPushBloqueado(persona)))
+const cantidadAvisosSeleccionados = computed(() => participantesAvisoSeleccionados.value.length)
 function cantidadPorEstado(estado: string) {
   return (detalle.value?.participantes ?? []).filter((item) => item.estado === estado).length
 }
@@ -265,7 +297,7 @@ async function procesarPendiente() {
     if (current.operacion === 'invitarParticipanteFeria' || current.operacion === 'agregarParticipanteFeria') candidata.value = ''
     pendiente.value = null; formulario.value = false; retiro.value = null
     limpiarArchivoImagen()
-    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'El proveedor aceptó el recordatorio. Esto todavía no confirma su entrega en el buzón' : current.operacion === 'enviarAvisoConfirmadasFeria' ? 'El proveedor aceptó el aviso de participación confirmada. La entrega todavía no está confirmada.' : 'Los cambios de la feria se guardaron en Firebase.'
+    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'El servidor aceptó el recordatorio en Firebase Cloud Messaging. La entrega depende de que el dispositivo pueda recibir notificaciones.' : 'Los cambios de la feria se guardaron en Firebase.'
     await cargar()
   } catch (cause) {
     error.value = mensajeError(cause)
@@ -355,6 +387,138 @@ function mantenerFocoConfirmacion(event: KeyboardEvent) {
   }
 }
 
+function mantenerFocoDialogoAvisos(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const primero = primeraAccionAvisosRef.value
+  const ejecutar = enviarAvisosRef.value
+  if (!primero || !ejecutar) return
+  if (event.shiftKey && document.activeElement === primero) {
+    event.preventDefault()
+    ejecutar.focus()
+  } else if (!event.shiftKey && document.activeElement === ejecutar) {
+    event.preventDefault()
+    primero.focus()
+  }
+}
+
+function avisoPushBloqueado(persona: ParticipanteFeria) {
+  const avisoPrevio = persona.avisoConfirmacion
+  if (!avisoPrevio || avisoPrevio.canal !== 'push') return false
+  const referencia = avisoPrevio.estado === 'aceptado' ? avisoPrevio.enviadoEn : avisoPrevio.iniciadoEn
+  if (!referencia) return avisoPrevio.estado === 'reservado'
+  const tiempo = new Date(referencia).getTime()
+  return Number.isFinite(tiempo) && Date.now() - tiempo < 24 * 60 * 60 * 1000
+}
+
+async function prepararAvisosConfirmadas() {
+  const feria = feriaSeleccionada.value
+  if (!feria || !detalle.value || pendiente.value || enviando.value || loteAvisosConfirmadas.value) return
+  if (feria.estado !== 'publicada' || !feria.fechaInicio || new Date(feria.fechaInicio).getTime() <= Date.now()) {
+    error.value = 'Los avisos push están disponibles para ferias publicadas que aún no comienzan.'
+    return
+  }
+  const destinatarias = emprendedorasConfirmadas.value
+  if (!destinatarias.length) {
+    error.value = 'Esta feria todavía no tiene emprendedoras confirmadas para avisar.'
+    return
+  }
+  const disponibles = destinatarias.filter((persona) => !avisoPushBloqueado(persona))
+  focoAnteriorAvisos = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  confirmacionAvisos.value = { feria, participantes: destinatarias }
+  participantesAvisoSeleccionados.value = disponibles.map((persona) => persona.id)
+  await nextTick()
+  primeraAccionAvisosRef.value?.focus()
+}
+
+function cerrarConfirmacionAvisos() {
+  confirmacionAvisos.value = null
+  participantesAvisoSeleccionados.value = []
+  void nextTick(() => {
+    focoAnteriorAvisos?.focus()
+    focoAnteriorAvisos = null
+  })
+}
+
+function cambiarSeleccionAviso(participanteId: string, seleccionado: boolean) {
+  const actual = new Set(participantesAvisoSeleccionados.value)
+  if (seleccionado) actual.add(participanteId)
+  else actual.delete(participanteId)
+  participantesAvisoSeleccionados.value = [...actual]
+}
+
+function alternarTodasAvisos() {
+  const disponibles = destinatariasAvisoSeleccionables.value
+  const todosSeleccionados = disponibles.length > 0 && disponibles.every((persona) => participantesAvisoSeleccionados.value.includes(persona.id))
+  participantesAvisoSeleccionados.value = todosSeleccionados ? [] : disponibles.map((persona) => persona.id)
+}
+
+async function procesarLoteAvisosConfirmadas() {
+  const lote = loteAvisosConfirmadas.value
+  if (!lote || enviando.value || pendiente.value) return
+  enviando.value = true
+  error.value = ''
+  aviso.value = ''
+  let errorFinal = ''
+  try {
+    while (lote.indice < lote.destinatarias.length) {
+      const destinataria = lote.destinatarias[lote.indice]
+      try {
+        const resultado = await enviarAvisoConfirmadasFeria($amancay, {
+          operacionId: destinataria.operacionId,
+          feriaId: lote.feriaId,
+          participanteId: destinataria.id,
+        })
+        if (resultado.estado !== 'aceptado') throw new Error('La API no confirmó la aceptación del aviso push.')
+        lote.aceptadas += 1
+        lote.indice += 1
+      } catch (cause) {
+        const resultadoIncierto = Boolean((cause as { resultadoIncierto?: boolean; code?: string })?.resultadoIncierto)
+          || (cause as { code?: string })?.code === 'envio-incierto'
+        if (resultadoIncierto) {
+          errorFinal = `No se confirmó el aviso para ${destinataria.nombre}. Conservé la misma solicitud para reintentar sin duplicarlo.`
+          break
+        }
+        lote.fallidas.push(destinataria.nombre)
+        lote.indice += 1
+      }
+    }
+    if (lote.indice >= lote.destinatarias.length) {
+      aviso.value = lote.aceptadas
+        ? `Firebase aceptó ${lote.aceptadas} aviso${lote.aceptadas === 1 ? '' : 's'} push para “${lote.feriaNombre}”. La entrega depende de que cada dispositivo pueda recibir notificaciones.`
+        : 'No se pudo enviar ningún aviso push.'
+      if (lote.fallidas.length) errorFinal = `No se pudieron enviar a: ${lote.fallidas.join(', ')}.`
+      loteAvisosConfirmadas.value = null
+    } else if (lote.aceptadas) {
+      aviso.value = `Firebase aceptó ${lote.aceptadas} aviso${lote.aceptadas === 1 ? '' : 's'} antes de una respuesta incierta.`
+    }
+    await cargar()
+    if (errorFinal) error.value = errorFinal
+  } finally {
+    enviando.value = false
+  }
+}
+
+function confirmarEnvioAvisosConfirmadas() {
+  const confirmacion = confirmacionAvisos.value
+  if (!confirmacion || !participantesAvisoSeleccionados.value.length || enviando.value || pendiente.value) return
+  const seleccionadas = confirmacion.participantes.filter((persona) => participantesAvisoSeleccionados.value.includes(persona.id) && !avisoPushBloqueado(persona))
+  if (!seleccionadas.length) return
+  loteAvisosConfirmadas.value = {
+    feriaId: confirmacion.feria.id,
+    feriaNombre: confirmacion.feria.nombre,
+    destinatarias: seleccionadas.map((persona) => ({
+      id: persona.id,
+      nombre: persona.nombreTienda || persona.nombre,
+      operacionId: opId(),
+    })),
+    indice: 0,
+    aceptadas: 0,
+    fallidas: [],
+  }
+  cerrarConfirmacionAvisos()
+  void procesarLoteAvisosConfirmadas()
+}
+
 async function gestionarParticipantes(item: FeriaAdmin) {
   retiro.value = null
   const carga = cargarParticipantes(item.id)
@@ -406,15 +570,16 @@ function etiquetaEstadoParticipante(persona: ParticipanteFeria) {
 function etiquetaAsistencia(asistencia: ParticipanteFeria['asistencia']) {
   if (asistencia === 'asistio') return 'Asistió'
   if (asistencia === 'no_asistio') return 'No asistió'
-  return 'Asistencia pendiente'
+  return ventanaAsistencia.value === 'finalizada' ? 'Sin asistencia registrada' : 'Asistencia pendiente'
 }
 
 
-function prepararRecordatorioFeria(persona: ParticipanteFeria) {
-  if (!detalle.value || pendiente.value || enviando.value) return
+async function prepararRecordatorioFeria(persona: ParticipanteFeria) {
+  const feria = detalle.value?.feria
+  if (!feria || pendiente.value || enviando.value) return
 
   if (
-    detalle.value.feria.estado !== 'publicada' ||
+    feria.estado !== 'publicada' ||
     persona.estado !== 'invitada'
   ) {
     error.value =
@@ -422,20 +587,36 @@ function prepararRecordatorioFeria(persona: ParticipanteFeria) {
     return
   }
 
-  if (
-    !window.confirm(
-      `¿Enviar un recordatorio real a ${persona.nombreTienda || persona.nombre}?`
-    )
-  ) {
+  if (persona.tipo !== 'emprendedora') {
+    error.value = 'Los recordatorios push están disponibles para invitaciones de emprendedoras con acceso a la app.'
     return
   }
 
+  focoAnteriorConfirmacion = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  confirmacionRecordatorio.value = { persona, feria }
+  await nextTick()
+  volverConfirmacionRef.value?.focus()
+}
+
+function cerrarConfirmacionRecordatorio() {
+  confirmacionRecordatorio.value = null
+  void nextTick(() => {
+    focoAnteriorConfirmacion?.focus()
+    focoAnteriorConfirmacion = null
+  })
+}
+
+function confirmarRecordatorioFeria() {
+  const confirmacion = confirmacionRecordatorio.value
+  if (!confirmacion || pendiente.value || enviando.value) return
+  confirmacionRecordatorio.value = null
+  focoAnteriorConfirmacion = null
   pendiente.value = {
     operacion: 'enviarRecordatorioFeria',
     solicitud: {
       operacionId: opId(),
-      feriaId: detalle.value.feria.id,
-      participanteId: persona.id,
+      feriaId: confirmacion.feria.id,
+      participanteId: confirmacion.persona.id,
     },
   }
 
@@ -444,6 +625,10 @@ function prepararRecordatorioFeria(persona: ParticipanteFeria) {
 
 function marcarAsistencia(item: ParticipanteFeria, asistencia: 'asistio' | 'no_asistio') {
   if (!detalle.value || pendiente.value) return
+  if (!asistenciaHabilitada.value) {
+    error.value = 'La asistencia solo se puede registrar durante el horario de la feria.'
+    return
+  }
   pendiente.value = { operacion: 'registrarAsistenciaFeria', solicitud: { operacionId: opId(), feriaId: detalle.value.feria.id, versionFeriaEsperada: detalle.value.feria.versionEsperada, participanteId: item.id, asistencia } }
   void procesarPendiente()
 }
@@ -453,18 +638,30 @@ function fechaBonita(value: string | null) {
   return new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
-onMounted(() => { void cargar() })
+onMounted(() => {
+  void cargar()
+  intervaloRelojAsistencia = setInterval(() => { relojAsistencia.value = Date.now() }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (intervaloRelojAsistencia) clearInterval(intervaloRelojAsistencia)
+})
 </script>
 
 <template>
   <section class="ferias-admin">
-    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. La imagen se sube al almacenamiento y queda asociada a la feria. Las invitaciones se registran en Firebase. Los recordatorios para invitaciones pendientes se envían desde el servidor y muestran cuándo el proveedor aceptó el correo (no su entrega final).</p></div>
+    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. La imagen se sube al almacenamiento y queda asociada a la feria. Las invitaciones se registran en Firebase. El recordatorio de una invitación pendiente se envía como notificación push a la emprendedora y abre su apartado de invitaciones; Firebase confirma que aceptó el mensaje, no que llegó al dispositivo.</p></div>
     <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para administrar ferias.</p>
     <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} registros</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
     <p v-if="cargando" role="status">Leyendo ferias desde Firebase…</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="aviso" class="exito" role="status">{{ aviso }}</p>
     <div v-if="pendiente" class="nota pendiente" role="status" tabindex="-1"><p>La respuesta de la API no se confirmó. Conservé el mismo identificador para evitar duplicar la operación.</p><button class="boton" type="button" :disabled="enviando" @click="procesarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar operación' }}</button></div>
+    <div v-if="loteAvisosConfirmadas" class="nota pendiente" role="status" aria-live="polite">
+      <p v-if="enviando">Enviando aviso {{ loteAvisosConfirmadas.indice + 1 }} de {{ loteAvisosConfirmadas.destinatarias.length }} a las emprendedoras seleccionadas.</p>
+      <p v-else>El resultado del aviso a {{ loteAvisosConfirmadas.destinatarias[loteAvisosConfirmadas.indice]?.nombre }} no se confirmó. Puedes reintentar la misma solicitud.</p>
+      <button class="boton" type="button" :disabled="enviando" @click="procesarLoteAvisosConfirmadas">{{ enviando ? 'Enviando…' : 'Reintentar avisos pendientes' }}</button>
+    </div>
 
     <section v-if="formulario" ref="formularioRef" class="formulario apartado-desplegable">
       <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cerrar</button></div>
@@ -518,7 +715,7 @@ onMounted(() => { void cargar() })
     <p v-else-if="!cargando" class="vacio">{{ ferias.length ? 'No hay ferias que coincidan con el filtro.' : 'Todavía no hay ferias registradas. Crea un borrador para comenzar.' }}</p>
 
     <section v-if="selectedId" ref="participantesRef" class="participantes apartado-desplegable">
-      <div class="formulario-cabecera"><div><p class="sobre">Lista y control</p><h3>Participantes</h3></div><div class="acciones"><button class="secundario" type="button" :disabled="cargandoDetalle || enviando || !!pendiente" @click="cargarParticipantes(selectedId)">Actualizar</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarParticipantes">Cerrar</button></div></div>
+      <div class="formulario-cabecera"><div><p class="sobre">Lista y control</p><h3>Participantes</h3></div><div class="acciones"><button v-if="puedeAvisarConfirmadas" class="secundario" type="button" :disabled="!habilitado || cargandoDetalle || enviando || !!pendiente || !!loteAvisosConfirmadas" @click="prepararAvisosConfirmadas">Avisar a confirmadas ({{ emprendedorasConfirmadas.length }})</button><button class="secundario" type="button" :disabled="cargandoDetalle || enviando || !!pendiente || !!loteAvisosConfirmadas" @click="cargarParticipantes(selectedId)">Actualizar</button><button class="secundario" type="button" :disabled="enviando || !!pendiente || !!loteAvisosConfirmadas" @click="cerrarParticipantes">Cerrar</button></div></div>
       <p v-if="cargandoDetalle" role="status">Consultando participantes…</p>
       <template v-if="detalle">
         <div class="asignar">
@@ -616,6 +813,15 @@ onMounted(() => { void cargar() })
           <label>Tipo de emprendimiento<select v-model="filtroTipoEmprendimiento"><option value="todos">Todos</option><option v-for="tipo in tiposEmprendimientoParticipantes" :key="tipo.id" :value="tipo.id">{{ tipo.nombre }}</option></select></label>
           <label>Asociación<select v-model="filtroAsociacion"><option value="todas">Todas</option><option v-for="asociacion in asociacionesParticipantes" :key="asociacion.id" :value="asociacion.id">{{ asociacion.nombre }}</option></select></label>
         </div>
+        <p v-if="ventanaAsistencia === 'antes'" class="asistencia-plazo" role="status">
+          La asistencia se podrá marcar desde el inicio de la feria ({{ fechaBonita(detalle.feria.fechaInicio) }}).
+        </p>
+        <p v-else-if="ventanaAsistencia === 'finalizada'" class="asistencia-plazo" role="status">
+          La feria terminó ({{ fechaBonita(detalle.feria.fechaFin) }}). El registro de asistencia está cerrado.
+        </p>
+        <p v-else-if="ventanaAsistencia === 'no_disponible'" class="asistencia-plazo" role="status">
+          La asistencia solo se puede registrar en una feria publicada con horario válido.
+        </p>
         <ul v-if="participantesVisibles.length" class="lista participantes-lista">
           <li v-for="persona in participantesVisibles" :key="persona.id" class="participante">
             <div class="persona">
@@ -625,12 +831,25 @@ onMounted(() => { void cargar() })
             </div>
             <div class="estados-participante">
               <span class="estado estado-participante" :class="`participacion-${persona.estado}`">{{ etiquetaEstadoParticipante(persona) }}</span>
-              <span v-if="persona.asistencia" class="estado asistencia">{{ etiquetaAsistencia(persona.asistencia) }}</span>
+              <span v-if="['confirmada', 'agregada_admin'].includes(persona.estado)" class="estado asistencia">{{ etiquetaAsistencia(persona.asistencia ?? 'pendiente') }}</span>
+              <span
+                v-if="persona.avisoConfirmacion?.estado === 'aceptado' && persona.avisoConfirmacion.canal === 'push'"
+                class="estado asistencia"
+                :title="'Firebase aceptó el aviso' + (persona.avisoConfirmacion.enviadoEn ? ': ' + fechaBonita(persona.avisoConfirmacion.enviadoEn) : '') + '. La entrega en Android no está confirmada.'"
+              >Aviso enviado</span>
+              <span v-else-if="persona.avisoConfirmacion?.estado === 'reservado' && persona.avisoConfirmacion.canal === 'push'" class="estado asistencia">Aviso en proceso</span>
             </div>
-            <div class="acciones" v-if="['confirmada', 'agregada_admin'].includes(persona.estado)"><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'asistio')">Asistió</button><button class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="marcarAsistencia(persona, 'no_asistio')">No asistió</button></div>
-            <button v-if="persona.estado === 'invitada' && detalle.feria.estado === 'publicada'" class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="prepararRecordatorioFeria(persona)"> Enviar recordatorio </button>
-            <small v-if="persona.recordatorio?.estado === 'aceptado'"> Último recordatorio aceptado: {{ persona.recordatorio.enviadoEn ? fechaBonita(persona.recordatorio.enviadoEn) : 'fecha pendiente' }} </small>
-            <small v-else-if="persona.recordatorio?.estado === 'reservado'"> Recordatorio en proceso o resultado por verificar</small>
+            <div class="acciones" v-if="['confirmada', 'agregada_admin'].includes(persona.estado)">
+              <button class="secundario" type="button" :disabled="!habilitado || !asistenciaHabilitada || enviando || !!pendiente" :title="!asistenciaHabilitada ? 'Disponible durante el horario publicado de la feria.' : undefined" @click="marcarAsistencia(persona, 'asistio')">Asistió</button>
+              <button class="secundario" type="button" :disabled="!habilitado || !asistenciaHabilitada || enviando || !!pendiente" :title="!asistenciaHabilitada ? 'Disponible durante el horario publicado de la feria.' : undefined" @click="marcarAsistencia(persona, 'no_asistio')">No asistió</button>
+            </div>
+            <button v-if="persona.tipo === 'emprendedora' && persona.estado === 'invitada' && detalle.feria.estado === 'publicada'" class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="prepararRecordatorioFeria(persona)"> Enviar recordatorio </button>
+            <small v-if="persona.estado === 'invitada' && persona.recordatorio?.estado === 'aceptado'" class="recordatorio-enviado">
+              <span>Último recordatorio enviado:</span>
+              <time v-if="persona.recordatorio.enviadoEn" :datetime="persona.recordatorio.enviadoEn">{{ fechaBonita(persona.recordatorio.enviadoEn) }}</time>
+              <span v-else>Fecha pendiente</span>
+            </small>
+            <small v-else-if="persona.estado === 'invitada' && persona.recordatorio?.estado === 'reservado'" class="recordatorio-enviado">Recordatorio en proceso o resultado por verificar</small>
             <button v-if="persona.estado === 'invitada'" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Cancelar invitación</button>
             <button v-else-if="['confirmada', 'agregada_admin'].includes(persona.estado)" class="peligro" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="retirar(persona)">Retirar</button>
           </li>
@@ -686,6 +905,110 @@ onMounted(() => { void cargar() })
               @click="confirmarCambioEstado"
             >
               {{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : 'Confirmar cancelación' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="confirmacion-modal">
+      <div
+        v-if="confirmacionRecordatorio"
+        class="confirmacion-fondo"
+        @click.self="cerrarConfirmacionRecordatorio"
+        @keydown.esc.stop.prevent="cerrarConfirmacionRecordatorio"
+      >
+        <section
+          ref="dialogoConfirmacionRef"
+          class="confirmacion-dialogo"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirmacion-recordatorio-titulo"
+          aria-describedby="confirmacion-recordatorio-descripcion"
+          tabindex="-1"
+          @keydown="mantenerFocoConfirmacion"
+        >
+          <div class="confirmacion-icono recordatorio" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19.5 3.5v3M18 5h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </div>
+          <p class="confirmacion-sobre">Invitaciones a ferias</p>
+          <h3 id="confirmacion-recordatorio-titulo">¿Enviar recordatorio push?</h3>
+          <p id="confirmacion-recordatorio-descripcion" class="confirmacion-descripcion">
+            Enviaremos una notificación a <strong>{{ confirmacionRecordatorio.persona.nombreTienda || confirmacionRecordatorio.persona.nombre }}</strong>
+            sobre su invitación a <strong>“{{ confirmacionRecordatorio.feria.nombre }}”</strong>.
+            Al pulsarla, se abrirá el apartado de invitaciones para que pueda responder.
+          </p>
+          <div class="confirmacion-acciones">
+            <button ref="volverConfirmacionRef" class="secundario" type="button" @click="cerrarConfirmacionRecordatorio">Ahora no</button>
+            <button ref="ejecutarConfirmacionRef" class="boton" type="button" :disabled="!habilitado" @click="confirmarRecordatorioFeria">Enviar recordatorio</button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="confirmacion-modal">
+      <div
+        v-if="confirmacionAvisos"
+        class="confirmacion-fondo"
+        @click.self="cerrarConfirmacionAvisos"
+        @keydown.esc.stop.prevent="cerrarConfirmacionAvisos"
+      >
+        <section
+          ref="dialogoAvisosRef"
+          class="confirmacion-dialogo dialogo-avisos"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirmacion-avisos-titulo"
+          aria-describedby="confirmacion-avisos-descripcion"
+          tabindex="-1"
+          @keydown="mantenerFocoDialogoAvisos"
+        >
+          <div class="confirmacion-icono recordatorio" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19.5 3.5v3M18 5h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </div>
+          <p class="confirmacion-sobre">Aviso de feria</p>
+          <h3 id="confirmacion-avisos-titulo">Avisar a emprendedoras confirmadas</h3>
+          <p id="confirmacion-avisos-descripcion" class="confirmacion-descripcion">
+            Selecciona quiénes recibirán un aviso push con los datos de <strong>“{{ confirmacionAvisos.feria.nombre }}”</strong>.
+            Al pulsarlo, se abrirá Invitaciones a ferias con esta feria destacada.
+          </p>
+          <p
+            v-if="destinatariasAvisoDisponibles.length && destinatariasAvisoDisponibles.every((persona) => avisoPushBloqueado(persona))"
+            class="aviso-plazo"
+            role="status"
+          >
+            Firebase aceptó los avisos anteriores, pero eso no confirma que aparecieran en los teléfonos.
+            Para evitar duplicados, el servidor habilitará otro envío cuando se cumplan 24 horas.
+          </p>
+          <div class="selector-destinatarias">
+            <div class="destinatarias-cabecera">
+              <strong>{{ cantidadAvisosSeleccionados }} seleccionada{{ cantidadAvisosSeleccionados === 1 ? '' : 's' }}</strong>
+              <button ref="primeraAccionAvisosRef" class="secundario" type="button" :disabled="!destinatariasAvisoSeleccionables.length" @click="alternarTodasAvisos">
+                {{ !destinatariasAvisoSeleccionables.length ? 'Sin avisos disponibles' : destinatariasAvisoSeleccionables.every((persona) => participantesAvisoSeleccionados.includes(persona.id)) ? 'Quitar selección' : 'Seleccionar disponibles' }}
+              </button>
+            </div>
+            <div class="destinatarias-aviso">
+              <label v-for="persona in destinatariasAvisoDisponibles" :key="persona.id" class="destinataria-aviso" :class="{ bloqueada: avisoPushBloqueado(persona) }">
+                <input v-model="participantesAvisoSeleccionados" type="checkbox" :value="persona.id" :disabled="avisoPushBloqueado(persona)" />
+                <span>
+                  <strong>{{ persona.nombreTienda || persona.nombre }}</strong>
+                  <small v-if="avisoPushBloqueado(persona) && persona.avisoConfirmacion?.estado === 'aceptado'">Aceptado por Firebase: {{ fechaBonita(persona.avisoConfirmacion.enviadoEn) }} · nuevo envío después de 24 horas</small>
+                  <small v-else-if="avisoPushBloqueado(persona)">Aviso push en proceso o resultado por verificar</small>
+                  <small v-else>{{ persona.nombre }}</small>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="confirmacion-acciones">
+            <button class="secundario" type="button" @click="cerrarConfirmacionAvisos">Cancelar</button>
+            <button ref="enviarAvisosRef" class="boton" type="button" :disabled="!habilitado || !cantidadAvisosSeleccionados || enviando || !!pendiente" @click="confirmarEnvioAvisosConfirmadas">
+              Enviar {{ cantidadAvisosSeleccionados ? `a ${cantidadAvisosSeleccionados}` : 'avisos push' }}
             </button>
           </div>
         </section>
@@ -750,4 +1073,22 @@ onMounted(() => { void cargar() })
 @media(max-width:560px){.opciones-disponibles{grid-template-columns:1fr;max-height:288px}}
 @media(max-width:520px){.selector-tipo{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px}.tipo-candidata{gap:4px;padding:7px 3px;font-size:.78rem}}
 @media(prefers-reduced-motion:reduce){.opcion-disponible:hover{transform:none}}
+.confirmacion-icono.recordatorio{border-color:#f2dfb8;background:#fef0cd;color:var(--vino)}
+.boton:not(:disabled):active,.secundario:not(:disabled):active,.peligro:not(:disabled):active{transform:translateY(0) scale(.97);box-shadow:inset 0 2px 5px rgba(42,18,33,.16)}
+.recordatorio-enviado{display:grid;gap:2px;min-width:180px;line-height:1.3}
+.aviso-plazo{margin:0;padding:12px 14px;border:1px solid #ead9e2;border-radius:13px;background:#fbf4f7;color:#6d5663;line-height:1.5}
+.asistencia-plazo{margin:0;padding:10px 12px;border:1px solid var(--borde);border-radius:12px;background:var(--crema);color:#775f6c;font-size:.9rem;line-height:1.4}
+.dialogo-avisos{width:min(620px,100%);max-height:min(84vh,760px);overflow:auto}
+.selector-destinatarias{display:grid;gap:10px;margin:16px 0}
+.destinatarias-cabecera{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--texto)}
+.destinatarias-cabecera .secundario{font-size:.9rem}
+.destinatarias-aviso{display:grid;gap:8px;max-height:280px;overflow:auto;padding:2px}
+.destinataria-aviso{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--borde);border-radius:14px;background:#fff;cursor:pointer}
+.destinataria-aviso:has(input:checked){border-color:var(--vino);background:#fff8fb}
+.destinataria-aviso.bloqueada{background:#faf7f8;color:#806d77;cursor:not-allowed}
+.destinataria-aviso input{width:18px;height:18px;accent-color:var(--vino);flex:none}
+.destinataria-aviso span{display:grid;gap:3px;min-width:0}
+.destinataria-aviso small{color:#775f6c}
+@media(max-width:560px){.destinatarias-cabecera{align-items:flex-start;flex-direction:column}.dialogo-avisos{padding:18px}}
+@media(prefers-reduced-motion:reduce){.boton:not(:disabled):active,.secundario:not(:disabled):active,.peligro:not(:disabled):active{transform:none}}
 </style>

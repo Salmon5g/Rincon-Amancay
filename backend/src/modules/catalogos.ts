@@ -11,8 +11,8 @@ export type ColeccionCatalogo = typeof coleccionesCatalogo[number];
 type CampoTipoProducto = { clave: string; etiqueta: string; tipo: 'texto'; obligatorio: boolean };
 type DefinicionTipoProducto = { campos: CampoTipoProducto[]; opcionesVariante: string[] };
 type SolicitudCatalogo =
-  | { accion: 'crearElementoCatalogo'; operacionId: string; coleccion: ColeccionCatalogo; nombre: string; id: string; definicion?: DefinicionTipoProducto }
-  | { accion: 'editarElementoCatalogo'; operacionId: string; coleccion: ColeccionCatalogo; documentoId: string; versionEsperada: string; nombre: string; definicion?: DefinicionTipoProducto }
+  | { accion: 'crearElementoCatalogo'; operacionId: string; coleccion: ColeccionCatalogo; nombre: string; id: string; definicion?: DefinicionTipoProducto; tipoProductoId?: string }
+  | { accion: 'editarElementoCatalogo'; operacionId: string; coleccion: ColeccionCatalogo; documentoId: string; versionEsperada: string; nombre: string; definicion?: DefinicionTipoProducto; tipoProductoId?: string }
   | { accion: 'cambiarEstadoCatalogo'; operacionId: string; coleccion: ColeccionCatalogo; documentoId: string; versionEsperada: string; activo: boolean };
 
 function exigir(ok: unknown, code: string, message: string): asserts ok {
@@ -52,6 +52,11 @@ function nombreNormalizado(value: string): string {
 function coleccion(value: unknown): ColeccionCatalogo {
   exigir(typeof value === 'string' && coleccionesCatalogo.includes(value as ColeccionCatalogo), 'datos-invalidos', 'Tipo de catálogo no permitido.');
   return value as ColeccionCatalogo;
+}
+
+function tipoProductoId(value: unknown): string {
+  exigir(id(value), 'datos-invalidos', 'Selecciona un tipo de producto válido para esta categoría.');
+  return value;
 }
 
 function versionEsperada(value: unknown): string {
@@ -97,19 +102,30 @@ function parsearSolicitud(accion: AccionCatalogo, input: unknown): SolicitudCata
   const data = objeto(input);
   const base = ['operacionId', 'coleccion', 'nombre'];
   if (accion === 'crearElementoCatalogo') {
-    camposExactos(data, base, ['definicion']);
+    camposExactos(data, base, ['definicion', 'tipoProductoId']);
     exigir(id(data.operacionId), 'datos-invalidos', 'ID de operación inválido.');
     const tipo = coleccion(data.coleccion);
     exigir((tipo === 'tiposProducto') === Object.hasOwn(data, 'definicion'), 'datos-invalidos', 'Los tipos de producto requieren una definición versionada.');
-    return { accion, operacionId: data.operacionId as string, coleccion: tipo, nombre: nombre(data.nombre), id: slug(nombre(data.nombre)), ...(tipo === 'tiposProducto' ? { definicion: definirTipoProducto(data.definicion) } : {}) };
+    exigir((tipo === 'categorias') === Object.hasOwn(data, 'tipoProductoId'), 'datos-invalidos', 'Las categorías nuevas deben vincularse a un tipo de producto.');
+    return {
+      accion, operacionId: data.operacionId as string, coleccion: tipo, nombre: nombre(data.nombre), id: slug(nombre(data.nombre)),
+      ...(tipo === 'tiposProducto' ? { definicion: definirTipoProducto(data.definicion) } : {}),
+      ...(tipo === 'categorias' ? { tipoProductoId: tipoProductoId(data.tipoProductoId) } : {}),
+    };
   }
   if (accion === 'editarElementoCatalogo') {
-    camposExactos(data, [...base, 'documentoId', 'versionEsperada'], ['definicion']);
+    camposExactos(data, [...base, 'documentoId', 'versionEsperada'], ['definicion', 'tipoProductoId']);
     exigir(id(data.operacionId) && id(data.documentoId), 'datos-invalidos', 'IDs inválidos.');
     const tipo = coleccion(data.coleccion);
     versionEsperada(data.versionEsperada);
     exigir((tipo === 'tiposProducto') === Object.hasOwn(data, 'definicion'), 'datos-invalidos', 'Los tipos de producto requieren una definición versionada.');
-    return { accion, operacionId: data.operacionId as string, coleccion: tipo, documentoId: data.documentoId as string, versionEsperada: data.versionEsperada as string, nombre: nombre(data.nombre), ...(tipo === 'tiposProducto' ? { definicion: definirTipoProducto(data.definicion) } : {}) };
+    exigir(tipo === 'categorias' || !Object.hasOwn(data, 'tipoProductoId'), 'datos-invalidos', 'Solo las categorías admiten un tipo de producto vinculado.');
+    return {
+      accion, operacionId: data.operacionId as string, coleccion: tipo, documentoId: data.documentoId as string,
+      versionEsperada: data.versionEsperada as string, nombre: nombre(data.nombre),
+      ...(tipo === 'tiposProducto' ? { definicion: definirTipoProducto(data.definicion) } : {}),
+      ...(tipo === 'categorias' && Object.hasOwn(data, 'tipoProductoId') ? { tipoProductoId: tipoProductoId(data.tipoProductoId) } : {}),
+    };
   }
   camposExactos(data, ['operacionId', 'coleccion', 'documentoId', 'versionEsperada', 'activo']);
   exigir(id(data.operacionId) && id(data.documentoId) && typeof data.activo === 'boolean', 'datos-invalidos', 'IDs o estado inválidos.');
@@ -128,10 +144,20 @@ export function crearCatalogos(db: Firestore) {
     const documentId = solicitud.accion === 'crearElementoCatalogo' ? solicitud.id : solicitud.documentoId;
     const itemRef = db.doc(`${solicitud.coleccion}/${documentId}`);
     const auditRef = db.doc(`auditoriaAdministracion/${identidad.uid}_${operationId}`);
+    const tipoRef = (solicitud.accion === 'crearElementoCatalogo' || solicitud.accion === 'editarElementoCatalogo')
+      && solicitud.coleccion === 'categorias' && solicitud.tipoProductoId
+      ? db.doc(`tiposProducto/${solicitud.tipoProductoId}`) : null;
 
     return db.runTransaction(async tx => {
-      const [adminSnapshot, receipt, item] = await tx.getAll(adminRef, receiptRef, itemRef);
+      const lecturas = await tx.getAll(adminRef, receiptRef, itemRef, ...(tipoRef ? [tipoRef] : []));
+      const [adminSnapshot, receipt, item] = lecturas;
+      const tipoVinculado = tipoRef ? lecturas[3] : null;
       exigir(esAdmin(adminSnapshot.data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
+      if (tipoRef) {
+        const conservaTipoHistorico = solicitud.accion === 'editarElementoCatalogo'
+          && item.exists && item.data()?.tipoProductoId === solicitud.tipoProductoId;
+        exigir(tipoVinculado?.data()?.activo === true || conservaTipoHistorico, 'datos-invalidos', 'El tipo de producto vinculado no existe o está inactivo.');
+      }
       if (receipt.exists) {
         exigir(receipt.data()!.firma === signature, 'id-reutilizado', 'operacionId corresponde a otra solicitud.');
         return receipt.data()!.resultado as Record<string, unknown>;
@@ -146,7 +172,11 @@ export function crearCatalogos(db: Firestore) {
         const currentCatalog = await tx.get(db.collection(solicitud.coleccion).limit(501));
         exigir(currentCatalog.size <= 500, 'limite-local', 'El catálogo supera el máximo administrable de 500 valores.');
         exigir(currentCatalog.docs.every(existing => nombreNormalizado(String(existing.data().nombre ?? existing.id)) !== nombreNormalizado(solicitud.nombre)), 'conflicto', 'Ya existe un valor con ese nombre en este catálogo.');
-        after = { nombre: solicitud.nombre, nombreNormalizado: nombreNormalizado(solicitud.nombre), activo: true, creadoEn: now, actualizadoEn: now };
+        after = {
+          nombre: solicitud.nombre, nombreNormalizado: nombreNormalizado(solicitud.nombre), activo: true,
+          ...(solicitud.coleccion === 'categorias' ? { tipoProductoId: solicitud.tipoProductoId } : {}),
+          creadoEn: now, actualizadoEn: now,
+        };
         if (solicitud.coleccion === 'tiposProducto') {
           after.versionActual = 1;
           const definitionRef = itemRef.collection('versiones').doc('1');
@@ -155,12 +185,20 @@ export function crearCatalogos(db: Firestore) {
         } else {
           tx.create(itemRef, after);
         }
-        resultado = { accion, coleccion: solicitud.coleccion, documentoId: documentId, activo: true, versionActual: solicitud.coleccion === 'tiposProducto' ? 1 : null };
+        resultado = {
+          accion, coleccion: solicitud.coleccion, documentoId: documentId, activo: true,
+          versionActual: solicitud.coleccion === 'tiposProducto' ? 1 : null,
+          ...(solicitud.coleccion === 'categorias' ? { tipoProductoId: solicitud.tipoProductoId } : {}),
+        };
       } else {
         exigir(item.exists, 'no-encontrado', 'El valor de catálogo ya no existe. Actualiza el listado.');
         const current = item.data()!;
         exigir(version(current) === solicitud.versionEsperada, 'conflicto', 'El valor cambió; actualiza el listado antes de guardar.');
-        before = { nombre: current.nombre, activo: current.activo, ...(current.versionActual ? { versionActual: current.versionActual } : {}) };
+        before = {
+          nombre: current.nombre, activo: current.activo,
+          ...(current.versionActual ? { versionActual: current.versionActual } : {}),
+          ...(typeof current.tipoProductoId === 'string' ? { tipoProductoId: current.tipoProductoId } : {}),
+        };
         if (solicitud.accion === 'editarElementoCatalogo') {
           const normalized = nombreNormalizado(solicitud.nombre);
           const nombreActual = nombreNormalizado(String(current.nombre ?? documentId));
@@ -170,6 +208,7 @@ export function crearCatalogos(db: Firestore) {
             exigir(currentCatalog.docs.every(existing => existing.id === documentId || nombreNormalizado(String(existing.data().nombre ?? existing.id)) !== normalized), 'conflicto', 'Ya existe otro valor con ese nombre en este catálogo.');
           }
           const update: DocumentData = { nombre: solicitud.nombre, nombreNormalizado: normalized, actualizadoEn: now };
+          if (solicitud.coleccion === 'categorias' && solicitud.tipoProductoId) update.tipoProductoId = solicitud.tipoProductoId;
           let currentVersion = typeof current.versionActual === 'number' ? current.versionActual : null;
           if (solicitud.coleccion === 'tiposProducto') {
             exigir(Number.isSafeInteger(currentVersion) && Number(currentVersion) > 0, 'datos-invalidos', 'El tipo de producto no tiene una versión de definición válida.');
@@ -187,8 +226,17 @@ export function crearCatalogos(db: Firestore) {
             }
           }
           tx.update(itemRef, update);
-          after = { ...before, nombre: solicitud.nombre, ...(currentVersion ? { versionActual: currentVersion } : {}) };
-          resultado = { accion, coleccion: solicitud.coleccion, documentoId: documentId, activo: current.activo === true, versionActual: currentVersion };
+          after = {
+            ...before, nombre: solicitud.nombre,
+            ...(solicitud.coleccion === 'categorias' && solicitud.tipoProductoId ? { tipoProductoId: solicitud.tipoProductoId } : {}),
+            ...(currentVersion ? { versionActual: currentVersion } : {}),
+          };
+          resultado = {
+            accion, coleccion: solicitud.coleccion, documentoId: documentId, activo: current.activo === true,
+            versionActual: currentVersion,
+            ...(solicitud.coleccion === 'categorias' && typeof (solicitud.tipoProductoId ?? current.tipoProductoId) === 'string'
+              ? { tipoProductoId: solicitud.tipoProductoId ?? current.tipoProductoId } : {}),
+          };
         } else {
           exigir(current.activo !== solicitud.activo, 'conflicto', solicitud.activo ? 'El valor ya está activo.' : 'El valor ya está inactivo.');
           tx.update(itemRef, { activo: solicitud.activo, actualizadoEn: now });

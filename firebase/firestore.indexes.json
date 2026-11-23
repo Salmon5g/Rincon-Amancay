@@ -7,6 +7,14 @@
         { "fieldPath": "estado", "order": "ASCENDING" },
         { "fieldPath": "fechaInicio", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "participantes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "entidadId", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

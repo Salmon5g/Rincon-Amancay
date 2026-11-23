@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
@@ -147,6 +148,35 @@ suspend fun obtenerUbicacionActual(contexto: Context, esperaMs: Long = 15_000): 
             }
         }
     }
+
+suspend fun obtenerUbicacionActualNueva(contexto: Context, esperaMs: Long = 12_000): Location? {
+    if (!tienePermisoUbicacion(contexto)) return null
+    val servicio = contexto.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+    val proveedor = listOf(
+        LocationManager.FUSED_PROVIDER,
+        LocationManager.GPS_PROVIDER,
+        LocationManager.NETWORK_PROVIDER
+    ).firstOrNull { nombre ->
+        runCatching { servicio.isProviderEnabled(nombre) }.getOrDefault(false)
+    } ?: return null
+    return withContext(Dispatchers.Main) {
+        withTimeoutOrNull(esperaMs) {
+            suspendCancellableCoroutine { continuacion ->
+                val oyente = LocationListener { ubicacion ->
+                    if (continuacion.isActive) continuacion.resume(ubicacion)
+                }
+                runCatching {
+                    servicio.requestSingleUpdate(proveedor, oyente, Looper.getMainLooper())
+                }.onFailure {
+                    if (continuacion.isActive) continuacion.resume(null)
+                }
+                continuacion.invokeOnCancellation {
+                    runCatching { servicio.removeUpdates(oyente) }
+                }
+            }
+        }
+    }
+}
 
 fun distanciaMetros(desde: Pair<Double, Double>, latitud: Double, longitud: Double): Float {
     val resultado = FloatArray(1)

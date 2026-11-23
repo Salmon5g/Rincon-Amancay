@@ -109,6 +109,7 @@ class MainActivity : FragmentActivity() {
     private var feriaPushPendiente by mutableStateOf<String?>(null)
     private var consultasPushTiendaPendiente by mutableStateOf<String?>(null)
     private var abrirInvitacionesFeriaPushPendiente by mutableStateOf(false)
+    private var feriaInvitacionPushPendiente by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,10 +120,12 @@ class MainActivity : FragmentActivity() {
                 val feriaId = feriaPushPendiente
                 val tiendaConsultaId = consultasPushTiendaPendiente
                 val abrirInvitacionesFeria = abrirInvitacionesFeriaPushPendiente
+                val feriaInvitacionId = feriaInvitacionPushPendiente
                 AmancayApp(
                     feriaIdPush = feriaId,
                     consultasTiendaIdPush = tiendaConsultaId,
                     abrirInvitacionesFeriaPush = abrirInvitacionesFeria,
+                    feriaInvitacionIdPush = feriaInvitacionId,
                     alConsumirFeriaPush = {
                         if (feriaPushPendiente == feriaId) feriaPushPendiente = null
                     },
@@ -132,6 +135,9 @@ class MainActivity : FragmentActivity() {
                     alConsumirInvitacionesFeriaPush = {
                         if (abrirInvitacionesFeriaPushPendiente == abrirInvitacionesFeria) {
                             abrirInvitacionesFeriaPushPendiente = false
+                        }
+                        if (feriaInvitacionPushPendiente == feriaInvitacionId) {
+                            feriaInvitacionPushPendiente = null
                         }
                     }
                 )
@@ -149,14 +155,20 @@ class MainActivity : FragmentActivity() {
         feriaPushPendiente = intent.getStringExtra(EXTRA_FERIA_ID)?.takeIf(String::isNotBlank)
         consultasPushTiendaPendiente = intent.getStringExtra(EXTRA_CONSULTAS_TIENDA_ID)?.takeIf(String::isNotBlank)
             ?: intent.getStringExtra("tiendaId")?.takeIf { intent.getStringExtra("tipo") == "consulta" }
+        val tipoAviso = intent.getStringExtra("tipo")
         abrirInvitacionesFeriaPushPendiente = intent.getBooleanExtra(EXTRA_ABRIR_INVITACIONES_FERIA, false)
-            || intent.getStringExtra("tipo") == "invitacion_feria"
+            || tipoAviso == "invitacion_feria"
+            || tipoAviso == "recordatorio_invitacion_feria"
+            || tipoAviso == "aviso_confirmacion_feria"
+        feriaInvitacionPushPendiente = intent.getStringExtra(EXTRA_FERIA_INVITACION_ID)?.takeIf(String::isNotBlank)
+            ?: if (abrirInvitacionesFeriaPushPendiente) intent.getStringExtra(EXTRA_FERIA_ID)?.takeIf(String::isNotBlank) else null
     }
 
     companion object {
         const val EXTRA_FERIA_ID = "com.example.amancay.EXTRA_FERIA_ID"
         const val EXTRA_CONSULTAS_TIENDA_ID = "com.example.amancay.EXTRA_CONSULTAS_TIENDA_ID"
         const val EXTRA_ABRIR_INVITACIONES_FERIA = "com.example.amancay.EXTRA_ABRIR_INVITACIONES_FERIA"
+        const val EXTRA_FERIA_INVITACION_ID = "com.example.amancay.EXTRA_FERIA_INVITACION_ID"
     }
 }
 
@@ -165,6 +177,7 @@ fun AmancayApp(
     feriaIdPush: String? = null,
     consultasTiendaIdPush: String? = null,
     abrirInvitacionesFeriaPush: Boolean = false,
+    feriaInvitacionIdPush: String? = null,
     alConsumirFeriaPush: () -> Unit = {},
     alConsumirConsultasPush: () -> Unit = {},
     alConsumirInvitacionesFeriaPush: () -> Unit = {}
@@ -178,10 +191,10 @@ fun AmancayApp(
         onDispose { catalogoComprador.cerrar() }
     }
     var espacioEmprendedora by remember { mutableStateOf(false) }
-    LaunchedEffect(feriaIdPush, consultasTiendaIdPush, abrirInvitacionesFeriaPush) {
+    LaunchedEffect(feriaIdPush, consultasTiendaIdPush, abrirInvitacionesFeriaPush, feriaInvitacionIdPush) {
         when {
             !feriaIdPush.isNullOrBlank() -> espacioEmprendedora = false
-            abrirInvitacionesFeriaPush -> espacioEmprendedora = true
+            abrirInvitacionesFeriaPush || !feriaInvitacionIdPush.isNullOrBlank() -> espacioEmprendedora = true
             !consultasTiendaIdPush.isNullOrBlank() -> espacioEmprendedora = true
         }
     }
@@ -203,6 +216,7 @@ fun AmancayApp(
             consultasTiendaIdPush = consultasTiendaIdPush,
             alConsumirConsultasPush = alConsumirConsultasPush,
             abrirInvitacionesFeriaPush = abrirInvitacionesFeriaPush,
+            feriaInvitacionIdPush = feriaInvitacionIdPush,
             alConsumirInvitacionesFeriaPush = alConsumirInvitacionesFeriaPush
         )
     }
@@ -221,6 +235,7 @@ private fun ContenidoAmancay(
     consultasTiendaIdPush: String?,
     alConsumirConsultasPush: () -> Unit,
     abrirInvitacionesFeriaPush: Boolean,
+    feriaInvitacionIdPush: String?,
     alConsumirInvitacionesFeriaPush: () -> Unit
 ) {
     var uidConEleccionDeModo by remember { mutableStateOf<String?>(null) }
@@ -242,6 +257,7 @@ private fun ContenidoAmancay(
             consultasTiendaIdPush = consultasTiendaIdPush,
             alConsumirConsultasPush = alConsumirConsultasPush,
             abrirInvitacionesFeriaPush = abrirInvitacionesFeriaPush,
+            feriaInvitacionIdPush = feriaInvitacionIdPush,
             alConsumirInvitacionesFeriaPush = alConsumirInvitacionesFeriaPush
         )
     } else {
@@ -700,6 +716,7 @@ internal fun EmprendedoraAppConectada(
     consultasTiendaIdPush: String? = null,
     alConsumirConsultasPush: () -> Unit = {},
     abrirInvitacionesFeriaPush: Boolean = false,
+    feriaInvitacionIdPush: String? = null,
     alConsumirInvitacionesFeriaPush: () -> Unit = {},
     huellaHabilitada: Boolean,
     aviso: String?,
@@ -731,6 +748,7 @@ internal fun EmprendedoraAppConectada(
     var errorInvitaciones by remember(sesion.uid) { mutableStateOf<String?>(null) }
     var ultimaCargaInvitaciones by remember(sesion.uid) { mutableLongStateOf(0L) }
     var respondiendoInvitacion by remember(sesion.uid) { mutableStateOf(false) }
+    var feriaDestacadaId by remember(sesion.uid) { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -786,10 +804,11 @@ internal fun EmprendedoraAppConectada(
         }
         alConsumirConsultasPush()
     }
-    LaunchedEffect(abrirInvitacionesFeriaPush, sesion.uid) {
-        if (!abrirInvitacionesFeriaPush) return@LaunchedEffect
+    LaunchedEffect(abrirInvitacionesFeriaPush, feriaInvitacionIdPush, sesion.uid) {
+        if (!abrirInvitacionesFeriaPush && feriaInvitacionIdPush.isNullOrBlank()) return@LaunchedEffect
         tab = Tab.INICIO
         screen = Screen.Ferias
+        feriaDestacadaId = feriaInvitacionIdPush
         cargarInvitacionesFeria(forzar = true)
         alConsumirInvitacionesFeriaPush()
     }
@@ -918,7 +937,7 @@ internal fun EmprendedoraAppConectada(
             if (historialVentasActivo) {
                 cargandoFeriasVenta = true
                 try {
-                    feriasVenta = productosRepository.listarFeriasPublicadas()
+                    feriasVenta = productosRepository.listarFeriasParaVenta(sesion.tiendaId)
                 } catch (e: Exception) {
                     feriasVenta = emptyList()
                     errorFeriasVenta = mensajeCargaVentas(e, "las ferias")
@@ -1484,7 +1503,6 @@ internal fun EmprendedoraAppConectada(
                         productos = productos,
                         ventas = ventasGuardadas,
                         ferias = feriasVenta,
-                        invitacionesConfirmadas = invitaciones.filter { it.estado == "aceptada" }.map { it.id }.toSet(),
                         historialActivo = historialVentasActivo,
                         historialConfiguracionCargada = historialConfiguracionCargada,
                         abrirHistorial = abrirHistorialVentas,
@@ -1560,10 +1578,11 @@ internal fun EmprendedoraAppConectada(
                     )
                     Screen.Ferias -> FeriasScreen(
                         invitaciones = invitaciones,
-                        onVerDetalle = { screen = Screen.FeriaDetalle(it.id) },
+                        onVerDetalle = { screen = Screen.FeriaDetalle(it.id); feriaDestacadaId = null },
                         onVolver = { screen = Screen.Home; tab = Tab.INICIO },
                         cargando = cargandoInvitaciones,
                         error = errorInvitaciones,
+                        feriaDestacadaId = feriaDestacadaId,
                         onActualizar = { scope.launch { cargarInvitacionesFeria(forzar = true) } }
                     )
                     is Screen.FeriaDetalle -> FeriaDetalleScreen(

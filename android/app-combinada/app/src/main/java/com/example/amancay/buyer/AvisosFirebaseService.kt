@@ -25,14 +25,24 @@ import kotlinx.coroutines.withTimeout
 
 internal class AvisosFirebaseService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["tipo"] == "invitacion_feria") {
+        val tipo = message.data["tipo"]
+        if (tipo == "invitacion_feria" || tipo == "recordatorio_invitacion_feria" || tipo == "aviso_confirmacion_feria") {
             val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
             if (message.data["destinatarioUid"] != uid) return
             val feriaId = message.data["feriaId"]?.takeIf(String::isNotBlank) ?: return
+            val avisoConfirmacion = tipo == "aviso_confirmacion_feria"
             mostrarAviso(
-                message.data["titulo"] ?: "Invitación a feria",
-                message.data["mensaje"] ?: "Te invitaron a participar en una feria.",
-                message.messageId ?: message.data.toString(),
+                message.data["titulo"] ?: when {
+                    avisoConfirmacion -> "Detalles de tu feria"
+                    tipo == "recordatorio_invitacion_feria" -> "Recordatorio de feria"
+                    else -> "Invitación a feria"
+                },
+                message.data["mensaje"] ?: when {
+                    avisoConfirmacion -> "Tu participación en ${message.data["nombreFeria"] ?: "la feria"} está confirmada."
+                    tipo == "recordatorio_invitacion_feria" -> "Tienes una invitación a feria pendiente de responder."
+                    else -> "Te invitaron a participar en una feria."
+                },
+                message.data["avisoId"] ?: message.data["recordatorioId"] ?: message.messageId ?: message.data.toString(),
                 invitacionFeriaId = feriaId
             )
             return
@@ -95,6 +105,7 @@ internal class AvisosFirebaseService : FirebaseMessagingService() {
             .setLargeIcon(iconoColorAmancay())
             .setContentTitle(titulo)
             .setContentText(mensaje)
+            .setStyle(Notification.BigTextStyle().bigText(mensaje))
             .setAutoCancel(true)
         val destino = when {
             invitacionFeriaId?.isNotBlank() == true -> Intent(this, MainActivity::class.java).apply {
@@ -102,6 +113,7 @@ internal class AvisosFirebaseService : FirebaseMessagingService() {
                 data = Uri.parse("amancay://feria/invitaciones/$invitacionFeriaId")
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra(MainActivity.EXTRA_ABRIR_INVITACIONES_FERIA, true)
+                putExtra(MainActivity.EXTRA_FERIA_INVITACION_ID, invitacionFeriaId)
                 putExtra("tipo", "invitacion_feria")
             }
             feriaId?.isNotBlank() == true -> Intent(this, MainActivity::class.java).apply {

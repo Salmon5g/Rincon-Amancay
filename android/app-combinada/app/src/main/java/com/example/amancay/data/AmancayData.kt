@@ -104,7 +104,7 @@ data class FeriaInvitation(
     val cuando: String,
     val horario: String,
     val organiza: String,
-    val estado: String = "pendiente", // pendiente | aceptada | rechazada
+    val estado: String = "pendiente", // pendiente | aceptada | rechazada | agregada_admin
     val fechaInicio: LocalDate? = null
 )
 

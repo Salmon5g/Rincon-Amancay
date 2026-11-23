@@ -142,6 +142,7 @@ fun ModoEmprendedoraConectada(
     consultasTiendaIdPush: String? = null,
     alConsumirConsultasPush: () -> Unit = {},
     abrirInvitacionesFeriaPush: Boolean = false,
+    feriaInvitacionIdPush: String? = null,
     alConsumirInvitacionesFeriaPush: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -442,6 +443,7 @@ fun ModoEmprendedoraConectada(
         consultasTiendaIdPush = consultasTiendaIdPush,
         alConsumirConsultasPush = alConsumirConsultasPush,
         abrirInvitacionesFeriaPush = abrirInvitacionesFeriaPush,
+        feriaInvitacionIdPush = feriaInvitacionIdPush,
         alConsumirInvitacionesFeriaPush = alConsumirInvitacionesFeriaPush,
         huellaHabilitada = huellaHabilitada,
         aviso = aviso,

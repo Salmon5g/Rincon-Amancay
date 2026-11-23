@@ -322,6 +322,7 @@ fun FeriasScreen(
     onVolver: () -> Unit,
     cargando: Boolean = false,
     error: String? = null,
+    feriaDestacadaId: String? = null,
     onActualizar: () -> Unit = {}
 ) {
     val zonaHorariaFeria = remember { ZoneId.of("America/Santiago") }
@@ -329,7 +330,7 @@ fun FeriasScreen(
     val localeFeria = remember { Locale.forLanguageTag("es-CL") }
     val feriasCalendario = remember(invitaciones) {
         invitaciones
-            .filter { it.estado == "pendiente" || it.estado == "aceptada" }
+            .filter { it.estado == "pendiente" || it.estado == "aceptada" || it.estado == "agregada_admin" }
             .filter { it.fechaInicio != null }
             .sortedBy { it.fechaInicio }
     }
@@ -337,6 +338,18 @@ fun FeriasScreen(
     var mesCalendario by remember { mutableStateOf(YearMonth.from(hoy)) }
     var diaCalendarioSeleccionado by remember { mutableStateOf(hoy) }
     val feriasDelDia = feriasCalendario.filter { it.fechaInicio == diaCalendarioSeleccionado }
+    val invitacionesVisibles = remember(invitaciones, feriaDestacadaId) {
+        if (feriaDestacadaId.isNullOrBlank()) invitaciones
+        else invitaciones.sortedByDescending { it.id == feriaDestacadaId }
+    }
+    LaunchedEffect(feriaDestacadaId, invitaciones) {
+        val destacada = invitaciones.firstOrNull { it.id == feriaDestacadaId } ?: return@LaunchedEffect
+        calendarioAbierto = true
+        destacada.fechaInicio?.let { fecha ->
+            diaCalendarioSeleccionado = fecha
+            mesCalendario = YearMonth.from(fecha)
+        }
+    }
     fun cambiarMesCalendario(nuevoMes: YearMonth) {
         mesCalendario = nuevoMes
         val fechaConFeria = feriasCalendario.firstOrNull { feria ->
@@ -352,7 +365,7 @@ fun FeriasScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Invitaciones a ferias", fontSize = 30.sp, color = Dark)
-                Text("Acepta o rechaza cada invitación.", fontSize = 15.sp, color = Muted)
+                Text("Acepta invitaciones y revisa las ferias inscritas.", fontSize = 15.sp, color = Muted)
             }
             TextButton(onClick = onActualizar, enabled = !cargando) {
                 if (cargando) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -409,19 +422,28 @@ fun FeriasScreen(
             Text("Sin invitaciones pendientes.", fontSize = 14.sp, color = Muted)
             Spacer(Modifier.height(8.dp))
         }
-        invitaciones.forEach { inv ->
+        if (!feriaDestacadaId.isNullOrBlank() && !cargando && error == null && invitaciones.none { it.id == feriaDestacadaId }) {
+            Text("La feria de este aviso ya no aparece entre tus invitaciones.", fontSize = 14.sp, color = Muted)
+        }
+        invitacionesVisibles.forEach { inv ->
+            val destacada = inv.id == feriaDestacadaId
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = if (destacada) Color(0xFFFFF8FB) else Color.White),
                 shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                border = androidx.compose.foundation.BorderStroke(if (destacada) 2.dp else 1.dp, if (destacada) Wine else Line),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { onVerDetalle(inv) }
             ) {
                 Column(Modifier.padding(16.dp)) {
+                    if (destacada) {
+                        Text("FERIA DEL AVISO", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Wine)
+                        Spacer(Modifier.height(4.dp))
+                    }
                     Text(inv.nombre, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Dark)
                     Text("${inv.donde} · ${inv.cuando}", fontSize = 13.sp, color = Muted)
                     Spacer(Modifier.height(10.dp))
                     when (inv.estado) {
                         "aceptada" -> Text("✓ Inscrita", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText)
+                        "agregada_admin" -> Text("✓ Inscrita por administración", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText)
                         "rechazada" -> Text("Rechazada", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Muted)
                     }
                 }
@@ -521,14 +543,14 @@ private fun CalendarioInvitacionesFeria(
             )
             if (ferias.isEmpty()) {
                 Text(
-                    "Tu calendario aparecerá aquí cuando tengas ferias invitadas o confirmadas con fecha.",
+                    "Tu calendario aparecerá aquí cuando tengas ferias invitadas o inscritas con fecha.",
                     modifier = Modifier.padding(top = 6.dp),
                     fontSize = 13.sp,
                     color = Muted
                 )
             } else if (feriasDelDia.isEmpty()) {
                 Text(
-                    "No tienes ferias invitadas o confirmadas para este día.",
+                    "No tienes ferias invitadas o inscritas para este día.",
                     modifier = Modifier.padding(top = 6.dp),
                     fontSize = 13.sp,
                     color = Muted
@@ -559,10 +581,14 @@ private fun CalendarioInvitacionesFeria(
                                 )
                             }
                             Text(
-                                if (feria.estado == "aceptada") "Confirmada" else "Invitada",
+                                when (feria.estado) {
+                                    "aceptada" -> "Confirmada"
+                                    "agregada_admin" -> "Inscrita por administración"
+                                    else -> "Invitada"
+                                },
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (feria.estado == "aceptada") GreenText else Wine
+                                color = if (feria.estado == "pendiente") Wine else GreenText
                             )
                         }
                     }
@@ -635,9 +661,33 @@ fun FeriaDetalleScreen(
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
-        Text("INVITACIÓN A FERIA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Wine)
-        Text("Te invitaron a una feria", fontSize = 30.sp, color = Dark, fontFamily = FontFamily.Serif)
-        Text("Responde con un toque si quieres participar.", fontSize = 15.sp, color = Muted)
+        Text(
+            if (invitacion.estado == "pendiente") "INVITACIÓN A FERIA" else "FERIA",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = Wine
+        )
+        Text(
+            when (invitacion.estado) {
+                "pendiente" -> "Te invitaron a una feria"
+                "agregada_admin" -> "Inscripción directa a feria"
+                "aceptada" -> "Feria confirmada"
+                else -> "Invitación respondida"
+            },
+            fontSize = 30.sp,
+            color = Dark,
+            fontFamily = FontFamily.Serif
+        )
+        Text(
+            when (invitacion.estado) {
+                "pendiente" -> "Responde con un toque si quieres participar."
+                "agregada_admin" -> "La administración registró tu participación directamente."
+                "aceptada" -> "Tu participación está confirmada."
+                else -> "Revisa los datos de esta feria."
+            },
+            fontSize = 15.sp,
+            color = Muted
+        )
         Spacer(Modifier.height(14.dp))
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -677,9 +727,13 @@ fun FeriaDetalleScreen(
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text("Tu respuesta le llega a quien organiza la feria.", fontSize = 13.sp, color = Muted)
+        if (invitacion.estado == "pendiente") {
+            Text("Tu respuesta le llega a quien organiza la feria.", fontSize = 13.sp, color = Muted)
+        }
         if (invitacion.estado == "aceptada") {
             Text("Respondiste: Participo ✓", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText)
+        } else if (invitacion.estado == "agregada_admin") {
+            Text("Inscrita por administración ✓", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText)
         } else if (invitacion.estado == "rechazada") {
             Text("Respondiste: No participo", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Muted)
         }
