@@ -230,6 +230,17 @@ private data class BorradorAlta(
     val mejorarLuz: Boolean = false
 )
 
+/** Mantiene los estados de la foto fuera del editor, que ya contiene muchos pasos Compose. */
+private class EstadoFotoProducto(borrador: BorradorAlta?) {
+    var recorteCuadrado by mutableStateOf(borrador?.recorteCuadrado ?: true)
+    var mejorarLuz by mutableStateOf(borrador?.mejorarLuz ?: false)
+    var compararOriginal by mutableStateOf(false)
+    var imagenOriginalSeleccionada by mutableStateOf<Bitmap?>(null)
+    var imagenPreparada by mutableStateOf<Bitmap?>(null)
+    var cargandoPreviaSeleccionada by mutableStateOf(false)
+    var procesandoPreviaSeleccionada by mutableStateOf(false)
+}
+
 private val TIPOS_PRODUCTO_APP = setOf(
     "alimento_reposteria", "artesania_manualidad", "plantas", "producto_agricola",
     "vestuario", "accesorio", "cosmetica_natural"
@@ -940,6 +951,7 @@ private fun EditorProductoEmprendedora(
     onSave: (ProductoSolicitud, ImagenSeleccionadaProducto?, Map<String, ImagenSeleccionadaProducto>, Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val puedeContinuar = if (enviando) false else true
     val borradorGuardado = remember(context, tiendaId, original?.id) { if (original == null) leerBorradorAlta(context, tiendaId) else null }
     val valoresDefecto = remember(context, tiendaId, original?.id) { PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, tiendaId) }
     val ordenTiposApp = listOf(
@@ -967,13 +979,7 @@ private fun EditorProductoEmprendedora(
     var stockInicial by remember(original?.id) { mutableStateOf(borradorGuardado?.stock ?: original?.stock?.toString().orEmpty()) }
     var paso by remember(original?.id) { mutableIntStateOf(borradorGuardado?.paso ?: 1) }
     val fotoLocal = remember(original?.id) { DraftState().apply { photoUri = borradorGuardado?.foto?.let(Uri::parse); fotoLista = photoUri != null } }
-    var recorteCuadrado by remember(original?.id) { mutableStateOf(borradorGuardado?.recorteCuadrado ?: true) }
-    var mejorarLuz by remember(original?.id) { mutableStateOf(borradorGuardado?.mejorarLuz ?: false) }
-    var compararOriginal by remember { mutableStateOf(false) }
-    var imagenOriginalSeleccionada by remember(original?.id) { mutableStateOf<Bitmap?>(null) }
-    var imagenPreparada by remember(original?.id) { mutableStateOf<Bitmap?>(null) }
-    var cargandoPreviaSeleccionada by remember(original?.id) { mutableStateOf(false) }
-    var procesandoPreviaSeleccionada by remember(original?.id) { mutableStateOf(false) }
+    val estadoFoto = remember(original?.id) { EstadoFotoProducto(borradorGuardado) }
     var camaraProductoVisible by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var capturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1000,14 +1006,14 @@ private fun EditorProductoEmprendedora(
                 variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
             } else if (persistida != null) {
                 val fotoAnterior = fotoLocal.photoUri
-                imagenOriginalSeleccionada = null
-                imagenPreparada = null
+                estadoFoto.imagenOriginalSeleccionada = null
+                estadoFoto.imagenPreparada = null
                 fotoLocal.photoUri = persistida
                 fotoLocal.photoBitmap = null
                 fotoLocal.fotoLista = true
-                recorteCuadrado = true
-                mejorarLuz = false
-                compararOriginal = false
+                estadoFoto.recorteCuadrado = true
+                estadoFoto.mejorarLuz = false
+                estadoFoto.compararOriginal = false
                 archivoId = UUID.randomUUID().toString()
                 eliminarFotoTemporalProducto(context, fotoAnterior)
             }
@@ -1133,39 +1139,39 @@ private fun EditorProductoEmprendedora(
             guardarBorradorAlta(
                 context,
                 tiendaId,
-                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, recorteCuadrado, mejorarLuz)
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz)
             )
             onCancel()
         } else onCancel()
     }
     LaunchedEffect(fotoLocal.photoUri, fotoLocal.fotoLista) {
-        imagenOriginalSeleccionada = null
-        imagenPreparada = null
+        estadoFoto.imagenOriginalSeleccionada = null
+        estadoFoto.imagenPreparada = null
         val uri = fotoLocal.photoUri?.takeIf { fotoLocal.fotoLista } ?: return@LaunchedEffect
-        cargandoPreviaSeleccionada = true
+        estadoFoto.cargandoPreviaSeleccionada = true
         try {
-            imagenOriginalSeleccionada = decodificarFotoSeleccionada(context, uri)
+            estadoFoto.imagenOriginalSeleccionada = decodificarFotoSeleccionada(context, uri)
         } finally {
-            cargandoPreviaSeleccionada = false
+            estadoFoto.cargandoPreviaSeleccionada = false
         }
     }
-    LaunchedEffect(imagenOriginalSeleccionada, recorteCuadrado, mejorarLuz) {
-        val originalPrevia = imagenOriginalSeleccionada
+    LaunchedEffect(estadoFoto.imagenOriginalSeleccionada, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz) {
+        val originalPrevia = estadoFoto.imagenOriginalSeleccionada
         if (originalPrevia == null) {
-            imagenPreparada = null
+            estadoFoto.imagenPreparada = null
             return@LaunchedEffect
         }
-        procesandoPreviaSeleccionada = true
+        estadoFoto.procesandoPreviaSeleccionada = true
         try {
-            imagenPreparada = withContext(Dispatchers.Default) {
-                prepararVistaFotoProducto(originalPrevia, recorteCuadrado, mejorarLuz)
+            estadoFoto.imagenPreparada = withContext(Dispatchers.Default) {
+                prepararVistaFotoProducto(originalPrevia, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz)
             }
         } finally {
-            procesandoPreviaSeleccionada = false
+            estadoFoto.procesandoPreviaSeleccionada = false
         }
     }
-    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta, recorteCuadrado, mejorarLuz) {
-        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, recorteCuadrado, mejorarLuz))
+    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz) {
+        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz))
     }
 
     LaunchedEffect(tipoId, original?.id) {
@@ -1211,14 +1217,14 @@ private fun EditorProductoEmprendedora(
             guardarBorradorAlta(
                 context,
                 tiendaId,
-                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, preparada.identidad.operacionId, preparada.identidad.productoId, preparada.identidad.firma, recorteCuadrado, mejorarLuz),
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, preparada.identidad.operacionId, preparada.identidad.productoId, preparada.identidad.firma, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz),
                 confirmar = true
             )
             preparada.solicitud
         } else solicitud.copy(operacionId = operacionId)
         val imagen = if (fotoLocal.fotoLista && (fotoLocal.photoUri != null || fotoLocal.photoBitmap != null)) {
-            val fotoProcesada = imagenPreparada
-            val seAplicaAjuste = fotoProcesada != null && (recorteCuadrado || mejorarLuz)
+            val fotoProcesada = estadoFoto.imagenPreparada
+            val seAplicaAjuste = fotoProcesada != null && (estadoFoto.recorteCuadrado || estadoFoto.mejorarLuz)
             ImagenSeleccionadaProducto(
                 uri = if (seAplicaAjuste) null else fotoLocal.photoUri,
                 bitmap = if (seAplicaAjuste) fotoProcesada else fotoLocal.photoBitmap,
@@ -1250,14 +1256,14 @@ private fun EditorProductoEmprendedora(
                     }
                     if (persistida != null) {
                         val fotoAnterior = fotoLocal.photoUri
-                        imagenOriginalSeleccionada = null
-                        imagenPreparada = null
+                        estadoFoto.imagenOriginalSeleccionada = null
+                        estadoFoto.imagenPreparada = null
                         fotoLocal.photoUri = persistida
                         fotoLocal.photoBitmap = null
                         fotoLocal.fotoLista = true
-                        recorteCuadrado = true
-                        mejorarLuz = false
-                        compararOriginal = false
+                        estadoFoto.recorteCuadrado = true
+                        estadoFoto.mejorarLuz = false
+                        estadoFoto.compararOriginal = false
                         archivoId = UUID.randomUUID().toString()
                         eliminarFotoTemporalProducto(context, fotoAnterior)
                     }
@@ -1274,16 +1280,16 @@ private fun EditorProductoEmprendedora(
         PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ abrirCamaraParaFoto() },
             onPickPhoto={ abrirGaleriaParaFoto() }, onNext={ paso=2 },
             onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true, onDiscardDraft=onDiscardDraft,
-            totalPasos=6, dibujarBajoBarraSistema=true, continuarHabilitado=!(cargandoPreviaSeleccionada || procesandoPreviaSeleccionada),
-            imagenOriginalSeleccionada=imagenOriginalSeleccionada,
-            imagenPreparada=imagenPreparada,
-            recorteCuadrado=recorteCuadrado,
-            onRecorteCuadrado={ recorteCuadrado = it; compararOriginal = false },
-            mejorarLuz=mejorarLuz,
-            onMejorarLuz={ mejorarLuz = it; compararOriginal = false },
-            compararOriginal=compararOriginal,
-            onCompararOriginal={ compararOriginal = it },
-            procesandoImagen=cargandoPreviaSeleccionada || procesandoPreviaSeleccionada,
+            totalPasos=6, dibujarBajoBarraSistema=true, continuarHabilitado=!(estadoFoto.cargandoPreviaSeleccionada || estadoFoto.procesandoPreviaSeleccionada),
+            imagenOriginalSeleccionada=estadoFoto.imagenOriginalSeleccionada,
+            imagenPreparada=estadoFoto.imagenPreparada,
+            recorteCuadrado=estadoFoto.recorteCuadrado,
+            onRecorteCuadrado={ estadoFoto.recorteCuadrado = it; estadoFoto.compararOriginal = false },
+            mejorarLuz=estadoFoto.mejorarLuz,
+            onMejorarLuz={ estadoFoto.mejorarLuz = it; estadoFoto.compararOriginal = false },
+            compararOriginal=estadoFoto.compararOriginal,
+            onCompararOriginal={ estadoFoto.compararOriginal = it },
+            procesandoImagen=estadoFoto.cargandoPreviaSeleccionada || estadoFoto.procesandoPreviaSeleccionada,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
             mensajeImagenExistente=when {
@@ -1439,8 +1445,8 @@ private fun EditorProductoEmprendedora(
         }
     } else if (paso == 6) {
         StepScaffold("Paso 6 de 6", "Disponibilidad", "Cuéntanos cómo quieres vender este producto.",
-            onNext={ paso=7 }, onBack={ paso=5 }, onSaveExit=::cancelarEditor,
-            nextEnabled=!enviando, pasoActual=6, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
+            onNext={ paso=7 }, onBack={ paso=5 }, onSaveExit={ cancelarEditor() },
+            nextEnabled=puedeContinuar, pasoActual=6, showSaveExit=false, onExit={ guardarLocalYSalir() }, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Text("Tipo de disponibilidad", color=Dark, fontWeight=FontWeight.Bold, fontSize=18.sp)
             Text("Selecciona cómo estará disponible este producto.", color=Muted, fontSize=14.sp)
             Spacer(Modifier.height(10.dp))
@@ -1475,8 +1481,8 @@ private fun EditorProductoEmprendedora(
     } else {
         StepScaffold("Último paso", "Revisa tu producto", "Verifica que toda la información esté correcta antes de publicarlo.",
             onNext={ guardarBorrador(publicar = original == null && tiendaPublicada) }, onBack={ paso=6 }, onSaveExit={ guardarBorrador(false) },
-            nextLabel=when { original != null -> "Guardar cambios"; tiendaPublicada -> "Publicar producto"; else -> "Guardar borrador" }, nextEnabled=!enviando,
-            pasoActual=6, showSaveExit=original==null, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
+            nextLabel=when { original != null -> "Guardar cambios"; tiendaPublicada -> "Publicar producto"; else -> "Guardar borrador" }, nextEnabled=puedeContinuar,
+            pasoActual=6, showSaveExit=original==null, onExit={ guardarLocalYSalir() }, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
                 Column(Modifier.padding(16.dp)) {
                     if (identidadAlta.avisoIntentoAnterior) {
