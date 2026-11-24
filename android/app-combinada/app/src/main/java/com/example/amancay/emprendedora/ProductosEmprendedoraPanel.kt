@@ -1138,13 +1138,13 @@ private fun EditorProductoEmprendedora(
             nextEnabled=errorDatos == null, pasoActual=2, showSaveExit=false, onExit=::guardarLocalYSalir, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
             Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(22.dp), border=BorderStroke(1.dp,Line)) {
             Column(Modifier.padding(16.dp)) {
-            AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres")
+            AmancayField(nombre, { nombre=it.take(120) }, "Nombre del producto *", "Ej.: Taza flores silvestres", dictado=true)
             Spacer(Modifier.height(16.dp))
-            AmancayField(descripcion, { descripcion=it.take(500) }, "Descripción *", "Cuenta sus características, materiales y medidas.", singleLine=false, minLines=4)
+            AmancayField(descripcion, { descripcion=it.take(500) }, "Descripción *", "Cuenta sus características, materiales y medidas.", singleLine=false, minLines=4, dictado=true)
             Text("${descripcion.length}/500", modifier=Modifier.fillMaxWidth(), textAlign=TextAlign.End, color=Muted, fontSize=12.sp)
             Spacer(Modifier.height(16.dp))
             Spacer(Modifier.height(14.dp))
-            AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base", "Ej.: 6.990", keyboardType=KeyboardType.Number)
+            AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio base", "Ej.: 6.990", keyboardType=KeyboardType.Number, dictado=true)
             Text("Si agregas variantes, el precio se define para cada una. Si no, completa aquí el precio del producto.", fontSize=13.sp, color=Muted, modifier=Modifier.padding(top=6.dp))
             errorDatos?.let { AvisoEmprendedora(it, true) }
             }
@@ -1210,7 +1210,7 @@ private fun EditorProductoEmprendedora(
                 campos.forEach { f ->
                     AmancayField(atributos[f.clave].orEmpty(),
                         { v -> atributos=atributos + (f.clave to v.take(500)) },
-                        f.etiqueta + if (f.obligatorio) " *" else "", "Ingresa ${f.etiqueta.lowercase()}", singleLine=false, minLines=2)
+                        f.etiqueta + if (f.obligatorio) " *" else "", "Ingresa ${f.etiqueta.lowercase()}", singleLine=false, minLines=2, dictado=true)
                     Spacer(Modifier.height(12.dp))
                 }
             } else Text("Este tipo no requiere detalles adicionales. Puedes continuar.", fontSize=15.sp, color=Muted)
@@ -1233,9 +1233,9 @@ private fun EditorProductoEmprendedora(
             }
             Spacer(Modifier.height(12.dp))
             if (!conVariantes) {
-                AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio", "Ingresa el precio", keyboardType=KeyboardType.Number)
+                AmancayField(precioBase, { precioBase=it.filter(Char::isDigit).take(12) }, "Precio", "Ingresa el precio", keyboardType=KeyboardType.Number, dictado=true)
                 Spacer(Modifier.height(12.dp))
-                if (manejaStock && original == null) AmancayField(stockInicial, { stockInicial=it.filter(Char::isDigit).take(9) }, "Stock inicial", "Cantidad disponible", keyboardType=KeyboardType.Number)
+                if (manejaStock && original == null) AmancayField(stockInicial, { stockInicial=it.filter(Char::isDigit).take(9) }, "Stock inicial", "Cantidad disponible", keyboardType=KeyboardType.Number, dictado=true)
                 else if (original != null && manejaStock) Text("Stock actual: ${original.stock ?: 0}. Ajusta las unidades desde el catálogo.", color=Muted, fontSize=13.sp)
             } else {
                 Text("Variantes", color=Dark, fontWeight=FontWeight.Bold)
@@ -1256,11 +1256,11 @@ private fun EditorProductoEmprendedora(
                             }
                             opciones.forEach { key -> CampoProducto(key.replaceFirstChar { it.uppercase() }, v.opciones[key].orEmpty(),
                                 { value -> variantes=variantes.mapIndexed { i,old -> if (i == index && !old.existente) old.copy(opciones=old.opciones + (key to value)) else old } },
-                                100, readOnly=v.existente, placeholder=ejemploOpcionVariante(key)) }
+                                100, readOnly=v.existente, placeholder=ejemploOpcionVariante(key), dictado=!v.existente) }
                             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                Box(Modifier.weight(1f)) { AmancayField(v.precio, { value -> variantes=variantes.actualizar(index) { it.copy(precio=value.filter(Char::isDigit).take(12)) } }, "Precio (CLP)", "Ej.: 18.000", keyboardType=KeyboardType.Number) }
+                                Box(Modifier.weight(1f)) { AmancayField(v.precio, { value -> variantes=variantes.actualizar(index) { it.copy(precio=value.filter(Char::isDigit).take(12)) } }, "Precio (CLP)", "Ej.: 18.000", keyboardType=KeyboardType.Number, dictado=true) }
                                 if (manejaStock && !v.existente) {
-                                    Box(Modifier.weight(1f)) { AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock", "Ej.: 3", keyboardType=KeyboardType.Number) }
+                                    Box(Modifier.weight(1f)) { AmancayField(v.stock, { value -> variantes=variantes.actualizar(index) { it.copy(stock=value.filter(Char::isDigit).take(9)) } }, "Stock", "Ej.: 3", keyboardType=KeyboardType.Number, dictado=true) }
                                 } else if (v.existente && manejaStock) {
                                     Text("Stock: " + (original?.variantes?.firstOrNull { it.id == v.id }?.stock ?: 0) + ". Ajusta desde la lista.", color=Muted, fontSize=12.sp)
                                 }
@@ -1509,7 +1509,7 @@ internal fun DialogoAjusteStock(
 }
 
 @Composable
-private fun CampoProducto(label: String, value: String, onValue: (String) -> Unit, max: Int, multiline: Boolean = false, readOnly: Boolean = false, placeholder: String = "") {
+private fun CampoProducto(label: String, value: String, onValue: (String) -> Unit, max: Int, multiline: Boolean = false, readOnly: Boolean = false, placeholder: String = "", dictado: Boolean = false) {
     OutlinedTextField(
         value = value,
         onValueChange = { if (!readOnly) onValue(it.take(max)) },
@@ -1519,6 +1519,11 @@ private fun CampoProducto(label: String, value: String, onValue: (String) -> Uni
         minLines = if (multiline) 3 else 1,
         singleLine = !multiline,
         readOnly = readOnly,
+        trailingIcon = if (dictado && !readOnly) {
+            { com.example.amancay.ui.BotonDictado(label, alReconocer = { reconocido ->
+                com.example.amancay.ui.combinarDictado(value, reconocido, numerico = false)?.let { onValue(it.take(max)) }
+            }) }
+        } else null,
         shape = RoundedCornerShape(16.dp),
         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Wine,

@@ -51,3 +51,18 @@ fun horarioHablado(horario: String): String {
     }.replace(Regex("\s*[–-]\s*"), " a ")
     return "de $convertido horas"
 }
+
+/**
+ * Integra lo dictado en un campo. En campos numéricos reemplaza el valor por los dígitos
+ * reconocidos («6.990» → «6990») y devuelve null si no se reconoció un número; en campos de
+ * texto agrega lo dictado al final, con mayúscula inicial si el campo estaba vacío.
+ */
+fun combinarDictado(actual: String, dictado: String, numerico: Boolean): String? {
+    val limpio = dictado.trim().replace(Regex("\s+"), " ")
+    if (numerico) return limpio.filter(Char::isDigit).takeIf(String::isNotEmpty)
+    if (limpio.isEmpty()) return null
+    val base = actual.trimEnd()
+    if (base.isEmpty()) return limpio.replaceFirstChar { it.uppercase() }
+    val siguiente = if (base.last() in ".!?") limpio.replaceFirstChar { it.uppercase() } else limpio
+    return "$base $siguiente"
+}

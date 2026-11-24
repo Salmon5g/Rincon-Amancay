@@ -3,6 +3,7 @@ package com.example.amancay
 import com.example.amancay.buyer.textoParaEscucharProducto
 import com.example.amancay.data.ProductoCatalogoComprador
 import com.example.amancay.data.VarianteCatalogoComprador
+import com.example.amancay.ui.combinarDictado
 import com.example.amancay.ui.dividirEnFrases
 import com.example.amancay.ui.horarioHablado
 import com.example.amancay.ui.textoParaEscucharPasoGuia
@@ -111,5 +112,22 @@ class TextoVozTest {
             "Paso 6 de 6. La ayuda está aquí. Toca para elegir un tutorial. Para continuar, toca el signo de pregunta.",
             textoParaEscucharPasoGuia(6, 6, "La ayuda está aquí", "Toca para elegir un tutorial", "?")
         )
+    }
+
+    @Test
+    fun dictadoEnCampoVacioEmpiezaConMayuscula() {
+        assertEquals("Taza de cerámica", combinarDictado("", "taza de cerámica", numerico = false))
+    }
+
+    @Test
+    fun dictadoSeAgregaAlTextoExistente() {
+        assertEquals("Hecha a mano con arcilla", combinarDictado("Hecha a mano ", "con arcilla", numerico = false))
+        assertEquals("Hecha a mano. Apta para microondas", combinarDictado("Hecha a mano.", "apta para microondas", numerico = false))
+    }
+
+    @Test
+    fun dictadoNumericoReemplazaConDigitos() {
+        assertEquals("6990", combinarDictado("1500", "6.990", numerico = true))
+        assertEquals(null, combinarDictado("1500", "seis mil", numerico = true))
     }
 }

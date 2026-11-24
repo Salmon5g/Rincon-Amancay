@@ -266,11 +266,13 @@ fun AmancayField(
     placeholder: String = "",
     singleLine: Boolean = true,
     minLines: Int = 1,
-    keyboardType: KeyboardType = KeyboardType.Text
+    keyboardType: KeyboardType = KeyboardType.Text,
+    dictado: Boolean = false
 ) {
     // Estado local: la letra aparece al instante y el foco no se pierde
     // aunque la pantalla se recomponga; se sincroniza hacia el borrador.
     var text by remember(value) { mutableStateOf(value) }
+    val contexto = androidx.compose.ui.platform.LocalContext.current
     Column {
         Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Dark)
         Spacer(Modifier.height(8.dp))
@@ -286,6 +288,20 @@ fun AmancayField(
             singleLine = singleLine,
             minLines = minLines,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            trailingIcon = if (dictado) {
+                {
+                    BotonDictado(label, alReconocer = { reconocido ->
+                        val numerico = keyboardType == KeyboardType.Number || keyboardType == KeyboardType.Decimal
+                        val nuevo = combinarDictado(text, reconocido, numerico)
+                        if (nuevo != null) {
+                            text = nuevo
+                            onChange(nuevo)
+                        } else if (numerico) {
+                            android.widget.Toast.makeText(contexto, "No se reconoció un número. Intenta decir solo la cifra.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    })
+                }
+            } else null,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Wine, unfocusedBorderColor = Line,
                 focusedContainerColor = Color.White, unfocusedContainerColor = Color.White,
