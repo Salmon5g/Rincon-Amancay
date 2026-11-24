@@ -2,6 +2,11 @@ package com.example.amancay.emprendedora
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.ImageDecoder
+import android.graphics.Paint
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -100,6 +105,7 @@ import com.example.amancay.ui.SelectableChip
 import com.example.amancay.ui.AmancayField
 import com.example.amancay.ui.Fig
 import com.example.amancay.ui.PhotoStep
+import com.example.amancay.ui.CamaraProductoGuiada
 import com.example.amancay.ui.ProductImage
 import com.example.amancay.ui.StepScaffold
 import androidx.compose.ui.text.input.KeyboardType
@@ -111,9 +117,18 @@ import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-private data class ImagenSeleccionadaProducto(val uri: Uri?, val bitmap: Bitmap?, val archivoId: String)
+private data class ImagenSeleccionadaProducto(
+    val uri: Uri?,
+    val bitmap: Bitmap?,
+    val archivoId: String,
+    val uriOriginalParaEliminar: Uri? = null
+)
 
 private fun crearUriFotoTemporalProducto(context: Context): Uri {
     val directorio = File(context.cacheDir, "product-photos")
@@ -153,6 +168,55 @@ private fun copiarFotoPersistente(context: Context, uri: Uri): Uri {
     }
 }
 
+private fun guardarBitmapPersistente(context: Context, bitmap: Bitmap): Uri {
+    val directorio = File(context.filesDir, "borradores-producto").apply { mkdirs() }
+    val destino = File(directorio, "${UUID.randomUUID()}.jpg")
+    return try {
+        FileOutputStream(destino).use { salida ->
+            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, salida)) { "No se pudo preparar la foto tomada." }
+        }
+        Uri.fromFile(destino)
+    } catch (error: Exception) {
+        destino.delete()
+        throw error
+    }
+}
+
+private suspend fun decodificarFotoSeleccionada(context: Context, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
+    runCatching {
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
+            val escala = minOf(1f, 1600f / max(info.size.width, info.size.height))
+            if (escala < 1f) {
+                decoder.setTargetSize(
+                    (info.size.width * escala).roundToInt().coerceAtLeast(1),
+                    (info.size.height * escala).roundToInt().coerceAtLeast(1)
+                )
+            }
+            decoder.isMutableRequired = true
+        }
+    }.getOrNull()
+}
+
+private fun prepararVistaFotoProducto(original: Bitmap, recorteCuadrado: Boolean, mejorarLuz: Boolean): Bitmap {
+    val encuadrada = if (recorteCuadrado) {
+        val lado = minOf(original.width, original.height)
+        Bitmap.createBitmap(original, (original.width - lado) / 2, (original.height - lado) / 2, lado, lado)
+    } else original
+    if (!mejorarLuz) return encuadrada
+
+    val resultado = Bitmap.createBitmap(encuadrada.width, encuadrada.height, Bitmap.Config.ARGB_8888)
+    val matriz = ColorMatrix(floatArrayOf(
+        1.04f, 0f, 0f, 0f, 8f,
+        0f, 1.04f, 0f, 0f, 8f,
+        0f, 0f, 1.04f, 0f, 8f,
+        0f, 0f, 0f, 1f, 0f
+    ))
+    AndroidCanvas(resultado).drawBitmap(encuadrada, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(matriz)
+    })
+    return resultado
+}
+
 private data class BorradorAlta(
     val tipoId: String, val categoriaId: String, val nombre: String, val descripcion: String,
     val modalidad: String, val manejaStock: Boolean, val alAgotarse: String,
@@ -161,7 +225,9 @@ private data class BorradorAlta(
     val conVariantes: Boolean = false,
     val operacionId: String = "",
     val productoIdNuevo: String = "",
-    val firmaSolicitud: String = ""
+    val firmaSolicitud: String = "",
+    val recorteCuadrado: Boolean = true,
+    val mejorarLuz: Boolean = false
 )
 
 private val TIPOS_PRODUCTO_APP = setOf(
@@ -370,7 +436,8 @@ private fun leerBorradorAlta(context: Context, tiendaId: String): BorradorAlta? 
                 fotoUri = v.optString("foto").takeIf(String::isNotBlank)?.let(Uri::parse), archivoId = v.optString("archivoId", UUID.randomUUID().toString()), fotoNueva = v.optBoolean("fotoNueva"))
         },
         json.optBoolean("conVariantes", variantesJson.length() > 0),
-        json.optString("operacionId"), json.optString("productoIdNuevo"), json.optString("firmaSolicitud")
+        json.optString("operacionId"), json.optString("productoIdNuevo"), json.optString("firmaSolicitud"),
+        json.optBoolean("recorteCuadrado", true), json.optBoolean("mejorarLuz", false)
     )
 }.getOrNull()
 
@@ -384,7 +451,7 @@ private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: Bo
         })
     } }
     val json = JSONObject().apply {
-        put("versionFlujo", 2)
+        put("versionFlujo", 3)
         put("tipoId", borrador.tipoId); put("categoriaId", borrador.categoriaId); put("nombre", borrador.nombre); put("descripcion", borrador.descripcion)
         put("modalidad", borrador.modalidad); put("manejaStock", borrador.manejaStock); put("alAgotarse", borrador.alAgotarse)
         put("precio", borrador.precio); put("stock", borrador.stock); put("paso", borrador.paso); put("foto", borrador.foto.orEmpty())
@@ -392,6 +459,7 @@ private fun guardarBorradorAlta(context: Context, tiendaId: String, borrador: Bo
         put("conVariantes", borrador.conVariantes)
         put("operacionId", borrador.operacionId); put("productoIdNuevo", borrador.productoIdNuevo)
         put("firmaSolicitud", borrador.firmaSolicitud)
+        put("recorteCuadrado", borrador.recorteCuadrado); put("mejorarLuz", borrador.mejorarLuz)
     }
     val editor = context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().putString(tiendaId, json.toString())
     if (confirmar) editor.commit() else editor.apply()
@@ -539,6 +607,7 @@ internal fun ProductosEmprendedoraPanel(
                             context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().remove(tiendaId).apply()
                         }
                         eliminarFotoTemporalProducto(context, imagen?.uri)
+                        eliminarFotoTemporalProducto(context, imagen?.uriOriginalParaEliminar)
                         imagenesVariantes.values.forEach { eliminarFotoTemporalProducto(context, it.uri) }
                         val imagenPublicadaActualizada = editando?.estadoPublicacion == "publicado" && imagen != null
                         nuevo = false; editando = null
@@ -898,6 +967,15 @@ private fun EditorProductoEmprendedora(
     var stockInicial by remember(original?.id) { mutableStateOf(borradorGuardado?.stock ?: original?.stock?.toString().orEmpty()) }
     var paso by remember(original?.id) { mutableIntStateOf(borradorGuardado?.paso ?: 1) }
     val fotoLocal = remember(original?.id) { DraftState().apply { photoUri = borradorGuardado?.foto?.let(Uri::parse); fotoLista = photoUri != null } }
+    var recorteCuadrado by remember(original?.id) { mutableStateOf(borradorGuardado?.recorteCuadrado ?: true) }
+    var mejorarLuz by remember(original?.id) { mutableStateOf(borradorGuardado?.mejorarLuz ?: false) }
+    var compararOriginal by remember { mutableStateOf(false) }
+    var imagenOriginalSeleccionada by remember(original?.id) { mutableStateOf<Bitmap?>(null) }
+    var imagenPreparada by remember(original?.id) { mutableStateOf<Bitmap?>(null) }
+    var cargandoPreviaSeleccionada by remember(original?.id) { mutableStateOf(false) }
+    var procesandoPreviaSeleccionada by remember(original?.id) { mutableStateOf(false) }
+    var camaraProductoVisible by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var capturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
     var varianteConFotoTemporal by remember { mutableStateOf<String?>(null) }
     var varianteCapturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
@@ -922,9 +1000,14 @@ private fun EditorProductoEmprendedora(
                 variantes = variantes.map { row -> if (row.id == idVariante) row.copy(fotoUri = persistida, fotoBitmap = null, archivoId = UUID.randomUUID().toString(), imagen = null, fotoNueva = true) else row }
             } else if (persistida != null) {
                 val fotoAnterior = fotoLocal.photoUri
+                imagenOriginalSeleccionada = null
+                imagenPreparada = null
                 fotoLocal.photoUri = persistida
                 fotoLocal.photoBitmap = null
                 fotoLocal.fotoLista = true
+                recorteCuadrado = true
+                mejorarLuz = false
+                compararOriginal = false
                 archivoId = UUID.randomUUID().toString()
                 eliminarFotoTemporalProducto(context, fotoAnterior)
             }
@@ -964,6 +1047,11 @@ private fun EditorProductoEmprendedora(
         eliminarFotoTemporalProducto(context, uri)
     }
     fun abrirCamaraParaFoto(idVariante: String? = null) {
+        if (idVariante == null) {
+            camaraProductoVisible = true
+            error = null
+            return
+        }
         val uri = try {
             crearUriFotoTemporalProducto(context)
         } catch (e: Exception) {
@@ -1045,13 +1133,39 @@ private fun EditorProductoEmprendedora(
             guardarBorradorAlta(
                 context,
                 tiendaId,
-                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma)
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, recorteCuadrado, mejorarLuz)
             )
             onCancel()
         } else onCancel()
     }
-    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta) {
-        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma))
+    LaunchedEffect(fotoLocal.photoUri, fotoLocal.fotoLista) {
+        imagenOriginalSeleccionada = null
+        imagenPreparada = null
+        val uri = fotoLocal.photoUri?.takeIf { fotoLocal.fotoLista } ?: return@LaunchedEffect
+        cargandoPreviaSeleccionada = true
+        try {
+            imagenOriginalSeleccionada = decodificarFotoSeleccionada(context, uri)
+        } finally {
+            cargandoPreviaSeleccionada = false
+        }
+    }
+    LaunchedEffect(imagenOriginalSeleccionada, recorteCuadrado, mejorarLuz) {
+        val originalPrevia = imagenOriginalSeleccionada
+        if (originalPrevia == null) {
+            imagenPreparada = null
+            return@LaunchedEffect
+        }
+        procesandoPreviaSeleccionada = true
+        try {
+            imagenPreparada = withContext(Dispatchers.Default) {
+                prepararVistaFotoProducto(originalPrevia, recorteCuadrado, mejorarLuz)
+            }
+        } finally {
+            procesandoPreviaSeleccionada = false
+        }
+    }
+    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta, recorteCuadrado, mejorarLuz) {
+        if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, recorteCuadrado, mejorarLuz))
     }
 
     LaunchedEffect(tipoId, original?.id) {
@@ -1097,13 +1211,20 @@ private fun EditorProductoEmprendedora(
             guardarBorradorAlta(
                 context,
                 tiendaId,
-                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, preparada.identidad.operacionId, preparada.identidad.productoId, preparada.identidad.firma),
+                BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, preparada.identidad.operacionId, preparada.identidad.productoId, preparada.identidad.firma, recorteCuadrado, mejorarLuz),
                 confirmar = true
             )
             preparada.solicitud
         } else solicitud.copy(operacionId = operacionId)
         val imagen = if (fotoLocal.fotoLista && (fotoLocal.photoUri != null || fotoLocal.photoBitmap != null)) {
-            ImagenSeleccionadaProducto(fotoLocal.photoUri, fotoLocal.photoBitmap, archivoId)
+            val fotoProcesada = imagenPreparada
+            val seAplicaAjuste = fotoProcesada != null && (recorteCuadrado || mejorarLuz)
+            ImagenSeleccionadaProducto(
+                uri = if (seAplicaAjuste) null else fotoLocal.photoUri,
+                bitmap = if (seAplicaAjuste) fotoProcesada else fotoLocal.photoBitmap,
+                archivoId = archivoId,
+                uriOriginalParaEliminar = fotoLocal.photoUri.takeIf { seAplicaAjuste }
+            )
         } else null
         val fotosVariantes = variantes.mapNotNull { row ->
             if (row.fotoNueva) {
@@ -1119,11 +1240,50 @@ private fun EditorProductoEmprendedora(
         conVariantes = item.opcionesVariante.isNotEmpty()
         error = null
     }
-    if (paso == 1) {
+    if (camaraProductoVisible) {
+        CamaraProductoGuiada(
+            onFoto = { bitmap ->
+                scope.launch {
+                    val persistida = runCatching { withContext(Dispatchers.IO) { guardarBitmapPersistente(context, bitmap) } }.getOrElse {
+                        error = it.message ?: "No se pudo guardar la foto tomada. Inténtalo de nuevo."
+                        null
+                    }
+                    if (persistida != null) {
+                        val fotoAnterior = fotoLocal.photoUri
+                        imagenOriginalSeleccionada = null
+                        imagenPreparada = null
+                        fotoLocal.photoUri = persistida
+                        fotoLocal.photoBitmap = null
+                        fotoLocal.fotoLista = true
+                        recorteCuadrado = true
+                        mejorarLuz = false
+                        compararOriginal = false
+                        archivoId = UUID.randomUUID().toString()
+                        eliminarFotoTemporalProducto(context, fotoAnterior)
+                    }
+                    camaraProductoVisible = false
+                }
+            },
+            onCancelar = { camaraProductoVisible = false },
+            onGaleria = {
+                camaraProductoVisible = false
+                abrirGaleriaParaFoto()
+            }
+        )
+    } else if (paso == 1) {
         PhotoStep(draft=fotoLocal, bump={}, onTakePhoto={ abrirCamaraParaFoto() },
             onPickPhoto={ abrirGaleriaParaFoto() }, onNext={ paso=2 },
             onBack=::cancelarEditor, onSaveExit=::guardarLocalYSalir, showSaveExit=true, onDiscardDraft=onDiscardDraft,
-            totalPasos=6, dibujarBajoBarraSistema=true,
+            totalPasos=6, dibujarBajoBarraSistema=true, continuarHabilitado=!(cargandoPreviaSeleccionada || procesandoPreviaSeleccionada),
+            imagenOriginalSeleccionada=imagenOriginalSeleccionada,
+            imagenPreparada=imagenPreparada,
+            recorteCuadrado=recorteCuadrado,
+            onRecorteCuadrado={ recorteCuadrado = it; compararOriginal = false },
+            mejorarLuz=mejorarLuz,
+            onMejorarLuz={ mejorarLuz = it; compararOriginal = false },
+            compararOriginal=compararOriginal,
+            onCompararOriginal={ compararOriginal = it },
+            procesandoImagen=cargandoPreviaSeleccionada || procesandoPreviaSeleccionada,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
             imagenPrevia=imagenPrivada,
             mensajeImagenExistente=when {

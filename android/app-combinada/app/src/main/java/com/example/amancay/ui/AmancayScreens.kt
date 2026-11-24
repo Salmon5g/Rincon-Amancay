@@ -988,19 +988,32 @@ fun PhotoStep(
     imagenExistente: Boolean = false,
     imagenPrevia: Bitmap? = null,
     mensajeImagenExistente: String? = null,
-    onDiscardDraft: (() -> Unit)? = null
+    onDiscardDraft: (() -> Unit)? = null,
+    imagenOriginalSeleccionada: Bitmap? = null,
+    imagenPreparada: Bitmap? = null,
+    recorteCuadrado: Boolean = true,
+    onRecorteCuadrado: (Boolean) -> Unit = {},
+    mejorarLuz: Boolean = false,
+    onMejorarLuz: (Boolean) -> Unit = {},
+    compararOriginal: Boolean = false,
+    onCompararOriginal: (Boolean) -> Unit = {},
+    procesandoImagen: Boolean = false,
+    continuarHabilitado: Boolean = true
 ) {
-    StepScaffold("Paso 1 de $totalPasos", "Agrega una foto", "Muéstrale a tus clientes lo que vendes.", onNext, onBack, onSaveExit, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft, totalPasos = totalPasos, dibujarBajoBarraSistema = dibujarBajoBarraSistema) {
+    StepScaffold("Paso 1 de $totalPasos", "Agrega una foto", "Te guiaremos para que tu producto se vea claro y atractivo.", onNext, onBack, onSaveExit, nextLabel = if (draft.fotoLista || imagenExistente) "Usar esta foto" else "Continuar", nextEnabled = continuarHabilitado, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft, totalPasos = totalPasos, dibujarBajoBarraSistema = dibujarBajoBarraSistema) {
         Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
             if (lista) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     ProductImage(
-                        fallback = Fig.VASE_BIG, size = 170.dp,
+                        fallback = Fig.VASE_BIG, size = 218.dp,
                         uri = draft.photoUri,
-                        bitmap = if (draft.fotoLista) draft.photoBitmap else imagenPrevia,
+                        bitmap = when {
+                            draft.fotoLista -> if (compararOriginal) imagenOriginalSeleccionada else imagenPreparada ?: imagenOriginalSeleccionada ?: draft.photoBitmap
+                            else -> imagenPrevia
+                        },
                         hasPhoto = draft.fotoLista || imagenExistente
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
                         Text(
                             if (draft.fotoLista) "Foto elegida" else "Foto actual",
@@ -1010,44 +1023,105 @@ fun PhotoStep(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                            if (draft.fotoLista) "La foto está seleccionada. Se guardará junto con el borrador."
+                            if (draft.fotoLista) "Así se verá la imagen principal de tu producto en la tienda."
                             else mensajeImagenExistente ?: "La foto está guardada de forma privada. Puedes reemplazarla desde la cámara o la galería.",
-                        fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
+                        fontSize = 14.sp, color = Muted, textAlign = TextAlign.Center
                     )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = onTakePhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                            Text("Tomar otra", color = Wine)
+                    if (draft.fotoLista && imagenOriginalSeleccionada != null) {
+                        Spacer(Modifier.height(12.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
+                            shape = RoundedCornerShape(20.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Ajusta la foto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
+                                Text("Elige cómo quieres mostrar el encuadre en tu catálogo.", fontSize = 14.sp, color = Muted)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SelectableChip("Cuadrada", recorteCuadrado) { onRecorteCuadrado(true) }
+                                    SelectableChip("Foto completa", !recorteCuadrado) { onRecorteCuadrado(false) }
+                                }
+                                Text(
+                                    if (recorteCuadrado) "Formato recomendado para que las fotos se vean parejas en la tienda."
+                                    else "Conserva toda la foto; puede quedar espacio libre alrededor en algunas tarjetas.",
+                                    fontSize = 13.sp, color = Muted
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Mejorar luz", color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                        Text("Ajuste suave y reversible", color = Muted, fontSize = 13.sp)
+                                    }
+                                    Switch(checked = mejorarLuz, onCheckedChange = onMejorarLuz)
+                                }
+                                OutlinedButton(
+                                    onClick = { onCompararOriginal(!compararOriginal) },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(if (compararOriginal) "Ver foto ajustada" else "Comparar con el original", color = Wine, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
-                        OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                            Text("Elegir otra", color = Wine)
+                    }
+                    if (draft.fotoLista && procesandoImagen) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                            CircularProgressIndicator(color = Wine, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Preparando vista previa…", color = Muted, fontSize = 13.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PrimaryButton(if (draft.fotoLista) "Tomar otra foto" else "Reemplazar con cámara", onTakePhoto, modifier = Modifier.fillMaxWidth(), fontSize = 15.sp)
+                        OutlinedButton(onClick = onPickPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) {
+                            Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (draft.fotoLista) "Elegir otra de la galería" else "Elegir de la galería", color = Wine, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             } else {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf("Tomar foto" to onTakePhoto, "Elegir de galería" to onPickPhoto).forEachIndexed { index, (etiqueta, accion) ->
-                        Surface(
-                            shape = RoundedCornerShape(24.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                            color = Color.White,
-                            modifier = Modifier.weight(1f).height(190.dp).clickable(onClick = accion)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.padding(12.dp)) {
-                                if (index == 0) Image(painter = painterResource(Fig.CAMERA), contentDescription = null, modifier = Modifier.size(76.dp))
-                else Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine, modifier = Modifier.size(76.dp))
-                                Spacer(Modifier.height(12.dp))
-                                Text(etiqueta, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wine, textAlign = TextAlign.Center)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
+                    shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Para que se vea bonita", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
+                        listOf(
+                            "Busca luz natural de frente, cerca de una ventana.",
+                            "Usa un fondo sencillo que contraste con tu producto.",
+                            "Muestra el producto completo y centra lo más importante."
+                        ).forEachIndexed { index, consejo ->
+                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Surface(color = Color(0xFFFFE8D8), shape = CircleShape, modifier = Modifier.size(26.dp)) {
+                                    Box(contentAlignment = Alignment.Center) { Text("${index + 1}", color = Wine, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                                }
+                                Text(consejo, color = Dark, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(top = 2.dp))
                             }
                         }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
+                PrimaryButton("Tomar foto", onTakePhoto, modifier = Modifier.fillMaxWidth(), fontSize = 16.sp)
+                OutlinedButton(onClick = onPickPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) {
+                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Elegir de la galería", color = Wine, fontWeight = FontWeight.Bold)
+                }
             }
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
-            if (draft.fotoLista || imagenExistente) "Puedes cambiar esta foto desde la cámara o la galería."
-            else "La foto se guardará con el borrador; puedes continuar más tarde.",
-            color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
+            when {
+                draft.fotoLista -> "La foto y sus ajustes se guardan junto con el producto."
+                imagenExistente -> "La foto actual se conserva si no eliges un reemplazo."
+                else -> "La foto queda en borrador hasta que guardes el producto."
+            },
+            color = Muted, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
     }
