@@ -3,6 +3,10 @@ withDefaults(defineProps<{ activo?: 'explorar' | 'productos' | 'tiendas' | 'dire
 
 const ruta = useRoute()
 
+function abrirAyuda() {
+  window.dispatchEvent(new Event('amancay:ayuda-comprador'))
+}
+
 async function irExplorar() {
   if (ruta.path === '/comprador') window.scrollTo({ top: 0, behavior: 'smooth' })
   else await navigateTo('/comprador')
@@ -12,31 +16,34 @@ async function irExplorar() {
 
 <template>
   <aside class="lateral">
-    <button class="marca marca-boton" type="button" @click="irExplorar">
-      <img class="marca-icono" src="/logo-amancay.png" alt="Rincón Amancay" />
-      <span class="marca-texto">
-        <small>Rincón</small>
-        <strong>Amancay</strong>
-      </span>
-    </button>
+    <div class="marca-fila">
+      <button class="marca marca-boton" type="button" @click="irExplorar">
+        <img class="marca-icono" src="/logo-amancay.png" alt="Rincón Amancay" />
+        <span class="marca-texto">
+          <small>Rincón</small>
+          <strong>Amancay</strong>
+        </span>
+      </button>
+      <button class="ayuda-lateral" type="button" data-guia="comprador-ayuda" aria-label="Ayuda" title="Ayuda" @click="abrirAyuda">?</button>
+    </div>
     <nav class="menu" aria-label="Catálogo">
-      <button :class="{ on: activo === 'explorar' && ruta.hash === '' }" type="button" @click="irExplorar">
+      <button data-guia="comprador-explorar" :class="{ on: activo === 'explorar' && ruta.hash === '' }" type="button" @click="irExplorar">
         <span class="mi" aria-hidden="true">🏠</span>
         Explorar
       </button>
-      <NuxtLink class="menu-enlace" :class="{ on: activo === 'productos' }" to="/comprador/productos">
+      <NuxtLink class="menu-enlace" data-guia="comprador-productos" :class="{ on: activo === 'productos' }" to="/comprador/productos">
         <span class="mi" aria-hidden="true">🛍️</span>
         Productos
       </NuxtLink>
-      <NuxtLink class="menu-enlace" :class="{ on: activo === 'tiendas' }" to="/comprador/tiendas">
+      <NuxtLink class="menu-enlace" data-guia="comprador-tiendas" :class="{ on: activo === 'tiendas' }" to="/comprador/tiendas">
         <span class="mi" aria-hidden="true">🏪</span>
         Tiendas
       </NuxtLink>
-      <NuxtLink class="menu-enlace" :class="{ on: activo === 'directorio' }" to="/comprador/directorio">
+      <NuxtLink class="menu-enlace" data-guia="comprador-directorio" :class="{ on: activo === 'directorio' }" to="/comprador/directorio">
         <span class="mi" aria-hidden="true">👥</span>
         Directorio
       </NuxtLink>
-      <NuxtLink class="menu-enlace" :class="{ on: activo === 'ferias' }" to="/comprador/ferias">
+      <NuxtLink class="menu-enlace" data-guia="comprador-ferias" :class="{ on: activo === 'ferias' }" to="/comprador/ferias">
         <span class="mi" aria-hidden="true">🎪</span>
         Ferias
       </NuxtLink>
@@ -73,6 +80,10 @@ async function irExplorar() {
   border-right: 1.5px solid var(--amancay-borde);
   font-family: var(--amancay-fuente-cuerpo);
 }
+
+.marca-fila{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.ayuda-lateral{flex:0 0 44px;width:44px;height:44px;border:1px solid var(--amancay-borde);border-radius:50%;background:#f8e9ea;color:var(--amancay-bordo);font:700 1.35rem var(--amancay-fuente-cuerpo);cursor:pointer}
+.ayuda-lateral:hover,.ayuda-lateral:focus-visible{outline:3px solid rgba(107,30,61,.24);outline-offset:2px}
 
 .marca {
   display: flex;
@@ -243,6 +254,8 @@ async function irExplorar() {
   .lateral > .marca {
     align-self: flex-start;
   }
+
+  .marca-fila{width:100%}
 
   .lateral .menu {
     width: 100%;

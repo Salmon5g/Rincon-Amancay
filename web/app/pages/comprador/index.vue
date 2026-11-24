@@ -39,6 +39,10 @@ const categoriasFiltro = computed(() => Object.fromEntries(
         tipoProductoId: categoriaTipoProducto.value[id] ?? '',
     }))).map((categoria) => [categoria.id, categoria.nombre]),
 ));
+
+function abrirAyudaComprador() {
+    window.dispatchEvent(new Event('amancay:ayuda-comprador'));
+}
 const categoriaSeleccionada = ref('');
 const filtroVisible = ref(true);
 let cursores: (string | null)[] = [null];
@@ -965,6 +969,7 @@ onBeforeUnmount(() => {
         </button>
       </label>
       <div class="barra-sesion">
+        <button class="ayuda-cabecera" type="button" data-guia="comprador-ayuda" aria-label="Ayuda" title="Ayuda" @click="abrirAyudaComprador">?</button>
         <AccesoComprador />
       </div>
     </header>
@@ -973,7 +978,7 @@ onBeforeUnmount(() => {
       <!-- Vista explorar -->
       <template v-if="!tienda">
         <div class="escena-explorar">
-        <header class="encabezado-fila">
+        <header class="encabezado-fila" data-guia="comprador-inicio">
           <div class="encabezado-titulo">
             <h1>Descubre productos hechos cerca</h1>
             <p class="sub">Conoce a nuestras emprendedoras y encuentra algo especial.</p>
@@ -1734,8 +1739,14 @@ select:focus-visible {
 }
 
 .barra-sesion {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
     margin-left: auto;
 }
+
+.ayuda-cabecera{flex:0 0 44px;width:44px;height:44px;border:1px solid var(--amancay-borde);border-radius:50%;background:#f8e9ea;color:var(--amancay-bordo);font:700 1.3rem var(--amancay-fuente-cuerpo);cursor:pointer}
+.ayuda-cabecera:hover,.ayuda-cabecera:focus-visible{outline:3px solid rgba(107,30,61,.24);outline-offset:2px}
 
 .barra-sesion :deep(.acceso) {
     margin-top: 0;

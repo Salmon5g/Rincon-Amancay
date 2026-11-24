@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import '~/assets/amancay-tokens.css'
 import { cargarCuentaEmprendedora, observarImagenesProductosPublicas, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
+import type { OpcionAyudaWeb, PasoGuiaWeb } from '~/types/ayuda-web'
 
 type Seccion = 'inicio' | 'productos' | 'agregar' | 'ventas' | 'mas'
 type Filtro = 'todos' | 'publicado' | 'borrador' | 'archivado'
@@ -15,7 +16,19 @@ type OperacionVentaPendiente = {
   productoId: string
   varianteId: string | null
   cantidad: number
+  lugarTipo: 'feria' | 'otro'
+  feriaId: string | null
   lugarTexto: string
+}
+type FeriaVentaWeb = {
+  id: string
+  nombre: string
+  direccion: string
+  fechaInicio: string
+  fechaFin: string
+  latitud: number | null
+  longitud: number | null
+  estadoParticipacion: string
 }
 
 useHead({
@@ -79,8 +92,23 @@ const productoVentaId = ref('')
 const varianteVentaId = ref('')
 const cantidadVenta = ref('1')
 const lugarVenta = ref('Tienda en línea')
+const tipoLugarVenta = ref<'feria' | 'otro'>('otro')
+const feriaVentaId = ref('')
+const feriasVenta = ref<FeriaVentaWeb[]>([])
+const feriasVentaCargando = ref(false)
+const errorFeriasVenta = ref('')
+const estadoUbicacionVenta = ref<'inactiva' | 'buscando' | 'encontrada' | 'sin-feria' | 'sin-permiso' | 'error'>('inactiva')
+const detalleUbicacionVenta = ref('')
 const guardandoVenta = ref(false)
 const operacionVentaPendiente = ref<OperacionVentaPendiente | null>(null)
+let feriasVentaTiendaIdCargada = ''
+let cargaFeriasVentaPendiente: Promise<void> | null = null
+const ayudaAbierta = ref(false)
+const guiaActiva = ref(false)
+const guiaIndividual = ref(false)
+const pasoActualGuia = ref(0)
+const pasosActivosGuia = ref<PasoGuiaWeb[]>([])
+const espera = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const { $catalogoPublico } = useNuxtApp()
 
@@ -121,6 +149,57 @@ const productosFormularioVenta = computed(() => {
   if (pendiente && !disponibles.some((producto) => producto.id === pendiente.id)) disponibles.unshift(pendiente)
   return disponibles
 })
+const feriasDeHoyVenta = computed(() => {
+  const hoy = fechaEnSantiago(new Date())
+  return feriasVenta.value.filter(feria => {
+    if (!['confirmada', 'agregada_admin'].includes(feria.estadoParticipacion)) return false
+    const inicio = new Date(feria.fechaInicio)
+    const fin = new Date(feria.fechaFin)
+    return Number.isFinite(inicio.getTime()) && Number.isFinite(fin.getTime())
+      && hoy >= fechaEnSantiago(inicio) && hoy <= fechaEnSantiago(fin)
+  })
+})
+const pasosGuiaEmprendedora = computed<PasoGuiaWeb[]>(() => cuenta.value ? [
+  { id: 'inicio', objetivo: '[data-guia="emprendedora-inicio"]', titulo: 'Este es tu espacio', explicacion: 'Desde Inicio tienes un resumen de tu tienda y accesos a las tareas principales.' },
+  { id: 'productos', objetivo: '[data-guia="emprendedora-productos"]', titulo: 'Administra tus productos', explicacion: 'Aquí puedes revisar publicaciones, editar información y organizar tu catálogo.' },
+  { id: 'agregar', objetivo: '[data-guia="emprendedora-agregar"]', titulo: 'Agrega productos', explicacion: 'Este botón abre el formulario para agregar o editar un producto.' },
+  { id: 'ventas', objetivo: '[data-guia="emprendedora-ventas"]', titulo: 'Registra tus ventas', explicacion: 'En Ventas puedes registrar una venta y actualizar el stock. Si estás en una feria participante, podrás detectarla por ubicación.' },
+  { id: 'mas', objetivo: '[data-guia="emprendedora-mas"]', titulo: 'Más opciones', explicacion: 'En Más puedes revisar tu cuenta, editar la ficha de tu tienda y ajustar el tamaño de texto.' },
+  { id: 'texto_grande', objetivo: '[data-guia="emprendedora-texto"]', titulo: 'Ajusta el tamaño de texto', explicacion: 'Elige entre tres tamaños para leer con mayor comodidad. El cambio se conserva para tus próximas visitas.' },
+  { id: 'ayuda', objetivo: '[data-guia="emprendedora-ayuda"]', titulo: 'La ayuda está aquí', explicacion: 'Toca «?» para repetir un tutorial específico o recorrer toda la web.' },
+] : [
+  { id: 'ingreso', objetivo: '[data-guia="emprendedora-ingreso"]', titulo: 'Tu acceso emprendedora', explicacion: 'Ingresa con las credenciales que te entregó la administración para abrir tu espacio.' },
+  { id: 'invitacion', objetivo: '[data-guia="emprendedora-invitacion"]', titulo: '¿Te invitaron a participar?', explicacion: 'Desde este enlace puedes aceptar una invitación para unirte a Rincón Amancay.' },
+  { id: 'ayuda', objetivo: '[data-guia="emprendedora-ayuda"]', titulo: 'La ayuda está aquí', explicacion: 'Toca «?» para repetir un tutorial específico o recorrer toda la web.' },
+])
+const pasoGuiaActual = computed(() => pasosActivosGuia.value[pasoActualGuia.value] ?? null)
+const seccionAyudaEmprendedora = computed(() => !cuenta.value ? 'Acceso emprendedora'
+  : seccion.value === 'inicio' ? 'Inicio'
+    : seccion.value === 'productos' ? 'Productos'
+      : seccion.value === 'agregar' ? 'Agregar'
+        : seccion.value === 'ventas' ? 'Ventas' : 'Más')
+const descripcionAyudaEmprendedora = computed(() => !cuenta.value
+  ? 'Desde aquí puedes iniciar sesión con tus credenciales o revisar una invitación para comenzar.'
+  : seccion.value === 'inicio'
+    ? 'En Inicio tienes accesos a tus productos, ventas, tu tienda y el catálogo público.'
+    : seccion.value === 'productos'
+      ? 'En Productos puedes revisar, editar y organizar los artículos de tu tienda.'
+      : seccion.value === 'agregar'
+        ? 'Sigue los pasos para completar o actualizar la ficha de un producto.'
+        : seccion.value === 'ventas'
+          ? 'Registra ventas, selecciona una feria participante o ingresa otro lugar.'
+          : 'En Más puedes editar la información de tu tienda y cambiar el tamaño de texto.')
+const opcionesAyudaEmprendedora = computed<OpcionAyudaWeb[]>(() => cuenta.value ? [
+  { id: 'inicio', titulo: 'Inicio y tareas principales', icono: '⌂' },
+  { id: 'productos', titulo: 'Mis productos', icono: '▦' },
+  { id: 'agregar', titulo: 'Agregar un producto', icono: '+' },
+  { id: 'ventas', titulo: 'Registrar una venta', icono: '↗' },
+  { id: 'mas', titulo: 'Mi tienda y cuenta', icono: '◉' },
+  { id: 'texto_grande', titulo: 'Tamaño de texto', icono: 'Aa' },
+] : [
+  { id: 'ingreso', titulo: 'Iniciar sesión', icono: '↪' },
+  { id: 'invitacion', titulo: 'Aceptar una invitación', icono: '✉' },
+])
 const precioVenta = computed(() => productoVenta.value?.tieneVariantes
   ? varianteVenta.value?.precio ?? null
   : productoVenta.value?.precioBase ?? null)
@@ -153,6 +232,7 @@ function limpiarVistaPreviaLogo() {
 onBeforeUnmount(() => {
   detenerObservadorImagenesProductos?.()
   limpiarVistaPreviaLogo()
+  window.removeEventListener('amancay:ayuda-emprendedora', escucharAyudaEmprendedora)
 })
 
 function cliente() {
@@ -196,6 +276,125 @@ function mensajeDeError(valor: unknown) {
   if (codigo.includes('network-request-failed')) return 'No hay conexión. Revisa internet e inténtalo nuevamente.'
   if (codigo.includes('too-many-requests')) return 'Hubo muchos intentos. Espera un momento y vuelve a probar.'
   return mensaje || 'No se pudo completar el acceso. Inténtalo nuevamente.'
+}
+
+function fechaEnSantiago(fecha: Date) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(fecha)
+  const valor = Object.fromEntries(partes.map(parte => [parte.type, parte.value]))
+  return `${valor.year}-${valor.month}-${valor.day}`
+}
+
+function distanciaMetros(latitudA: number, longitudA: number, latitudB: number, longitudB: number) {
+  const radio = 6_371_000
+  const radianes = (grados: number) => grados * Math.PI / 180
+  const dLatitud = radianes(latitudB - latitudA)
+  const dLongitud = radianes(longitudB - longitudA)
+  const a = Math.sin(dLatitud / 2) ** 2 + Math.cos(radianes(latitudA)) * Math.cos(radianes(latitudB)) * Math.sin(dLongitud / 2) ** 2
+  return 2 * radio * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+async function cargarFeriasVenta(forzar = false) {
+  const tiendaId = cuenta.value?.tienda.id
+  if (!tiendaId) return
+  if (cargaFeriasVentaPendiente) {
+    await cargaFeriasVentaPendiente
+    if (!forzar || feriasVentaTiendaIdCargada === tiendaId) return
+  }
+  if (!forzar && feriasVentaTiendaIdCargada === tiendaId) return
+  feriasVentaCargando.value = true
+  errorFeriasVenta.value = ''
+  feriasVenta.value = []
+  cargaFeriasVentaPendiente = (async () => {
+    try {
+      const resultado = await cliente().llamar('listarFeriasVenta', { tiendaId })
+      const recibidas = Array.isArray(resultado.ferias) ? resultado.ferias : []
+      feriasVenta.value = recibidas.flatMap((entrada): FeriaVentaWeb[] => {
+        if (!entrada || typeof entrada !== 'object') return []
+        const feria = entrada as Record<string, unknown>
+        if (typeof feria.id !== 'string' || typeof feria.fechaInicio !== 'string' || typeof feria.fechaFin !== 'string') return []
+        return [{
+          id: feria.id,
+          nombre: typeof feria.nombre === 'string' ? feria.nombre : 'Feria',
+          direccion: typeof feria.direccion === 'string' ? feria.direccion : '',
+          fechaInicio: feria.fechaInicio,
+          fechaFin: feria.fechaFin,
+          latitud: typeof feria.latitud === 'number' && Number.isFinite(feria.latitud) ? feria.latitud : null,
+          longitud: typeof feria.longitud === 'number' && Number.isFinite(feria.longitud) ? feria.longitud : null,
+          estadoParticipacion: typeof feria.estadoParticipacion === 'string' ? feria.estadoParticipacion : '',
+        }]
+      })
+      feriasVentaTiendaIdCargada = tiendaId
+    } catch (fallo) {
+      feriasVenta.value = []
+      errorFeriasVenta.value = fallo instanceof Error ? fallo.message : 'No se pudieron cargar tus ferias participantes.'
+    } finally {
+      feriasVentaCargando.value = false
+      cargaFeriasVentaPendiente = null
+    }
+  })()
+  await cargaFeriasVentaPendiente
+}
+
+async function detectarFeriaCercana() {
+  detalleUbicacionVenta.value = ''
+  estadoUbicacionVenta.value = 'buscando'
+  await cargarFeriasVenta()
+  if (!navigator.geolocation) {
+    estadoUbicacionVenta.value = 'error'
+    detalleUbicacionVenta.value = 'Este navegador no permite consultar la ubicación. Puedes elegir la feria manualmente.'
+    return
+  }
+  if (errorFeriasVenta.value) {
+    estadoUbicacionVenta.value = 'error'
+    detalleUbicacionVenta.value = 'No pudimos consultar tus ferias. Vuelve a intentar o elige otro lugar.'
+    return
+  }
+  const ahora = Date.now()
+  const feriasEnCurso = feriasDeHoyVenta.value.filter(feria => {
+    const inicio = Date.parse(feria.fechaInicio)
+    const fin = Date.parse(feria.fechaFin)
+    return Number.isFinite(inicio) && Number.isFinite(fin) && inicio <= ahora && ahora <= fin
+      && feria.latitud !== null && feria.longitud !== null
+      && feria.latitud >= -90 && feria.latitud <= 90 && feria.longitud >= -180 && feria.longitud <= 180
+  })
+  if (!feriasEnCurso.length) {
+    estadoUbicacionVenta.value = 'sin-feria'
+    detalleUbicacionVenta.value = 'No tienes una feria participante en curso con ubicación registrada. Puedes elegirla manualmente si corresponde.'
+    return
+  }
+
+  try {
+    const posicion = await new Promise<GeolocationPosition>((resolver, rechazar) => {
+      navigator.geolocation.getCurrentPosition(resolver, rechazar, { enableHighAccuracy: true, timeout: 20_000, maximumAge: 30_000 })
+    })
+    const { latitude, longitude, accuracy } = posicion.coords
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy) || accuracy > 500) {
+      estadoUbicacionVenta.value = 'error'
+      detalleUbicacionVenta.value = 'La ubicación no tiene suficiente precisión. Acércate al recinto e inténtalo otra vez.'
+      return
+    }
+    const cercana = feriasEnCurso.map(feria => ({
+      feria,
+      distancia: distanciaMetros(latitude, longitude, feria.latitud!, feria.longitud!),
+    })).filter(resultado => resultado.distancia + accuracy <= 500).sort((a, b) => a.distancia - b.distancia)[0]
+    if (!cercana) {
+      estadoUbicacionVenta.value = 'sin-feria'
+      detalleUbicacionVenta.value = 'No detectamos que estés dentro de una feria cercana. Puedes elegirla manualmente si corresponde.'
+      return
+    }
+    tipoLugarVenta.value = 'feria'
+    feriaVentaId.value = cercana.feria.id
+    estadoUbicacionVenta.value = 'encontrada'
+    detalleUbicacionVenta.value = `Encontramos ${cercana.feria.nombre} a ${Math.round(cercana.distancia)} m. Revisa la selección antes de registrar la venta.`
+  } catch (fallo) {
+    const codigo = typeof fallo === 'object' && fallo !== null && 'code' in fallo ? Number((fallo as { code?: unknown }).code) : 0
+    estadoUbicacionVenta.value = codigo === 1 ? 'sin-permiso' : 'error'
+    detalleUbicacionVenta.value = codigo === 1
+      ? 'No autorizaste la ubicación. Puedes seleccionar la feria manualmente.'
+      : 'No pudimos obtener tu ubicación. Revisa los permisos y vuelve a intentar.'
+  }
 }
 
 async function revisarSesion() {
@@ -483,6 +682,74 @@ function irA(destino: Seccion) {
   error.value = ''
 }
 
+function claveGuiaEmprendedora() {
+  return `amancay:guia-web:emprendedora:${cuenta.value?.uid ?? 'sin-sesion'}`
+}
+
+function seleccionarSeccionDeGuia(id: string) {
+  if (id === 'productos') irA('productos')
+  else if (id === 'ventas') irA('ventas')
+  else if (id === 'mas' || id === 'texto_grande') irA('mas')
+  else if (id === 'agregar') irA('inicio')
+  else if (id !== 'ayuda' && id !== 'ingreso' && id !== 'invitacion') irA('inicio')
+}
+
+async function mostrarPasoDeGuia(indice: number) {
+  pasoActualGuia.value = indice
+  const destino = pasosActivosGuia.value[indice]?.id
+  if (destino) seleccionarSeccionDeGuia(destino)
+  await nextTick()
+}
+
+async function iniciarGuiaEmprendedora(id?: string) {
+  ayudaAbierta.value = false
+  pasosActivosGuia.value = pasosGuiaEmprendedora.value
+  guiaIndividual.value = Boolean(id)
+  guiaActiva.value = true
+  const indice = id ? pasosActivosGuia.value.findIndex(item => item.id === id) : 0
+  if (indice < 0) { guiaActiva.value = false; return }
+  await mostrarPasoDeGuia(indice)
+}
+
+function terminarGuiaEmprendedora(completada: boolean) {
+  guiaActiva.value = false
+  if (completada && !guiaIndividual.value) {
+    try { localStorage.setItem(claveGuiaEmprendedora(), 'completa') } catch { /* La guía puede volver a aparecer en otra visita. */ }
+  }
+  guiaIndividual.value = false
+}
+
+async function continuarGuiaEmprendedora() {
+  if (guiaIndividual.value) { terminarGuiaEmprendedora(false); return }
+  if (pasoGuiaActual.value?.id === 'ayuda') {
+    terminarGuiaEmprendedora(true)
+    ayudaAbierta.value = true
+    return
+  }
+  const siguiente = pasoActualGuia.value + 1
+  if (siguiente >= pasosActivosGuia.value.length) { terminarGuiaEmprendedora(true); return }
+  await mostrarPasoDeGuia(siguiente)
+}
+
+function abrirAyudaEmprendedora() { ayudaAbierta.value = true }
+function escucharAyudaEmprendedora() { abrirAyudaEmprendedora() }
+
+const guiaInicialEvaluada = ref(false)
+watch(revisando, async cargando => {
+  if (!import.meta.client || cargando || guiaInicialEvaluada.value) return
+  guiaInicialEvaluada.value = true
+  try { if (localStorage.getItem(claveGuiaEmprendedora()) === 'completa') return } catch {}
+  await espera(450)
+  if (!guiaActiva.value && !ayudaAbierta.value) await iniciarGuiaEmprendedora()
+}, { immediate: true })
+
+watch(() => cuenta.value?.uid, async (uid, anterior) => {
+  if (!import.meta.client || !guiaInicialEvaluada.value || !uid || anterior || guiaActiva.value) return
+  try { if (localStorage.getItem(claveGuiaEmprendedora()) === 'completa') return } catch {}
+  await espera(450)
+  if (cuenta.value?.uid === uid && !guiaActiva.value && !ayudaAbierta.value) await iniciarGuiaEmprendedora()
+})
+
 function abrirNuevoProducto() {
   productoEnEdicion.value = null
   irA('agregar')
@@ -502,6 +769,10 @@ function abrirVenta(productoId = '') {
   varianteVentaId.value = ''
   cantidadVenta.value = '1'
   lugarVenta.value = 'Tienda en línea'
+  tipoLugarVenta.value = 'otro'
+  feriaVentaId.value = ''
+  estadoUbicacionVenta.value = 'inactiva'
+  detalleUbicacionVenta.value = ''
   irA('ventas')
 }
 
@@ -539,21 +810,31 @@ function restaurarVentaPendiente() {
     const guardada = localStorage.getItem(clave)
     if (!guardada) return
     const datos = JSON.parse(guardada) as Partial<OperacionVentaPendiente>
+    const tipoLugar = datos.lugarTipo === 'feria' ? 'feria' : 'otro'
     const esValida = typeof datos.id === 'string' && typeof datos.firma === 'string'
       && typeof datos.fecha === 'string' && Number.isFinite(Date.parse(datos.fecha))
       && datos.tiendaId === cuenta.value.tienda.id && typeof datos.productoId === 'string'
       && (datos.varianteId === null || typeof datos.varianteId === 'string')
       && Number.isSafeInteger(datos.cantidad) && Number(datos.cantidad) > 0 && Number(datos.cantidad) <= 10000
-      && typeof datos.lugarTexto === 'string'
+      && (tipoLugar === 'feria' ? typeof datos.feriaId === 'string' : typeof datos.lugarTexto === 'string')
     if (!esValida) {
       localStorage.removeItem(clave)
       return
     }
-    operacionVentaPendiente.value = datos as OperacionVentaPendiente
+    const normalizada: OperacionVentaPendiente = {
+      ...(datos as OperacionVentaPendiente),
+      lugarTipo: tipoLugar,
+      feriaId: tipoLugar === 'feria' && typeof datos.feriaId === 'string' ? datos.feriaId : null,
+      lugarTexto: typeof datos.lugarTexto === 'string' ? datos.lugarTexto : '',
+    }
+    operacionVentaPendiente.value = normalizada
     productoVentaId.value = datos.productoId!
     varianteVentaId.value = datos.varianteId ?? ''
     cantidadVenta.value = String(datos.cantidad)
-    lugarVenta.value = datos.lugarTexto!
+    tipoLugarVenta.value = normalizada.lugarTipo
+    feriaVentaId.value = normalizada.feriaId ?? ''
+    lugarVenta.value = normalizada.lugarTexto
+    guardarVentaPendiente(normalizada)
     error.value = 'Hay una venta cuyo resultado no se confirmó. Reintenta con el mismo botón para consultar el resultado sin registrarla dos veces.'
   } catch {
     localStorage.removeItem(clave)
@@ -602,19 +883,26 @@ async function registrarVentaWeb() {
       error.value = 'Una pieza única se registra de una en una.'
       return
     }
-    const lugarTexto = lugarVenta.value.trim()
-    if (!lugarTexto || lugarTexto.length > 200) {
+    const lugarTexto = tipoLugarVenta.value === 'otro' ? lugarVenta.value.trim() : ''
+    if (tipoLugarVenta.value === 'otro' && (!lugarTexto || lugarTexto.length > 200)) {
       error.value = 'Escribe el lugar de la venta (hasta 200 caracteres).'
       return
     }
+    const feriaElegida = tipoLugarVenta.value === 'feria' ? feriasDeHoyVenta.value.find(feria => feria.id === feriaVentaId.value) : null
+    if (tipoLugarVenta.value === 'feria' && !feriaElegida) {
+      error.value = 'Elige una feria participante que se realice hoy.'
+      return
+    }
     pendiente = {
-      firma: JSON.stringify([cuenta.value.tienda.id, producto.id, variante?.id ?? null, cantidad, lugarTexto]),
+      firma: JSON.stringify([cuenta.value.tienda.id, producto.id, variante?.id ?? null, cantidad, tipoLugarVenta.value, feriaElegida?.id ?? null, lugarTexto]),
       id: crypto.randomUUID(),
       fecha: new Date().toISOString(),
       tiendaId: cuenta.value.tienda.id,
       productoId: producto.id,
       varianteId: variante?.id ?? null,
       cantidad,
+      lugarTipo: tipoLugarVenta.value,
+      feriaId: feriaElegida?.id ?? null,
       lugarTexto,
     }
     operacionVentaPendiente.value = pendiente
@@ -628,8 +916,9 @@ async function registrarVentaWeb() {
       ...(pendiente.varianteId ? { varianteId: pendiente.varianteId } : {}),
       cantidad: pendiente.cantidad,
       operacionId: pendiente.id,
-      lugarTipo: 'otro',
-      lugarTexto: pendiente.lugarTexto,
+      lugarTipo: pendiente.lugarTipo,
+      ...(pendiente.lugarTipo === 'feria' && pendiente.feriaId ? { feriaId: pendiente.feriaId } : {}),
+      ...(pendiente.lugarTipo === 'otro' ? { lugarTexto: pendiente.lugarTexto } : {}),
       fecha: pendiente.fecha,
     })
     operacionVentaPendiente.value = null
@@ -679,6 +968,10 @@ watch(seccion, (vista) => {
   void router.replace({ path: '/emprendedora', query, hash: ruta.hash })
 })
 
+watch(() => [seccion.value, cuenta.value?.tienda.id] as const, ([vista]) => {
+  if (vista === 'ventas') void cargarFeriasVenta()
+}, { immediate: true })
+
 watch(() => ruta.query.vista, (valor) => {
   const vista = typeof valor === 'string' && vistasValidas.has(valor as Seccion) ? valor as Seccion : 'inicio'
   if (vista !== seccion.value) seccion.value = vista
@@ -724,6 +1017,7 @@ function estadoBonito(estado: ProductoEmprendedoraWeb['estado']) {
 }
 
 onMounted(async () => {
+  window.addEventListener('amancay:ayuda-emprendedora', escucharAyudaEmprendedora)
   fecha.value = new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
   try {
     await revisarSesion()
@@ -746,7 +1040,7 @@ onMounted(async () => {
       <div class="etiqueta-lateral">ESPACIO EMPRENDEDORA</div>
       <nav class="menu-lateral" aria-label="Navegación emprendedora">
         <template v-if="cuenta">
-          <button v-for="item in secciones" :key="item.id" class="opcion-menu" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" type="button" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)">
+          <button v-for="item in secciones" :key="item.id" class="opcion-menu" :data-guia="`emprendedora-${item.id}`" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" type="button" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)">
             <span class="icono-menu" aria-hidden="true">{{ item.icono }}</span>{{ item.nombre }}
             <span v-if="item.id === 'productos' && borradores" class="contador-menu">{{ borradores }}</span>
           </button>
@@ -765,6 +1059,7 @@ onMounted(async () => {
       <header class="barra-superior">
         <div><span class="punto-marca"></span> RINCÓN AMANCAY <span class="separador">/</span> EMPRENDEDORA</div>
         <NuxtLink to="/comprador" class="volver-catalogo">Volver al catálogo <span aria-hidden="true">↗</span></NuxtLink>
+        <button class="ayuda-emprendedora" type="button" data-guia="emprendedora-ayuda" aria-label="Ayuda" title="Ayuda" @click="abrirAyudaEmprendedora">?</button>
         <div v-if="cuenta && editandoTienda" class="perfil-cabecera-editor"><span>{{ nombrePersona().slice(0, 2).toUpperCase() }}</span><div><strong>{{ nombrePersona() }}</strong><small>Mi tienda</small></div><b aria-hidden="true">⌄</b></div>
       </header>
 
@@ -778,7 +1073,7 @@ onMounted(async () => {
           <div class="detalle-ingreso"><span class="detalle-icono" aria-hidden="true">✿</span><span>Tu historia emprendedora comienza aquí.</span></div>
           <span class="flor-decorativa" aria-hidden="true">✿</span>
         </div>
-        <div class="tarjeta-ingreso">
+        <div class="tarjeta-ingreso" data-guia="emprendedora-ingreso">
           <img class="logo-ingreso" src="/logo-amancay.png" alt="" />
           <span class="sobre-titulo">ACCESO EMPRENDEDORA</span>
           <h2>Qué bueno tenerte aquí</h2>
@@ -798,12 +1093,12 @@ onMounted(async () => {
               <span v-if="enviando" class="rueda rueda-clara"></span>{{ enviando ? 'Ingresando…' : 'Ingresar a mi espacio' }}
             </button>
           </form>
-          <NuxtLink class="enlace-invitacion" to="/invitacion-emprendedora">¿Tienes una invitación para unirte?</NuxtLink>
+          <NuxtLink class="enlace-invitacion" data-guia="emprendedora-invitacion" to="/invitacion-emprendedora">¿Tienes una invitación para unirte?</NuxtLink>
         </div>
       </section>
 
       <section v-else class="contenido-panel" :class="{ 'modo-edicion-tienda': seccion === 'mas' && editandoTienda }">
-        <div v-if="!(seccion === 'mas' && editandoTienda)" class="cabecera-panel">
+        <div v-if="!(seccion === 'mas' && editandoTienda)" class="cabecera-panel" :data-guia="seccion === 'inicio' ? 'emprendedora-inicio' : undefined">
           <div>
             <span class="sobre-titulo">HOLA, {{ nombrePersona().toUpperCase() }}</span>
             <h1>{{ seccion === 'inicio' ? 'Tu tienda, paso a paso' : seccion === 'productos' ? 'Mis productos' : seccion === 'agregar' ? (productoEnEdicion ? 'Editar producto' : 'Un nuevo producto') : seccion === 'ventas' ? 'Registrar una venta' : 'Tu espacio' }}</h1>
@@ -900,10 +1195,32 @@ onMounted(async () => {
                 <label class="campo-venta-web">Cantidad
                   <input v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
                 </label>
-                <label class="campo-venta-web">Lugar de la venta
-                  <input v-model="lugarVenta" type="text" maxlength="200" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
-                  <small>Se guarda en el historial si está activado en tu tienda.</small>
-                </label>
+                <div class="campo-venta-web lugar-venta-web">
+                  <label for="tipo-lugar-venta">¿Dónde fue la venta?</label>
+                  <select id="tipo-lugar-venta" v-model="tipoLugarVenta" :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
+                    <option value="otro">Otro lugar</option>
+                    <option value="feria" :disabled="!feriasDeHoyVenta.length">Feria participante de hoy</option>
+                  </select>
+                  <template v-if="tipoLugarVenta === 'feria'">
+                    <label for="feria-venta">Feria</label>
+                    <select id="feria-venta" v-model="feriaVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || feriasVentaCargando">
+                      <option value="" disabled>{{ feriasVentaCargando ? 'Cargando tus ferias…' : 'Elige una feria' }}</option>
+                      <option v-for="feria in feriasDeHoyVenta" :key="feria.id" :value="feria.id">{{ feria.nombre }}{{ feria.direccion ? ` · ${feria.direccion}` : '' }}</option>
+                    </select>
+                    <button class="boton-detectar-feria" type="button" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || feriasVentaCargando" @click="detectarFeriaCercana">
+                      {{ estadoUbicacionVenta === 'buscando' ? 'Buscando feria cercana…' : '⌖ Detectar feria cercana' }}
+                    </button>
+                    <small>La ubicación se consulta solo al tocar el botón y se usa para sugerir una feria cercana; no se guarda.</small>
+                    <p v-if="detalleUbicacionVenta" class="estado-ubicacion-feria" :class="{ 'estado-ubicacion-error': estadoUbicacionVenta === 'error' || estadoUbicacionVenta === 'sin-permiso' }" :role="estadoUbicacionVenta === 'error' || estadoUbicacionVenta === 'sin-permiso' ? 'alert' : 'status'">{{ detalleUbicacionVenta }}</p>
+                    <p v-else-if="errorFeriasVenta" class="estado-ubicacion-feria estado-ubicacion-error" role="alert">{{ errorFeriasVenta }} <button type="button" @click="cargarFeriasVenta(true)">Volver a intentar</button></p>
+                    <small v-else-if="!feriasVentaCargando && !feriasDeHoyVenta.length">No tienes una feria participante vigente hoy. Puedes registrar la venta en otro lugar.</small>
+                  </template>
+                  <template v-else>
+                    <label for="lugar-venta">Lugar</label>
+                    <input id="lugar-venta" v-model="lugarVenta" type="text" maxlength="200" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
+                    <small>Se guarda en el historial si está activado en tu tienda.</small>
+                  </template>
+                </div>
               </div>
               <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
               <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
@@ -1044,15 +1361,34 @@ onMounted(async () => {
                 </ul>
               </section>
             </div>
+            <div class="control-tamano-texto" data-guia="emprendedora-texto"><SelectorTextoAccesible /></div>
             <div class="cuenta-acciones"><button class="boton-secundario" type="button" @click="cerrarSesion">Cerrar sesión</button></div>
           </section>
         </template>
       </section>
 
       <nav v-if="cuenta" class="navegacion-movil" aria-label="Navegación emprendedora">
-        <button v-for="item in secciones" :key="item.id" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
+        <button v-for="item in secciones" :key="item.id" :data-guia="`emprendedora-${item.id}`" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
       </nav>
     </main>
+    <DialogoAyudaWeb
+      :abierto="ayudaAbierta"
+      :titulo="`Ayuda de ${seccionAyudaEmprendedora}`"
+      :descripcion="descripcionAyudaEmprendedora"
+      :opciones="opcionesAyudaEmprendedora"
+      @cerrar="ayudaAbierta = false"
+      @elegir="id => iniciarGuiaEmprendedora(id)"
+      @recorrido-completo="iniciarGuiaEmprendedora()"
+    />
+    <GuiaSpotlightWeb
+      :activo="guiaActiva"
+      :paso="pasoGuiaActual"
+      :numero="guiaIndividual ? 1 : pasoActualGuia + 1"
+      :total="guiaIndividual ? 1 : pasosActivosGuia.length"
+      titulo-recorrido="Guía de emprendedora"
+      @continuar="continuarGuiaEmprendedora"
+      @cerrar="terminarGuiaEmprendedora(!guiaIndividual)"
+    />
   </div>
 </template>
 
@@ -1363,7 +1699,7 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
 .boton-cancelar-editor{border:1px solid #e8a98f;background:#fffaf4;color:var(--vino);font:700 14px 'Plus Jakarta Sans',sans-serif;cursor:pointer}
 .boton-cancelar-editor:hover{background:#fff1e5}.boton-guardar-editor{min-width:230px}
 @media(max-width:1120px){.rejilla-editor-ficha{grid-template-columns:1fr}.panel-vista-previa-tienda .tarjeta-vista-previa-tienda{max-width:760px}}
-.tarjeta-ventas-web{display:grid;gap:20px;max-width:760px;padding:clamp(18px,3vw,30px);border:1px solid var(--borde);border-radius:24px;background:var(--amancay-superficie);box-shadow:0 12px 36px rgba(46,27,32,.05)}.tarjeta-ventas-web>header h2{margin:7px 0;color:var(--texto);font:400 clamp(27px,3vw,36px)/1.12 'DM Serif Display',Georgia,serif}.tarjeta-ventas-web>header p{max-width:600px;margin:0;color:var(--suave);font-size:12px;line-height:1.65}.formulario-venta-web{display:grid;gap:17px}.campo-venta-web{display:grid;gap:7px;color:var(--texto);font-size:12px;font-weight:700}.campo-venta-web select,.campo-venta-web input{width:100%;min-height:40px;padding:7px 10px;border:1px solid rgba(88,57,69,.22);border-radius:5px;background:#fffdf9;color:var(--texto);font:500 13px 'Plus Jakarta Sans',sans-serif;outline:none}.campo-venta-web input[type="number"]{height:40px}.campo-venta-web select:focus,.campo-venta-web input:focus{border-color:rgba(107,30,61,.55);box-shadow:0 0 0 1px rgba(107,30,61,.05)}.campo-venta-web small{color:var(--suave);font-size:10px;font-weight:400;line-height:1.5}.resumen-venta-web{display:flex;flex-wrap:wrap;gap:9px 20px;padding:14px 16px;border-radius:14px;background:var(--crema);color:var(--suave);font-size:11px}.resumen-venta-web span{display:flex;align-items:center;gap:8px}.resumen-venta-web strong{color:var(--vino);font-size:13px}.campos-venta-web{display:grid;grid-template-columns:minmax(110px,.65fr) minmax(0,1fr);align-items:start;gap:14px}.boton-registro-venta{min-height:50px}.boton-registro-venta:disabled{opacity:.62;cursor:wait}.sin-productos-venta{display:grid;justify-items:start;gap:13px;padding:17px;border-radius:15px;background:var(--crema)}.sin-productos-venta p{margin:0;color:var(--suave);font-size:12px;line-height:1.65}
+.tarjeta-ventas-web{display:grid;gap:20px;max-width:760px;padding:clamp(18px,3vw,30px);border:1px solid var(--borde);border-radius:24px;background:var(--amancay-superficie);box-shadow:0 12px 36px rgba(46,27,32,.05)}.tarjeta-ventas-web>header h2{margin:7px 0;color:var(--texto);font:400 clamp(27px,3vw,36px)/1.12 'DM Serif Display',Georgia,serif}.tarjeta-ventas-web>header p{max-width:600px;margin:0;color:var(--suave);font-size:12px;line-height:1.65}.formulario-venta-web{display:grid;gap:17px}.campo-venta-web{display:grid;gap:7px;color:var(--texto);font-size:12px;font-weight:700}.campo-venta-web select,.campo-venta-web input{width:100%;min-height:40px;padding:7px 10px;border:1px solid rgba(88,57,69,.22);border-radius:5px;background:#fffdf9;color:var(--texto);font:500 13px 'Plus Jakarta Sans',sans-serif;outline:none}.campo-venta-web input[type="number"]{height:40px}.campo-venta-web select:focus,.campo-venta-web input:focus{border-color:rgba(107,30,61,.55);box-shadow:0 0 0 1px rgba(107,30,61,.05)}.campo-venta-web small{color:var(--suave);font-size:10px;font-weight:400;line-height:1.5}.boton-detectar-feria{min-height:44px;padding:7px 13px;border:1px solid var(--borde);border-radius:12px;background:var(--rosa);color:var(--vino);font:700 12px 'Plus Jakarta Sans',sans-serif;text-align:left;cursor:pointer}.boton-detectar-feria:hover,.boton-detectar-feria:focus-visible{outline:3px solid rgba(107,30,61,.2);outline-offset:2px}.boton-detectar-feria:disabled{opacity:.62;cursor:wait}.estado-ubicacion-feria{margin:0;padding:10px 12px;border-radius:11px;background:var(--amancay-verde-fondo);color:var(--amancay-verde-texto);font-size:11px;line-height:1.5;font-weight:500}.estado-ubicacion-error{background:#fff0ee;color:#9d3429}.estado-ubicacion-feria button{display:block;margin-top:5px;padding:4px 0;border:0;background:transparent;color:inherit;font:700 11px 'Plus Jakarta Sans',sans-serif;text-decoration:underline;cursor:pointer}.resumen-venta-web{display:flex;flex-wrap:wrap;gap:9px 20px;padding:14px 16px;border-radius:14px;background:var(--crema);color:var(--suave);font-size:11px}.resumen-venta-web span{display:flex;align-items:center;gap:8px}.resumen-venta-web strong{color:var(--vino);font-size:13px}.campos-venta-web{display:grid;grid-template-columns:minmax(110px,.65fr) minmax(0,1fr);align-items:start;gap:14px}.boton-registro-venta{min-height:50px}.boton-registro-venta:disabled{opacity:.62;cursor:wait}.sin-productos-venta{display:grid;justify-items:start;gap:13px;padding:17px;border-radius:15px;background:var(--crema)}.sin-productos-venta p{margin:0;color:var(--suave);font-size:12px;line-height:1.65}
 @media(max-width:740px){
   .contenido-panel.modo-edicion-tienda{width:calc(100% - 30px);padding:24px 0 0}
   .perfil-cabecera-editor{display:none}
@@ -1378,4 +1714,9 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
   .barra-acciones-editor{gap:8px;margin-top:14px;padding:10px 0 calc(10px + env(safe-area-inset-bottom))}.boton-cancelar-editor,.boton-guardar-editor{min-width:0;min-height:47px;flex:1;font-size:12px}.boton-guardar-editor{flex:1.25}
 .acciones-producto{display:flex;align-items:center;gap:8px;margin-left:auto}.acciones-producto .boton-vino,.acciones-producto .boton-secundario{min-height:38px;padding:0 12px;font-size:10px}
 @media(max-width:740px){.acciones-producto{width:100%;margin-left:0}.tarjeta-ventas-web{gap:16px;padding:17px;border-radius:20px}.tarjeta-ventas-web>header h2{font-size:28px}.campos-venta-web{grid-template-columns:1fr}.resumen-venta-web{gap:9px 14px;padding:12px;font-size:10px}.resumen-venta-web span{justify-content:space-between;flex:1 1 100%}.navegacion-movil{grid-template-columns:repeat(5,1fr)}}
-}</style>
+}
+.ayuda-emprendedora{flex:0 0 44px;width:44px;height:44px;border:1px solid var(--borde);border-radius:50%;background:#f8e9ea;color:var(--vino);font:700 20px 'Plus Jakarta Sans',sans-serif;letter-spacing:0;cursor:pointer}
+.ayuda-emprendedora:hover,.ayuda-emprendedora:focus-visible{outline:3px solid rgba(107,30,61,.24);outline-offset:2px}
+.control-tamano-texto{max-width:780px;margin-top:20px}
+@media(max-width:400px){.ayuda-emprendedora{flex-basis:38px;width:38px;height:38px}}
+</style>

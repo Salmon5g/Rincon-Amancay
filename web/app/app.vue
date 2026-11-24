@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 const ruta = useRoute()
+useTextoAccesible()
 // La política de acceso solo aplica a las rutas del comprador.
 const esComprador = computed(() => ruta.path === '/comprador' || ruta.path.startsWith('/comprador/'))
 </script>

@@ -12,6 +12,7 @@ const nuxt = useNuxtApp()
 const modo = ref<PoliticaNavegacion>('permitir')
 const sesion = ref<SesionComprador | null>(null)
 const omitido = ref(false)
+const listo = ref(false)
 const enviando = ref(false)
 const error = ref('')
 let desconectar: (() => void) | undefined
@@ -44,6 +45,7 @@ onMounted(async () => {
   desconectar = acceso.observar((nueva) => { sesion.value = nueva })
   try { modo.value = await nuxt.$catalogoPublico.leerPoliticaNavegacion() }
   catch { modo.value = 'permitir' }
+  listo.value = true
 })
 onBeforeUnmount(() => desconectar?.())
 </script>
@@ -70,6 +72,7 @@ onBeforeUnmount(() => desconectar?.())
     </div>
     <slot />
   </template>
+  <GuiaCompradorWeb :con-sesion="Boolean(sesion)" :listo="listo" :bloqueado="bloqueado" />
 </template>
 
 <style scoped>

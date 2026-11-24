@@ -148,11 +148,11 @@ onBeforeUnmount(() => desconectar?.())
   <div class="acceso">
     <p v-if="!listo" class="acceso-nota" aria-live="polite">&nbsp;</p>
 
-    <button v-else-if="!sesion" class="acceso-abrir" type="button" @click="abrir('ingreso')">
+    <button v-else-if="!sesion" class="acceso-abrir" data-guia="comprador-cuenta" type="button" @click="abrir('ingreso')">
       Iniciar sesión
     </button>
 
-    <div v-else class="acceso-sesion" :class="{ 'sin-verificar': !sesion.verificado }">
+    <div v-else class="acceso-sesion" data-guia="comprador-cuenta" :class="{ 'sin-verificar': !sesion.verificado }">
       <span class="acceso-avatar" aria-hidden="true">{{ inicialCuenta }}</span>
       <div class="acceso-identidad">
         <p class="acceso-nombre">{{ sesion.nombre || 'Cuenta de comprador' }}</p>

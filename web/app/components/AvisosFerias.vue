@@ -100,7 +100,7 @@ async function alternar() {
 </script>
 
 <template>
-  <section class="avisos" aria-labelledby="titulo-avisos-ferias">
+  <section class="avisos" data-guia="comprador-avisos" aria-labelledby="titulo-avisos-ferias">
     <div class="avisos-texto">
       <p class="avisos-sobretitulo">AVISOS DE FERIAS</p>
       <h2 id="titulo-avisos-ferias" class="avisos-titulo">Entérate cuando participen</h2>
