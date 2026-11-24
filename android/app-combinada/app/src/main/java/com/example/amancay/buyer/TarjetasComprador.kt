@@ -254,12 +254,8 @@ fun DialogoDetalleProducto(
     val imagenActual = varianteActual?.imagenUrl ?: producto.imagenUrl
     val atributos = producto.atributosEspecificos.entries
         .filter { it.value.isNotBlank() }
-    val modalidad = when (producto.modalidad.lowercase(Locale.ROOT)) {
-        "a_pedido" -> "A pedido"
-        "pieza_unica" -> "Pieza única"
-        "regular" -> "Regular"
-        else -> producto.modalidad.replace('_', ' ').replaceFirstChar { it.uppercase() }
-    }
+    val modalidad = etiquetaModalidad(producto.modalidad)
+    val lector = com.example.amancay.ui.rememberLectorVoz()
     val datos = listOfNotNull(
         producto.unidadVenta.takeIf(String::isNotBlank)?.let { "Venta" to it.replaceFirstChar { letra -> letra.uppercase() } },
         modalidad.takeIf(String::isNotBlank)?.let { "Modalidad" to it }
@@ -290,6 +286,13 @@ fun DialogoDetalleProducto(
                         Text("×", color = AmancayBordo, style = MaterialTheme.typography.headlineLarge)
                     }
                 }
+                com.example.amancay.ui.BotonEscuchar(
+                    lector = lector,
+                    id = "producto:${producto.tiendaId}:${producto.id}:${varianteActual?.id.orEmpty()}",
+                    texto = { textoParaEscucharProducto(producto, varianteActual) },
+                    modifier = Modifier.padding(bottom = 8.dp),
+                    color = AmancayBordo
+                )
                 Column(
                     modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -440,7 +443,14 @@ fun DialogoDetalleProducto(
     }
 }
 
-private fun etiquetaAtributoProducto(clave: String): String {
+internal fun etiquetaModalidad(modalidad: String): String = when (modalidad.lowercase(Locale.ROOT)) {
+    "a_pedido" -> "A pedido"
+    "pieza_unica" -> "Pieza única"
+    "regular" -> "Regular"
+    else -> modalidad.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
+
+internal fun etiquetaAtributoProducto(clave: String): String {
     val separada = clave
         .replace(Regex("([a-z0-9])([A-Z])"), "$1 $2")
         .replace('_', ' ')

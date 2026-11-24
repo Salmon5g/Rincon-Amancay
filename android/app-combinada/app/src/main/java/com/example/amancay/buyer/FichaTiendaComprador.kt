@@ -49,6 +49,7 @@ internal fun FichaTiendaComprador(
     var categoria by remember(tienda.id) { mutableStateOf("Todas las categorías") }
     var menuCategorias by remember { mutableStateOf(false) }
     val categorias = remember(productos) { productos.map { it.categoriaNombre }.filter(String::isNotBlank).distinct().sorted() }
+    val lector = com.example.amancay.ui.rememberLectorVoz()
     val visibles = productos.filter {
         it.nombre.contains(busqueda.trim(), true) && (categoria == "Todas las categorías" || it.categoriaNombre == categoria)
     }
@@ -77,6 +78,17 @@ internal fun FichaTiendaComprador(
                             Icon(Icons.Filled.LocationOn, null, tint = AmancayBordo, modifier = Modifier.size(20.dp))
                             Text(listOf(tipo, sector).filter(String::isNotBlank).joinToString("  •  "), color = AmancayTinta, fontSize = 17.sp)
                         }
+                        if (tienda.descripcion.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(tienda.descripcion, color = AmancayTinta, fontSize = 16.sp, lineHeight = 22.sp)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        com.example.amancay.ui.BotonEscuchar(
+                            lector = lector,
+                            id = "tienda:${tienda.id}",
+                            texto = { textoParaEscucharTienda(tienda, tipo, sector, productos.size) },
+                            color = AmancayBordo
+                        )
                     }
                     item {
                         Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE5D7)), border = BorderStroke(1.dp, Color(0xFFF7D4C4))) {

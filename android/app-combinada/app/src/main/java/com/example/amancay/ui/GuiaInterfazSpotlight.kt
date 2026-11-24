@@ -20,6 +20,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +63,8 @@ fun GuiaInterfazSpotlight(
     val posicionY = objetivo.top.roundToInt()
     val centroPantallaDp = LocalConfiguration.current.screenHeightDp / 2
     val objetivoEstaArriba = with(densidad) { objetivo.center.y.toDp().value < centroPantallaDp }
+    val lector = rememberLectorVoz()
+    LaunchedEffect(paso, titulo) { lector.detener() }
 
     Box(modifier.fillMaxSize().zIndex(10f)) {
         Box(
@@ -119,6 +122,12 @@ fun GuiaInterfazSpotlight(
                 Text(titulo, color = Color(0xFF501A37), fontSize = 22.sp, lineHeight = 27.sp)
                 Text(explicacion, color = Color(0xFF3A2731), fontSize = 17.sp, lineHeight = 23.sp)
                 Text("Toca «$nombreObjetivo» para continuar.", color = Color(0xFF501A37), fontSize = 16.sp)
+                BotonEscuchar(
+                    lector = lector,
+                    id = "guia:$paso:$titulo",
+                    texto = { textoParaEscucharPasoGuia(paso, total, titulo, explicacion, nombreObjetivo) },
+                    etiqueta = "Escuchar instrucciones"
+                )
                 Spacer(Modifier.height(2.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = alSaltar, modifier = Modifier.height(48.dp)) {
@@ -130,4 +139,10 @@ fun GuiaInterfazSpotlight(
             }
         }
     }
+}
+
+/** Texto del paso de la guía para «Escuchar instrucciones». */
+fun textoParaEscucharPasoGuia(paso: Int, total: Int, titulo: String, explicacion: String, nombreObjetivo: String): String {
+    val objetivo = nombreObjetivo.takeIf { it.any(Char::isLetterOrDigit) } ?: "el signo de pregunta"
+    return unirFrases("Paso $paso de $total", titulo, explicacion, "Para continuar, toca $objetivo")
 }

@@ -66,6 +66,7 @@ fun DialogoAyudaTutoriales(
     val fondoIcono = Color(0xFFFFE7D7)
     val vinoOscuro = Color(0xFF74264F)
     val coral = Color(0xFFEA666B)
+    val lector = rememberLectorVoz()
 
     Dialog(
         onDismissRequest = alCerrar,
@@ -93,6 +94,13 @@ fun DialogoAyudaTutoriales(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
                     )
                     Text(descripcion, color = Muted, fontSize = 15.sp, lineHeight = 21.sp)
+                    BotonEscuchar(
+                        lector = lector,
+                        id = "ayuda:$titulo",
+                        texto = { textoParaEscucharAyuda(titulo, descripcion, opciones.map { it.titulo }, mostrarRecorridoCompleto) },
+                        etiqueta = "Escuchar instrucciones",
+                        color = vinoOscuro
+                    )
                     Spacer(Modifier.height(2.dp))
                     if (opciones.isNotEmpty()) {
                         Text("Elige qué tutorial quieres repetir", color = vinoOscuro, fontSize = 15.sp)
@@ -163,3 +171,11 @@ fun DialogoAyudaTutoriales(
         }
     }
 }
+
+/** Texto del diálogo de Ayuda para «Escuchar instrucciones». */
+fun textoParaEscucharAyuda(titulo: String, descripcion: String, tutoriales: List<String>, recorridoCompleto: Boolean): String = unirFrases(
+    titulo,
+    descripcion,
+    tutoriales.takeIf { it.isNotEmpty() }?.let { "Puedes repetir estos tutoriales: ${it.joinToString(", ")}" },
+    if (recorridoCompleto) "También puedes elegir Recorrido completo para ver toda la guía otra vez" else null
+)
