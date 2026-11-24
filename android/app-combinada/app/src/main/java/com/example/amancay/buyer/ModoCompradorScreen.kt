@@ -27,7 +27,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -75,6 +80,8 @@ import com.example.amancay.data.SesionComprador
 import com.example.amancay.data.SeguimientoAsociacionesComprador
 import com.example.amancay.data.SeguimientoTiendasComprador
 import com.example.amancay.data.sesionDesdeUsuario
+import com.example.amancay.ui.DialogoAyudaTutoriales
+import com.example.amancay.ui.OpcionTutorialAyuda
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CancellationException
@@ -85,6 +92,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.first
+
+private data class PasoGuiaComprador(
+    val idObjetivo: String,
+    val pestana: PestanaComprador?,
+    val nombreObjetivo: String,
+    val titulo: String,
+    val explicacion: String
+)
 
 /**
  * Modo comprador con cuatro pestañas: Inicio (hero + selección + feria),
@@ -153,6 +168,7 @@ fun ModoCompradorScreen(
     var guiaSoloTutorial by rememberSaveable { mutableStateOf(false) }
     var mostrarAyuda by remember { mutableStateOf(false) }
     val objetivosGuia = remember { mutableStateMapOf<PestanaComprador, Rect>() }
+    var objetivoAyudaGuia by remember { mutableStateOf<Rect?>(null) }
 
     suspend fun actualizarRespuestas(consultas: List<ConsultaSeguida>, maximo: Int? = null): List<ConsultaSeguida> {
         val pendientes = consultas.filter { it.respuesta == null }.let { if (maximo == null) it else it.take(maximo) }
@@ -521,18 +537,19 @@ fun ModoCompradorScreen(
     val catalogoRestringido = estadoPolitica.bloqueaCatalogo || invitaGoogle
     val perfilGuia = if (sesion == null) "compradora_sin_sesion" else "compradora_con_sesion_${uidSesion ?: "cuenta"}"
     val pasosGuia = remember(perfilGuia) {
-        buildList<Pair<PestanaComprador, Pair<String, String>>> {
-            add(PestanaComprador.INICIO to ("Tu inicio" to "Esta es la portada: aquí puedes descubrir tiendas, productos destacados y próximas ferias."))
-            add(PestanaComprador.EXPLORAR to ("Busca productos" to "En Explorar puedes buscar y filtrar por categoría o tienda. Abre una ficha para ver sus detalles; con sesión también puedes seguir la tienda."))
-            add(PestanaComprador.FERIAS to ("Conoce las ferias" to "En Ferias puedes revisar fechas, lugares y detalles para planificar una visita."))
+        buildList {
+            add(PasoGuiaComprador("inicio", PestanaComprador.INICIO, "Inicio", "Tu inicio", "Esta es la portada: aquí puedes descubrir tiendas, productos destacados y próximas ferias."))
+            add(PasoGuiaComprador("explorar", PestanaComprador.EXPLORAR, "Explorar", "Busca productos", "En Explorar puedes buscar y filtrar por categoría o tienda. Abre una ficha para ver sus detalles; con sesión también puedes seguir la tienda."))
+            add(PasoGuiaComprador("ferias", PestanaComprador.FERIAS, "Ferias", "Conoce las ferias", "En Ferias puedes revisar fechas, lugares y detalles para planificar una visita."))
             if (sesion != null) {
-                add(PestanaComprador.RESPUESTAS to ("Revisa tus respuestas" to "Aquí aparecen las respuestas que las tiendas enviaron a tus consultas."))
+                add(PasoGuiaComprador("respuestas", PestanaComprador.RESPUESTAS, "Respuestas", "Revisa tus respuestas", "Aquí aparecen las respuestas que las tiendas enviaron a tus consultas."))
             }
-            add(PestanaComprador.CUENTA to if (sesion == null) {
-                "Tu sesión" to "Puedes recorrer el catálogo sin iniciar sesión. Para seguir tiendas o asociaciones y recibir avisos, entra desde aquí con Google."
+            add(PasoGuiaComprador("cuenta", PestanaComprador.CUENTA, "Mi sesión", if (sesion == null) "Tu sesión" else "Tu cuenta", if (sesion == null) {
+                "Puedes recorrer el catálogo sin iniciar sesión. Para seguir tiendas o asociaciones y recibir avisos, entra desde aquí con Google."
             } else {
-                "Tu cuenta" to "Desde Mi sesión puedes revisar tiendas y asociaciones que sigues, administrar avisos y cerrar sesión."
-            })
+                "Desde Mi sesión puedes revisar tiendas y asociaciones que sigues, administrar avisos y cerrar sesión."
+            }))
+            add(PasoGuiaComprador("ayuda", null, "?", "La ayuda está aquí", "Toca ? para elegir un tutorial específico o volver a recorrer la guía completa."))
         }
     }
     LaunchedEffect(perfilGuia, catalogoRestringido) {
@@ -553,7 +570,7 @@ fun ModoCompradorScreen(
 
     fun iniciarTutorialComprador(seccion: PestanaComprador?) {
         if (catalogoRestringido && seccion != PestanaComprador.CUENTA) return
-        val indice = if (seccion == null) 0 else pasosGuia.indexOfFirst { it.first == seccion }
+        val indice = if (seccion == null) 0 else pasosGuia.indexOfFirst { it.pestana == seccion }
         if (indice < 0) return
         pasoGuia = indice
         guiaSoloTutorial = seccion != null
@@ -563,8 +580,8 @@ fun ModoCompradorScreen(
     }
 
     fun avanzarGuia() {
-        val destino = pasosGuia.getOrNull(pasoGuia)?.first ?: return
-        pestana = destino
+        val paso = pasosGuia.getOrNull(pasoGuia) ?: return
+        paso.pestana?.let { pestana = it }
         if (guiaSoloTutorial) {
             terminarGuia(completarRecorrido = false)
         } else if (pasoGuia >= pasosGuia.lastIndex) {
@@ -613,7 +630,8 @@ fun ModoCompradorScreen(
             }) else null,
                 respuestasNuevas = misConsultas.count { it.respuesta != null && !it.respuestaVista },
                 alVerRespuestas = { pestana = PestanaComprador.RESPUESTAS },
-                alAyuda = { mostrarAyuda = true }
+                alAyuda = { mostrarAyuda = true },
+                alUbicarAyuda = { objetivoAyudaGuia = it }
             ) {
                 val sesionActual = sesion
                 if (sesionActual == null) {
@@ -781,15 +799,18 @@ fun ModoCompradorScreen(
     }
     if (guiaActiva) {
         val paso = pasosGuia.getOrNull(pasoGuia)
-        val objetivo = paso?.let { objetivosGuia[it.first] }
+        val objetivo = when (paso?.idObjetivo) {
+            "ayuda" -> objetivoAyudaGuia
+            else -> paso?.pestana?.let { objetivosGuia[it] }
+        }
         if (paso != null && objetivo != null) {
             com.example.amancay.ui.GuiaInterfazSpotlight(
                 objetivo = objetivo,
-                nombreObjetivo = paso.first.etiqueta,
+                nombreObjetivo = paso.nombreObjetivo,
                 paso = if (guiaSoloTutorial) 1 else pasoGuia + 1,
                 total = if (guiaSoloTutorial) 1 else pasosGuia.size,
-                titulo = paso.second.first,
-                explicacion = paso.second.second,
+                titulo = paso.titulo,
+                explicacion = paso.explicacion,
                 alTocarObjetivo = ::avanzarGuia,
                 alSaltar = { terminarGuia(completarRecorrido = !guiaSoloTutorial) }
             )
@@ -805,45 +826,25 @@ fun ModoCompradorScreen(
             PestanaComprador.RESPUESTAS -> "Aquí aparecen las respuestas de las tiendas a tus consultas."
             PestanaComprador.CUENTA -> if (sesion == null) "Desde Mi sesión puedes ingresar con Google y seguir tiendas o asociaciones." else "Desde Mi sesión puedes revisar tus avisos, respuestas y opciones de cuenta."
         }
-        val seccionesDisponibles = if (catalogoRestringido) emptyList() else pasosGuia.map { it.first }
-        fun etiquetaTutorial(seccion: PestanaComprador) = when (seccion) {
-            PestanaComprador.INICIO -> "Inicio y portada"
-            PestanaComprador.EXPLORAR -> "Buscar productos"
-            PestanaComprador.FERIAS -> "Ferias"
-            PestanaComprador.RESPUESTAS -> "Respuestas de tiendas"
-            PestanaComprador.CUENTA -> "Mi sesión y avisos"
+        val opcionesAyuda = if (catalogoRestringido) emptyList() else pasosGuia.mapNotNull { paso ->
+            val seccion = paso.pestana ?: return@mapNotNull null
+            val opcion = when (seccion) {
+                PestanaComprador.INICIO -> "Inicio y portada" to Icons.Outlined.Home
+                PestanaComprador.EXPLORAR -> "Buscar productos" to Icons.Outlined.Search
+                PestanaComprador.FERIAS -> "Ferias" to Icons.Outlined.Event
+                PestanaComprador.RESPUESTAS -> "Respuestas de tiendas" to Icons.Outlined.ChatBubbleOutline
+                PestanaComprador.CUENTA -> "Mi sesión y avisos" to Icons.Outlined.Person
+            }
+            OpcionTutorialAyuda(seccion.name, opcion.first, opcion.second)
         }
-        AlertDialog(
-            onDismissRequest = { mostrarAyuda = false },
-            title = { Text("Ayuda de ${pestana.etiqueta}") },
-            text = {
-                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    Text(ayuda)
-                    Spacer(Modifier.height(12.dp))
-                    Text("Elige qué tutorial quieres repetir:", color = AmancayBordo, fontWeight = FontWeight.Bold)
-                    if (catalogoRestringido) {
-                        Text("Para recorrer las otras secciones, primero continúa con el acceso al catálogo.", modifier = Modifier.padding(top = 8.dp))
-                    }
-                    seccionesDisponibles.forEach { seccion ->
-                        TextButton(
-                            onClick = { iniciarTutorialComprador(seccion) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-                        ) {
-                            Text(etiquetaTutorial(seccion), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, fontSize = 16.sp)
-                        }
-                    }
-                    if (!catalogoRestringido) {
-                        TextButton(
-                            onClick = { iniciarTutorialComprador(null) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-                        ) {
-                            Text("Recorrido completo", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, fontSize = 16.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { mostrarAyuda = false }) { Text("Cerrar") } }
+        DialogoAyudaTutoriales(
+            titulo = "Ayuda de ${pestana.etiqueta}",
+            descripcion = if (catalogoRestringido) "$ayuda Para acceder a los otros tutoriales, continúa primero con el acceso al catálogo." else ayuda,
+            opciones = opcionesAyuda,
+            alElegir = { iniciarTutorialComprador(PestanaComprador.valueOf(it)) },
+            alRepetirTodo = { iniciarTutorialComprador(null) },
+            alCerrar = { mostrarAyuda = false },
+            mostrarRecorridoCompleto = !catalogoRestringido
         )
     }
 

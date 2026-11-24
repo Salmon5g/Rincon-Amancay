@@ -39,6 +39,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -144,7 +146,8 @@ fun AmancayTopBar(
     etiquetaEspacio: Boolean = false,
     onNotifications: (() -> Unit)? = null,
     notificationsCount: Int = 0,
-    onNotificationsBounds: ((Rect) -> Unit)? = null
+    onNotificationsBounds: ((Rect) -> Unit)? = null,
+    onHelpBounds: ((Rect) -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -199,12 +202,14 @@ fun AmancayTopBar(
             }
         }
         if (onHelp != null) {
-            TextButton(
+            IconButton(
                 onClick = onHelp,
-                modifier = Modifier.heightIn(min = 48.dp).background(Color(0xFFF8E9EA), RoundedCornerShape(24.dp)),
-                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 4.dp)
+                modifier = Modifier.size(48.dp)
+                    .background(Color(0xFFF8E9EA), CircleShape)
+                    .semantics { contentDescription = "Ayuda" }
+                    .onGloballyPositioned { onHelpBounds?.invoke(it.boundsInRoot()) }
             ) {
-                Text("? Ayuda", fontSize = 13.sp, maxLines = 1, softWrap = false, fontWeight = FontWeight.Bold, color = Wine)
+                Text("?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Wine)
             }
         }
     }

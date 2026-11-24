@@ -24,6 +24,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -791,6 +800,7 @@ internal fun EmprendedoraAppConectada(
     val objetivosGuia = remember(sesion.uid) { mutableStateMapOf<Tab, Rect>() }
     val objetivosInicioGuia = remember(sesion.uid) { mutableStateMapOf<String, Rect>() }
     var objetivoConsultasGuia by remember(sesion.uid) { mutableStateOf<Rect?>(null) }
+    var objetivoAyudaGuia by remember(sesion.uid) { mutableStateOf<Rect?>(null) }
     var objetivoTextoGrande by remember(sesion.uid) { mutableStateOf<Rect?>(null) }
     val pasosGuia = remember(sesion.uid) {
         listOf(
@@ -801,6 +811,7 @@ internal fun EmprendedoraAppConectada(
             PasoGuiaEmprendedora("encargos", "Encargos", "Revisa ventas y encargos", "Desde esta tarjeta consultas tus ventas y el historial de encargos. También puedes registrar una venta."),
             PasoGuiaEmprendedora("mi_tienda", "Mi tienda", "Mantén tu tienda al día", "Aquí puedes revisar y personalizar la información de tu tienda, como su nombre, descripción e imagen."),
             PasoGuiaEmprendedora("texto_grande", "Grande", "Haz más cómoda la lectura", "Toca Grande para aumentar el tamaño del texto y elegir una lectura más cómoda."),
+            PasoGuiaEmprendedora("ayuda", "?", "Aquí encuentras más ayuda", "Toca este signo cuando lo necesites: podrás elegir un tutorial específico o volver a recorrer la guía completa."),
             PasoGuiaEmprendedora("agregar", "Agregar", "Agrega un producto", "Este botón inicia el formulario para cargar un producto paso por paso.")
         )
     }
@@ -1150,6 +1161,7 @@ internal fun EmprendedoraAppConectada(
                 screen = Screen.Consultas
             }
             "productos" -> abrirTab(Tab.PRODUCTOS)
+            "ayuda" -> Unit
             "encargos" -> {
                 tab = Tab.INICIO
                 screen = Screen.Ventas
@@ -1250,7 +1262,7 @@ internal fun EmprendedoraAppConectada(
     Scaffold(
         containerColor = Cream,
         contentWindowInsets = if (editandoProducto) WindowInsets.safeDrawing.only(WindowInsetsSides.Top) else ScaffoldDefaults.contentWindowInsets,
-        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = if (editandoTienda) null else ({ showHelp = true }), onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas, onNotificationsBounds = { objetivoConsultasGuia = it }) },
+        topBar = { if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen != Screen.Consultas && screen !is Screen.Preview) AmancayTopBar(onHelp = if (editandoTienda) null else ({ showHelp = true }), onExit = alSalir, etiquetaEspacio = true, onNotifications = { tab = Tab.INICIO; screen = Screen.Consultas }, notificationsCount = nuevasConsultas, onNotificationsBounds = { objetivoConsultasGuia = it }, onHelpBounds = { objetivoAyudaGuia = it }) },
         bottomBar = {
             if (!editandoProducto && screen != Screen.ConfiguracionCatalogo && screen !is Screen.Preview) {
             Surface(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -1752,6 +1764,7 @@ internal fun EmprendedoraAppConectada(
         val objetivo = when (paso?.idObjetivo) {
             "invitaciones", "encargos", "mi_tienda" -> objetivosInicioGuia[paso.idObjetivo]
             "consultas" -> objetivoConsultasGuia
+            "ayuda" -> objetivoAyudaGuia
             "texto_grande" -> objetivoTextoGrande
             "inicio" -> objetivosGuia[Tab.INICIO]
             "productos" -> objetivosGuia[Tab.PRODUCTOS]
@@ -1813,56 +1826,43 @@ internal fun EmprendedoraAppConectada(
     }
 
     if (showHelp) {
-        val opcionesTutorial: List<Pair<String?, String>> = listOf(
-            "inicio" to "Inicio",
-            "invitaciones" to "Ferias e invitaciones",
-            "consultas" to "Responder consultas",
-            "productos" to "Productos",
-            "encargos" to "Encargos y ventas",
-            "mi_tienda" to "Mi tienda",
-            "texto_grande" to "Tamaño de texto",
-            "agregar" to "Agregar un producto",
-            null to "Recorrido completo"
+        val opcionesTutorial = listOf(
+            OpcionTutorialAyuda("inicio", "Inicio y portada", Icons.Outlined.Home),
+            OpcionTutorialAyuda("invitaciones", "Ferias e invitaciones", Icons.Outlined.Event),
+            OpcionTutorialAyuda("consultas", "Responder consultas", Icons.Outlined.ChatBubbleOutline),
+            OpcionTutorialAyuda("productos", "Productos", Icons.Filled.ShoppingBag),
+            OpcionTutorialAyuda("encargos", "Encargos y ventas", Icons.Filled.ReceiptLong),
+            OpcionTutorialAyuda("mi_tienda", "Mi tienda", Icons.Filled.Storefront),
+            OpcionTutorialAyuda("texto_grande", "Tamaño de texto", Icons.Outlined.Settings),
+            OpcionTutorialAyuda("agregar", "Agregar un producto", Icons.Filled.Add)
         )
-        AlertDialog(
-            onDismissRequest = { showHelp = false },
-            title = { Text("Ayuda de ${when (screen) {
-                is Screen.Home -> "Inicio"
-                is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "Productos"
-                is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Agregar"
-                is Screen.History, is Screen.Ventas -> "Ventas"
-                is Screen.Consultas -> "Consultas"
-                is Screen.Ferias, is Screen.FeriaDetalle -> "Ferias"
-                is Screen.Settings, is Screen.ConfiguracionCatalogo -> "Más"
-            }}") },
-            text = {
-                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    Text(when (screen) {
-                        is Screen.Home -> "En Inicio tienes accesos directos a tus productos, encargos, tienda e invitaciones a ferias. El timbre de arriba abre Consultas."
-                        is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "En Productos puedes revisar, editar y organizar los artículos de tu tienda."
-                        is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Sigue los pasos en pantalla para agregar un producto o registrar una venta."
-                        is Screen.History, is Screen.Ventas -> "Aquí puedes revisar tus ventas y buscar por fecha o feria."
-                        is Screen.Consultas -> "Abre una consulta para leer el mensaje y responder a la persona. El estado te ayuda a distinguir las nuevas de las atendidas."
-                        is Screen.Ferias -> "Aquí puedes consultar fechas y estados, abrir cada invitación y responder si participarás. Usa el calendario para ubicar las ferias por día."
-                        is Screen.FeriaDetalle -> "Revisa la fecha, el lugar y las condiciones de la feria. Desde esta ficha puedes aceptar o rechazar la invitación."
-                        is Screen.Settings -> "En esta configuración puedes cambiar el tamaño de letra y editar la información de tu tienda."
-                        is Screen.ConfiguracionCatalogo -> "Aquí puedes ajustar las opciones que se aplican a los productos nuevos."
-                    })
-                    Spacer(Modifier.height(12.dp))
-                    Text("Elige qué tutorial quieres repetir:", color = Wine, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    opcionesTutorial.forEach { (id, etiqueta) ->
-                        TextButton(
-                            onClick = { iniciarTutorialEmprendedora(id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Text(etiqueta, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, fontSize = 16.sp, maxLines = 1)
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { showHelp = false }) { Text("Cerrar", color = Wine) } }
+        val seccionAyuda = when (screen) {
+            is Screen.Home -> "Inicio"
+            is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "Productos"
+            is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Agregar"
+            is Screen.History, is Screen.Ventas -> "Ventas"
+            is Screen.Consultas -> "Consultas"
+            is Screen.Ferias, is Screen.FeriaDetalle -> "Ferias"
+            is Screen.Settings, is Screen.ConfiguracionCatalogo -> "Más"
+        }
+        val descripcionAyuda = when (screen) {
+            is Screen.Home -> "En Inicio tienes accesos directos a tus productos, encargos, tienda e invitaciones a ferias. El timbre de arriba abre Consultas."
+            is Screen.Products, is Screen.OrganizarCatalogo, is Screen.Preview -> "En Productos puedes revisar, editar y organizar los artículos de tu tienda."
+            is Screen.Sell, is Screen.Sale, is Screen.Camara -> "Sigue los pasos en pantalla para agregar un producto o registrar una venta."
+            is Screen.History, is Screen.Ventas -> "Aquí puedes revisar tus ventas y buscar por fecha o feria."
+            is Screen.Consultas -> "Abre una consulta para leer el mensaje y responder a la persona. El estado te ayuda a distinguir las nuevas de las atendidas."
+            is Screen.Ferias -> "Aquí puedes consultar fechas y estados, abrir cada invitación y responder si participarás. Usa el calendario para ubicar las ferias por día."
+            is Screen.FeriaDetalle -> "Revisa la fecha, el lugar y las condiciones de la feria. Desde esta ficha puedes aceptar o rechazar la invitación."
+            is Screen.Settings -> "En esta configuración puedes cambiar el tamaño de letra y editar la información de tu tienda."
+            is Screen.ConfiguracionCatalogo -> "Aquí puedes ajustar las opciones que se aplican a los productos nuevos."
+        }
+        DialogoAyudaTutoriales(
+            titulo = "Ayuda de $seccionAyuda",
+            descripcion = descripcionAyuda,
+            opciones = opcionesTutorial,
+            alElegir = { iniciarTutorialEmprendedora(it) },
+            alRepetirTodo = { iniciarTutorialEmprendedora(null) },
+            alCerrar = { showHelp = false }
         )
     }
 }
