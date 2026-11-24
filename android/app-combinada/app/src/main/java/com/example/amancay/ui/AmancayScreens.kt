@@ -693,6 +693,7 @@ fun FeriaDetalleScreen(
         }
         return
     }
+    val lectorFeria = rememberLectorVoz()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
         Text(
@@ -749,6 +750,13 @@ fun FeriaDetalleScreen(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(invitacion.nombre, fontSize = 28.sp, color = Dark, fontFamily = FontFamily.Serif)
+                Spacer(Modifier.height(10.dp))
+                BotonEscuchar(
+                    lector = lectorFeria,
+                    id = "invitacion:${invitacion.id}:${invitacion.estado}",
+                    texto = { com.example.amancay.buyer.textoParaEscucharInvitacionFeria(invitacion) },
+                    color = Wine
+                )
                 Spacer(Modifier.height(12.dp))
                 Surface(color = CardPink, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {

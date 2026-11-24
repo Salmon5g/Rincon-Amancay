@@ -61,7 +61,8 @@ data class TiendaCatalogoComprador(
     val correoHabilitado: Boolean = false,
     val correoDireccion: String = "",
     val calificacionesHabilitadas: Boolean = false,
-    val puntoRetiro: PuntoRetiroTienda? = null
+    val puntoRetiro: PuntoRetiroTienda? = null,
+    val descripcion: String = ""
 )
 
 data class IntegranteAsociacionCatalogo(val tiendaId: String, val nombre: String)
@@ -228,6 +229,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                         nombre = documento.getString("nombre")?.takeIf(String::isNotBlank) ?: documento.id,
                         tipoId = documento.getString("tipoEmprendimientoId").orEmpty(),
                         sectorId = documento.getString("sectorId").orEmpty(),
+                        descripcion = documento.getString("descripcion").orEmpty().trim(),
                         mostrarPrecios = documento.getBoolean("mostrarPrecios") == true,
                         formaContacto = formaContacto,
                         contacto = contacto,

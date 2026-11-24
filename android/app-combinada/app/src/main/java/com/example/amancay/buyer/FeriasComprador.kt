@@ -308,6 +308,7 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
     var participantes by remember(feria.id) { mutableStateOf<List<ParticipanteFeriaPublico>?>(null) }
     var cargandoParticipantes by remember(feria.id) { mutableStateOf(true) }
     var errorParticipantes by remember(feria.id) { mutableStateOf<String?>(null) }
+    val lector = com.example.amancay.ui.rememberLectorVoz()
 
     LaunchedEffect(feria.id, intentoCarga) {
         cargandoParticipantes = true
@@ -333,6 +334,12 @@ fun DialogoDetalleFeria(feria: FeriaComprador, alCerrar: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                com.example.amancay.ui.BotonEscuchar(
+                    lector = lector,
+                    id = "feria:${feria.id}",
+                    texto = { textoParaEscucharFeria(feria, participantes?.map { it.nombre }) },
+                    color = AmancayBordo
+                )
                 val fecha = formatoFeria(feria.fechaInicio)
                 if (fecha.isNotBlank()) Text("Inicio: $fecha", color = AmancayTinta)
                 val termino = formatoFeria(feria.fechaFin)
