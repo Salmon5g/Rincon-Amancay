@@ -1730,8 +1730,8 @@ onMounted(async () => {
       <div v-else class="ayuda-lateral"><span aria-hidden="true">✿</span><p>Un espacio para que tu emprendimiento siga creciendo.</p></div>
     </aside>
 
-    <main class="principal">
-      <header class="barra-superior">
+    <main class="principal" :class="{ 'principal-con-sesion': Boolean(cuenta) }">
+      <header v-if="!cuenta || seccion === 'ventas' || seccion === 'agregar' || (seccion === 'mas' && editandoTienda)" class="barra-superior">
         <div><span class="punto-marca"></span> RINCÓN AMANCAY <span class="separador">/</span> EMPRENDEDORA</div>
         <NuxtLink to="/comprador" class="volver-catalogo">Volver al catálogo <span aria-hidden="true">↗</span></NuxtLink>
         <button class="ayuda-emprendedora" type="button" data-guia="emprendedora-ayuda" aria-label="Ayuda" title="Ayuda" @click="abrirAyudaEmprendedora">?</button>
@@ -1790,7 +1790,7 @@ onMounted(async () => {
           <div class="tarjeta-accion">
             <div><span class="sobre-titulo claro">UN PASO A LA VEZ</span><h2>¿Qué quieres hacer hoy?</h2><p>Elige una acción. Te acompañamos en cada paso.</p></div>
             <button class="boton-blanco" type="button" @click="abrirNuevoProducto"><span aria-hidden="true">＋</span> Agregar producto</button>
-            <span class="flor-tarjeta" aria-hidden="true">✿</span>
+            <img class="flor-tarjeta" src="/amancay-flor-principal-v3.png" alt="" />
           </div>
           <div class="resumen-inicio" aria-label="Resumen de tu tienda">
             <button class="indicador-inicio" type="button" @click="filtro = 'publicado'; irA('productos')">
@@ -1830,13 +1830,15 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="seccion === 'productos'">
-          <div class="encabezado-seccion"><div><span class="sobre-titulo">MI CATÁLOGO</span><h2>Productos de {{ cuenta.tienda.nombre || 'mi tienda' }}</h2></div></div>
+          <div class="encabezado-seccion encabezado-catalogo">
+            <span class="sobre-titulo">MI CATÁLOGO</span>
+            <button class="boton-vino boton-agregar-catalogo" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
+          </div>
           <div class="controles-catalogo">
-            <label class="busqueda-productos">
+            <label class="busqueda-productos busqueda-catalogo">
               <span aria-hidden="true">⌕</span>
               <input v-model="busquedaProductos" type="search" aria-label="Buscar productos por nombre o categoría" placeholder="Buscar por nombre o categoría" />
             </label>
-            <button class="boton-vino boton-agregar-catalogo" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
           </div>
           <div class="filtros-productos" role="group" aria-label="Filtrar productos">
             <button type="button" :class="{ activo: filtro === 'todos' }" @click="filtro = 'todos'">Todos · {{ totalProductos }}</button>
@@ -1898,13 +1900,18 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="seccion === 'ventas'">
-          <section class="tarjeta-ventas-web">
-            <header><span class="sobre-titulo">VENTA DE MI CATÁLOGO</span><h2>¿Qué producto vendiste?</h2><p>El stock se descuenta del producto o la variante seleccionada y se sincroniza con la tienda pública.</p></header>
-            <ol class="pasos-venta-web" aria-label="Pasos para registrar una venta">
-              <li class="paso-venta-activo"><span>1</span>Producto</li>
-              <li><span>2</span>Cantidad</li>
-              <li><span>3</span>Lugar</li>
-            </ol>
+          <div class="escena-ventas">
+            <img class="flor-ventas-fondo" src="/amancay-flor-principal-v3.png" alt="" />
+            <section class="tarjeta-ventas-web">
+              <div class="encabezado-venta-web">
+                <span class="sobre-titulo">VENTA DE MI CATÁLOGO</span>
+                <ol class="pasos-venta-web" aria-label="Pasos para registrar una venta">
+                  <li class="paso-venta-activo"><span>1</span>Producto</li>
+                  <li><span>2</span>Cantidad</li>
+                  <li><span>3</span>Lugar</li>
+                </ol>
+              </div>
+              <header class="intro-venta-web"><h2>¿Qué producto vendiste?</h2><p>El stock se descuenta del producto o la variante seleccionada y se sincroniza con la tienda pública.</p></header>
             <p v-if="productosVentaCargando" class="mensaje mensaje-aviso" role="status">Cargando productos publicados…</p>
             <p v-if="productosVentaError" class="mensaje mensaje-error" role="alert">{{ productosVentaError }} <button type="button" @click="cargarPaginaVentas(true)">Volver a intentar</button></p>
             <form v-if="productosFormularioVenta.length || operacionVentaPendiente" class="formulario-venta-web" @submit.prevent="registrarVentaWeb">
@@ -1927,21 +1934,23 @@ onMounted(async () => {
               </div>
               <p v-if="variantesVentaCargando" class="mensaje mensaje-aviso" role="status">Cargando las variantes de este producto…</p>
               <p v-if="variantesVentaError" class="mensaje mensaje-error" role="alert">{{ variantesVentaError }}</p>
+              <div class="campo-venta-web campo-cantidad-venta">
+                <label for="cantidad-venta-web">Cantidad</label>
+                <div class="control-cantidad-venta">
+                  <button type="button" aria-label="Restar una unidad" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || Number(cantidadVenta) <= 1" @click="ajustarCantidadVenta(-1)">−</button>
+                  <input id="cantidad-venta-web" v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
+                  <button type="button" aria-label="Agregar una unidad" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || Number(cantidadVenta) >= 10000 || (productoVenta?.manejaStock && stockVenta !== null && stockVenta !== undefined && Number(cantidadVenta) >= stockVenta)" @click="ajustarCantidadVenta(1)">＋</button>
+                </div>
+              </div>
               <div class="campos-venta-web">
                 <div class="campo-venta-web">
-                  <label for="cantidad-venta-web">Cantidad</label>
-                  <div class="control-cantidad-venta">
-                    <button type="button" aria-label="Restar una unidad" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || Number(cantidadVenta) <= 1" @click="ajustarCantidadVenta(-1)">−</button>
-                    <input id="cantidad-venta-web" v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
-                    <button type="button" aria-label="Agregar una unidad" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || Number(cantidadVenta) >= 10000 || (productoVenta?.manejaStock && stockVenta !== null && stockVenta !== undefined && Number(cantidadVenta) >= stockVenta)" @click="ajustarCantidadVenta(1)">＋</button>
-                  </div>
-                </div>
-                <div class="campo-venta-web lugar-venta-web">
                   <label for="tipo-lugar-venta">¿Dónde fue la venta?</label>
                   <select id="tipo-lugar-venta" v-model="tipoLugarVenta" :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
                     <option value="otro">Otro lugar</option>
                     <option value="feria" :disabled="!feriasDeHoyVenta.length">Feria participante de hoy</option>
                   </select>
+                </div>
+                <div class="campo-venta-web lugar-venta-web">
                   <template v-if="tipoLugarVenta === 'feria'">
                     <label for="feria-venta">Feria</label>
                     <select id="feria-venta" v-model="feriaVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || feriasVentaCargando">
@@ -1977,7 +1986,8 @@ onMounted(async () => {
             <div v-if="productosVentaCursor && !productosVentaCargando" class="mas-productos">
               <button class="boton-secundario" type="button" @click="cargarMasProductosVenta">Cargar más productos para vender</button>
             </div>
-          </section>
+            </section>
+          </div>
         </template>
 
         <template v-else-if="editandoTienda">
@@ -2112,6 +2122,7 @@ onMounted(async () => {
 
         <template v-else>
           <div class="bloques-mi-espacio">
+            <img class="flor-espacio-decorativa" src="/amancay-botanica-inferior.png" alt="" />
             <section class="tarjeta-tienda tarjeta-cuenta">
               <div class="cuenta-cabecera">
                 <div class="cuenta-identidad">
@@ -2799,5 +2810,92 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
   .cuenta-completitud{padding:20px 0 0;border-top:1px solid var(--borde);border-left:0}
   .control-tamano-texto{padding:16px;border-radius:18px}
   .cuenta-acciones{align-items:stretch}.boton-ayuda-cuenta,.boton-cerrar-cuenta{gap:7px;padding:0 6px;font-size:11px}.boton-cerrar-cuenta{padding-left:12px}
+}
+
+/* Ajustes de composición para acercar cada vista a los mockups de escritorio. */
+.envoltura{grid-template-columns:clamp(210px,17vw,435px) minmax(0,1fr)}
+.contenido-panel{width:min(2040px,calc(100% - clamp(48px,5.5vw,144px)));padding:48px 0 68px}
+.principal-con-sesion{min-width:0}
+.barra-lateral{padding-right:clamp(18px,2vw,36px);padding-left:clamp(18px,2vw,36px)}
+.etiqueta-lateral{margin-left:10px;margin-right:10px;letter-spacing:.12em}
+.opcion-menu{font-size:clamp(13px,.95vw,17px)}
+.icono-menu{background:#fff0df;color:var(--amancay-bordo-oscuro)}
+
+.tarjeta-accion{display:block;min-height:clamp(270px,19vw,420px);padding:clamp(32px,3.3vw,62px);border-radius:30px}
+.tarjeta-accion>div{max-width:68%}
+.tarjeta-accion h2{font-size:clamp(38px,3.5vw,70px)}
+.tarjeta-accion p{font-size:clamp(15px,1.1vw,20px)}
+.tarjeta-accion .boton-blanco{margin-top:clamp(24px,2vw,40px)}
+.flor-tarjeta{top:-8%;right:1%;width:min(42%,720px);height:116%;object-fit:contain;background:none;mix-blend-mode:screen;opacity:.92}
+
+.encabezado-catalogo{align-items:center;min-height:42px;margin-bottom:17px}
+.encabezado-catalogo>.sobre-titulo{color:var(--amancay-bordo);font-size:clamp(12px,.95vw,17px);letter-spacing:.12em}
+.boton-agregar-catalogo{min-height:56px;padding:0 24px;border-radius:16px;background:var(--amancay-bordo-oscuro);font-size:15px}
+.controles-catalogo{grid-template-columns:minmax(0,1fr);margin-bottom:19px}
+.busqueda-catalogo{width:min(100%,1048px);min-height:58px;border-radius:18px}
+.filtros-productos button{font-size:clamp(12px,.9vw,16px)}
+
+.escena-ventas{position:relative;isolation:isolate;min-height:clamp(680px,68vh,980px);padding:22px 0 40px}
+.flor-ventas-fondo{position:absolute;z-index:-1;top:2%;right:-2%;width:min(51%,1000px);height:94%;object-fit:contain;mix-blend-mode:screen;opacity:.92;pointer-events:none}
+.tarjeta-ventas-web{position:relative;width:min(1250px,63%);max-width:none;gap:24px;padding:clamp(26px,2.4vw,50px);border-radius:28px;background:rgba(255,251,242,.9);box-shadow:0 18px 52px rgba(109,67,34,.09)}
+.encabezado-venta-web{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-bottom:13px;border-bottom:1px solid #edcba8}
+.encabezado-venta-web>.sobre-titulo{flex:0 0 auto;color:var(--amancay-bordo);font-size:clamp(11px,.8vw,15px);letter-spacing:.1em}
+.pasos-venta-web{flex:1;max-width:560px;padding:0;border:0}
+.pasos-venta-web li{font-size:clamp(11px,.8vw,15px)}
+.pasos-venta-web li span{background:transparent;color:#e46d49;font-size:inherit}
+.pasos-venta-web li.paso-venta-activo span{background:transparent;color:#e46d49}
+.intro-venta-web>h2{font-size:clamp(34px,3vw,54px)}
+.intro-venta-web>p{font-size:clamp(13px,.95vw,17px)}
+.formulario-venta-web{gap:20px}
+.campo-venta-web select,.campo-venta-web input{border-radius:12px}
+.campo-cantidad-venta{max-width:390px}
+.campo-cantidad-venta>label{color:var(--texto);font-weight:700}
+.campos-venta-web{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:20px 24px}
+.aviso-stock-venta{border-color:#edc391;background:#fff2df}
+.boton-registro-venta{border-radius:16px;background:var(--amancay-bordo-oscuro)}
+
+.bloques-mi-espacio{position:relative;isolation:isolate;gap:20px}
+.flor-espacio-decorativa{position:absolute;z-index:-1;top:-80px;right:-10px;width:min(32vw,520px);height:280px;object-fit:contain;object-position:right top;opacity:.16;pointer-events:none}
+.cuenta-cabecera{border-bottom:0;padding:9px 0 10px}
+.tarjeta-cuenta,.tarjeta-tienda-cuenta{border:1px solid #edcba8;border-radius:26px;background:rgba(255,253,249,.82)}
+.cuenta-cabecera .boton-restablecer{min-height:58px;padding:0 22px;border-radius:16px;font-size:15px}
+.cuenta-panel{gap:36px}
+.control-tamano-texto{max-width:none;margin-top:0;padding:26px 30px;border-radius:25px;background:linear-gradient(110deg,#ffd7bd,#ffc8a8)}
+.cuenta-acciones{margin-top:0;padding-top:18px}
+
+@media(max-width:1120px){
+  .envoltura{grid-template-columns:215px minmax(0,1fr)}
+  .contenido-panel{width:calc(100% - 48px)}
+  .tarjeta-ventas-web{width:68%}
+  .flor-ventas-fondo{right:-5%;width:48%}
+}
+@media(max-width:740px){
+  .envoltura{display:block}
+  .barra-lateral{padding:11px 14px 7px}
+  .opcion-menu{font-size:11px}
+  .contenido-panel{width:calc(100% - 30px);padding:25px 0 100px}
+  .tarjeta-accion{display:flex;min-height:230px;padding:23px;border-radius:22px}
+  .tarjeta-accion>div{max-width:100%;padding-right:25px}
+  .tarjeta-accion h2{font-size:clamp(30px,7vw,40px)}
+  .tarjeta-accion .boton-blanco{margin-top:16px}
+  .flor-tarjeta{top:auto;right:-25px;bottom:-20px;width:190px;height:190px;opacity:.72}
+  .encabezado-catalogo{align-items:center;flex-wrap:nowrap}
+  .boton-agregar-catalogo{width:auto;min-height:46px;padding:0 12px;font-size:11px}
+  .busqueda-catalogo{width:100%;min-height:50px}
+  .escena-ventas{min-height:0;padding:0 0 25px}
+  .flor-ventas-fondo{top:auto;right:-38px;bottom:0;width:58%;height:48%;opacity:.28}
+  .tarjeta-ventas-web{width:100%;gap:17px;padding:18px;border-radius:20px}
+  .encabezado-venta-web{align-items:flex-start;flex-direction:column;gap:10px}
+  .pasos-venta-web{width:100%;max-width:none}
+  .pasos-venta-web li{font-size:10px}
+  .intro-venta-web>h2{font-size:30px}
+  .campos-venta-web{grid-template-columns:1fr}
+  .campo-cantidad-venta{max-width:none}
+  .bloques-mi-espacio{gap:14px}
+  .flor-espacio-decorativa{top:-45px;right:-8px;width:190px;height:150px;opacity:.1}
+  .tarjeta-cuenta,.tarjeta-tienda-cuenta{border-radius:19px}
+  .cuenta-cabecera{padding:0}
+  .cuenta-panel{gap:17px}
+  .control-tamano-texto{padding:16px;border-radius:18px}
 }
 </style>
