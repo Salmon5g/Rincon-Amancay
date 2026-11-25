@@ -681,9 +681,12 @@ async function cargarFormulario() {
       formulario.tipoProductoId = tipo.id
       formulario.categoriaId = original.categoriaId
     } else {
-      formulario.modalidad = 'regular'
-      formulario.manejaStock = true
-      formulario.alAgotarse = 'mostrar_agotado'
+      const valoresDefecto = props.cuenta.tienda.configuracion?.valoresDefecto
+      elegirModalidad(valoresDefecto?.modalidad ?? 'regular')
+      if (formulario.modalidad !== 'pieza_unica') {
+        formulario.manejaStock = valoresDefecto?.manejaStock ?? true
+        formulario.alAgotarse = valoresDefecto?.alAgotarse ?? 'mostrar_agotado'
+      }
       const tipo = tiposVisibles.value[0]
       if (tipo) seleccionarTipo(tipo)
       const borrador = await leerBorradorLocal().catch(() => null)

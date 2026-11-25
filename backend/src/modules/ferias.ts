@@ -194,16 +194,19 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       const access = await actorRef.get();
       const accessData = access.data();
       exigir(accessData?.estado === 'activo' && Array.isArray(accessData.roles) && accessData.roles.includes('emprendedora'), 'sin-permiso', 'Solo una cuenta emprendedora activa puede consultar sus invitaciones.');
-      const ferias = await db.collection('ferias').where('estado', 'in', ['borrador', 'publicada']).limit(101).get();
-      exigir(ferias.size <= 100, 'limite-local', 'Hay más de 100 ferias en preparación o publicadas; se requiere paginación.');
-      if (!ferias.size) return { invitaciones: [] };
-      const participantes = await db.getAll(...ferias.docs.map(doc => doc.ref.collection('participantes').doc(`emprendedora_${identidad.uid}`)));
-      const invitaciones = participantes.flatMap((participante, indice) => {
-        if (!participante.exists) return [];
-        const data = participante.data()!;
-        if (data.tipo !== 'emprendedora' || data.entidadId !== identidad.uid || !['invitada', 'confirmada', 'rechazada', 'agregada_admin'].includes(String(data.estado))) return [];
-        const feria = ferias.docs[indice];
-        const feriaData = feria.data();
+      const participaciones = await db.collectionGroup('participantes')
+        .where('entidadId', '==', identidad.uid)
+        .where('estado', 'in', ['invitada', 'confirmada', 'rechazada', 'agregada_admin'])
+        .limit(101).get();
+      exigir(participaciones.size <= 100, 'limite-local', 'Hay más de 100 participaciones en ferias; se requiere paginación.');
+      const propias = participaciones.docs.filter(doc => doc.id === `emprendedora_${identidad.uid}` && doc.data().tipo === 'emprendedora' && doc.ref.parent.parent);
+      if (!propias.length) return { invitaciones: [] };
+      const ferias = await db.getAll(...propias.map(doc => doc.ref.parent.parent!));
+      const invitaciones = propias.flatMap((participante, indice) => {
+        const data = participante.data();
+        const feria = ferias[indice];
+        const feriaData = feria?.data();
+        if (!feria?.exists || !feriaData || !['borrador', 'publicada'].includes(String(feriaData.estado))) return [];
         return [{
           id: feria.id,
           nombre: String(feriaData.nombre ?? ''),

@@ -84,6 +84,46 @@ export type PuntoRetiroEmprendedoraWeb = {
   descripcion: string
 }
 
+export type ConfiguracionTiendaWeb = {
+  historialVentasActivo: boolean
+  calificacionesHabilitadas: boolean
+  valoresDefecto: {
+    modalidad: 'regular' | 'a_pedido' | 'pieza_unica'
+    manejaStock: boolean
+    alAgotarse: 'mostrar_agotado' | 'ocultar' | 'pasar_a_pedido'
+  }
+  avisosContacto: {
+    habilitado: boolean
+    horaInicio: string
+    horaFin: string
+    zonaHoraria: string
+  }
+}
+
+export function mapearConfiguracionTienda(datos: Record<string, unknown>): ConfiguracionTiendaWeb {
+  const hora = (valor: unknown, alternativo: string) => typeof valor === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(valor) ? valor : alternativo
+  const horario = datos.notificacionesContacto && typeof datos.notificacionesContacto === 'object'
+    ? datos.notificacionesContacto as Record<string, unknown>
+    : {}
+  const modalidad = ['regular', 'a_pedido', 'pieza_unica'].includes(String(datos.modalidadDefecto)) ? datos.modalidadDefecto as ConfiguracionTiendaWeb['valoresDefecto']['modalidad'] : 'regular'
+  const alAgotarse = ['mostrar_agotado', 'ocultar', 'pasar_a_pedido'].includes(String(datos.alAgotarseDefecto)) ? datos.alAgotarseDefecto as ConfiguracionTiendaWeb['valoresDefecto']['alAgotarse'] : 'mostrar_agotado'
+  return {
+    historialVentasActivo: datos.historialVentasActivo === true,
+    calificacionesHabilitadas: datos.calificacionesHabilitadas === true,
+    valoresDefecto: {
+      modalidad,
+      manejaStock: typeof datos.manejaStockDefecto === 'boolean' ? datos.manejaStockDefecto : true,
+      alAgotarse,
+    },
+    avisosContacto: {
+      habilitado: horario.habilitado === true,
+      horaInicio: hora(horario.horaInicio, '09:00'),
+      horaFin: hora(horario.horaFin, '18:00'),
+      zonaHoraria: typeof horario.zonaHoraria === 'string' && horario.zonaHoraria ? horario.zonaHoraria : 'America/Santiago',
+    },
+  }
+}
+
 export type CuentaEmprendedoraWeb = {
   uid: string
   correo: string
@@ -104,6 +144,7 @@ export type CuentaEmprendedoraWeb = {
     tieneLogo: boolean
     logoPublico: string | null
     contactoVisible: boolean
+    configuracion: ConfiguracionTiendaWeb
   }
   productos: ProductoEmprendedoraWeb[]
 }
@@ -471,6 +512,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       tipoEmprendimientoId: texto(tienda.tipoEmprendimientoId),
       sectorId: texto(tienda.sectorId),
       mostrarPrecios,
+      configuracion: mapearConfiguracionTienda(configuracion),
       contacto,
       canalesContacto,
       puntoRetiro,
@@ -483,4 +525,15 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
     },
     productos: [],
   }
+}
+
+export async function leerProductosPorIdEmprendedora(firebase: ServiciosCliente, tiendaId: string, productoIds: string[]): Promise<ProductoEmprendedoraWeb[]> {
+  const ids = [...new Set(productoIds)].filter(Boolean)
+  const productos = collection(firebase.db, 'tiendasPrivadas', tiendaId, 'productos')
+  const grupos: string[][] = []
+  for (let inicio = 0; inicio < ids.length; inicio += 30) grupos.push(ids.slice(inicio, inicio + 30))
+  const resultados = await Promise.all(grupos.map((grupo) => getDocsFromServer(query(productos, where(documentId(), 'in', grupo)))))
+  return resultados.flatMap((resultado) => resultado.docs
+    .filter((snapshot) => snapshot.data().estadoPublicacion !== 'eliminado')
+    .map((snapshot) => mapearProducto(snapshot.id, snapshot.data())))
 }

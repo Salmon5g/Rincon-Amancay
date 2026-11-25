@@ -3,10 +3,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import '~/assets/amancay-tokens.css'
 import SelectorUbicacionFeria from '~/components/admin/MapaUbicacionFeria.client.vue'
-import { cargarCuentaEmprendedora, contarProductosEmprendedora, leerFichaProductoEmprendedora, leerProductoEmprendedora, leerVariantesProductoEmprendedora, listarPaginaProductosEmprendedora, type ProductoEmprendedoraWeb, type ResumenProductosEmprendedora } from '~/repositories/firebase/emprendedora'
+import { cargarCuentaEmprendedora, contarProductosEmprendedora, type ConfiguracionTiendaWeb, leerFichaProductoEmprendedora, leerProductoEmprendedora, leerVariantesProductoEmprendedora, listarPaginaProductosEmprendedora, type ProductoEmprendedoraWeb, type ResumenProductosEmprendedora } from '~/repositories/firebase/emprendedora'
 import type { OpcionAyudaWeb, PasoGuiaWeb } from '~/types/ayuda-web'
+import { contarConsultasNuevasEmprendedora } from '~/repositories/firebase/consultas-emprendedora'
+import { obtenerInvitacionesFeria, olvidarInvitaciones } from '~/lib/ferias-emprendedora'
+import type { Operacion } from '~/lib/cliente-base'
 
-type Seccion = 'inicio' | 'productos' | 'agregar' | 'ventas' | 'mas'
+type Seccion = 'inicio' | 'productos' | 'agregar' | 'ventas' | 'consultas' | 'ferias' | 'mas'
 type Filtro = 'todos' | 'publicado' | 'borrador' | 'archivado'
 type AccionPublicacionTienda = 'publicarTienda' | 'retirarTienda'
 type AccionProductoWeb = 'retirarProducto' | 'eliminarProducto'
@@ -48,8 +51,17 @@ const secciones: { id: Seccion; nombre: string; icono: string }[] = [
   { id: 'productos', nombre: 'Productos', icono: '▦' },
   { id: 'agregar', nombre: 'Agregar', icono: '+' },
   { id: 'ventas', nombre: 'Ventas', icono: '↗' },
+  { id: 'consultas', nombre: 'Consultas', icono: '✉' },
+  { id: 'ferias', nombre: 'Ferias', icono: '✿' },
   { id: 'mas', nombre: 'Más', icono: '•••' },
 ]
+const seccionesMovil = secciones.filter((item) => item.id !== 'consultas' && item.id !== 'ferias')
+const consultasNuevas = ref(0)
+const vistaVentas = ref<'registrar' | 'historial'>('registrar')
+const organizandoCatalogo = ref(false)
+const productoVistaPreviaId = ref<string | null>(null)
+const productoVistaPrevia = computed(() => cuenta.value?.productos.find((producto) => producto.id === productoVistaPreviaId.value) ?? null)
+const feriasPendientes = ref(0)
 const cuenta = ref<Awaited<ReturnType<typeof cargarCuentaEmprendedora>> | null>(null)
 const revisando = ref(true)
 const enviando = ref(false)
@@ -62,7 +74,7 @@ const error = ref('')
 const aviso = ref('')
 const ruta = useRoute()
 const router = useRouter()
-const vistasValidas = new Set<Seccion>(['inicio', 'productos', 'agregar', 'ventas', 'mas'])
+const vistasValidas = new Set<Seccion>(['inicio', 'productos', 'agregar', 'ventas', 'consultas', 'ferias', 'mas'])
 const vistaEnUrl = typeof ruta.query.vista === 'string' && vistasValidas.has(ruta.query.vista as Seccion)
   ? ruta.query.vista as Seccion
   : 'inicio'
@@ -329,8 +341,12 @@ async function recargarCuentaConProductos(uid = cuenta.value?.uid) {
 
 function guardarProductoEnMemoria(producto: ProductoEmprendedoraWeb) {
   if (!cuenta.value) return
+  const anterior = cuenta.value.productos.find((item) => item.id === producto.id)
+  const mismaImagen = anterior?.imagenPublica && !producto.imagenPublica && producto.estado === 'publicado'
+    && anterior.imagenes.join('|') === producto.imagenes.join('|')
+  const actualizado = mismaImagen ? { ...producto, imagenPublica: anterior.imagenPublica } : producto
   const otros = cuenta.value.productos.filter((item) => item.id !== producto.id)
-  cuenta.value = { ...cuenta.value, productos: [...otros, producto] }
+  cuenta.value = { ...cuenta.value, productos: [...otros, actualizado] }
 }
 
 async function cargarResumenProductos(forzar = false) {
@@ -958,6 +974,9 @@ async function cerrarSesion() {
   productosVentaCargando.value = false
   resumenProductosCargando.value = false
   variantesVentaCargando.value = false
+  if (cuenta.value) olvidarInvitaciones(cuenta.value.uid)
+  consultasNuevas.value = 0
+  feriasPendientes.value = 0
   cuenta.value = null
   accionPublicacionTienda.value = null
   operacionPublicacionTiendaPendiente.value = null
@@ -974,6 +993,8 @@ async function cerrarSesion() {
 
 function irA(destino: Seccion) {
   cerrarMenuProducto()
+  organizandoCatalogo.value = false
+  productoVistaPreviaId.value = null
   seccion.value = destino
   filtro.value = 'todos'
   if (destino !== 'agregar') productoEnEdicion.value = null
@@ -1075,6 +1096,12 @@ watch(() => cuenta.value?.uid, async (uid, anterior) => {
 function abrirNuevoProducto() {
   productoEnEdicion.value = null
   irA('agregar')
+}
+
+function abrirVistaPrevia(productoId: string) {
+  cerrarMenuProducto()
+  productoVistaPreviaId.value = productoId
+  if (import.meta.client) window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 }
 
 function editarProducto(productoId: string) {
@@ -1611,10 +1638,10 @@ watch(() => [seccion.value, filtro.value, cuenta.value?.tienda.id] as const, ([v
   if (vista === 'productos') {
     void cargarCategoriasProducto()
     const vencida = productosPaginaActualizadaEn > 0 && Date.now() - productosPaginaActualizadaEn > 60_000
-    if (!productosPaginaLista || productosPaginaTiendaCargada !== tiendaId || productosPaginaFiltro !== filtroActual || vencida) void cargarPaginaProductos(true)
+    if (!productosPaginaLista.value || productosPaginaTiendaCargada !== tiendaId || productosPaginaFiltro !== filtroActual || vencida) void cargarPaginaProductos(true)
   }
   if (vista === 'ventas') {
-    if (!productosVentaPaginaLista || productosVentaTiendaCargada !== tiendaId || Date.now() - productosVentaActualizadaEn > 60_000) void cargarPaginaVentas(true)
+    if (!productosVentaPaginaLista.value || productosVentaTiendaCargada !== tiendaId || Date.now() - productosVentaActualizadaEn > 60_000) void cargarPaginaVentas(true)
     void cargarFeriasVenta()
   }
 }, { immediate: true })
@@ -1637,6 +1664,34 @@ watch(() => cuenta.value?.tienda.id, (tiendaId) => {
   }
   void cargarResumenProductos(true)
 }, { immediate: true })
+
+function actualizarConfiguracionTienda(configuracion: ConfiguracionTiendaWeb) {
+  if (!cuenta.value) return
+  cuenta.value = { ...cuenta.value, tienda: { ...cuenta.value.tienda, configuracion } }
+}
+
+async function abrirConfiguracionTienda() {
+  editandoTienda.value = false
+  irA('mas')
+  await nextTick()
+  document.getElementById('configuracion-tienda')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function cargarAvisosPanel(uid: string, tiendaId: string) {
+  const servicio = cliente() as ReturnType<typeof cliente> & { llamar?: (operacion: Operacion, solicitud: Record<string, unknown>) => Promise<Record<string, unknown>> }
+  const [nuevas, invitaciones] = await Promise.allSettled([
+    contarConsultasNuevasEmprendedora(servicio.firebase, tiendaId),
+    typeof servicio.llamar === 'function' ? obtenerInvitacionesFeria(uid, servicio.llamar.bind(servicio)) : Promise.resolve([]),
+  ])
+  if (cuenta.value?.uid !== uid) return
+  if (nuevas.status === 'fulfilled') consultasNuevas.value = nuevas.value
+  if (invitaciones.status === 'fulfilled') feriasPendientes.value = invitaciones.value.filter((invitacion) => invitacion.estado === 'pendiente').length
+}
+
+watch(() => cuenta.value ? `${cuenta.value.uid}:${cuenta.value.tienda.id}` : '', (clave) => {
+  if (!clave || !cuenta.value) return
+  void cargarAvisosPanel(cuenta.value.uid, cuenta.value.tienda.id)
+})
 
 watch(() => ruta.query.vista, (valor) => {
   const vista = typeof valor === 'string' && vistasValidas.has(valor as Seccion) ? valor as Seccion : 'inicio'
@@ -1718,6 +1773,8 @@ onMounted(async () => {
           <button v-for="item in secciones" :key="item.id" class="opcion-menu" :data-guia="`emprendedora-${item.id}`" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" type="button" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)">
             <span class="icono-menu" aria-hidden="true">{{ item.icono }}</span>{{ item.nombre }}
             <span v-if="item.id === 'productos' && borradores" class="contador-menu">{{ borradores }}</span>
+            <span v-else-if="item.id === 'consultas' && consultasNuevas" class="contador-menu aviso" :aria-label="`${consultasNuevas} nuevas`">{{ consultasNuevas }}</span>
+            <span v-else-if="item.id === 'ferias' && feriasPendientes" class="contador-menu aviso" :aria-label="`${feriasPendientes} pendientes`">{{ feriasPendientes }}</span>
           </button>
         </template>
         <button v-else class="opcion-menu seleccionada" type="button" aria-current="page"><span class="icono-menu" aria-hidden="true">↪</span>Iniciar sesión</button>
@@ -1776,11 +1833,13 @@ onMounted(async () => {
         <div v-if="!(seccion === 'mas' && editandoTienda)" class="cabecera-panel" :data-guia="seccion === 'inicio' ? 'emprendedora-inicio' : undefined">
           <div>
             <span class="sobre-titulo saludo-panel">Hola, {{ nombrePersona() }}</span>
-            <h1>{{ seccion === 'inicio' ? 'Tu tienda, paso a paso' : seccion === 'productos' ? 'Mis productos' : seccion === 'agregar' ? (productoEnEdicion ? 'Editar producto' : 'Un nuevo producto') : seccion === 'ventas' ? 'Registrar una venta' : 'Tu espacio' }}</h1>
+            <h1>{{ seccion === 'inicio' ? 'Tu tienda, paso a paso' : seccion === 'productos' ? 'Mis productos' : seccion === 'agregar' ? (productoEnEdicion ? 'Editar producto' : 'Un nuevo producto') : seccion === 'ventas' ? (vistaVentas === 'historial' ? 'Historial de ventas' : 'Registrar una venta') : seccion === 'consultas' ? 'Consultas' : seccion === 'ferias' ? 'Ferias' : 'Tu espacio' }}</h1>
             <p v-if="seccion === 'inicio'">Administra tus productos y revisa cómo va tu tienda.</p>
             <p v-else-if="seccion === 'productos'">Revisa el estado de los productos de tu tienda.</p>
             <p v-else-if="seccion === 'agregar'">{{ productoEnEdicion ? 'Actualiza la ficha y refleja los cambios en tu catálogo.' : 'Prepara una nueva pieza para compartir con tus clientes.' }}</p>
             <p v-else-if="seccion === 'ventas'">Registra una venta y actualiza el stock de la variante correspondiente.</p>
+            <p v-else-if="seccion === 'consultas'">Lee y responde los mensajes que te dejan las compradoras.</p>
+            <p v-else-if="seccion === 'ferias'">Revisa tus invitaciones y las ferias en que participas.</p>
             <p v-else>Tu cuenta y los datos principales de tu emprendimiento.</p>
           </div>
           <span v-if="fecha" class="fecha-hoy">{{ fecha }}</span>
@@ -1809,6 +1868,18 @@ onMounted(async () => {
               <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : 'Pendiente' }}</span>
             </button>
           </div>
+          <div class="resumen-inicio avisos" aria-label="Avisos de tu tienda">
+            <button class="indicador-inicio" type="button" @click="irA('consultas')">
+              <span class="icono-indicador" aria-hidden="true">✉</span>
+              <span><small>Consultas nuevas</small><strong>{{ consultasNuevas }}</strong></span>
+              <span class="indicador-flecha" aria-hidden="true">›</span>
+            </button>
+            <button class="indicador-inicio" type="button" @click="irA('ferias')">
+              <span class="icono-indicador" aria-hidden="true">✿</span>
+              <span><small>Invitaciones a ferias</small><strong>{{ feriasPendientes ? `${feriasPendientes} por responder` : 'Ver ferias' }}</strong></span>
+              <span class="indicador-flecha" aria-hidden="true">›</span>
+            </button>
+          </div>
           <section class="tarjeta-tienda">
             <div class="cabecera-tienda"><div><span class="sobre-titulo">MI TIENDA</span><h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2></div>
               <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada del catálogo' : 'En borrador' }}</span>
@@ -1829,10 +1900,21 @@ onMounted(async () => {
           </section>
         </template>
 
+        <template v-else-if="seccion === 'productos' && organizandoCatalogo">
+          <EmprendedoraOrganizarCatalogoEmprendedora :key="cuenta.tienda.id" :cuenta="cuenta" :categorias="categoriasProducto" @actualizados="(actualizados) => actualizados.forEach(guardarProductoEnMemoria)" @cerrar="organizandoCatalogo = false" />
+        </template>
+
+        <template v-else-if="seccion === 'productos' && productoVistaPrevia">
+          <EmprendedoraVistaPreviaProductoEmprendedora :key="productoVistaPrevia.id" :cuenta="cuenta" :producto="productoVistaPrevia" :categoria="nombreCategoriaProducto(productoVistaPrevia.categoriaId)" @variantes="guardarProductoEnMemoria" @editar="editarProducto" @cerrar="productoVistaPreviaId = null" />
+        </template>
+
         <template v-else-if="seccion === 'productos'">
           <div class="encabezado-seccion encabezado-catalogo">
             <span class="sobre-titulo">MI CATÁLOGO</span>
-            <button class="boton-vino boton-agregar-catalogo" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
+            <div class="acciones-catalogo">
+              <button class="boton-secundario boton-organizar-catalogo" type="button" @click="organizandoCatalogo = true">Organizar catálogo</button>
+              <button class="boton-vino boton-agregar-catalogo" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
+            </div>
           </div>
           <div class="controles-catalogo">
             <label class="busqueda-productos busqueda-catalogo">
@@ -1850,10 +1932,10 @@ onMounted(async () => {
           <p v-if="productosPaginaError" class="mensaje mensaje-error" role="alert">{{ productosPaginaError }} <button type="button" @click="cargarPaginaProductos(true)">Volver a intentar</button></p>
           <div v-if="productosFiltrados.length" class="lista-productos">
             <article v-for="producto in productosFiltrados" :key="producto.id" class="tarjeta-producto">
-              <div class="imagen-producto">
+              <button class="imagen-producto boton-vista-previa" type="button" :aria-label="`Ver vista previa de ${producto.nombre || 'este producto'}`" title="Ver vista previa" @click="abrirVistaPrevia(producto.id)">
                 <ImagenPublica v-if="producto.imagenPublica" :ruta="producto.imagenPublica" :alt="producto.nombre" ajuste="contain" :zoom="false" />
                 <span v-else aria-hidden="true">{{ producto.nombre.trim().charAt(0).toUpperCase() || '✿' }}</span>
-              </div>
+              </button>
               <div class="datos-producto"><small v-if="nombreCategoriaProducto(producto.categoriaId)" class="categoria-producto">{{ nombreCategoriaProducto(producto.categoriaId) }}</small><strong>{{ producto.nombre || 'Producto sin nombre' }}</strong><p>{{ producto.descripcion || 'Sin descripción' }}</p>
                 <div class="metadatos-producto"><span>{{ precioProductoBonito(producto) }}</span><span>·</span><span>{{ stockBonito(producto) }}</span></div>
               </div>
@@ -1878,6 +1960,7 @@ onMounted(async () => {
                     @click.stop="alternarMenuProducto(producto.id, $event)"
                   >⋮</button>
                   <div v-if="menuProductoAbiertoId === producto.id" :id="`menu-producto-${producto.id}`" class="menu-acciones-producto" role="menu" @click.stop>
+                    <button type="button" role="menuitem" @click="abrirVistaPrevia(producto.id)">Vista previa y compartir</button>
                     <button v-if="producto.estado === 'publicado'" type="button" role="menuitem" @click="abrirAccionProducto(producto, 'retirarProducto')">Retirar del catálogo</button>
                     <button type="button" role="menuitem" :disabled="!producto.manejaStock || producto.piezaUnicaVendida" :title="producto.piezaUnicaVendida ? 'Esta pieza ya figura como vendida.' : !producto.manejaStock ? 'Este producto no controla stock.' : undefined" @click="abrirAjusteStock(producto)">Ajustar stock</button>
                     <button class="accion-eliminar-producto" type="button" role="menuitem" @click="abrirAccionProducto(producto, 'eliminarProducto')">Eliminar</button>
@@ -1895,12 +1978,25 @@ onMounted(async () => {
           </div>
         </template>
 
+        <template v-else-if="seccion === 'consultas'">
+          <EmprendedoraConsultasEmprendedora :key="cuenta.tienda.id" :cuenta="cuenta" @consulta-atendida="consultasNuevas = Math.max(0, consultasNuevas - 1)" />
+        </template>
+
+        <template v-else-if="seccion === 'ferias'">
+          <EmprendedoraFeriasEmprendedora :key="cuenta.uid" :cuenta="cuenta" @pendientes="feriasPendientes = $event" />
+        </template>
+
         <template v-else-if="seccion === 'agregar'">
           <EmprendedoraProductoEditor :key="productoEnEdicion ?? 'nuevo'" :cuenta="cuenta" :producto-id="productoEnEdicion" @cancelar="irA('productos')" @guardado="guardarProductoTerminado" />
         </template>
 
         <template v-else-if="seccion === 'ventas'">
-          <div class="escena-ventas">
+          <div class="pestanas-ventas" role="tablist" aria-label="Ventas">
+            <button type="button" role="tab" :aria-selected="vistaVentas === 'registrar'" :class="{ activa: vistaVentas === 'registrar' }" @click="vistaVentas = 'registrar'">Registrar venta</button>
+            <button type="button" role="tab" :aria-selected="vistaVentas === 'historial'" :class="{ activa: vistaVentas === 'historial' }" @click="vistaVentas = 'historial'">Historial</button>
+          </div>
+          <EmprendedoraHistorialVentasEmprendedora v-if="vistaVentas === 'historial'" :key="cuenta.tienda.id" :cuenta="cuenta" @configurar="abrirConfiguracionTienda" />
+          <div v-else class="escena-ventas">
             <img class="flor-ventas-fondo" src="/amancay-flor-principal-v3.png" alt="" />
             <section class="tarjeta-ventas-web">
               <div class="encabezado-venta-web">
@@ -2166,6 +2262,11 @@ onMounted(async () => {
                 </section>
               </div>
             </section>
+            <section id="configuracion-tienda" class="bloque-configuracion" aria-labelledby="titulo-configuracion-tienda">
+              <span class="sobre-titulo">PREFERENCIAS</span>
+              <h2 id="titulo-configuracion-tienda">Configuración de la tienda</h2>
+              <EmprendedoraConfiguracionTiendaEmprendedora :cuenta="cuenta" @actualizada="actualizarConfiguracionTienda" />
+            </section>
             <div class="control-tamano-texto" data-guia="emprendedora-texto"><SelectorTextoAccesible /></div>
             <div class="cuenta-acciones">
               <button class="boton-ayuda-cuenta" type="button" @click="abrirAyudaEmprendedora"><span aria-hidden="true">?</span> Ayuda y accesibilidad</button>
@@ -2176,7 +2277,7 @@ onMounted(async () => {
       </section>
 
       <nav v-if="cuenta" class="navegacion-movil" aria-label="Navegación emprendedora">
-        <button v-for="item in secciones" :key="item.id" :data-guia="`emprendedora-${item.id}`" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
+        <button v-for="item in seccionesMovil" :key="item.id" :data-guia="`emprendedora-${item.id}`" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
       </nav>
     </main>
     <Teleport to="body">
@@ -2713,7 +2814,7 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
 .enlace-tienda-publica:hover{background:#fff0df;border-color:#d8895e}
 .enlace-tienda-publica span{font-size:17px}
 
-.controles-catalogo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;margin:0 0 17px}
+.controles-catalogo{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:18px;align-items:center;margin:0 0 17px}
 .busqueda-productos{display:flex;align-items:center;gap:12px;min-width:0;min-height:54px;padding:0 17px;border:1px solid #edcba8;border-radius:16px;background:var(--amancay-superficie);color:var(--vino)}
 .busqueda-productos>span{font-size:24px;line-height:1}
 .busqueda-productos input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--texto);font:500 14px 'Plus Jakarta Sans',sans-serif}
@@ -2898,4 +2999,19 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
   .cuenta-panel{gap:17px}
   .control-tamano-texto{padding:16px;border-radius:18px}
 }
+.resumen-inicio.avisos{grid-template-columns:repeat(2,minmax(0,1fr))}
+.contador-menu.aviso{background:var(--naranja)}
+@media(max-width:560px){.resumen-inicio.avisos{grid-template-columns:1fr}}
+.pestanas-ventas{display:inline-flex;gap:4px;margin:0 0 16px;padding:4px;border:1px solid var(--borde);border-radius:16px;background:var(--amancay-superficie)}
+.pestanas-ventas button{min-height:42px;padding:0 18px;border:0;border-radius:12px;background:transparent;color:var(--vino);font:700 13px 'Plus Jakarta Sans',sans-serif;cursor:pointer}
+.pestanas-ventas button.activa{background:var(--vino);color:#fff}
+.pestanas-ventas button:focus-visible{outline:3px solid rgba(116,36,78,.3);outline-offset:2px}
+.bloque-configuracion{display:grid;gap:10px;margin:18px 0}
+.boton-vista-previa{padding:0;border:0;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}
+.boton-vista-previa:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(109,67,34,.14)}
+@media(prefers-reduced-motion:reduce){.boton-vista-previa{transition:none}.boton-vista-previa:hover{transform:none}}
+.acciones-catalogo{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}
+.boton-organizar-catalogo{min-height:56px;padding:0 22px;border-radius:16px;font-size:15px}
+@media(max-width:740px){.acciones-catalogo{gap:6px}.boton-organizar-catalogo{min-height:46px;padding:0 12px;font-size:11px}}
+.bloque-configuracion h2{margin:0 0 4px;color:var(--vino);font:400 28px/1.1 'DM Serif Display',Georgia,serif}
 </style>
