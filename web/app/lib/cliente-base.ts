@@ -15,7 +15,7 @@ export interface ServiciosCliente {
   storage: FirebaseStorage;
 }
 
-export const operaciones = ['publicarTienda', 'retirarTienda', 'editarTiendaEmprendedora', 'configurarMostrarPrecios', 'listarFeriasVenta', 'registrarVenta', 'publicarProducto', 'retirarProducto', 'altaEmprendedora', 'crearProducto', 'editarProducto', 'asignarImagenVariante', 'ajustarStock', 'desactivarEmprendedora', 'registrarComprador', 'invitarEmprendedora',
+export const operaciones = ['publicarTienda', 'retirarTienda', 'editarTiendaEmprendedora', 'configurarMostrarPrecios', 'listarFeriasVenta', 'registrarVenta', 'publicarProducto', 'retirarProducto', 'altaEmprendedora', 'crearProducto', 'editarProducto', 'eliminarProducto', 'asignarImagenVariante', 'ajustarStock', 'desactivarEmprendedora', 'registrarComprador', 'invitarEmprendedora',
   'consultarInvitacion', 'aceptarInvitacion', 'cancelarInvitacion', 'reactivarEmprendedora', 'listarEmprendedorasAdmin', 'editarCuentaEmprendedora', 'crearElementoCatalogo', 'editarElementoCatalogo', 'cambiarEstadoCatalogo', 'listarAsociaciones', 'leerIntegrantesAsociacion', 'crearAsociacion', 'editarAsociacion', 'cambiarEstadoAsociacion', 'asignarEmprendedora', 'quitarEmprendedora', 'leerConfiguracionNavegacion', 'guardarConfiguracionNavegacion', 'listarAdministradores',
   'agregarAdministrador', 'quitarAdministrador', 'listarFeriasAdmin', 'listarInvitacionesFeria', 'crearFeria', 'editarFeria', 'cambiarEstadoFeria', 'leerParticipantesFeria', 'invitarParticipanteFeria', 'agregarParticipanteFeria', 'cancelarInvitacionFeria', 'retirarParticipanteFeria', 'registrarAsistenciaFeria', 'responderInvitacionFeria', 'enviarRecordatorioFeria', 'enviarAvisoConfirmadasFeria'] as const;
 export type Operacion = typeof operaciones[number];

@@ -35,6 +35,9 @@ internal fun FichaTiendaComprador(
     tipo: String,
     sector: String,
     productos: List<ProductoCatalogoComprador>,
+    cargandoProductos: Boolean,
+    hayMasProductos: Boolean,
+    alCargarMas: () -> Unit,
     usuarioId: String?,
     firestore: FirebaseFirestore,
     alPedirInicioSesion: () -> Unit,
@@ -168,6 +171,17 @@ internal fun FichaTiendaComprador(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             visibles.chunked(2)[fila].forEach { producto -> TarjetaProductoTienda(producto, tienda.mostrarPrecios, Modifier.weight(1f), onClick = { alAbrirProducto(producto) }) }
                             if (visibles.size % 2 == 1 && fila == visibles.chunked(2).lastIndex) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    if (cargandoProductos && productos.isEmpty()) item {
+                        Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = AmancayBordo)
+                        }
+                    }
+                    if (hayMasProductos) item {
+                        TextButton(onClick = alCargarMas, enabled = !cargandoProductos, modifier = Modifier.fillMaxWidth()) {
+                            if (cargandoProductos) CircularProgressIndicator(Modifier.size(18.dp), color = AmancayBordo)
+                            else Text("Cargar más productos", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     item {

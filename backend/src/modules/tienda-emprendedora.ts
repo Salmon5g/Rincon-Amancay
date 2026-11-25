@@ -104,7 +104,7 @@ export function crearEdicionTiendaEmprendedora(db: Firestore) {
     // con clientes que no los envían; si faltan, no modifican los valores guardados.
     const CAMPOS_EDICION = ['tiendaId', 'operacionId', 'versionEsperada', 'nombre', 'descripcion', 'tipoEmprendimientoId', 'sectorId', 'contacto', 'mostrarContacto', 'canalesContacto', 'puntoRetiro'];
     exigir(Object.keys(solicitud).every(clave => clave === 'direccion' || CAMPOS_EDICION.includes(clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
-    exigir(CAMPOS_EDICION.filter(clave => clave !== 'canalesContacto').every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
+    exigir(CAMPOS_EDICION.filter(clave => !['canalesContacto', 'puntoRetiro'].includes(clave)).every(clave => Object.hasOwn(solicitud, clave)), 'datos-invalidos', 'Campos ausentes o no permitidos.');
     exigir(id(solicitud.tiendaId) && id(solicitud.operacionId) && id(solicitud.tipoEmprendimientoId) && id(solicitud.sectorId), 'datos-invalidos', 'Identificadores inválidos.');
     exigir(typeof solicitud.versionEsperada === 'string' && /^[0-9]{1,12}:[0-9]{1,9}$/.test(solicitud.versionEsperada), 'datos-invalidos', 'Versión inválida.');
     const nombre = texto(solicitud.nombre, 120);

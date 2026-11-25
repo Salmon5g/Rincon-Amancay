@@ -32,7 +32,7 @@ export type PoliticaNavegacion = 'permitir' | 'invitar' | 'exigir'
 
 export interface CatalogoPublicoRepository {
   listarTiendas(cursor?: string | null): Promise<PaginaRepositorio<TiendaPublica>>
-  listarProductos(tiendaId: string, cursor?: string | null): Promise<PaginaRepositorio<ProductoPublico>>
+  listarProductos(tiendaId: string, cursor?: string | null, tamanoPagina?: number): Promise<PaginaRepositorio<ProductoPublico>>
   leerTienda(tiendaId: string): Promise<TiendaPublica>
   observarTienda(tiendaId: string, alCambiar: (tienda: TiendaPublica) => void): () => void
   leerProducto(tiendaId: string, productoId: string): Promise<ProductoPublico>

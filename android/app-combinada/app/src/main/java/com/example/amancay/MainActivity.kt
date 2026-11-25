@@ -42,6 +42,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -762,6 +765,10 @@ internal fun EmprendedoraAppConectada(
     }
     val tiposProducto by productosRepository.tipos.collectAsState()
     val categoriasProducto by productosRepository.categorias.collectAsState()
+    val hayMasProductosPrivados by productosRepository.hayMasProductos.collectAsState()
+    val cargandoMasProductosPrivados by productosRepository.cargandoMasProductos.collectAsState()
+    val hayMasConsultasPrivadas by productosRepository.hayMasConsultas.collectAsState()
+    val cargandoMasConsultasPrivadas by productosRepository.cargandoMasConsultas.collectAsState()
     var invitaciones by remember(sesion.uid) { mutableStateOf<List<FeriaInvitation>>(emptyList()) }
     var cargandoInvitaciones by remember(sesion.uid) { mutableStateOf(false) }
     var errorInvitaciones by remember(sesion.uid) { mutableStateOf<String?>(null) }
@@ -789,6 +796,34 @@ internal fun EmprendedoraAppConectada(
     LaunchedEffect(sesion.uid, feriasRepository) { cargarInvitacionesFeria(forzar = true) }
     var tab by remember(sesion.uid) { mutableStateOf(Tab.INICIO) }
     var screen by remember(sesion.uid) { mutableStateOf<Screen>(Screen.Home) }
+    val cicloPanelProductos = LocalLifecycleOwner.current
+    val tipoSuscripcionProducto = when (screen) {
+        Screen.Products -> 1
+        Screen.Consultas -> 2
+        else -> 0
+    }
+    DisposableEffect(productosRepository, cicloPanelProductos, sesion.tiendaId, tipoSuscripcionProducto) {
+        fun iniciarSuscripcion() {
+            when (tipoSuscripcionProducto) {
+                1 -> productosRepository.observarProductos(sesion.tiendaId)
+                2 -> productosRepository.observarConsultas(sesion.tiendaId)
+                else -> productosRepository.cerrar()
+            }
+        }
+        val observador = LifecycleEventObserver { _, evento ->
+            when (evento) {
+                Lifecycle.Event.ON_START -> iniciarSuscripcion()
+                Lifecycle.Event.ON_STOP -> productosRepository.cerrar()
+                else -> Unit
+            }
+        }
+        cicloPanelProductos.lifecycle.addObserver(observador)
+        if (cicloPanelProductos.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) iniciarSuscripcion()
+        onDispose {
+            cicloPanelProductos.lifecycle.removeObserver(observador)
+            productosRepository.cerrar()
+        }
+    }
     var editandoTienda by remember(sesion.uid) { mutableStateOf(false) }
     var editandoProducto by remember(sesion.uid) { mutableStateOf(false) }
     var productoInicialId by remember(sesion.uid) { mutableStateOf<String?>(null) }
@@ -1505,7 +1540,13 @@ internal fun EmprendedoraAppConectada(
                             onAjustarStock = { legado ->
                                 productoAjustando = productos.firstOrNull { it.id == legado.id }
                             },
-                            onOrganizeCatalog = { screen = Screen.OrganizarCatalogo }
+                            onOrganizeCatalog = { screen = Screen.OrganizarCatalogo },
+                            hayMasProductos = hayMasProductosPrivados,
+                            cargandoMasProductos = cargandoMasProductosPrivados,
+                            onCargarMasProductos = { productosRepository.cargarMasProductos(sesion.tiendaId) },
+                            onProductVisibilityChanged = { productoId, visible ->
+                                productosRepository.actualizarVisibilidadVariante(sesion.tiendaId, productoId, visible)
+                            }
                         )
                     }
                     Screen.ConfiguracionCatalogo -> ConfiguracionVistaPreviaScreen(
@@ -1687,7 +1728,10 @@ internal fun EmprendedoraAppConectada(
                             }
                         },
                         alVolver = { screen = Screen.Home; tab = Tab.INICIO },
-                        alAyuda = { showHelp = true }
+                        alAyuda = { showHelp = true },
+                        hayMasConsultas = hayMasConsultasPrivadas,
+                        cargandoMasConsultas = cargandoMasConsultasPrivadas,
+                        alCargarMas = { productosRepository.cargarMasConsultas() }
                     )
                     is Screen.Preview -> PreviewCatalogScreen(
                         producto = productoDeVista,

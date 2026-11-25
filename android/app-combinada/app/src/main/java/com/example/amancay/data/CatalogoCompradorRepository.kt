@@ -8,6 +8,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.tasks.await
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -83,7 +86,17 @@ interface CatalogoCompradorRepository {
     val modoNavegacion: StateFlow<String?>
     val productos: StateFlow<List<ProductoCatalogoComprador>>
     val cargando: StateFlow<Boolean>
+    val cargandoProductos: StateFlow<Boolean>
+    val hayMasProductos: StateFlow<Boolean>
+    val productoEnDetalle: StateFlow<ProductoCatalogoComprador?>
     val error: StateFlow<String?>
+    fun iniciar()
+    fun pausar()
+    fun cargarProductos(tiendaId: String)
+    fun cargarMasProductos(tiendaId: String? = null)
+    fun tieneMasProductos(tiendaId: String): Boolean
+    fun observarDetalle(producto: ProductoCatalogoComprador)
+    fun cerrarDetalle()
     fun cerrar()
 }
 
@@ -94,6 +107,10 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     override val productos: StateFlow<List<ProductoCatalogoComprador>> = _productos.asStateFlow()
     private val _cargando = MutableStateFlow(true)
     override val cargando: StateFlow<Boolean> = _cargando.asStateFlow()
+    private val _cargandoProductos = MutableStateFlow(false)
+    override val cargandoProductos: StateFlow<Boolean> = _cargandoProductos.asStateFlow()
+    private val _hayMasProductos = MutableStateFlow(false)
+    override val hayMasProductos: StateFlow<Boolean> = _hayMasProductos.asStateFlow()
     private val _error = MutableStateFlow<String?>(null)
     override val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -109,19 +126,33 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
     // defecto mientras todavía no se conoce la opción guardada por administración.
     private val _modo = MutableStateFlow<String?>(null)
     override val modoNavegacion = _modo.asStateFlow()
+    private val _productoEnDetalle = MutableStateFlow<ProductoCatalogoComprador?>(null)
+    override val productoEnDetalle: StateFlow<ProductoCatalogoComprador?> = _productoEnDetalle.asStateFlow()
 
     private val tiendas = mutableMapOf<String, TiendaCatalogoComprador>()
     private val productosPorTienda = mutableMapOf<String, List<ProductoCatalogoComprador>>()
-    private val variantesPorProducto = mutableMapOf<String, List<VarianteCatalogoComprador>>()
-    private val suscripcionesProductos = mutableMapOf<String, ListenerRegistration>()
-    private val coleccionProductosPorTienda = mutableMapOf<String, String>()
-    private val suscripcionesVariantes = mutableMapOf<String, ListenerRegistration>()
+    private val tiendasConPaginaCargada = mutableSetOf<String>()
+    private val cursoresProductos = mutableMapOf<String, DocumentSnapshot>()
+    private val tiendasConMasProductos = mutableSetOf<String>()
+    private val cargasProductosEnCurso = mutableSetOf<String>()
     private val nombresCategorias = mutableMapOf<String, String>()
     private val nombresTiposProducto = mutableMapOf<String, String>()
     private val suscripciones = mutableListOf<ListenerRegistration>()
     private val alcanceApi = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var activo = false
+    private var catalogosCargados = false
+    private var asociacionesCargadas = false
+    private var consultaModoEnCurso = false
+    private var suscripcionProductoDetalle: ListenerRegistration? = null
+    private var suscripcionVariantesDetalle: ListenerRegistration? = null
+    private val tamanoPaginaGlobal = 5
+    private val tamanoPaginaTienda = 20
 
-    init {
+    private val bloqueoProductos = Any()
+
+    override fun iniciar() {
+        if (activo) return
+        activo = true
         suscripciones += db.document("configuracionAplicacion/navegacion")
             .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, exception ->
                 if (exception != null) informarError(exception)
@@ -129,70 +160,60 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                     _modo.value = snapshot.getString("modo") ?: "permitir"
                 }
             }
-        alcanceApi.launch {
-            delay(2_000)
-            while (_modo.value == null && isActive) {
-                try {
-                    val modo = ApiNavegacionComprador.leerModo()
-                    if (_modo.value == null) _modo.value = modo
-                } catch (error: Exception) {
-                    if (_modo.value == null) _error.value = error.message ?: "No se pudo consultar la configuración de acceso."
-                    delay(5_000)
+        if (_modo.value == null && !consultaModoEnCurso) {
+            consultaModoEnCurso = true
+            alcanceApi.launch {
+                delay(2_000)
+                if (_modo.value == null && isActive) {
+                    try {
+                        _modo.value = ApiNavegacionComprador.leerModo()
+                    } catch (error: Exception) {
+                        if (_modo.value == null) _error.value = error.message ?: "No se pudo consultar la configuración de acceso."
+                    }
                 }
+                consultaModoEnCurso = false
             }
         }
+        if (!catalogosCargados) cargarCatalogos()
+        if (!asociacionesCargadas) cargarAsociaciones()
+        escucharDirectorio()
+        _productoEnDetalle.value?.let(::conectarDetalle)
+    }
 
+    private fun cargarCatalogos() {
+        catalogosCargados = true
         listOf("tiposEmprendimiento" to _tipos, "sectores" to _sectores).forEach { (coleccion, destino) ->
-            suscripciones += db.collection(coleccion).whereEqualTo("activo", true).limit(200)
-                .addSnapshotListener { snapshot, exception ->
-                    if (exception != null) informarError(exception)
-                    else destino.value = snapshot?.documents.orEmpty().associate { it.id to (it.getString("nombre") ?: it.id) }
+            db.collection(coleccion).whereEqualTo("activo", true).limit(200).get()
+                .addOnSuccessListener { snapshot ->
+                    destino.value = snapshot.documents.associate { it.id to (it.getString("nombre") ?: it.id) }
                 }
+                .addOnFailureListener { exception -> catalogosCargados = false; informarError(exception) }
         }
-        suscripciones += db.collection("categorias")
-            .whereEqualTo("activo", true)
-            .limit(200)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
+        db.collection("categorias").whereEqualTo("activo", true).limit(200).get()
+            .addOnSuccessListener { snapshot ->
                 nombresCategorias.clear()
-                snapshot?.documents?.forEach { documento ->
-                    nombresCategorias[documento.id] = documento.getString("nombre") ?: documento.id
-                }
+                snapshot.documents.forEach { nombresCategorias[it.id] = it.getString("nombre") ?: it.id }
                 reconstruirCatalogo()
             }
-
-        suscripciones += db.collection("tiposProducto")
-            .whereEqualTo("activo", true)
-            .limit(200)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
+            .addOnFailureListener { exception -> catalogosCargados = false; informarError(exception) }
+        db.collection("tiposProducto").whereEqualTo("activo", true).limit(200).get()
+            .addOnSuccessListener { snapshot ->
                 nombresTiposProducto.clear()
-                snapshot?.documents?.forEach { documento ->
-                    nombresTiposProducto[documento.id] = documento.getString("nombre") ?: documento.id
-                }
+                snapshot.documents.forEach { nombresTiposProducto[it.id] = it.getString("nombre") ?: it.id }
                 reconstruirCatalogo()
             }
+            .addOnFailureListener { exception -> catalogosCargados = false; informarError(exception) }
+    }
 
-        suscripciones += db.collection("asociacionesPublicas")
-            .whereEqualTo("activo", true)
-            .limit(20)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
-                _asociaciones.value = snapshot?.documents.orEmpty().map { documento ->
+    private fun cargarAsociaciones() {
+        asociacionesCargadas = true
+        db.collection("asociacionesPublicas").whereEqualTo("activo", true).limit(20).get()
+            .addOnSuccessListener { snapshot ->
+                _asociaciones.value = snapshot.documents.map { documento ->
                     val integrantes = (documento.get("integrantes") as? List<*>).orEmpty().mapNotNull { item ->
                         val datos = item as? Map<*, *> ?: return@mapNotNull null
                         val tiendaId = datos["tiendaId"] as? String ?: return@mapNotNull null
-                        val nombre = datos["nombre"] as? String ?: tiendaId
-                        IntegranteAsociacionCatalogo(tiendaId, nombre)
+                        IntegranteAsociacionCatalogo(tiendaId, datos["nombre"] as? String ?: tiendaId)
                     }
                     AsociacionCatalogoComprador(
                         id = documento.id,
@@ -203,7 +224,11 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                     )
                 }.sortedBy { it.nombre.lowercase() }
             }
+            .addOnFailureListener { exception -> asociacionesCargadas = false; informarError(exception) }
+    }
 
+    private fun escucharDirectorio() {
+        _cargando.value = true
         suscripciones += db.collection("tiendasPublicas")
             .whereEqualTo("estadoPublicacion", "publicado")
             .whereEqualTo("habilitada", true)
@@ -249,94 +274,162 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
                             val latitud = punto["latitud"] as? Number
                             val longitud = punto["longitud"] as? Number
                             if (latitud != null && longitud != null) PuntoRetiroTienda(
-                                latitud = latitud.toDouble(),
-                                longitud = longitud.toDouble(),
+                                latitud = latitud.toDouble(), longitud = longitud.toDouble(),
                                 descripcion = punto["descripcion"] as? String ?: ""
                             ) else null
                         }
                     )
                 }
-                tiendas.clear()
-                tiendas.putAll(tiendasNuevas)
-                _directorio.value = tiendas.values.sortedBy { it.nombre.lowercase() }
-
-                val tiendasPublicadas = documentos.map { it.id }.toSet()
-                (suscripcionesProductos.keys - tiendasPublicadas).forEach { id ->
-                    suscripcionesProductos.remove(id)?.remove()
-                    coleccionProductosPorTienda.remove(id)
-                    productosPorTienda.remove(id).orEmpty().forEach { producto ->
-                        quitarSuscripcionVariantes(clave(producto.tiendaId, producto.id))
-                    }
-                }
-                tiendasNuevas.values.forEach { tienda ->
-                    val coleccion = if (tienda.mostrarPrecios) "productos" else "productosConsulta"
-                    if (coleccionProductosPorTienda[tienda.id] != coleccion) {
-                        suscripcionesProductos.remove(tienda.id)?.remove()
-                        productosPorTienda.remove(tienda.id).orEmpty().forEach { producto ->
-                            quitarSuscripcionVariantes(clave(producto.tiendaId, producto.id))
+                synchronized(bloqueoProductos) {
+                    tiendasNuevas.values.forEach { nueva ->
+                        val anterior = tiendas[nueva.id]
+                        if (anterior != null && anterior.mostrarPrecios != nueva.mostrarPrecios) {
+                            productosPorTienda.remove(nueva.id)
+                            tiendasConPaginaCargada.remove(nueva.id)
+                            cursoresProductos.remove(nueva.id)
+                            tiendasConMasProductos.remove(nueva.id)
                         }
-                        escucharProductos(tienda.id, coleccion)
+                    }
+                    tiendas.clear()
+                    tiendas.putAll(tiendasNuevas)
+                    (productosPorTienda.keys - tiendasNuevas.keys).forEach { id ->
+                        productosPorTienda.remove(id)
+                        tiendasConPaginaCargada.remove(id)
+                        cursoresProductos.remove(id)
+                        tiendasConMasProductos.remove(id)
                     }
                 }
+                _directorio.value = tiendas.values.sortedBy { it.nombre.lowercase() }
                 _error.value = null
                 _cargando.value = false
-                reconstruirCatalogo()
+                actualizarProductos()
+                actualizarHayMasProductos()
             }
     }
 
-    private fun escucharProductos(tiendaId: String, coleccion: String) {
-        coleccionProductosPorTienda[tiendaId] = coleccion
-        suscripcionesProductos[tiendaId] = db.collection("tiendasPublicas")
-            .document(tiendaId)
-            .collection(coleccion)
-            .whereEqualTo("estadoPublicacion", "publicado")
-            .limit(20)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
+    override fun cargarProductos(tiendaId: String) {
+        cargarPaginaTienda(tiendaId, tamanoPaginaTienda, reiniciar = true)
+    }
+
+    override fun cargarMasProductos(tiendaId: String?) {
+        if (tiendaId != null) {
+            cargarPaginaTienda(tiendaId, tamanoPaginaTienda)
+            return
+        }
+        val pendientes = _directorio.value.filter { tienda ->
+            synchronized(bloqueoProductos) { tienda.id in tiendasConMasProductos || tienda.id !in tiendasConPaginaCargada }
+        }
+        if (pendientes.isEmpty()) {
+            actualizarHayMasProductos()
+            return
+        }
+        _cargandoProductos.value = true
+        alcanceApi.launch {
+            pendientes.map { tienda -> async { cargarPagina(tienda, tamanoPaginaGlobal) } }.awaitAll()
+            _cargandoProductos.value = synchronized(bloqueoProductos) { cargasProductosEnCurso.isNotEmpty() }
+            actualizarHayMasProductos()
+        }
+    }
+
+    override fun tieneMasProductos(tiendaId: String): Boolean = synchronized(bloqueoProductos) {
+        tiendaId in tiendasConMasProductos
+    }
+
+    private fun cargarPaginaTienda(tiendaId: String, limite: Int, reiniciar: Boolean = false) {
+        val tienda = tiendas[tiendaId] ?: return
+        _cargandoProductos.value = true
+        alcanceApi.launch {
+            while (synchronized(bloqueoProductos) { tiendaId in cargasProductosEnCurso }) delay(25)
+            cargarPagina(tienda, limite, reiniciar)
+            _cargandoProductos.value = synchronized(bloqueoProductos) { cargasProductosEnCurso.isNotEmpty() }
+            actualizarHayMasProductos()
+        }
+    }
+
+    private suspend fun cargarPagina(tienda: TiendaCatalogoComprador, limite: Int, reiniciar: Boolean = false) {
+        val inicio = synchronized(bloqueoProductos) { limite > 0 && cargasProductosEnCurso.add(tienda.id) }
+        if (!inicio) return
+        try {
+            val coleccion = if (tienda.mostrarPrecios) "productos" else "productosConsulta"
+            var consulta = db.collection("tiendasPublicas").document(tienda.id).collection(coleccion)
+                .whereEqualTo("estadoPublicacion", "publicado").limit(limite.toLong())
+            if (!reiniciar) synchronized(bloqueoProductos) { cursoresProductos[tienda.id] }?.let { consulta = consulta.startAfter(it) }
+            val resultado = consulta.get().await()
+            val pagina = resultado.documents.map { it.aProducto(tienda) }
+            synchronized(bloqueoProductos) {
+                productosPorTienda[tienda.id] = if (reiniciar) pagina else
+                    (productosPorTienda[tienda.id].orEmpty() + pagina).distinctBy { it.id }
+                tiendasConPaginaCargada.add(tienda.id)
+                resultado.documents.lastOrNull()?.let { cursoresProductos[tienda.id] = it }
+                if (resultado.size() < limite) tiendasConMasProductos.remove(tienda.id)
+                else tiendasConMasProductos.add(tienda.id)
+            }
+            _error.value = null
+            actualizarProductos()
+        } catch (exception: Exception) {
+            informarError(exception)
+        } finally {
+            synchronized(bloqueoProductos) { cargasProductosEnCurso.remove(tienda.id) }
+        }
+    }
+
+    private fun actualizarHayMasProductos() {
+        _hayMasProductos.value = synchronized(bloqueoProductos) {
+            tiendasConMasProductos.isNotEmpty() || _directorio.value.any { tienda -> tienda.id !in tiendasConPaginaCargada }
+        }
+    }
+
+    override fun observarDetalle(producto: ProductoCatalogoComprador) {
+        if (_productoEnDetalle.value?.let { it.tiendaId == producto.tiendaId && it.id == producto.id } == true) return
+        cerrarDetalle()
+        _productoEnDetalle.value = producto
+        if (activo) conectarDetalle(producto)
+    }
+
+    private fun conectarDetalle(producto: ProductoCatalogoComprador) {
+        if (suscripcionProductoDetalle != null) return
+        val tienda = tiendas[producto.tiendaId] ?: return
+        val coleccion = if (tienda.mostrarPrecios) "productos" else "productosConsulta"
+        val referencia = db.collection("tiendasPublicas").document(tienda.id).collection(coleccion).document(producto.id)
+        suscripcionProductoDetalle = referencia.addSnapshotListener { documento, exception ->
+            if (exception != null) {
+                informarError(exception)
+                return@addSnapshotListener
+            }
+            if (documento == null || !documento.exists()) {
+                cerrarDetalle()
+                return@addSnapshotListener
+            }
+            val variantes = _productoEnDetalle.value?.variantes.orEmpty()
+            val actualizado = documento.aProducto(tienda).copy(variantes = variantes)
+            _productoEnDetalle.value = actualizado
+            synchronized(bloqueoProductos) {
+                productosPorTienda[tienda.id] = productosPorTienda[tienda.id].orEmpty().map {
+                    if (it.id == actualizado.id) actualizado.copy(variantes = emptyList()) else it
                 }
-                val tienda = tiendas[tiendaId] ?: return@addSnapshotListener
-                val lista = snapshot?.documents.orEmpty().map { it.aProducto(tienda) }
-                val productosPrevios = productosPorTienda.put(tiendaId, lista).orEmpty()
-                val clavesActuales = lista.map { clave(it.tiendaId, it.id) }.toSet()
-                productosPrevios
-                    .map { clave(it.tiendaId, it.id) }
-                    .filterNot(clavesActuales::contains)
-                    .forEach(::quitarSuscripcionVariantes)
-                lista.filter { it.tieneVariantes }.forEach(::escucharVariantes)
-                _error.value = null
-                reconstruirCatalogo()
             }
-    }
-
-    private fun escucharVariantes(producto: ProductoCatalogoComprador) {
-        val id = clave(producto.tiendaId, producto.id)
-        if (suscripcionesVariantes[id] != null) return
-        val coleccion = coleccionProductosPorTienda[producto.tiendaId] ?: "productos"
-        suscripcionesVariantes[id] = db.collection("tiendasPublicas")
-            .document(producto.tiendaId)
-            .collection(coleccion)
-            .document(producto.id)
-            .collection("variantes")
-            .whereEqualTo("activa", true)
-            .limit(20)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
+            actualizarProductos()
+        }
+        if (producto.tieneVariantes) {
+            suscripcionVariantesDetalle = referencia.collection("variantes").whereEqualTo("activa", true).limit(20)
+                .addSnapshotListener { snapshot, exception ->
+                    if (exception != null) {
+                        informarError(exception)
+                        return@addSnapshotListener
+                    }
+                    val base = _productoEnDetalle.value ?: producto
+                    _productoEnDetalle.value = base.copy(variantes = snapshot?.documents.orEmpty().map { it.aVariante(base) })
                 }
-                variantesPorProducto[id] = snapshot?.documents.orEmpty().map { it.aVariante(producto) }
-                _error.value = null
-                reconstruirCatalogo()
-            }
+        }
     }
 
-    private fun quitarSuscripcionVariantes(id: String) {
-        suscripcionesVariantes.remove(id)?.remove()
-        variantesPorProducto.remove(id)
+    override fun cerrarDetalle() {
+        suscripcionProductoDetalle?.remove()
+        suscripcionVariantesDetalle?.remove()
+        suscripcionProductoDetalle = null
+        suscripcionVariantesDetalle = null
+        _productoEnDetalle.value = null
     }
-
     private fun DocumentSnapshot.aProducto(tienda: TiendaCatalogoComprador) = ProductoCatalogoComprador(
         id = id,
         tiendaId = tienda.id,
@@ -374,12 +467,17 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
             .orEmpty()
 
     private fun reconstruirCatalogo() {
-        _productos.value = productosPorTienda.values.flatten()
-            .map { producto ->
-                producto.copy(variantes = variantesPorProducto[clave(producto.tiendaId, producto.id)].orEmpty())
-            }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.nombre })
+        synchronized(bloqueoProductos) {
+            _productos.value = productosPorTienda.values.flatten().map { producto ->
+                producto.copy(
+                    categoriaNombre = nombresCategorias[producto.categoriaId] ?: producto.categoriaId,
+                    tipoProductoNombre = nombresTiposProducto[producto.tipoProductoId] ?: producto.tipoProductoId
+                )
+            }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.nombre })
+        }
     }
+
+    private fun actualizarProductos() = reconstruirCatalogo()
 
     private fun informarError(exception: Exception) {
         _error.value = when ((exception as? com.google.firebase.firestore.FirebaseFirestoreException)?.code) {
@@ -391,18 +489,21 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         }
     }
 
-    override fun cerrar() {
+    override fun pausar() {
+        if (!activo) return
+        activo = false
         suscripciones.forEach(ListenerRegistration::remove)
-        suscripcionesProductos.values.forEach(ListenerRegistration::remove)
-        suscripcionesVariantes.values.forEach(ListenerRegistration::remove)
+        suscripcionProductoDetalle?.remove()
+        suscripcionVariantesDetalle?.remove()
+        suscripcionProductoDetalle = null
+        suscripcionVariantesDetalle = null
         suscripciones.clear()
-        alcanceApi.cancel()
-        suscripcionesProductos.clear()
-        coleccionProductosPorTienda.clear()
-        suscripcionesVariantes.clear()
     }
 
-    private fun clave(tiendaId: String, productoId: String) = "$tiendaId/$productoId"
+    override fun cerrar() {
+        pausar()
+        alcanceApi.cancel()
+    }
 }
 
 private fun urlImagenCatalogo(tiendaId: String, productoId: String, rutas: List<String>): String? {

@@ -22,7 +22,19 @@ const props = withDefaults(defineProps<{
   longitud: number | null
   direccion: string
   disabled?: boolean
-}>(), { disabled: false })
+  titulo?: string
+  ayuda?: string
+  etiquetaBusqueda?: string
+  etiquetaMapa?: string
+  textoInstruccion?: string
+}>(), {
+  disabled: false,
+  titulo: 'Ubicación en el mapa',
+  ayuda: 'Busca una dirección o marca el punto donde se realizará la feria.',
+  etiquetaBusqueda: 'Buscar dirección o lugar',
+  etiquetaMapa: 'Mapa para elegir la ubicación de la feria',
+  textoInstruccion: 'También puedes hacer clic en el mapa para fijar el punto. Al seleccionarlo, completaremos «Dirección o lugar».',
+})
 
 const emit = defineEmits<{
   (event: 'ubicacion-seleccionada', ubicacion: UbicacionFeria): void
@@ -220,13 +232,13 @@ onBeforeUnmount(() => {
   <section class="selector-ubicacion-feria" aria-labelledby="titulo-ubicacion-feria">
     <div class="selector-ubicacion-cabecera">
       <div>
-        <h4 id="titulo-ubicacion-feria">Ubicación en el mapa</h4>
-        <p>Busca una dirección o marca el punto donde se realizará la feria.</p>
+        <h4 id="titulo-ubicacion-feria">{{ titulo }}</h4>
+        <p>{{ ayuda }}</p>
       </div>
       <span class="nota-mapa">OpenStreetMap</span>
     </div>
     <label class="campo-busqueda-feria">
-      Buscar dirección o lugar
+      {{ etiquetaBusqueda }}
       <input
         v-model="consulta"
         type="search"
@@ -246,8 +258,8 @@ onBeforeUnmount(() => {
     </ul>
     <p v-if="buscando" class="estado-mapa" role="status">Buscando direcciones…</p>
     <p v-else-if="estadoBusqueda" class="estado-mapa" role="status">{{ estadoBusqueda }}</p>
-    <p class="instruccion-mapa">También puedes hacer clic en el mapa para fijar el punto. Al seleccionarlo, completaremos «Dirección o lugar».</p>
-    <div ref="contenedor" class="mapa-feria" role="region" aria-label="Mapa para elegir la ubicación de la feria"></div>
+    <p class="instruccion-mapa">{{ textoInstruccion }}</p>
+    <div ref="contenedor" class="mapa-feria" role="region" :aria-label="etiquetaMapa"></div>
     <p v-if="ubicacionMarcada && nombreUbicacion" class="ubicacion-confirmada" aria-live="polite">
       <span aria-hidden="true">📍</span> Ubicación marcada: {{ nombreUbicacion }}
     </p>

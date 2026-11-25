@@ -34,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -84,7 +85,10 @@ internal fun BandejaConsultasScreen(
     alMarcarLeida: (ConsultaComprador) -> Unit,
     alResponder: (ConsultaComprador, String) -> Unit,
     alVolver: () -> Unit,
-    alAyuda: () -> Unit
+    alAyuda: () -> Unit,
+    hayMasConsultas: Boolean,
+    cargandoMasConsultas: Boolean,
+    alCargarMas: () -> Unit
 ) {
     var busqueda by remember { mutableStateOf("") }
     var filtro by remember { mutableStateOf("Todas") }
@@ -168,6 +172,16 @@ internal fun BandejaConsultasScreen(
                                 if (consulta.estado == "nueva") alMarcarLeida(consulta)
                             }
                         )
+                    }
+                }
+                if (hayMasConsultas) item {
+                    TextButton(
+                        onClick = alCargarMas,
+                        enabled = !cargandoMasConsultas,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (cargandoMasConsultas) CircularProgressIndicator(Modifier.size(18.dp), color = Vino, strokeWidth = 2.dp)
+                        else Text("Cargar consultas anteriores", color = Vino, fontWeight = FontWeight.SemiBold)
                     }
                 }
             } else {

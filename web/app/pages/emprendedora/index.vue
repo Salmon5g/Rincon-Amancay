@@ -2,11 +2,15 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import '~/assets/amancay-tokens.css'
-import { cargarCuentaEmprendedora, observarImagenesProductosPublicas, type ProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
+import SelectorUbicacionFeria from '~/components/admin/MapaUbicacionFeria.client.vue'
+import { cargarCuentaEmprendedora, contarProductosEmprendedora, leerFichaProductoEmprendedora, leerProductoEmprendedora, leerVariantesProductoEmprendedora, listarPaginaProductosEmprendedora, type ProductoEmprendedoraWeb, type ResumenProductosEmprendedora } from '~/repositories/firebase/emprendedora'
 import type { OpcionAyudaWeb, PasoGuiaWeb } from '~/types/ayuda-web'
 
 type Seccion = 'inicio' | 'productos' | 'agregar' | 'ventas' | 'mas'
 type Filtro = 'todos' | 'publicado' | 'borrador' | 'archivado'
+type AccionPublicacionTienda = 'publicarTienda' | 'retirarTienda'
+type AccionProductoWeb = 'retirarProducto' | 'eliminarProducto'
+type AjusteStockPendienteWeb = { productoId: string; varianteId: string; cantidad: number; motivo: 'reposicion' | 'perdida' | 'correccion'; nota: string; firma: string; operacionId: string; incierta: boolean }
 type ElementoCatalogo = { id: string; nombre: string }
 type OperacionVentaPendiente = {
   firma: string
@@ -69,6 +73,13 @@ const productoEnEdicion = ref<string | null>(null)
 const editandoTienda = ref(false)
 const cargandoEdicionTienda = ref(false)
 const guardandoTienda = ref(false)
+const accionPublicacionTienda = ref<AccionPublicacionTienda | null>(null)
+const guardandoPublicacionTienda = ref(false)
+const errorPublicacionTienda = ref('')
+const operacionPublicacionTiendaPendiente = ref<{ accion: AccionPublicacionTienda; uid: string; tiendaId: string; versionEsperada: string; operacionId: string } | null>(null)
+const botonAccionPublicacionTienda = ref<HTMLButtonElement | null>(null)
+const botonCancelarPublicacionTienda = ref<HTMLButtonElement | null>(null)
+const dialogoPublicacionTienda = ref<HTMLElement | null>(null)
 const catalogosTienda = ref<{ sectores: ElementoCatalogo[]; tiposEmprendimiento: ElementoCatalogo[] } | null>(null)
 const formularioTienda = ref({
   nombre: '',
@@ -80,6 +91,10 @@ const formularioTienda = ref({
   formularioHabilitado: false,
   correoHabilitado: false,
   correoDireccion: '',
+  puntoRetiroHabilitado: false,
+  puntoRetiroLatitud: '',
+  puntoRetiroLongitud: '',
+  puntoRetiroDescripcion: '',
   mostrarPrecios: true,
 })
 const edicionTiendaPendiente = ref<{ firma: string; operacionId: string } | null>(null)
@@ -87,7 +102,48 @@ const logoSeleccionado = ref<File | null>(null)
 const logoArchivoId = ref('')
 const logoVistaPrevia = ref('')
 const logoInput = ref<HTMLInputElement | null>(null)
-let detenerObservadorImagenesProductos: (() => void) | undefined
+const resumenProductos = ref<ResumenProductosEmprendedora>({ publicados: 0, borradores: 0, retirados: 0 })
+const productosPaginaIds = ref<string[]>([])
+const productosPaginaCursor = ref<string | null>(null)
+const productosPaginaCargando = ref(false)
+const productosPaginaError = ref('')
+const productosVentaIds = ref<string[]>([])
+const productosVentaCargando = ref(false)
+const productosVentaError = ref('')
+const variantesVentaCargando = ref(false)
+const variantesVentaError = ref('')
+const productosVentaCursor = ref<string | null>(null)
+const productosVentaPaginaLista = ref(false)
+const productosPaginaLista = ref(false)
+const resumenProductosCargando = ref(false)
+const menuProductoAbiertoId = ref('')
+const botonMenuProductoActivo = ref<HTMLButtonElement | null>(null)
+const dialogoAccionProducto = ref<{ accion: AccionProductoWeb; productoId: string; nombre: string } | null>(null)
+const guardandoAccionProducto = ref(false)
+const errorAccionProducto = ref('')
+const botonCancelarAccionProducto = ref<HTMLButtonElement | null>(null)
+const operacionProductoPendiente = ref<{ accion: AccionProductoWeb; productoId: string; versionEsperada: string; operacionId: string } | null>(null)
+const dialogoStockProductoId = ref('')
+const variantesStockCargando = ref(false)
+const errorStockProducto = ref('')
+const guardandoStockProducto = ref(false)
+const varianteStockId = ref('')
+const cantidadStock = ref('')
+const motivoStock = ref<'reposicion' | 'perdida' | 'correccion'>('reposicion')
+const notaStock = ref('')
+const ajusteStockPendiente = ref<AjusteStockPendienteWeb | null>(null)
+const campoCantidadStock = ref<HTMLInputElement | null>(null)
+let variantesStockVersion = 0
+let productosPaginaVersion = 0
+let productosVentaVersion = 0
+let resumenVersion = 0
+let variantesVentaVersion = 0
+let productosVentaTiendaCargada = ''
+let resumenTiendaCargada = ''
+let productosPaginaActualizadaEn = 0
+let productosVentaActualizadaEn = 0
+let productosPaginaFiltro: Filtro | null = null
+let productosPaginaTiendaCargada = ''
 const productoVentaId = ref('')
 const varianteVentaId = ref('')
 const cantidadVenta = ref('1')
@@ -112,9 +168,10 @@ const espera = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const { $catalogoPublico } = useNuxtApp()
 
-const publicados = computed(() => cuenta.value?.productos.filter((producto) => producto.estado === 'publicado').length ?? 0)
-const borradores = computed(() => cuenta.value?.productos.filter((producto) => producto.estado === 'borrador').length ?? 0)
-const retirados = computed(() => cuenta.value?.productos.filter((producto) => producto.estado === 'archivado').length ?? 0)
+const publicados = computed(() => resumenProductos.value.publicados)
+const borradores = computed(() => resumenProductos.value.borradores)
+const retirados = computed(() => resumenProductos.value.retirados)
+const totalProductos = computed(() => publicados.value + borradores.value + retirados.value)
 const progresoTienda = computed(() => {
   const tienda = cuenta.value?.tienda
   return [
@@ -126,8 +183,14 @@ const progresoTienda = computed(() => {
 })
 const productosFiltrados = computed(() => {
   const productos = cuenta.value?.productos ?? []
-  return filtro.value === 'todos' ? productos : productos.filter((producto) => producto.estado === filtro.value)
+  return productosPaginaIds.value.flatMap((id) => {
+    const producto = productos.find((item) => item.id === id)
+    return producto && (filtro.value === 'todos' || producto.estado === filtro.value) ? [producto] : []
+  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 })
+const productoStockSeleccionado = computed(() => cuenta.value?.productos.find((item) => item.id === dialogoStockProductoId.value) ?? null)
+const variantesStockDisponibles = computed(() => productoStockSeleccionado.value?.variantes ?? [])
+const ajusteStockIncierto = computed(() => ajusteStockPendiente.value?.productoId === dialogoStockProductoId.value && ajusteStockPendiente.value.incierta)
 const productoVenta = computed(() => cuenta.value?.productos.find((producto) => producto.id === productoVentaId.value) ?? null)
 const variantesVendibles = computed(() => {
   const producto = productoVenta.value
@@ -136,12 +199,20 @@ const variantesVendibles = computed(() => {
     || (operacionVentaPendiente.value?.productoId === producto.id && operacionVentaPendiente.value.varianteId === variante.id))
 })
 const varianteVenta = computed(() => variantesVendibles.value.find((variante) => variante.id === varianteVentaId.value) ?? null)
-const productosVendibles = computed(() => (cuenta.value?.productos ?? []).filter((producto) => {
+const productosVendibles = computed(() => productosVentaIds.value.flatMap((id) => {
+  const producto = cuenta.value?.productos.find((item) => item.id === id)
+  return producto ? [producto] : []
+}).filter((producto) => {
   if (cuenta.value?.tienda.estadoPublicacion !== 'publicado') return false
   if (producto.estado !== 'publicado' || !producto.disponible || producto.piezaUnicaVendida) return false
-  if (producto.tieneVariantes) return producto.variantes.some((variante) => variante.activa && (!producto.manejaStock || (variante.stock ?? 0) > 0))
+  if (producto.tieneVariantes) return !producto.variantesCargadas || producto.variantes.some((variante) => variante.activa && (!producto.manejaStock || (variante.stock ?? 0) > 0))
   return !producto.manejaStock || (producto.stock ?? 0) > 0
-}))
+}).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')))
+function puedeRegistrarVenta(producto: ProductoEmprendedoraWeb) {
+  if (cuenta.value?.tienda.estadoPublicacion !== 'publicado' || producto.estado !== 'publicado' || !producto.disponible || producto.piezaUnicaVendida) return false
+  if (producto.tieneVariantes) return !producto.variantesCargadas || producto.variantes.some((variante) => variante.activa && (!producto.manejaStock || (variante.stock ?? 0) > 0))
+  return !producto.manejaStock || (producto.stock ?? 0) > 0
+}
 const productosFormularioVenta = computed(() => {
   const disponibles = [...productosVendibles.value]
   const pendienteId = operacionVentaPendiente.value?.productoId
@@ -230,7 +301,6 @@ function limpiarVistaPreviaLogo() {
 }
 
 onBeforeUnmount(() => {
-  detenerObservadorImagenesProductos?.()
   limpiarVistaPreviaLogo()
   window.removeEventListener('amancay:ayuda-emprendedora', escucharAyudaEmprendedora)
 })
@@ -241,27 +311,127 @@ function cliente() {
   return $amancay
 }
 
-watch(() => [cuenta.value?.tienda.id, cuenta.value?.tienda.mostrarPrecios] as const, ([tiendaId, mostrarPrecios]) => {
-  detenerObservadorImagenesProductos?.()
-  detenerObservadorImagenesProductos = undefined
-  if (!import.meta.client || !tiendaId || typeof mostrarPrecios !== 'boolean') return
+async function recargarCuentaConProductos(uid = cuenta.value?.uid) {
+  if (!uid) throw new Error('No hay una cuenta activa.')
+  const productosPrevios = cuenta.value?.uid === uid ? cuenta.value.productos : []
+  const actualizada = await cargarCuentaEmprendedora(cliente().firebase, uid)
+  cuenta.value = { ...actualizada, productos: productosPrevios }
+  return cuenta.value
+}
+
+function guardarProductoEnMemoria(producto: ProductoEmprendedoraWeb) {
+  if (!cuenta.value) return
+  const otros = cuenta.value.productos.filter((item) => item.id !== producto.id)
+  cuenta.value = { ...cuenta.value, productos: [...otros, producto] }
+}
+
+async function cargarResumenProductos(forzar = false) {
+  const tiendaId = cuenta.value?.tienda.id
+  if (!tiendaId || (!forzar && resumenProductosCargando.value) || (!forzar && resumenTiendaCargada === tiendaId)) return
+  const version = ++resumenVersion
+  resumenProductosCargando.value = true
   try {
-    const firebase = cliente().firebase
-    detenerObservadorImagenesProductos = observarImagenesProductosPublicas(firebase, tiendaId, mostrarPrecios, (imagenes) => {
-      if (cuenta.value?.tienda.id !== tiendaId) return
-      cuenta.value = {
-        ...cuenta.value,
-        productos: cuenta.value.productos.map((producto) => {
-          const imagenPublica = imagenes.get(producto.id)
-          if (imagenPublica) return { ...producto, imagenPublica }
-          const sinImagenPublica = { ...producto }
-          delete sinImagenPublica.imagenPublica
-          return sinImagenPublica
-        }),
-      }
-    })
-  } catch {}
-})
+    const resumen = await contarProductosEmprendedora(cliente().firebase, tiendaId)
+    if (version === resumenVersion && cuenta.value?.tienda.id === tiendaId) {
+      resumenProductos.value = resumen
+      resumenTiendaCargada = tiendaId
+    }
+  } catch {
+    if (version === resumenVersion) resumenTiendaCargada = ''
+  } finally {
+    if (version === resumenVersion) resumenProductosCargando.value = false
+  }
+}
+
+async function cargarPaginaProductos(reiniciar = false) {
+  const cuentaActual = cuenta.value
+  if (!cuentaActual || (productosPaginaCargando.value && !reiniciar)) return
+  if (reiniciar) {
+    productosPaginaVersion++
+    productosPaginaIds.value = []
+    productosPaginaCursor.value = null
+    productosPaginaError.value = ''
+    productosPaginaLista.value = false
+  } else if (!productosPaginaCursor.value && productosPaginaLista.value) return
+  const version = productosPaginaVersion
+  productosPaginaCargando.value = true
+  productosPaginaError.value = ''
+  try {
+    const pagina = await listarPaginaProductosEmprendedora(
+      cliente().firebase,
+      cuentaActual.tienda.id,
+      cuentaActual.tienda.mostrarPrecios,
+      filtro.value,
+      reiniciar ? null : productosPaginaCursor.value,
+    )
+    if (version !== productosPaginaVersion || cuenta.value?.tienda.id !== cuentaActual.tienda.id) return
+    for (const producto of pagina.productos) guardarProductoEnMemoria(producto)
+    const nuevos = pagina.productos.map((producto) => producto.id)
+    productosPaginaIds.value = reiniciar
+      ? [...new Set(nuevos)]
+      : [...new Set([...productosPaginaIds.value, ...nuevos])]
+    productosPaginaCursor.value = pagina.siguienteCursor
+    productosPaginaLista.value = true
+    productosPaginaFiltro = filtro.value
+    productosPaginaTiendaCargada = cuentaActual.tienda.id
+    productosPaginaActualizadaEn = Date.now()
+  } catch (fallo) {
+    if (version === productosPaginaVersion && cuenta.value?.tienda.id === cuentaActual.tienda.id) {
+      productosPaginaError.value = fallo instanceof Error ? fallo.message : 'No se pudieron cargar los productos.'
+    }
+  } finally {
+    if (version === productosPaginaVersion) productosPaginaCargando.value = false
+  }
+}
+
+async function cargarMasProductos() {
+  if (!productosPaginaCursor.value || productosPaginaCargando.value) return
+  await cargarPaginaProductos()
+}
+
+async function cargarPaginaVentas(reiniciar = false) {
+  const cuentaActual = cuenta.value
+  if (!cuentaActual || (productosVentaCargando.value && !reiniciar)) return
+  if (reiniciar) {
+    productosVentaVersion++
+    productosVentaIds.value = []
+    productosVentaCursor.value = null
+    productosVentaPaginaLista.value = false
+    productosVentaError.value = ''
+  } else if (!productosVentaCursor.value && productosVentaPaginaLista.value) return
+  const version = productosVentaVersion
+  productosVentaCargando.value = true
+  productosVentaError.value = ''
+  try {
+    const pagina = await listarPaginaProductosEmprendedora(
+      cliente().firebase,
+      cuentaActual.tienda.id,
+      cuentaActual.tienda.mostrarPrecios,
+      'publicado',
+      reiniciar ? null : productosVentaCursor.value,
+      false,
+    )
+    if (version !== productosVentaVersion || cuenta.value?.tienda.id !== cuentaActual.tienda.id) return
+    for (const producto of pagina.productos) guardarProductoEnMemoria(producto)
+    const nuevos = pagina.productos.map((producto) => producto.id)
+    productosVentaIds.value = reiniciar
+      ? [...new Set(nuevos)]
+      : [...new Set([...productosVentaIds.value, ...nuevos])]
+    productosVentaCursor.value = pagina.siguienteCursor
+    productosVentaPaginaLista.value = true
+    productosVentaTiendaCargada = cuentaActual.tienda.id
+    productosVentaActualizadaEn = Date.now()
+  } catch (fallo) {
+    if (version === productosVentaVersion) productosVentaError.value = fallo instanceof Error ? fallo.message : 'No se pudieron cargar los productos publicados.'
+  } finally {
+    if (version === productosVentaVersion) productosVentaCargando.value = false
+  }
+}
+
+async function cargarMasProductosVenta() {
+  if (!productosVentaCursor.value || productosVentaCargando.value) return
+  await cargarPaginaVentas()
+}
 
 function nombrePersona() {
   const nombre = cuenta.value?.nombreMostrar.trim()
@@ -483,7 +653,7 @@ async function abrirEdicionTienda() {
   limpiarVistaPreviaLogo()
   try {
     const servicio = cliente()
-    const actualizada = await cargarCuentaEmprendedora(servicio.firebase, cuenta.value.uid)
+    const actualizada = await recargarCuentaConProductos(cuenta.value.uid)
     cuenta.value = actualizada
     formularioTienda.value = {
       nombre: actualizada.tienda.nombre,
@@ -495,6 +665,10 @@ async function abrirEdicionTienda() {
       formularioHabilitado: actualizada.tienda.canalesContacto?.formulario?.habilitado ?? false,
       correoHabilitado: actualizada.tienda.canalesContacto?.correo?.habilitado ?? (actualizada.tienda.mostrarContacto && actualizada.tienda.contacto?.tipo === 'correo'),
       correoDireccion: actualizada.tienda.canalesContacto?.correo?.direccion ?? (actualizada.tienda.contacto?.tipo === 'correo' ? actualizada.tienda.contacto.valor : ''),
+      puntoRetiroHabilitado: actualizada.tienda.puntoRetiro !== null,
+      puntoRetiroLatitud: actualizada.tienda.puntoRetiro ? String(actualizada.tienda.puntoRetiro.latitud) : '',
+      puntoRetiroLongitud: actualizada.tienda.puntoRetiro ? String(actualizada.tienda.puntoRetiro.longitud) : '',
+      puntoRetiroDescripcion: actualizada.tienda.puntoRetiro?.descripcion ?? '',
       mostrarPrecios: actualizada.tienda.mostrarPrecios,
     }
     catalogosTienda.value = await $catalogoPublico.listarCatalogosPublicos()
@@ -513,6 +687,84 @@ function cancelarEdicionTienda() {
   limpiarVistaPreviaLogo()
   error.value = ''
   aviso.value = ''
+}
+
+async function abrirAccionPublicacionTienda() {
+  if (!cuenta.value || guardandoPublicacionTienda.value) return
+  error.value = ''
+  aviso.value = ''
+  errorPublicacionTienda.value = ''
+  accionPublicacionTienda.value = cuenta.value.tienda.estadoPublicacion === 'publicado' ? 'retirarTienda' : 'publicarTienda'
+  await nextTick()
+  botonCancelarPublicacionTienda.value?.focus()
+}
+
+async function cerrarDialogoPublicacionTienda() {
+  if (guardandoPublicacionTienda.value) return
+  accionPublicacionTienda.value = null
+  errorPublicacionTienda.value = ''
+  await nextTick()
+  botonAccionPublicacionTienda.value?.focus()
+}
+
+function mantenerFocoDialogoPublicacionTienda(evento: KeyboardEvent) {
+  if (evento.key !== 'Tab') return
+  const botones = dialogoPublicacionTienda.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+  if (!botones?.length) return
+  const primero = botones[0]
+  const ultimo = botones[botones.length - 1]
+  if (evento.shiftKey && document.activeElement === primero) {
+    evento.preventDefault()
+    ultimo.focus()
+  } else if (!evento.shiftKey && document.activeElement === ultimo) {
+    evento.preventDefault()
+    primero.focus()
+  }
+}
+
+async function confirmarAccionPublicacionTienda() {
+  const cuentaActual = cuenta.value
+  const accion = accionPublicacionTienda.value
+  if (!cuentaActual || !accion || guardandoPublicacionTienda.value) return
+  const { id: tiendaId, versionEsperada } = cuentaActual.tienda
+  if (!versionEsperada) {
+    errorPublicacionTienda.value = 'No encontramos la versión actual de la tienda. Actualiza la página e inténtalo de nuevo.'
+    return
+  }
+  const pendiente = operacionPublicacionTiendaPendiente.value
+  if (!pendiente || pendiente.accion !== accion || pendiente.uid !== cuentaActual.uid || pendiente.tiendaId !== tiendaId || pendiente.versionEsperada !== versionEsperada) {
+    operacionPublicacionTiendaPendiente.value = { accion, uid: cuentaActual.uid, tiendaId, versionEsperada, operacionId: crypto.randomUUID() }
+  }
+  const solicitudPendiente = operacionPublicacionTiendaPendiente.value!
+  guardandoPublicacionTienda.value = true
+  errorPublicacionTienda.value = ''
+  error.value = ''
+  aviso.value = ''
+  try {
+    await cliente().llamar(accion, {
+      tiendaId: solicitudPendiente.tiendaId,
+      operacionId: solicitudPendiente.operacionId,
+      versionEsperada: solicitudPendiente.versionEsperada,
+    })
+    operacionPublicacionTiendaPendiente.value = null
+    accionPublicacionTienda.value = null
+    const estadoPublicacion = accion === 'publicarTienda' ? 'publicado' : 'archivado'
+    cuenta.value = { ...cuentaActual, tienda: { ...cuentaActual.tienda, estadoPublicacion } }
+    aviso.value = accion === 'publicarTienda'
+      ? 'Tu tienda ya está publicada. Publica cada producto desde su ficha para que aparezca en el catálogo.'
+      : 'Tu tienda se retiró del catálogo. Tus datos privados se conservaron; para volver a mostrarla, publica la tienda y sus productos.'
+    try {
+      await recargarCuentaConProductos(cuentaActual.uid)
+    } catch {
+      aviso.value += ' Actualiza la página antes de realizar otra acción de publicación.'
+    }
+    await nextTick()
+    botonAccionPublicacionTienda.value?.focus()
+  } catch (fallo) {
+    errorPublicacionTienda.value = mensajeDeError(fallo)
+  } finally {
+    guardandoPublicacionTienda.value = false
+  }
 }
 
 function abrirSelectorLogo() {
@@ -539,6 +791,12 @@ function seleccionarLogo(evento: Event) {
   logoArchivoId.value = crypto.randomUUID()
   logoVistaPrevia.value = URL.createObjectURL(archivo)
   entrada.value = ''
+}
+
+function actualizarPuntoRetiro(ubicacion: { latitud: number; longitud: number; direccion: string }) {
+  formularioTienda.value.puntoRetiroLatitud = String(ubicacion.latitud)
+  formularioTienda.value.puntoRetiroLongitud = String(ubicacion.longitud)
+  formularioTienda.value.puntoRetiroDescripcion = ubicacion.direccion.slice(0, 200)
 }
 
 async function guardarTienda() {
@@ -570,6 +828,13 @@ async function guardarTienda() {
         direccion: formularioTienda.value.correoDireccion.trim(),
       },
     },
+    puntoRetiro: formularioTienda.value.puntoRetiroHabilitado
+      ? {
+          latitud: Number(formularioTienda.value.puntoRetiroLatitud),
+          longitud: Number(formularioTienda.value.puntoRetiroLongitud),
+          descripcion: formularioTienda.value.puntoRetiroDescripcion.trim(),
+        }
+      : null,
   }
   if (!campos.nombre || campos.nombre.length > 120) {
     error.value = 'Escribe un nombre para tu tienda de hasta 120 caracteres.'
@@ -590,6 +855,20 @@ async function guardarTienda() {
   if (formularioTienda.value.correoHabilitado && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formularioTienda.value.correoDireccion.trim())) {
     error.value = 'Ingresa un correo válido para habilitar este canal.'
     return
+  }
+  if (formularioTienda.value.puntoRetiroHabilitado) {
+    const latitud = Number(formularioTienda.value.puntoRetiroLatitud)
+    const longitud = Number(formularioTienda.value.puntoRetiroLongitud)
+    if (!formularioTienda.value.puntoRetiroLatitud.trim() || !formularioTienda.value.puntoRetiroLongitud.trim()
+      || !Number.isFinite(latitud) || latitud < -90 || latitud > 90
+      || !Number.isFinite(longitud) || longitud < -180 || longitud > 180) {
+      error.value = 'Marca una ubicación válida en el mapa o deja desactivado el punto de retiro.'
+      return
+    }
+    if (formularioTienda.value.puntoRetiroDescripcion.trim().length > 200) {
+      error.value = 'La descripción del punto de retiro puede tener hasta 200 caracteres.'
+      return
+    }
   }
 
   const servicio = cliente() as ReturnType<typeof cliente> & {
@@ -612,7 +891,7 @@ async function guardarTienda() {
   try {
     if (logoSeleccionado.value) {
       await servicio.subirLogoTienda!(tiendaId, logoSeleccionado.value, logoArchivoId.value)
-      cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid)
+      await recargarCuentaConProductos(uid)
       logoSeleccionado.value = null
       logoArchivoId.value = ''
       if (logoInput.value) logoInput.value.value = ''
@@ -633,10 +912,10 @@ async function guardarTienda() {
     const solicitud = { ...datos, operacionId: pendiente.operacionId }
     await servicio.llamar('editarTiendaEmprendedora', solicitud)
     edicionTiendaPendiente.value = null
-    cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid)
+    await recargarCuentaConProductos(uid)
     if (mostrarPreciosCambio) {
       await servicio.llamar('configurarMostrarPrecios', { tiendaId, mostrarPrecios: formularioTienda.value.mostrarPrecios })
-      cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid)
+      await recargarCuentaConProductos(uid)
     }
     editandoTienda.value = false
     logoSeleccionado.value = null
@@ -650,7 +929,7 @@ async function guardarTienda() {
   } catch (fallo) {
     const codigo = typeof fallo === 'object' && fallo !== null && 'code' in fallo ? String((fallo as { code?: unknown }).code ?? '') : ''
     if (codigo === 'conflicto') {
-      try { cuenta.value = await cargarCuentaEmprendedora(servicio.firebase, uid) } catch {}
+      try { await recargarCuentaConProductos(uid) } catch {}
       edicionTiendaPendiente.value = null
       error.value = 'La ficha cambió desde otro dispositivo. Actualizamos la versión; revisa los datos antes de guardar otra vez.'
     } else {
@@ -663,7 +942,18 @@ async function guardarTienda() {
 
 async function cerrarSesion() {
   await cliente().cerrarSesion()
+  productosPaginaVersion++
+  productosVentaVersion++
+  resumenVersion++
+  variantesVentaVersion++
+  productosPaginaCargando.value = false
+  productosVentaCargando.value = false
+  resumenProductosCargando.value = false
+  variantesVentaCargando.value = false
   cuenta.value = null
+  accionPublicacionTienda.value = null
+  operacionPublicacionTiendaPendiente.value = null
+  errorPublicacionTienda.value = ''
   contrasena.value = ''
   seccion.value = 'inicio'
   productoEnEdicion.value = null
@@ -675,6 +965,7 @@ async function cerrarSesion() {
 }
 
 function irA(destino: Seccion) {
+  cerrarMenuProducto()
   seccion.value = destino
   filtro.value = 'todos'
   if (destino !== 'agregar') productoEnEdicion.value = null
@@ -760,6 +1051,291 @@ function editarProducto(productoId: string) {
   irA('agregar')
 }
 
+function cerrarMenuProducto() {
+  menuProductoAbiertoId.value = ''
+}
+
+function alternarMenuProducto(productoId: string, evento: MouseEvent) {
+  if (menuProductoAbiertoId.value === productoId) {
+    cerrarMenuProducto()
+    return
+  }
+  menuProductoAbiertoId.value = productoId
+  botonMenuProductoActivo.value = evento.currentTarget as HTMLButtonElement
+}
+
+function cambiarResumenProducto(estadoAnterior: ProductoEmprendedoraWeb['estado'], estadoNuevo: ProductoEmprendedoraWeb['estado'] | null) {
+  if (estadoAnterior === estadoNuevo) return
+  const clave = (estado: ProductoEmprendedoraWeb['estado']) => estado === 'publicado' ? 'publicados' : estado === 'borrador' ? 'borradores' : 'retirados'
+  const resumen = { ...resumenProductos.value }
+  const anterior = clave(estadoAnterior)
+  resumen[anterior] = Math.max(0, resumen[anterior] - 1)
+  if (estadoNuevo) {
+    const nuevo = clave(estadoNuevo)
+    resumen[nuevo] += 1
+  }
+  resumenProductos.value = resumen
+}
+
+async function actualizarFichaProducto(productoId: string) {
+  const cuentaActual = cuenta.value
+  const productoActual = cuentaActual?.productos.find((item) => item.id === productoId)
+  if (!cuentaActual || !productoActual) throw new Error('No encontramos el producto en esta lista.')
+  const ficha = await leerFichaProductoEmprendedora(cliente().firebase, cuentaActual.tienda.id, productoId)
+  const actualizada: ProductoEmprendedoraWeb = {
+    ...productoActual,
+    ...ficha,
+    variantes: ficha.tieneVariantes ? productoActual.variantes : [],
+    variantesCargadas: !ficha.tieneVariantes || productoActual.variantesCargadas,
+  }
+  guardarProductoEnMemoria(actualizada)
+  cambiarResumenProducto(productoActual.estado, actualizada.estado)
+  return actualizada
+}
+
+async function abrirAccionProducto(producto: ProductoEmprendedoraWeb, accion: AccionProductoWeb) {
+  cerrarMenuProducto()
+  errorAccionProducto.value = ''
+  aviso.value = ''
+  dialogoAccionProducto.value = { accion, productoId: producto.id, nombre: producto.nombre }
+  await nextTick()
+  botonCancelarAccionProducto.value?.focus()
+}
+
+async function cerrarDialogoAccionProducto() {
+  if (guardandoAccionProducto.value) return
+  dialogoAccionProducto.value = null
+  errorAccionProducto.value = ''
+  await nextTick()
+  botonMenuProductoActivo.value?.focus()
+}
+
+function mantenerFocoDialogoProducto(evento: KeyboardEvent) {
+  if (evento.key !== 'Tab') return
+  const dialogo = evento.currentTarget as HTMLElement
+  const controles = dialogo.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')
+  if (!controles.length) return
+  const primero = controles[0]
+  const ultimo = controles[controles.length - 1]
+  if (evento.shiftKey && document.activeElement === primero) {
+    evento.preventDefault()
+    ultimo.focus()
+  } else if (!evento.shiftKey && document.activeElement === ultimo) {
+    evento.preventDefault()
+    primero.focus()
+  }
+}
+
+async function confirmarAccionProducto() {
+  const cuentaActual = cuenta.value
+  const dialogo = dialogoAccionProducto.value
+  const producto = cuentaActual?.productos.find((item) => item.id === dialogo?.productoId)
+  if (!cuentaActual || !dialogo || !producto || guardandoAccionProducto.value) return
+  if (!producto.versionEsperada) {
+    errorAccionProducto.value = 'Actualiza la ficha del producto antes de realizar esta acción.'
+    return
+  }
+  let pendiente = operacionProductoPendiente.value
+  if (!pendiente || pendiente.accion !== dialogo.accion || pendiente.productoId !== producto.id || pendiente.versionEsperada !== producto.versionEsperada) {
+    pendiente = { accion: dialogo.accion, productoId: producto.id, versionEsperada: producto.versionEsperada, operacionId: crypto.randomUUID() }
+    operacionProductoPendiente.value = pendiente
+  }
+  guardandoAccionProducto.value = true
+  errorAccionProducto.value = ''
+  try {
+    await cliente().llamar(dialogo.accion, {
+      tiendaId: cuentaActual.tienda.id,
+      productoId: producto.id,
+      operacionId: pendiente.operacionId,
+      versionEsperada: pendiente.versionEsperada,
+    })
+    operacionProductoPendiente.value = null
+    dialogoAccionProducto.value = null
+    if (dialogo.accion === 'eliminarProducto') {
+      cuenta.value = { ...cuentaActual, productos: cuentaActual.productos.filter((item) => item.id !== producto.id) }
+      productosPaginaIds.value = productosPaginaIds.value.filter((id) => id !== producto.id)
+      cambiarResumenProducto(producto.estado, null)
+      aviso.value = 'El producto se eliminó.'
+    } else {
+      const retirada = { ...producto, estado: 'archivado' as const, versionEsperada: '' }
+      guardarProductoEnMemoria(retirada)
+      productosPaginaIds.value = productosPaginaIds.value.includes(producto.id) ? productosPaginaIds.value : [producto.id, ...productosPaginaIds.value]
+      cambiarResumenProducto(producto.estado, 'archivado')
+      aviso.value = 'El producto se retiró del catálogo público. Sus datos se conservaron.'
+      try {
+        await actualizarFichaProducto(producto.id)
+      } catch {
+        aviso.value += ' Actualiza la lista antes de volver a editarlo.'
+      }
+    }
+    await nextTick()
+    if (dialogo.accion === 'retirarProducto') botonMenuProductoActivo.value?.focus()
+    else document.querySelector<HTMLButtonElement>('.boton-menu-producto')?.focus()
+  } catch (fallo) {
+    errorAccionProducto.value = mensajeDeError(fallo)
+    const resultadoIncierto = typeof fallo === 'object' && fallo !== null && 'resultadoIncierto' in fallo && (fallo as { resultadoIncierto?: unknown }).resultadoIncierto === true
+    if (!resultadoIncierto) {
+      operacionProductoPendiente.value = null
+      try { await actualizarFichaProducto(producto.id) } catch {}
+    }
+  } finally {
+    guardandoAccionProducto.value = false
+  }
+}
+
+async function cargarVariantesAjusteStock(productoId: string) {
+  const producto = cuenta.value?.productos.find((item) => item.id === productoId)
+  const cuentaActual = cuenta.value
+  if (!producto || !cuentaActual || !producto.tieneVariantes || producto.variantesCargadas || variantesStockCargando.value) return
+  const version = ++variantesStockVersion
+  variantesStockCargando.value = true
+  errorStockProducto.value = ''
+  try {
+    const variantes = await leerVariantesProductoEmprendedora(cliente().firebase, cuentaActual.tienda.id, producto.id)
+    if (version !== variantesStockVersion || dialogoStockProductoId.value !== productoId || cuenta.value?.tienda.id !== cuentaActual.tienda.id) return
+    guardarProductoEnMemoria({ ...producto, variantes, variantesCargadas: true })
+    if (!varianteStockId.value) varianteStockId.value = variantes.find((variante) => variante.activa)?.id ?? variantes[0]?.id ?? ''
+  } catch (fallo) {
+    if (version === variantesStockVersion && dialogoStockProductoId.value === productoId) errorStockProducto.value = mensajeDeError(fallo)
+  } finally {
+    if (version === variantesStockVersion) variantesStockCargando.value = false
+  }
+}
+
+async function abrirAjusteStock(producto: ProductoEmprendedoraWeb) {
+  cerrarMenuProducto()
+  if (ajusteStockPendiente.value?.incierta && ajusteStockPendiente.value.productoId !== producto.id) {
+    error.value = 'Hay un ajuste de stock sin confirmar. Abre ese mismo producto y reintenta antes de iniciar otro ajuste.'
+    return
+  }
+  if (!producto.manejaStock || producto.piezaUnicaVendida) return
+  errorStockProducto.value = ''
+  aviso.value = ''
+  dialogoStockProductoId.value = producto.id
+  const pendiente = ajusteStockPendiente.value?.productoId === producto.id ? ajusteStockPendiente.value : null
+  if (pendiente) {
+    varianteStockId.value = pendiente.varianteId
+    cantidadStock.value = String(pendiente.cantidad)
+    motivoStock.value = pendiente.motivo
+    notaStock.value = pendiente.nota
+  } else {
+    varianteStockId.value = producto.tieneVariantes ? producto.variantes.find((variante) => variante.activa)?.id ?? producto.variantes[0]?.id ?? '' : ''
+    cantidadStock.value = ''
+    motivoStock.value = 'reposicion'
+    notaStock.value = ''
+  }
+  if (producto.tieneVariantes && !producto.variantesCargadas) void cargarVariantesAjusteStock(producto.id)
+  await nextTick()
+  campoCantidadStock.value?.focus()
+}
+
+function cerrarAjusteStock() {
+  if (guardandoStockProducto.value) return
+  variantesStockVersion++
+  dialogoStockProductoId.value = ''
+  variantesStockCargando.value = false
+  errorStockProducto.value = ''
+  void nextTick(() => botonMenuProductoActivo.value?.focus())
+}
+
+async function guardarAjusteStock() {
+  const cuentaActual = cuenta.value
+  const producto = productoStockSeleccionado.value
+  if (!cuentaActual || !producto || guardandoStockProducto.value) return
+  if (!producto.manejaStock || !producto.versionEsperada) {
+    errorStockProducto.value = 'Actualiza la ficha del producto antes de cambiar su stock.'
+    return
+  }
+  if (producto.tieneVariantes && (!producto.variantesCargadas || !producto.variantes.some((variante) => variante.id === varianteStockId.value))) {
+    errorStockProducto.value = 'Elige una variante disponible.'
+    return
+  }
+  const textoCantidad = cantidadStock.value.trim().replace(/^−/, '-')
+  if (!/^[+-]?\d+$/.test(textoCantidad)) {
+    errorStockProducto.value = 'Escribe una cantidad entera con signo + o -.'
+    return
+  }
+  const cantidad = Number(textoCantidad)
+  if (!Number.isSafeInteger(cantidad) || cantidad === 0) {
+    errorStockProducto.value = 'La cantidad debe ser un número entero distinto de cero.'
+    return
+  }
+  if ((motivoStock.value === 'reposicion' && cantidad < 0) || (motivoStock.value === 'perdida' && cantidad > 0)) {
+    errorStockProducto.value = motivoStock.value === 'reposicion' ? 'La reposición debe sumar stock: usa una cantidad positiva.' : 'La pérdida debe restar stock: usa una cantidad negativa.'
+    return
+  }
+  const nota = notaStock.value.trim()
+  if (nota.length > 500) {
+    errorStockProducto.value = 'La nota puede tener hasta 500 caracteres.'
+    return
+  }
+  const varianteId = producto.tieneVariantes ? varianteStockId.value : ''
+  const firma = JSON.stringify([cuentaActual.tienda.id, producto.id, varianteId || null, producto.versionEsperada, cantidad, motivoStock.value, nota || null])
+  let pendiente = ajusteStockPendiente.value
+  if (!pendiente || pendiente.firma !== firma) {
+    pendiente = { productoId: producto.id, varianteId, cantidad, motivo: motivoStock.value, nota, firma, operacionId: crypto.randomUUID(), incierta: false }
+    ajusteStockPendiente.value = pendiente
+  }
+  guardandoStockProducto.value = true
+  errorStockProducto.value = ''
+  try {
+    const resultado = await cliente().llamar('ajustarStock', {
+      tiendaId: cuentaActual.tienda.id,
+      productoId: producto.id,
+      ...(pendiente.varianteId ? { varianteId: pendiente.varianteId } : {}),
+      operacionId: pendiente.operacionId,
+      versionEsperada: producto.versionEsperada,
+      cantidad: pendiente.cantidad,
+      motivo: pendiente.motivo,
+      ...(pendiente.nota ? { nota: pendiente.nota } : {}),
+    })
+    ajusteStockPendiente.value = null
+    const stockNuevo = typeof resultado.stockNuevo === 'number' && Number.isSafeInteger(resultado.stockNuevo) ? resultado.stockNuevo : null
+    const requiereRepublicar = resultado.requiereRepublicar === true
+    const variantesActualizadas = producto.tieneVariantes
+      ? producto.variantes.map((variante) => variante.id === pendiente!.varianteId && stockNuevo !== null ? { ...variante, stock: stockNuevo } : variante)
+      : []
+    const respaldo: ProductoEmprendedoraWeb = {
+      ...producto,
+      estado: requiereRepublicar ? 'archivado' : producto.estado,
+      versionEsperada: '',
+      ...(pendiente.varianteId ? {} : stockNuevo === null ? {} : { stock: stockNuevo }),
+      variantes: variantesActualizadas,
+      variantesCargadas: !producto.tieneVariantes || producto.variantesCargadas,
+    }
+    guardarProductoEnMemoria(respaldo)
+    cambiarResumenProducto(producto.estado, respaldo.estado)
+    variantesStockVersion++
+    dialogoStockProductoId.value = ''
+    variantesStockCargando.value = false
+    void nextTick(() => botonMenuProductoActivo.value?.focus())
+    const actualizacion = resultado.actualizacionCatalogo
+    aviso.value = actualizacion === 'actualizado'
+      ? 'Stock ajustado y catálogo público actualizado.'
+      : actualizacion === 'oculto'
+        ? 'Stock ajustado; el producto quedó oculto según su disponibilidad.'
+        : actualizacion === 'requiere_republicar'
+          ? 'Stock ajustado. Vuelve a publicar el producto para mostrarlo otra vez.'
+          : 'Stock ajustado.'
+    try {
+      await actualizarFichaProducto(producto.id)
+    } catch {
+      aviso.value += ' Actualiza la lista antes de realizar otra acción con este producto.'
+    }
+  } catch (fallo) {
+    errorStockProducto.value = mensajeDeError(fallo)
+    const resultadoIncierto = typeof fallo === 'object' && fallo !== null && 'resultadoIncierto' in fallo && (fallo as { resultadoIncierto?: unknown }).resultadoIncierto === true
+    if (resultadoIncierto && ajusteStockPendiente.value) {
+      ajusteStockPendiente.value = { ...ajusteStockPendiente.value, incierta: true }
+    } else if (!resultadoIncierto) {
+      ajusteStockPendiente.value = null
+      try { await actualizarFichaProducto(producto.id) } catch {}
+    }
+  } finally {
+    guardandoStockProducto.value = false
+  }
+}
+
 function abrirVenta(productoId = '') {
   if (operacionVentaPendiente.value) {
     irA('ventas')
@@ -776,13 +1352,35 @@ function abrirVenta(productoId = '') {
   irA('ventas')
 }
 
-watch(productoVentaId, (id) => {
-  if (operacionVentaPendiente.value) return
-  const producto = cuenta.value?.productos.find((item) => item.id === id)
+watch(productoVentaId, async (id) => {
+  const version = ++variantesVentaVersion
+  variantesVentaCargando.value = false
+  if (operacionVentaPendiente.value) {
+    variantesVentaError.value = ''
+    return
+  }
+  let producto = cuenta.value?.productos.find((item) => item.id === id)
   varianteVentaId.value = producto?.tieneVariantes
     ? producto.variantes.find((item) => item.activa && (!producto.manejaStock || (item.stock ?? 0) > 0))?.id ?? ''
     : ''
   cantidadVenta.value = '1'
+  variantesVentaError.value = ''
+  if (!producto?.tieneVariantes || producto.variantesCargadas || !cuenta.value) return
+  variantesVentaCargando.value = true
+  const tiendaId = cuenta.value.tienda.id
+  try {
+    const variantes = await leerVariantesProductoEmprendedora(cliente().firebase, tiendaId, producto.id)
+    if (version !== variantesVentaVersion || productoVentaId.value !== id || cuenta.value?.tienda.id !== tiendaId) return
+    producto = { ...producto, variantes, variantesCargadas: true }
+    guardarProductoEnMemoria(producto)
+    varianteVentaId.value = producto.variantes.find((item) => item.activa && (!producto!.manejaStock || (item.stock ?? 0) > 0))?.id ?? ''
+  } catch (fallo) {
+    if (version === variantesVentaVersion && productoVentaId.value === id && cuenta.value?.tienda.id === tiendaId) {
+      variantesVentaError.value = fallo instanceof Error ? fallo.message : 'No se pudieron cargar las variantes.'
+    }
+  } finally {
+    if (version === variantesVentaVersion) variantesVentaCargando.value = false
+  }
 })
 
 watch(varianteVentaId, () => {
@@ -846,7 +1444,12 @@ async function guardarProductoTerminado(resultado: { productoId: string; publica
   let actualizada = false
   if (cuenta.value) {
     try {
-      cuenta.value = await cargarCuentaEmprendedora(cliente().firebase, cuenta.value.uid)
+      await recargarCuentaConProductos(cuenta.value.uid)
+      const producto = await leerProductoEmprendedora(cliente().firebase, cuenta.value.tienda.id, cuenta.value.tienda.mostrarPrecios, resultado.productoId)
+      guardarProductoEnMemoria(producto)
+      productosPaginaIds.value = [producto.id, ...productosPaginaIds.value.filter((id) => id !== producto.id)]
+      productosPaginaLista.value = true
+      await cargarResumenProductos(true)
       actualizada = true
     } catch {}
   }
@@ -938,7 +1541,11 @@ async function registrarVentaWeb() {
       ? `Venta registrada. ${detalleCatalogo}`
       : `Stock actualizado; el historial de ventas está desactivado. ${detalleCatalogo}`
     try {
-      cuenta.value = await cargarCuentaEmprendedora(cliente().firebase, cuenta.value.uid)
+      const cuentaActual = cuenta.value
+      const actualizada = await leerProductoEmprendedora(cliente().firebase, cuentaActual.tienda.id, cuentaActual.tienda.mostrarPrecios, pendiente.productoId)
+      guardarProductoEnMemoria(actualizada)
+      await cargarResumenProductos(true)
+      productosVentaIds.value = productosVentaIds.value.filter((id) => id !== actualizada.id || productosVendibles.value.some((item) => item.id === id))
       productoVentaId.value = ''
       varianteVentaId.value = ''
       cantidadVenta.value = '1'
@@ -968,8 +1575,35 @@ watch(seccion, (vista) => {
   void router.replace({ path: '/emprendedora', query, hash: ruta.hash })
 })
 
-watch(() => [seccion.value, cuenta.value?.tienda.id] as const, ([vista]) => {
-  if (vista === 'ventas') void cargarFeriasVenta()
+watch(() => [seccion.value, filtro.value, cuenta.value?.tienda.id] as const, ([vista, filtroActual, tiendaId]) => {
+  if (!tiendaId) return
+  if (vista === 'productos') {
+    const vencida = productosPaginaActualizadaEn > 0 && Date.now() - productosPaginaActualizadaEn > 60_000
+    if (!productosPaginaLista || productosPaginaTiendaCargada !== tiendaId || productosPaginaFiltro !== filtroActual || vencida) void cargarPaginaProductos(true)
+  }
+  if (vista === 'ventas') {
+    if (!productosVentaPaginaLista || productosVentaTiendaCargada !== tiendaId || Date.now() - productosVentaActualizadaEn > 60_000) void cargarPaginaVentas(true)
+    void cargarFeriasVenta()
+  }
+}, { immediate: true })
+
+watch(() => cuenta.value?.tienda.id, (tiendaId) => {
+  if (!tiendaId) {
+    resumenProductos.value = { publicados: 0, borradores: 0, retirados: 0 }
+    resumenTiendaCargada = ''
+    productosPaginaIds.value = []
+    productosVentaIds.value = []
+    productosPaginaLista.value = false
+    productosVentaPaginaLista.value = false
+    productosPaginaCursor.value = null
+    productosVentaCursor.value = null
+    productosPaginaTiendaCargada = ''
+    productosPaginaFiltro = null
+    productosPaginaError.value = ''
+    productosVentaError.value = ''
+    return
+  }
+  void cargarResumenProductos(true)
 }, { immediate: true })
 
 watch(() => ruta.query.vista, (valor) => {
@@ -985,6 +1619,7 @@ function precioBonito(precio: number | null) {
 function stockBonito(producto: ProductoEmprendedoraWeb) {
   if (!producto.manejaStock) return producto.modalidad === 'a_pedido' ? 'Por encargo' : 'Sin control de stock'
   if (producto.tieneVariantes) {
+    if (!producto.variantesCargadas) return 'Stock por variantes'
     const total = producto.variantes.filter((variante) => variante.activa).reduce((suma, variante) => suma + (variante.stock ?? 0), 0)
     return `${total} ${total === 1 ? 'unidad' : 'unidades'} en variantes`
   }
@@ -994,6 +1629,7 @@ function stockBonito(producto: ProductoEmprendedoraWeb) {
 
 function precioProductoBonito(producto: ProductoEmprendedoraWeb) {
   if (!producto.tieneVariantes) return precioBonito(producto.precioBase)
+  if (!producto.variantesCargadas) return 'Precio según variante'
   const precios = producto.variantes.filter((variante) => variante.activa).map((variante) => variante.precio)
   if (!precios.length) return 'Sin variantes activas'
   const minimo = Math.min(...precios)
@@ -1097,7 +1733,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section v-else class="contenido-panel" :class="{ 'modo-edicion-tienda': seccion === 'mas' && editandoTienda }">
+      <section v-else class="contenido-panel" :class="{ 'modo-edicion-tienda': seccion === 'mas' && editandoTienda }" @click="cerrarMenuProducto">
         <div v-if="!(seccion === 'mas' && editandoTienda)" class="cabecera-panel" :data-guia="seccion === 'inicio' ? 'emprendedora-inicio' : undefined">
           <div>
             <span class="sobre-titulo">HOLA, {{ nombrePersona().toUpperCase() }}</span>
@@ -1124,13 +1760,13 @@ onMounted(async () => {
           </button>
           <section class="tarjeta-tienda">
             <div class="cabecera-tienda"><div><span class="sobre-titulo">MI TIENDA</span><h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2></div>
-              <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : 'En borrador' }}</span>
+              <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada del catálogo' : 'En borrador' }}</span>
             </div>
             <p>{{ cuenta.tienda.descripcion || 'Agrega una descripción a tu tienda para contar qué haces.' }}</p>
             <div class="separador-tienda"></div><div class="progreso-cabecera"><strong>Tu progreso</strong><span>{{ publicados > 0 ? '¡Vas muy bien!' : 'Comienza cuando quieras' }}</span></div>
             <div class="pasos-progreso">
               <div class="paso-progreso"><span class="check-progreso" :class="{ completado: cuenta.tienda.nombre.trim().length > 0 }">{{ cuenta.tienda.nombre.trim().length > 0 ? '✓' : '1' }}</span><span><strong>Prepara tu tienda</strong><small>{{ cuenta.tienda.nombre.trim() ? 'Nombre listo' : 'Completa el nombre de tu tienda' }}</small></span></div>
-              <div class="paso-progreso"><span class="check-progreso" :class="{ completado: cuenta.productos.length > 0 }">{{ cuenta.productos.length > 0 ? '✓' : '2' }}</span><span><strong>Agrega tu primer producto</strong><small>{{ cuenta.productos.length > 0 ? cuenta.productos.length + ' productos en tu lista' : 'Cada creación comienza con una idea' }}</small></span></div>
+              <div class="paso-progreso"><span class="check-progreso" :class="{ completado: totalProductos > 0 }">{{ totalProductos > 0 ? '✓' : '2' }}</span><span><strong>Agrega tu primer producto</strong><small>{{ totalProductos > 0 ? totalProductos + ' productos en tu lista' : 'Cada creación comienza con una idea' }}</small></span></div>
               <div class="paso-progreso"><span class="check-progreso" :class="{ completado: publicados > 0 }">{{ publicados > 0 ? '✓' : '3' }}</span><span><strong>Publica tu catálogo</strong><small>{{ publicados > 0 ? 'Ya tienes productos visibles' : 'Publica productos para mostrarlos' }}</small></span></div>
             </div>
           </section>
@@ -1139,11 +1775,13 @@ onMounted(async () => {
         <template v-else-if="seccion === 'productos'">
           <div class="encabezado-seccion"><div><span class="sobre-titulo">MI CATÁLOGO</span><h2>Productos de {{ cuenta.tienda.nombre || 'mi tienda' }}</h2></div><button class="boton-vino compacto" type="button" @click="abrirNuevoProducto">＋ Agregar</button></div>
           <div class="filtros-productos" role="group" aria-label="Filtrar productos">
-            <button type="button" :class="{ activo: filtro === 'todos' }" @click="filtro = 'todos'">Todos · {{ cuenta.productos.length }}</button>
+            <button type="button" :class="{ activo: filtro === 'todos' }" @click="filtro = 'todos'">Todos · {{ totalProductos }}</button>
             <button type="button" :class="{ activo: filtro === 'publicado' }" @click="filtro = 'publicado'">Publicados · {{ publicados }}</button>
             <button type="button" :class="{ activo: filtro === 'borrador' }" @click="filtro = 'borrador'">Borradores · {{ borradores }}</button>
             <button type="button" :class="{ activo: filtro === 'archivado' }" @click="filtro = 'archivado'">Retirados · {{ retirados }}</button>
           </div>
+          <p v-if="productosPaginaCargando" class="mensaje mensaje-aviso" role="status">Cargando productos…</p>
+          <p v-if="productosPaginaError" class="mensaje mensaje-error" role="alert">{{ productosPaginaError }} <button type="button" @click="cargarPaginaProductos(true)">Volver a intentar</button></p>
           <div v-if="productosFiltrados.length" class="lista-productos">
             <article v-for="producto in productosFiltrados" :key="producto.id" class="tarjeta-producto">
               <div class="imagen-producto">
@@ -1156,13 +1794,31 @@ onMounted(async () => {
               <span class="estado-producto" :class="producto.estado">{{ estadoBonito(producto.estado) }}</span>
               <div class="acciones-producto">
                 <button class="boton-secundario" type="button" @click="editarProducto(producto.id)">Editar</button>
-                <button v-if="productosVendibles.some((item) => item.id === producto.id)" class="boton-vino" type="button" @click="abrirVenta(producto.id)">Registrar venta</button>
+                <button v-if="puedeRegistrarVenta(producto)" class="boton-vino" type="button" @click="abrirVenta(producto.id)">Registrar venta</button>
+                <div class="contenedor-menu-producto">
+                  <button
+                    class="boton-menu-producto"
+                    type="button"
+                    :aria-label="`Más acciones para ${producto.nombre || 'este producto'}`"
+                    :aria-expanded="menuProductoAbiertoId === producto.id"
+                    :aria-controls="`menu-producto-${producto.id}`"
+                    @click.stop="alternarMenuProducto(producto.id, $event)"
+                  >⋮</button>
+                  <div v-if="menuProductoAbiertoId === producto.id" :id="`menu-producto-${producto.id}`" class="menu-acciones-producto" role="menu" @click.stop>
+                    <button v-if="producto.estado === 'publicado'" type="button" role="menuitem" @click="abrirAccionProducto(producto, 'retirarProducto')">Retirar del catálogo</button>
+                    <button type="button" role="menuitem" :disabled="!producto.manejaStock || producto.piezaUnicaVendida" :title="producto.piezaUnicaVendida ? 'Esta pieza ya figura como vendida.' : !producto.manejaStock ? 'Este producto no controla stock.' : undefined" @click="abrirAjusteStock(producto)">Ajustar stock</button>
+                    <button class="accion-eliminar-producto" type="button" role="menuitem" @click="abrirAccionProducto(producto, 'eliminarProducto')">Eliminar</button>
+                  </div>
+                </div>
               </div>
             </article>
           </div>
-          <div v-else class="vacio-productos"><span aria-hidden="true">✿</span><h3>{{ filtro === 'todos' ? 'Todavía no hay productos' : 'No hay productos en esta lista' }}</h3>
+          <div v-else-if="!productosPaginaCargando && !productosPaginaError" class="vacio-productos"><span aria-hidden="true">✿</span><h3>{{ filtro === 'todos' ? 'Todavía no hay productos' : 'No hay productos en esta lista' }}</h3>
             <p>{{ filtro === 'todos' ? 'Cuando agregues tus productos, aparecerán aquí para que puedas revisar su estado.' : 'Prueba con otro filtro para ver tus productos.' }}</p>
             <button v-if="filtro === 'todos'" class="boton-vino" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
+          </div>
+          <div v-if="productosPaginaCursor && !productosPaginaCargando" class="mas-productos">
+            <button class="boton-secundario" type="button" @click="cargarMasProductos">Cargar más productos</button>
           </div>
         </template>
 
@@ -1173,16 +1829,18 @@ onMounted(async () => {
         <template v-else-if="seccion === 'ventas'">
           <section class="tarjeta-ventas-web">
             <header><span class="sobre-titulo">VENTA DE MI CATÁLOGO</span><h2>¿Qué producto vendiste?</h2><p>El stock se descuenta del producto o la variante seleccionada y se sincroniza con la tienda pública.</p></header>
+            <p v-if="productosVentaCargando" class="mensaje mensaje-aviso" role="status">Cargando productos publicados…</p>
+            <p v-if="productosVentaError" class="mensaje mensaje-error" role="alert">{{ productosVentaError }} <button type="button" @click="cargarPaginaVentas(true)">Volver a intentar</button></p>
             <form v-if="productosFormularioVenta.length || operacionVentaPendiente" class="formulario-venta-web" @submit.prevent="registrarVentaWeb">
               <label class="campo-venta-web">Producto
-                <select v-model="productoVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
+                <select v-model="productoVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || productosVentaCargando">
                   <option value="" disabled>Selecciona un producto</option>
                   <option v-for="producto in productosFormularioVenta" :key="producto.id" :value="producto.id">{{ producto.nombre }} · {{ precioProductoBonito(producto) }}</option>
                   <option v-if="operacionVentaPendiente && !productosFormularioVenta.some((producto) => producto.id === operacionVentaPendiente?.productoId)" :value="operacionVentaPendiente.productoId">Venta pendiente por confirmar</option>
                 </select>
               </label>
               <label v-if="productoVenta?.tieneVariantes" class="campo-venta-web">Variante
-                <select v-model="varianteVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
+                <select v-model="varianteVentaId" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || variantesVentaCargando">
                   <option value="" disabled>Selecciona una variante disponible</option>
                   <option v-for="variante in variantesVendibles" :key="variante.id" :value="variante.id">{{ opcionVarianteVenta(variante) }}</option>
                 </select>
@@ -1191,6 +1849,8 @@ onMounted(async () => {
                 <span>Precio unitario <strong>{{ precioVenta === null ? '—' : precioBonito(precioVenta) }}</strong></span>
                 <span v-if="productoVenta.manejaStock">Stock disponible <strong>{{ stockVenta ?? 0 }}</strong></span>
               </div>
+              <p v-if="variantesVentaCargando" class="mensaje mensaje-aviso" role="status">Cargando las variantes de este producto…</p>
+              <p v-if="variantesVentaError" class="mensaje mensaje-error" role="alert">{{ variantesVentaError }}</p>
               <div class="campos-venta-web">
                 <label class="campo-venta-web">Cantidad
                   <input v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
@@ -1224,13 +1884,16 @@ onMounted(async () => {
               </div>
               <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
               <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
-              <button class="boton-vino boton-registro-venta" type="submit" :disabled="guardandoVenta">
+              <button class="boton-vino boton-registro-venta" type="submit" :disabled="guardandoVenta || variantesVentaCargando || Boolean(variantesVentaError)">
                 {{ guardandoVenta ? 'Guardando venta…' : operacionVentaPendiente ? 'Reintentar la misma venta' : 'Registrar venta' }}
               </button>
             </form>
-            <div v-else class="sin-productos-venta">
+            <div v-else-if="!productosVentaCargando && !productosVentaError" class="sin-productos-venta">
               <p>No hay productos publicados y disponibles para vender. Publica un producto o revisa su disponibilidad en el catálogo.</p>
               <button class="boton-vino" type="button" @click="irA('productos')">Revisar mis productos</button>
+            </div>
+            <div v-if="productosVentaCursor && !productosVentaCargando" class="mas-productos">
+              <button class="boton-secundario" type="button" @click="cargarMasProductosVenta">Cargar más productos para vender</button>
             </div>
           </section>
         </template>
@@ -1279,7 +1942,41 @@ onMounted(async () => {
                 </section>
 
                 <section class="paso-edicion-tienda">
-                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">3</span><div><h2>Precios del catálogo</h2><p>Elige qué verán quienes visiten tu tienda.</p></div></header>
+                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">3</span><div><h2>Punto de retiro <span class="opcional-tienda">Opcional</span></h2><p>Indica dónde pueden retirar sus compras tus clientes.</p></div></header>
+                  <div class="campos-ficha-tienda">
+                    <label class="interruptor-contacto-tienda">
+                      <input v-model="formularioTienda.puntoRetiroHabilitado" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
+                      <span class="pista-interruptor"></span>
+                      <span><strong>Ofrecer retiro en un punto</strong><small>Si lo activas, marca el lugar en el mapa. Puedes dejarlo desactivado.</small></span>
+                    </label>
+                    <template v-if="formularioTienda.puntoRetiroHabilitado">
+                      <div class="campo-completo-tienda">
+                        <ClientOnly>
+                          <SelectorUbicacionFeria
+                            :latitud="formularioTienda.puntoRetiroLatitud.trim() ? Number(formularioTienda.puntoRetiroLatitud) : null"
+                            :longitud="formularioTienda.puntoRetiroLongitud.trim() ? Number(formularioTienda.puntoRetiroLongitud) : null"
+                            :direccion="formularioTienda.puntoRetiroDescripcion"
+                            :disabled="guardandoTienda"
+                            titulo="Ubicación del punto de retiro"
+                            ayuda="Busca una dirección o marca el lugar donde se entregarán las compras."
+                            etiqueta-busqueda="Buscar dirección o lugar"
+                            etiqueta-mapa="Mapa para marcar el punto de retiro de la tienda"
+                            texto-instruccion="También puedes hacer clic en el mapa. La ubicación solo se publica cuando guardas los cambios."
+                            @ubicacion-seleccionada="actualizarPuntoRetiro"
+                          />
+                          <template #fallback><p class="mensaje mensaje-aviso">Cargando el selector de ubicación…</p></template>
+                        </ClientOnly>
+                      </div>
+                      <label class="campo-ficha-tienda campo-completo-tienda">Descripción para tus clientes
+                        <input v-model="formularioTienda.puntoRetiroDescripcion" type="text" maxlength="200" placeholder="Ej.: Retiro en mi local, entrada por calle…" :disabled="guardandoTienda" />
+                        <small>Hasta 200 caracteres. Puedes dejarlo en blanco.</small>
+                      </label>
+                    </template>
+                  </div>
+                </section>
+
+                <section class="paso-edicion-tienda">
+                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">4</span><div><h2>Precios del catálogo</h2><p>Elige qué verán quienes visiten tu tienda.</p></div></header>
                   <label class="interruptor-contacto-tienda">
                     <input v-model="formularioTienda.mostrarPrecios" type="checkbox" :disabled="cargandoEdicionTienda || guardandoTienda" />
                     <span class="pista-interruptor"></span>
@@ -1288,7 +1985,7 @@ onMounted(async () => {
                 </section>
 
                 <section class="paso-edicion-tienda paso-identidad-tienda">
-                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">4</span><div><h2>Identidad visual</h2><p>Agrega un logo para que tu tienda destaque.</p></div></header>
+                  <header class="cabecera-paso-tienda"><span class="numero-paso-tienda">5</span><div><h2>Identidad visual</h2><p>Agrega un logo para que tu tienda destaque.</p></div></header>
                   <div class="selector-logo-tienda">
                     <div class="marco-logo-tienda"><img :src="logoVisible" :alt="'Logo de ' + (formularioTienda.nombre || 'mi tienda')" /></div>
                     <div class="datos-logo-tienda">
@@ -1347,8 +2044,17 @@ onMounted(async () => {
                 <span class="sobre-titulo">MI TIENDA</span>
                 <h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2>
                 <p>{{ cuenta.tienda.descripcion || 'Aún no hay una descripción para mostrar.' }}</p>
-                <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Visible para compradores' : 'Aún no aparece en el catálogo comprador' }}</span>
-                <button class="boton-secundario boton-editar-tienda" type="button" :disabled="cargandoEdicionTienda || guardandoTienda" @click="abrirEdicionTienda">Editar datos de mi tienda</button>
+                <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Visible para compradores' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada del catálogo' : 'Aún no aparece en el catálogo comprador' }}</span>
+                <div class="acciones-publicacion-tienda">
+                  <button
+                    ref="botonAccionPublicacionTienda"
+                    :class="cuenta.tienda.estadoPublicacion === 'publicado' ? 'boton-retirar-tienda' : 'boton-vino boton-publicar-tienda'"
+                    type="button"
+                    :disabled="guardandoPublicacionTienda || cargandoEdicionTienda || guardandoTienda"
+                    @click="abrirAccionPublicacionTienda"
+                  >{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Retirar del catálogo' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Volver a publicar tienda' : 'Publicar tienda' }}</button>
+                  <button class="boton-secundario boton-editar-tienda" type="button" :disabled="cargandoEdicionTienda || guardandoTienda || guardandoPublicacionTienda" @click="abrirEdicionTienda">Editar datos de mi tienda</button>
+                </div>
               </div>
               <section class="cuenta-completitud" aria-label="Completa tu tienda">
                 <span class="sobre-titulo">COMPLETA TU TIENDA</span>
@@ -1371,6 +2077,124 @@ onMounted(async () => {
         <button v-for="item in secciones" :key="item.id" :data-guia="`emprendedora-${item.id}`" type="button" :class="{ seleccionada: seccion === item.id }" :aria-current="seccion === item.id ? 'page' : undefined" @click="item.id === 'agregar' ? abrirNuevoProducto() : irA(item.id)"><span aria-hidden="true">{{ item.icono }}</span><small>{{ item.nombre }}</small></button>
       </nav>
     </main>
+    <Teleport to="body">
+      <div
+        v-if="dialogoAccionProducto"
+        class="fondo-dialogo-producto"
+        @click.self="cerrarDialogoAccionProducto"
+        @keydown.esc.stop.prevent="cerrarDialogoAccionProducto"
+      >
+        <section class="dialogo-producto" role="dialog" aria-modal="true" aria-labelledby="titulo-accion-producto" aria-describedby="descripcion-accion-producto" @keydown="mantenerFocoDialogoProducto">
+          <span class="icono-dialogo-publicacion" :class="{ retiro: dialogoAccionProducto.accion === 'retirarProducto' }" aria-hidden="true">{{ dialogoAccionProducto.accion === 'retirarProducto' ? '↗' : '!' }}</span>
+          <span class="sobre-titulo">{{ dialogoAccionProducto.accion === 'retirarProducto' ? 'VISIBILIDAD DEL PRODUCTO' : 'ADMINISTRA TUS PRODUCTOS' }}</span>
+          <h2 id="titulo-accion-producto">{{ dialogoAccionProducto.accion === 'retirarProducto' ? '¿Retirar del catálogo?' : '¿Eliminar producto?' }}</h2>
+          <p id="descripcion-accion-producto">
+            <template v-if="dialogoAccionProducto.accion === 'retirarProducto'"><strong>{{ dialogoAccionProducto.nombre }}</strong> dejará de aparecer en el catálogo público. La ficha privada se conservará.</template>
+            <template v-else>Se marcará <strong>{{ dialogoAccionProducto.nombre }}</strong> como eliminado y se quitará de tu lista y del catálogo.</template>
+          </p>
+          <p v-if="errorAccionProducto" class="mensaje mensaje-error" role="alert">{{ errorAccionProducto }}</p>
+          <div class="acciones-dialogo-publicacion">
+            <button ref="botonCancelarAccionProducto" class="boton-secundario" type="button" :disabled="guardandoAccionProducto" @click="cerrarDialogoAccionProducto">Cancelar</button>
+            <button :class="dialogoAccionProducto.accion === 'eliminarProducto' ? 'boton-eliminar-dialogo' : 'boton-retirar-tienda'" type="button" :disabled="guardandoAccionProducto" @click="confirmarAccionProducto">
+              <span v-if="guardandoAccionProducto" class="rueda rueda-clara" aria-hidden="true"></span>
+              {{ guardandoAccionProducto ? dialogoAccionProducto.accion === 'eliminarProducto' ? 'Eliminando…' : 'Retirando…' : dialogoAccionProducto.accion === 'eliminarProducto' ? 'Eliminar producto' : 'Retirar del catálogo' }}
+            </button>
+          </div>
+        </section>
+      </div>
+      <div
+        v-if="dialogoStockProductoId && productoStockSeleccionado"
+        class="fondo-dialogo-producto"
+        @click.self="cerrarAjusteStock"
+        @keydown.esc.stop.prevent="cerrarAjusteStock"
+      >
+        <section class="dialogo-producto dialogo-ajuste-stock" role="dialog" aria-modal="true" aria-labelledby="titulo-ajuste-stock" @keydown="mantenerFocoDialogoProducto">
+          <span class="icono-dialogo-publicacion" aria-hidden="true">±</span>
+          <span class="sobre-titulo">INVENTARIO DE TU TIENDA</span>
+          <h2 id="titulo-ajuste-stock">Ajustar stock</h2>
+          <p class="producto-dialogo-nombre">{{ productoStockSeleccionado.nombre }}</p>
+          <p v-if="ajusteStockIncierto" class="mensaje mensaje-aviso" role="status">No se confirmó el resultado anterior. Reintenta este mismo ajuste; sus datos están bloqueados para evitar duplicarlo.</p>
+          <form class="formulario-ajuste-stock" @submit.prevent="guardarAjusteStock">
+            <label v-if="productoStockSeleccionado.tieneVariantes" class="campo-dialogo-producto">
+              Variante
+              <select v-model="varianteStockId" required :disabled="ajusteStockIncierto || variantesStockCargando || !productoStockSeleccionado.variantesCargadas">
+                <option value="" disabled>Elige una variante</option>
+                <option v-for="variante in variantesStockDisponibles" :key="variante.id" :value="variante.id">
+                  {{ varianteBonita(variante) }} · {{ variante.stock ?? 0 }} disponibles{{ variante.activa ? '' : ' · inactiva' }}
+                </option>
+              </select>
+              <small v-if="variantesStockCargando" role="status">Cargando variantes…</small>
+              <small v-else-if="productoStockSeleccionado.variantesCargadas && !variantesStockDisponibles.length" role="status">Este producto no tiene variantes registradas.</small>
+              <small v-else-if="!productoStockSeleccionado.variantesCargadas" role="status">No se pudieron cargar. Usa «Volver a intentar».</small>
+              <button v-if="!productoStockSeleccionado.variantesCargadas && !variantesStockCargando" class="boton-reintentar-variantes" type="button" @click="cargarVariantesAjusteStock(productoStockSeleccionado.id)">Volver a intentar</button>
+            </label>
+            <p v-else class="producto-sin-variantes">Producto sin variantes · {{ productoStockSeleccionado.stock ?? 0 }} disponibles</p>
+            <label class="campo-dialogo-producto">
+              Cantidad <span>(usa + para sumar y − para restar)</span>
+              <input ref="campoCantidadStock" v-model="cantidadStock" type="text" inputmode="numeric" autocomplete="off" placeholder="Ej.: +5 o -2" required :readonly="ajusteStockIncierto" />
+            </label>
+            <label class="campo-dialogo-producto">
+              Motivo
+              <select v-model="motivoStock" required :disabled="ajusteStockIncierto">
+                <option value="reposicion">Reposición</option>
+                <option value="perdida">Pérdida</option>
+                <option value="correccion">Corrección</option>
+              </select>
+            </label>
+            <label class="campo-dialogo-producto">
+              Nota <span>(opcional)</span>
+              <textarea v-model="notaStock" rows="2" maxlength="500" placeholder="Agrega un detalle si lo necesitas" :readonly="ajusteStockIncierto"></textarea>
+            </label>
+            <p v-if="errorStockProducto" class="mensaje mensaje-error" role="alert">{{ errorStockProducto }}</p>
+            <div class="acciones-dialogo-publicacion">
+              <button class="boton-secundario" type="button" :disabled="guardandoStockProducto" @click="cerrarAjusteStock">Cancelar</button>
+              <button class="boton-vino boton-guardar-ajuste" type="submit" :disabled="guardandoStockProducto || variantesStockCargando || (productoStockSeleccionado.tieneVariantes && (!productoStockSeleccionado.variantesCargadas || !variantesStockDisponibles.length))">
+                <span v-if="guardandoStockProducto" class="rueda rueda-clara" aria-hidden="true"></span>
+                {{ guardandoStockProducto ? 'Guardando…' : ajusteStockIncierto ? 'Reintentar ajuste' : 'Guardar ajuste' }}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+      <div
+        v-if="accionPublicacionTienda"
+        class="fondo-dialogo-publicacion-tienda"
+        @click.self="cerrarDialogoPublicacionTienda"
+        @keydown.esc.stop.prevent="cerrarDialogoPublicacionTienda"
+      >
+        <section
+          ref="dialogoPublicacionTienda"
+          class="dialogo-publicacion-tienda"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="titulo-dialogo-publicacion-tienda"
+          aria-describedby="descripcion-dialogo-publicacion-tienda"
+          tabindex="-1"
+          @keydown="mantenerFocoDialogoPublicacionTienda"
+        >
+          <span class="icono-dialogo-publicacion" :class="{ retiro: accionPublicacionTienda === 'retirarTienda' }" aria-hidden="true">{{ accionPublicacionTienda === 'publicarTienda' ? '✓' : '↗' }}</span>
+          <span class="sobre-titulo">{{ accionPublicacionTienda === 'publicarTienda' ? 'VISIBILIDAD DE TU TIENDA' : 'ADMINISTRA TU CATÁLOGO' }}</span>
+          <h2 id="titulo-dialogo-publicacion-tienda">{{ accionPublicacionTienda === 'publicarTienda' ? '¿Publicar tu tienda?' : '¿Retirar tu tienda?' }}</h2>
+          <p id="descripcion-dialogo-publicacion-tienda">
+            <template v-if="accionPublicacionTienda === 'publicarTienda'">Tu tienda aparecerá en el catálogo comprador. Después puedes publicar cada producto desde su propia ficha.</template>
+            <template v-else>La tienda y sus productos dejarán de aparecer en el catálogo. Se conservarán tus datos privados; para volver a mostrarlos tendrás que publicar la tienda y cada producto otra vez.</template>
+          </p>
+          <p v-if="errorPublicacionTienda" class="mensaje mensaje-error" role="alert">{{ errorPublicacionTienda }}</p>
+          <div class="acciones-dialogo-publicacion">
+            <button ref="botonCancelarPublicacionTienda" class="boton-secundario" type="button" :disabled="guardandoPublicacionTienda" @click="cerrarDialogoPublicacionTienda">Cancelar</button>
+            <button
+              :class="accionPublicacionTienda === 'publicarTienda' ? 'boton-vino' : 'boton-retirar-tienda'"
+              type="button"
+              :disabled="guardandoPublicacionTienda"
+              @click="confirmarAccionPublicacionTienda"
+            >
+              <span v-if="guardandoPublicacionTienda" class="rueda rueda-clara" aria-hidden="true"></span>
+              {{ guardandoPublicacionTienda ? accionPublicacionTienda === 'publicarTienda' ? 'Publicando…' : 'Retirando…' : accionPublicacionTienda === 'publicarTienda' ? 'Publicar tienda' : 'Confirmar retiro' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
     <DialogoAyudaWeb
       :abierto="ayudaAbierta"
       :titulo="`Ayuda de ${seccionAyudaEmprendedora}`"
@@ -1530,6 +2354,22 @@ onMounted(async () => {
 .cuenta-ficha{padding:8px 0}
 .cuenta-ficha h2{margin:10px 0 7px;color:var(--texto);font:400 clamp(30px,3vw,42px)/1.1 'DM Serif Display',Georgia,serif}
 .cuenta-ficha p{margin:0 0 18px;color:var(--suave);font-size:15px;line-height:1.7}
+.acciones-publicacion-tienda{display:flex;flex-wrap:wrap;gap:10px;margin-top:17px}
+.acciones-publicacion-tienda .boton-editar-tienda{margin-top:0}
+.boton-publicar-tienda,.boton-retirar-tienda{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 18px;border:1px solid transparent;border-radius:13px;font:700 12px 'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:background .15s,border-color .15s,transform .15s}
+.boton-publicar-tienda{background:var(--vino);color:#fff}.boton-publicar-tienda:hover{background:var(--oscuro)}
+.boton-retirar-tienda{border-color:#dba99b;background:#fff4f0;color:#9d3429}.boton-retirar-tienda:hover{background:#ffe9e3}
+.boton-publicar-tienda:disabled,.boton-retirar-tienda:disabled{opacity:.62;cursor:wait}
+.fondo-dialogo-publicacion-tienda{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(46,27,32,.55);backdrop-filter:blur(4px)}
+.dialogo-publicacion-tienda{display:grid;gap:12px;width:min(100%,490px);padding:clamp(23px,5vw,34px);border:1px solid var(--borde);border-radius:22px;background:var(--amancay-superficie);box-shadow:0 24px 70px rgba(46,27,32,.25);outline:none}
+.icono-dialogo-publicacion{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:var(--amancay-verde-fondo);color:var(--amancay-verde-texto);font-size:24px;font-weight:700}
+.icono-dialogo-publicacion.retiro{background:#fff0ee;color:#9d3429}
+.dialogo-publicacion-tienda>.sobre-titulo{margin-top:4px}.dialogo-publicacion-tienda h2{margin:0;color:var(--amancay-bordo-oscuro);font:400 clamp(27px,5vw,34px)/1.12 'DM Serif Display',Georgia,serif}
+.dialogo-publicacion-tienda>p:not(.sobre-titulo){margin:0;color:var(--suave);font-size:13px;line-height:1.7}
+.acciones-dialogo-publicacion{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:9px;margin-top:8px}
+.acciones-dialogo-publicacion .boton-secundario,.acciones-dialogo-publicacion .boton-vino,.acciones-dialogo-publicacion .boton-retirar-tienda{min-height:46px}
+.acciones-dialogo-publicacion .boton-vino{background:#6b1e3d;color:#fff}
+.acciones-dialogo-publicacion .boton-vino:hover{background:#4e142c}
 .cuenta-completitud{padding:8px 0 8px 30px;border-left:1px solid var(--borde)}
 .cuenta-completitud>p{margin:10px 0 18px;color:var(--suave);font-size:14px;line-height:1.6}
 .lista-completitud{display:grid;gap:13px;margin:0;padding:0;list-style:none}
@@ -1626,6 +2466,10 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
   .cuenta-cabecera h2,.cuenta-ficha h2{font-size:30px}
   .cuenta-cabecera p,.cuenta-ficha p{font-size:12px}
   .cuenta-panel{grid-template-columns:1fr;gap:19px}
+  .acciones-publicacion-tienda{flex-direction:column;align-items:stretch}
+  .acciones-publicacion-tienda>button{width:100%}
+  .acciones-dialogo-publicacion{flex-direction:column-reverse}
+  .acciones-dialogo-publicacion>button{width:100%}
   .cuenta-completitud{padding:20px 0 0;border-top:1px solid var(--borde);border-left:0}
   .lista-completitud strong{font-size:12px}
   .lista-completitud small,.cuenta-completitud>p{font-size:11px}
@@ -1657,7 +2501,9 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
 .numero-paso-tienda{display:grid;place-items:center;flex:0 0 58px;height:58px;border-radius:50%;background:var(--amancay-naranja-fondo);color:var(--amancay-bordo-oscuro);font:400 28px 'DM Serif Display',Georgia,serif}
 .cabecera-paso-tienda h2{margin:0 0 3px;color:var(--vino);font:400 24px/1.15 'DM Serif Display',Georgia,serif}
 .cabecera-paso-tienda p{margin:0;color:var(--suave);font-size:13px}
+.opcional-tienda{display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;padding:4px 9px;border:1px solid var(--borde);border-radius:999px;background:#fffaf4;color:var(--suave);font:600 10px 'Plus Jakarta Sans',sans-serif}
 .campos-ficha-tienda{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 22px;padding-left:74px}
+.campo-completo-tienda{grid-column:1/-1}
 .campo-ficha-tienda{display:grid;align-content:start;gap:8px;min-width:0;color:var(--texto);font-size:13px;font-weight:700}
 .campo-ficha-tienda input,.campo-ficha-tienda textarea,.campo-ficha-tienda select{width:100%;min-width:0;min-height:49px;padding:12px 15px;border:1px solid #e8d7c5;border-radius:13px;background:#fffdf9;color:var(--texto);font:500 14px 'Plus Jakarta Sans',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
 .campo-ficha-tienda textarea{min-height:94px;resize:vertical;line-height:1.55}
@@ -1718,5 +2564,27 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
 .ayuda-emprendedora{flex:0 0 44px;width:44px;height:44px;border:1px solid var(--borde);border-radius:50%;background:#f8e9ea;color:var(--vino);font:700 20px 'Plus Jakarta Sans',sans-serif;letter-spacing:0;cursor:pointer}
 .ayuda-emprendedora:hover,.ayuda-emprendedora:focus-visible{outline:3px solid rgba(107,30,61,.24);outline-offset:2px}
 .control-tamano-texto{max-width:780px;margin-top:20px}
+.mas-productos{display:flex;justify-content:center;margin-top:16px}.mas-productos .boton-secundario{min-width:210px}.mas-productos button:disabled{opacity:.65;cursor:wait}
 @media(max-width:400px){.ayuda-emprendedora{flex-basis:38px;width:38px;height:38px}}
+.contenedor-menu-producto{position:relative;display:flex;align-items:center}
+.boton-menu-producto{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid var(--borde);border-radius:12px;background:var(--amancay-superficie);color:var(--vino);font:700 24px/1 'Plus Jakarta Sans',sans-serif;cursor:pointer}
+.boton-menu-producto:hover,.boton-menu-producto[aria-expanded="true"]{border-color:var(--vino);background:var(--rosa)}
+.menu-acciones-producto{position:absolute;z-index:20;top:calc(100% + 7px);right:0;display:grid;min-width:205px;padding:6px;border:1px solid var(--borde);border-radius:14px;background:var(--amancay-superficie);box-shadow:0 14px 36px rgba(46,27,32,.18)}
+.menu-acciones-producto button{min-height:42px;padding:8px 11px;border:0;border-radius:9px;background:transparent;color:var(--texto);font:600 11px 'Plus Jakarta Sans',sans-serif;text-align:left;cursor:pointer}
+.menu-acciones-producto button:hover:not(:disabled),.menu-acciones-producto button:focus-visible{background:var(--crema);color:var(--vino)}
+.menu-acciones-producto button:disabled{color:var(--suave);opacity:.62;cursor:not-allowed}
+.menu-acciones-producto .accion-eliminar-producto{color:#9d3429}
+.fondo-dialogo-producto{position:fixed;z-index:1010;inset:0;display:grid;place-items:center;overflow-y:auto;padding:20px;background:rgba(46,27,32,.55);backdrop-filter:blur(4px)}
+.dialogo-producto{display:grid;gap:12px;width:min(100%,490px);max-height:calc(100dvh - 40px);overflow-y:auto;padding:clamp(23px,5vw,34px);border:1px solid var(--borde);border-radius:22px;background:var(--amancay-superficie);box-shadow:0 24px 70px rgba(46,27,32,.25);outline:none}
+.dialogo-producto>.sobre-titulo{margin-top:4px}.dialogo-producto h2{margin:0;color:var(--amancay-bordo-oscuro);font:400 clamp(27px,5vw,34px)/1.12 'DM Serif Display',Georgia,serif}.dialogo-producto>p{margin:0;color:var(--suave);font-size:13px;line-height:1.7}.dialogo-producto>p strong{color:var(--texto)}
+.boton-eliminar-dialogo{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 18px;border:1px solid #9d3429;border-radius:13px;background:#9d3429;color:#fff;font:700 12px 'Plus Jakarta Sans',sans-serif;cursor:pointer}.boton-eliminar-dialogo:hover{background:#81291f}.boton-eliminar-dialogo:disabled{opacity:.62;cursor:wait}
+.formulario-ajuste-stock{display:grid;gap:14px;margin-top:3px}.producto-dialogo-nombre{font-weight:700}.producto-sin-variantes{padding:11px 13px;border-radius:12px;background:var(--crema);color:var(--vino)!important;font-weight:600}
+.campo-dialogo-producto{display:grid;gap:7px;color:var(--texto);font-size:12px;font-weight:700}.campo-dialogo-producto>span{display:inline;color:var(--suave);font-size:11px;font-weight:400}.campo-dialogo-producto input,.campo-dialogo-producto select,.campo-dialogo-producto textarea{width:100%;min-height:45px;padding:10px 12px;border:1px solid var(--borde);border-radius:12px;background:#fffdf9;color:var(--texto);font:500 13px 'Plus Jakarta Sans',sans-serif;outline:none}.campo-dialogo-producto textarea{min-height:74px;resize:vertical}.campo-dialogo-producto input:focus,.campo-dialogo-producto select:focus,.campo-dialogo-producto textarea:focus{border-color:var(--vino);box-shadow:0 0 0 3px rgba(107,30,61,.12)}.campo-dialogo-producto small{color:var(--suave);font-size:10px;font-weight:400}.boton-reintentar-variantes{justify-self:start;padding:3px 0;border:0;background:transparent;color:var(--vino);font:700 11px 'Plus Jakarta Sans',sans-serif;text-decoration:underline;cursor:pointer}.boton-guardar-ajuste{min-height:46px;padding:0 18px}
+@media(max-width:740px){.acciones-producto{justify-content:flex-end;gap:7px}.contenedor-menu-producto{margin-left:auto}.menu-acciones-producto{min-width:195px}.dialogo-producto{max-height:calc(100dvh - 24px);padding:22px;border-radius:19px}.fondo-dialogo-producto{padding:12px}}
+.acciones-producto{display:flex;flex:0 0 auto;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:8px;width:auto;min-width:max-content;margin-left:auto}
+.acciones-producto>.boton-vino,.acciones-producto>.boton-secundario{flex:0 0 auto;white-space:nowrap}
+.acciones-producto .contenedor-menu-producto{flex:0 0 auto;margin-left:0}
+.tarjeta-producto>.estado-producto{flex:0 0 auto}
+@media(max-width:740px){.acciones-producto{width:100%;min-width:0;flex:1 0 100%;justify-content:flex-end;margin-left:0}.acciones-producto>.boton-vino,.acciones-producto>.boton-secundario{flex:0 1 auto;padding-right:10px;padding-left:10px}.acciones-producto .contenedor-menu-producto{margin-left:0}}
+@media(max-width:400px){.acciones-producto{gap:6px}.acciones-producto>.boton-vino,.acciones-producto>.boton-secundario{padding-right:8px;padding-left:8px;font-size:9px}.acciones-producto .boton-menu-producto{flex-basis:36px;width:36px;height:36px}}
 </style>

@@ -122,6 +122,15 @@ data class ConsultaComprador(
     val notificable: Boolean = true
 )
 
+private object CacheCatalogosEmprendedora {
+    private val definiciones = mutableMapOf<Pair<String, Int>, TipoProductoEmprendedora>()
+    var tipos: List<TipoProductoEmprendedora>? = null
+    var categorias: List<CategoriaEmprendedora>? = null
+
+    @Synchronized fun definicion(id: String, version: Int): TipoProductoEmprendedora? = definiciones[id to version]
+    @Synchronized fun guardarDefinicion(tipo: TipoProductoEmprendedora) { definiciones[tipo.id to tipo.version] = tipo }
+}
+
 data class FeriaParaVenta(
     val id: String,
     val nombre: String,
@@ -181,17 +190,38 @@ class ProductosEmprendedoraRepository(
     val error: StateFlow<String?> = _error.asStateFlow()
     private val _consultas = MutableStateFlow<List<ConsultaComprador>>(emptyList())
     val consultas: StateFlow<List<ConsultaComprador>> = _consultas.asStateFlow()
+    private val _hayMasProductos = MutableStateFlow(false)
+    val hayMasProductos: StateFlow<Boolean> = _hayMasProductos.asStateFlow()
+    private val _cargandoMasProductos = MutableStateFlow(false)
+    val cargandoMasProductos: StateFlow<Boolean> = _cargandoMasProductos.asStateFlow()
+    private val _hayMasConsultas = MutableStateFlow(false)
+    val hayMasConsultas: StateFlow<Boolean> = _hayMasConsultas.asStateFlow()
+    private val _cargandoMasConsultas = MutableStateFlow(false)
+    val cargandoMasConsultas: StateFlow<Boolean> = _cargandoMasConsultas.asStateFlow()
 
-    private var productSubscription: ListenerRegistration? = null
+    private val productSubscriptions = mutableMapOf<Int, ListenerRegistration>()
     private var typeSubscription: ListenerRegistration? = null
     private var categorySubscription: ListenerRegistration? = null
     private var inquirySubscription: ListenerRegistration? = null
+    private val inquiryPageSubscriptions = mutableMapOf<Int, ListenerRegistration>()
+    private val productPages = mutableMapOf<Int, List<ProductoEmprendedora>>()
+    private val productPageEnds = mutableMapOf<Int, DocumentSnapshot>()
+    private val productPageCounts = mutableMapOf<Int, Int>()
+    private val inquiryPages = mutableMapOf<Int, List<ConsultaComprador>>()
+    private val inquiryPageEnds = mutableMapOf<Int, DocumentSnapshot>()
+    private val inquiryPageCounts = mutableMapOf<Int, Int>()
+    private val visibleProductIds = mutableSetOf<String>()
     private val variantSubscriptions = mutableMapOf<String, ListenerRegistration>()
     private val variantsById = mutableMapOf<String, List<VarianteProductoEmprendedora>>()
-    private val definitionsById = mutableMapOf<String, TipoProductoEmprendedora>()
+    private val definitionsByVersion = mutableMapOf<Pair<String, Int>, TipoProductoEmprendedora>()
+    private val definitionLoadsPending = mutableSetOf<Pair<String, Int>>()
     private val operationIds = mutableMapOf<String, String>()
 
+    private val pageSizeProducts = 20L
+    private val pageSizeInquiries = 50L
+
     suspend fun leerTipo(id: String, version: Int): TipoProductoEmprendedora = withContext(Dispatchers.IO) {
+        CacheCatalogosEmprendedora.definicion(id, version)?.let { return@withContext it }
         val type = Tasks.await(db.collection("tiposProducto").document(id).get())
         val definition = Tasks.await(db.collection("tiposProducto").document(id).collection("versiones").document(version.toString()).get())
         if (!type.exists() || !definition.exists()) throw ApiEmprendedoraException("datos-invalidos", "No se encontró la definición histórica del tipo de producto.")
@@ -202,91 +232,236 @@ class ProductosEmprendedoraRepository(
         }
         val options = (definition.get("opcionesVariante") as? List<*>).orEmpty().filterIsInstance<String>()
         TipoProductoEmprendedora(id, type.getString("nombre") ?: id, version, fields, options, type.getBoolean("activo") == true)
+            .also(CacheCatalogosEmprendedora::guardarDefinicion)
     }
 
-    fun observar(tiendaId: String) {
-        inquirySubscription?.remove()
-        inquirySubscription = db.collection("tiendasPrivadas").document(tiendaId).collection("consultas")
+    private var tiendaObservadaId: String? = null
+
+    fun observarProductos(tiendaId: String) {
+        val cambioTienda = tiendaObservadaId != null && tiendaObservadaId != tiendaId
+        cerrar()
+        if (cambioTienda) limpiarDatosDeTiendaAnterior()
+        tiendaObservadaId = tiendaId
+        cargarCatalogosEstables()
+        observarPaginaProductos(tiendaId, 0)
+        productPages.keys.filter { it > 0 }.sorted().forEach { pagina ->
+            productPageEnds[pagina - 1]?.let { observarPaginaProductos(tiendaId, pagina, it) }
+        }
+    }
+
+    fun observarConsultas(tiendaId: String) {
+        val cambioTienda = tiendaObservadaId != null && tiendaObservadaId != tiendaId
+        cerrar()
+        if (cambioTienda) limpiarDatosDeTiendaAnterior()
+        tiendaObservadaId = tiendaId
+        observarPaginaConsultas(tiendaId, 0)
+        inquiryPages.keys.filter { it > 0 }.sorted().forEach { pagina ->
+            inquiryPageEnds[pagina - 1]?.let { observarPaginaConsultas(tiendaId, pagina, it) }
+        }
+    }
+
+    private fun limpiarDatosDeTiendaAnterior() {
+        productPages.clear()
+        productPageEnds.clear()
+        productPageCounts.clear()
+        inquiryPages.clear()
+        inquiryPageEnds.clear()
+        inquiryPageCounts.clear()
+        visibleProductIds.clear()
+        variantsById.clear()
+        _productos.value = emptyList()
+        _consultas.value = emptyList()
+        _hayMasProductos.value = false
+        _hayMasConsultas.value = false
+    }
+
+    fun cargarMasProductos(tiendaId: String) {
+        if (tiendaObservadaId != tiendaId || !_hayMasProductos.value || _cargandoMasProductos.value) return
+        val pagina = (productPages.keys.maxOrNull() ?: 0) + 1
+        val anterior = productPageEnds[pagina - 1] ?: return
+        _cargandoMasProductos.value = true
+        observarPaginaProductos(tiendaId, pagina, anterior)
+    }
+
+    fun cargarMasConsultas() {
+        val tiendaId = tiendaObservadaId ?: return
+        if (!_hayMasConsultas.value || _cargandoMasConsultas.value) return
+        val pagina = (inquiryPages.keys.maxOrNull() ?: 0) + 1
+        val anterior = inquiryPageEnds[pagina - 1] ?: return
+        _cargandoMasConsultas.value = true
+        observarPaginaConsultas(tiendaId, pagina, anterior)
+    }
+
+    fun actualizarVisibilidadVariante(tiendaId: String, productoId: String, visible: Boolean) {
+        if (visible) {
+            visibleProductIds.add(productoId)
+            val producto = _productos.value.firstOrNull { it.id == productoId } ?: return
+            if (producto.tieneVariantes) observarVariantes(tiendaId, productoId)
+        } else {
+            visibleProductIds.remove(productoId)
+            variantSubscriptions.remove(productoId)?.remove()
+            reconstruir()
+        }
+    }
+
+    private fun observarPaginaProductos(
+        tiendaId: String,
+        pagina: Int,
+        desde: DocumentSnapshot? = null
+    ) {
+        if (productSubscriptions[pagina] != null) return
+        var consulta = db.collection("tiendasPrivadas").document(tiendaId).collection("productos")
+            .orderBy(com.google.firebase.firestore.FieldPath.documentId())
+            .limit(pageSizeProducts)
+        desde?.let { consulta = consulta.startAfter(it) }
+        productSubscriptions[pagina] = consulta.addSnapshotListener { snapshot, exception ->
+            if (exception != null) {
+                productSubscriptions.remove(pagina)?.remove()
+                if (pagina > 0) _cargandoMasProductos.value = false
+                informarError(exception)
+                return@addSnapshotListener
+            }
+            val documentos = snapshot?.documents.orEmpty()
+            val actuales = documentos.mapNotNull { runCatching { it.aProducto().copy(variantes = emptyList()) }.getOrNull() }
+                .filterNot { it.estadoPublicacion == "eliminado" }
+            productPages[pagina] = actuales
+            productPageCounts[pagina] = documentos.size
+            documentos.lastOrNull()?.let { productPageEnds[pagina] = it }
+            _productos.value = productPages.toSortedMap().values.flatten().distinctBy { it.id }
+            val ultimaPagina = productPages.keys.maxOrNull() ?: pagina
+            _hayMasProductos.value = (productPageCounts[ultimaPagina] ?: documentos.size).toLong() >= pageSizeProducts
+            if (pagina > 0) _cargandoMasProductos.value = false
+            visibleProductIds.intersect(_productos.value.filter { it.tieneVariantes }.map { it.id }.toSet())
+                .forEach { observarVariantes(tiendaId, it) }
+            val idsCargados = _productos.value.filter { it.tieneVariantes }.map { it.id }.toSet()
+            (variantSubscriptions.keys - idsCargados - visibleProductIds).forEach { id ->
+                variantSubscriptions.remove(id)?.remove()
+                variantsById.remove(id)
+            }
+            _error.value = null
+            reconstruir()
+        }
+    }
+
+    private fun observarPaginaConsultas(
+        tiendaId: String,
+        pagina: Int,
+        desde: DocumentSnapshot? = null
+    ) {
+        if (inquiryPageSubscriptions[pagina] != null) return
+        var consulta = db.collection("tiendasPrivadas").document(tiendaId).collection("consultas")
             .orderBy("creadaEn", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(200)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
-                _consultas.value = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    val fecha = doc.getTimestamp("creadaEn")?.toDate() ?: return@mapNotNull null
-                    ConsultaComprador(doc.id, doc.getString("nombre").orEmpty(), doc.getString("correo").orEmpty(),
-                        doc.getString("mensaje").orEmpty(), doc.getString("producto"), fecha,
-                        doc.getString("estado") ?: "nueva", doc.getString("respuesta"), doc.getTimestamp("respondidaEn")?.toDate(),
-                        doc.getBoolean("notificable") ?: true)
-                }
+            .limit(pageSizeInquiries)
+        desde?.let { consulta = consulta.startAfter(it) }
+        val listener = consulta.addSnapshotListener { snapshot, exception ->
+            if (exception != null) {
+                inquiryPageSubscriptions.remove(pagina)?.remove()
+                if (pagina == 0) inquirySubscription = null
+                if (pagina > 0) _cargandoMasConsultas.value = false
+                informarError(exception)
+                return@addSnapshotListener
             }
-        productSubscription?.remove()
-        productSubscription = db.collection("tiendasPrivadas").document(tiendaId).collection("productos")
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
-                val docs = snapshot?.documents.orEmpty()
-                val actuales = docs.mapNotNull { runCatching { it.aProducto() }.getOrNull() }
-                    .filterNot { it.estadoPublicacion == "eliminado" }
-                val ids = actuales.filter { it.tieneVariantes }.map { it.id }.toSet()
-                (variantSubscriptions.keys - ids).forEach { id ->
-                    variantSubscriptions.remove(id)?.remove()
-                    variantsById.remove(id)
-                }
-                actuales.filter { it.tieneVariantes }.forEach { producto -> observarVariantes(tiendaId, producto.id) }
-                _productos.value = actuales
-                _error.value = null
-                reconstruir()
+            val documentos = snapshot?.documents.orEmpty()
+            inquiryPageCounts[pagina] = documentos.size
+            inquiryPages[pagina] = documentos.mapNotNull { doc ->
+                val fecha = doc.getTimestamp("creadaEn")?.toDate() ?: return@mapNotNull null
+                ConsultaComprador(doc.id, doc.getString("nombre").orEmpty(), doc.getString("correo").orEmpty(),
+                    doc.getString("mensaje").orEmpty(), doc.getString("producto"), fecha,
+                    doc.getString("estado") ?: "nueva", doc.getString("respuesta"), doc.getTimestamp("respondidaEn")?.toDate(),
+                    doc.getBoolean("notificable") ?: true)
             }
-
-        typeSubscription?.remove()
-        typeSubscription = db.collection("tiposProducto").limit(200)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
-                snapshot?.documents.orEmpty().forEach { documento ->
-                    val version = documento.getLong("versionActual")?.toInt() ?: return@forEach
-                    documento.reference.collection("versiones").document(version.toString()).get()
-                        .addOnSuccessListener { definicion ->
-                            if (!definicion.exists()) return@addOnSuccessListener
-                            val campos = (definicion.get("campos") as? List<*>).orEmpty().mapNotNull { valor ->
-                                val map = valor as? Map<*, *> ?: return@mapNotNull null
-                                val key = map["clave"] as? String ?: return@mapNotNull null
-                                CampoTipoProducto(key, map["etiqueta"] as? String ?: key, map["obligatorio"] == true)
-                            }
-                            val opciones = (definicion.get("opcionesVariante") as? List<*>).orEmpty().filterIsInstance<String>()
-                            definitionsById[documento.id] = TipoProductoEmprendedora(documento.id, documento.getString("nombre") ?: documento.id, version, campos, opciones, documento.getBoolean("activo") == true)
-                            _tipos.value = definitionsById.values.sortedBy { it.nombre.lowercase() }
-                        }
-                }
-            }
-
-        categorySubscription?.remove()
-        categorySubscription = db.collection("categorias").limit(200)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    informarError(exception)
-                    return@addSnapshotListener
-                }
-                _categorias.value = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    doc.getString("nombre")?.let {
-                        CategoriaEmprendedora(doc.id, it, doc.getBoolean("activo") == true, doc.getString("tipoProductoId"))
-                    }
-                }.sortedBy { it.nombre.lowercase() }
-                _error.value = null
-            }
+            documentos.lastOrNull()?.let { inquiryPageEnds[pagina] = it }
+            _consultas.value = inquiryPages.toSortedMap().values.flatten().distinctBy { it.id }
+            val ultimaPagina = inquiryPages.keys.maxOrNull() ?: pagina
+            _hayMasConsultas.value = (inquiryPageCounts[ultimaPagina] ?: documentos.size).toLong() >= pageSizeInquiries
+            if (pagina > 0) _cargandoMasConsultas.value = false
+        }
+        inquiryPageSubscriptions[pagina] = listener
+        if (pagina == 0) inquirySubscription = listener
     }
 
+    private fun cargarCatalogosEstables() {
+        CacheCatalogosEmprendedora.categorias?.let { categorias ->
+            _categorias.value = categorias
+        } ?: db.collection("categorias").limit(200).get()
+            .addOnSuccessListener { snapshot ->
+                val categorias = snapshot.documents.mapNotNull { doc ->
+                    doc.getString("nombre")?.let { CategoriaEmprendedora(doc.id, it, doc.getBoolean("activo") == true, doc.getString("tipoProductoId")) }
+                }.sortedBy { it.nombre.lowercase() }
+                CacheCatalogosEmprendedora.categorias = categorias
+                _categorias.value = categorias
+            }
+            .addOnFailureListener(::informarError)
+
+        CacheCatalogosEmprendedora.tipos?.let { tipos ->
+            _tipos.value = tipos
+        } ?: db.collection("tiposProducto").limit(200).get()
+            .addOnSuccessListener { snapshot ->
+                val documentos = snapshot.documents
+                if (documentos.isEmpty()) {
+                    CacheCatalogosEmprendedora.tipos = emptyList()
+                    _tipos.value = emptyList()
+                    return@addOnSuccessListener
+                }
+                val pendientes = java.util.concurrent.atomic.AtomicInteger(documentos.size)
+                val tiposPorId = java.util.concurrent.ConcurrentHashMap<String, TipoProductoEmprendedora>()
+                fun terminarCarga() {
+                    if (pendientes.decrementAndGet() == 0) {
+                        val tipos = tiposPorId.values.sortedBy { it.nombre.lowercase() }
+                        CacheCatalogosEmprendedora.tipos = tipos
+                        _tipos.value = tipos
+                    }
+                }
+                documentos.forEach { documento ->
+                    val version = documento.getLong("versionActual")?.toInt()
+                    if (version == null) {
+                        terminarCarga()
+                        return@forEach
+                    }
+                    val clave = documento.id to version
+                    val nombre = documento.getString("nombre") ?: documento.id
+                    val activo = documento.getBoolean("activo") == true
+                    val cache = CacheCatalogosEmprendedora.definicion(documento.id, version)
+                    if (cache != null) {
+                        val actualizado = cache.copy(nombre = nombre, activo = activo)
+                        definitionsByVersion[clave] = actualizado
+                        tiposPorId[documento.id] = actualizado
+                        terminarCarga()
+                    } else if (!definitionLoadsPending.add(clave)) {
+                        terminarCarga()
+                    } else {
+                        documento.reference.collection("versiones").document(version.toString()).get()
+                            .addOnSuccessListener { definicion ->
+                                if (definicion.exists()) {
+                                    val campos = (definicion.get("campos") as? List<*>).orEmpty().mapNotNull { valor ->
+                                        val map = valor as? Map<*, *> ?: return@mapNotNull null
+                                        val key = map["clave"] as? String ?: return@mapNotNull null
+                                        CampoTipoProducto(key, map["etiqueta"] as? String ?: key, map["obligatorio"] == true)
+                                    }
+                                    val opciones = (definicion.get("opcionesVariante") as? List<*>).orEmpty().filterIsInstance<String>()
+                                    val tipo = TipoProductoEmprendedora(documento.id, nombre, version, campos, opciones, activo)
+                                    CacheCatalogosEmprendedora.guardarDefinicion(tipo)
+                                    definitionsByVersion[clave] = tipo
+                                    tiposPorId[documento.id] = tipo
+                                }
+                                definitionLoadsPending.remove(clave)
+                                terminarCarga()
+                            }
+                            .addOnFailureListener { error ->
+                                definitionLoadsPending.remove(clave)
+                                informarError(error)
+                                terminarCarga()
+                            }
+                    }
+                }
+            }
+            .addOnFailureListener(::informarError)
+    }
     private fun observarVariantes(tiendaId: String, productoId: String) {
         if (variantSubscriptions[productoId] != null) return
         variantSubscriptions[productoId] = db.collection("tiendasPrivadas").document(tiendaId)
             .collection("productos").document(productoId).collection("variantes")
+            .limit(20)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)
@@ -619,11 +794,19 @@ class ProductosEmprendedoraRepository(
 
     fun cerrar() {
         inquirySubscription?.remove()
-        productSubscription?.remove()
+        productSubscriptions.values.forEach(ListenerRegistration::remove)
+        inquiryPageSubscriptions.values.forEach(ListenerRegistration::remove)
         typeSubscription?.remove()
         categorySubscription?.remove()
         variantSubscriptions.values.forEach(ListenerRegistration::remove)
+        productSubscriptions.clear()
+        inquiryPageSubscriptions.clear()
         variantSubscriptions.clear()
+        _cargandoMasProductos.value = false
+        _cargandoMasConsultas.value = false
+        typeSubscription = null
+        categorySubscription = null
+        inquirySubscription = null
     }
 
     private fun operationId(vararg partes: String): String = synchronized(operationIds) {

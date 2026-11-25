@@ -1,4 +1,5 @@
-import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { collection, doc, documentId, getCountFromServer, getDocFromServer, getDocsFromServer, limit, orderBy, query, startAfter, where } from 'firebase/firestore'
+import type { Firestore } from 'firebase/firestore'
 import type { Timestamp } from 'firebase/firestore'
 import { versionDocumento } from '~/lib/cliente-base'
 import type { ServiciosCliente } from '~/lib/cliente-base'
@@ -23,8 +24,21 @@ export type ProductoEmprendedoraWeb = {
   piezaUnicaVendida: boolean
   imagenes: string[]
   variantes: VarianteEmprendedoraWeb[]
+  variantesCargadas: boolean
   imagenPublica?: string
 }
+
+export type FiltroProductosEmprendedora = 'todos' | 'publicado' | 'borrador' | 'archivado'
+export type ResumenProductosEmprendedora = { publicados: number; borradores: number; retirados: number }
+export type PaginaProductosEmprendedora = { productos: ProductoEmprendedoraWeb[]; siguienteCursor: string | null }
+
+type CacheTiposProducto = {
+  listado?: { vence: number; valor: TipoProductoEmprendedoraWeb[] }
+  listadoPendiente?: Promise<TipoProductoEmprendedoraWeb[]>
+  definiciones: Map<string, Promise<TipoProductoEmprendedoraWeb>>
+}
+
+const cachesTiposProducto = new WeakMap<Firestore, CacheTiposProducto>()
 
 export type VarianteEmprendedoraWeb = {
   id: string
@@ -64,6 +78,12 @@ export type CanalesContactoEmprendedoraWeb = {
   correo: { habilitado: boolean; direccion: string }
 }
 
+export type PuntoRetiroEmprendedoraWeb = {
+  latitud: number
+  longitud: number
+  descripcion: string
+}
+
 export type CuentaEmprendedoraWeb = {
   uid: string
   correo: string
@@ -77,6 +97,7 @@ export type CuentaEmprendedoraWeb = {
     mostrarPrecios: boolean
     contacto: ContactoEmprendedoraWeb | null
     canalesContacto?: CanalesContactoEmprendedoraWeb
+    puntoRetiro: PuntoRetiroEmprendedoraWeb | null
     mostrarContacto: boolean
     versionEsperada: string
     estadoPublicacion: string
@@ -133,34 +154,212 @@ function mapearTipoProducto(id: string, nombre: string, activo: boolean, version
   return { id, nombre, activo, versionActual, version: versionActual, campos, opcionesVariante }
 }
 
+function cacheTipos(firebase: ServiciosCliente): CacheTiposProducto {
+  let cache = cachesTiposProducto.get(firebase.db)
+  if (!cache) {
+    cache = { definiciones: new Map() }
+    cachesTiposProducto.set(firebase.db, cache)
+  }
+  return cache
+}
+
+function leerDefinicionTipo(
+  firebase: ServiciosCliente,
+  id: string,
+  nombre: string,
+  activo: boolean,
+  version: number,
+): Promise<TipoProductoEmprendedoraWeb> {
+  const cache = cacheTipos(firebase)
+  const clave = `${id}:${version}`
+  const existente = cache.definiciones.get(clave)
+  if (existente) return existente
+  const lectura = getDocFromServer(doc(firebase.db, 'tiposProducto', id, 'versiones', String(version))).then((definicion) => {
+    if (!definicion.exists()) throw new Error(`No se encontró la definición vigente de “${nombre}”.`)
+    return mapearTipoProducto(id, nombre, activo, version, definicion.data())
+  }).catch((error: unknown) => {
+    cache.definiciones.delete(clave)
+    throw error
+  })
+  cache.definiciones.set(clave, lectura)
+  return lectura
+}
+
 export async function listarTiposProductoEmprendedora(firebase: ServiciosCliente): Promise<TipoProductoEmprendedoraWeb[]> {
-  const resultado = await getDocsFromServer(query(
-    collection(firebase.db, 'tiposProducto'),
-    where('activo', '==', true),
-    orderBy(documentId()),
-    limit(200),
-  ))
-  return Promise.all(resultado.docs.map(async (snapshot) => {
-    const datos = snapshot.data()
-    const versionActual = Number(datos.versionActual)
-    if (!Number.isSafeInteger(versionActual) || versionActual < 1) {
-      throw new Error(`El tipo de producto “${texto(datos.nombre, snapshot.id)}” no tiene una versión válida.`)
-    }
-    const definicion = await getDocFromServer(doc(firebase.db, 'tiposProducto', snapshot.id, 'versiones', String(versionActual)))
-    if (!definicion.exists()) throw new Error(`No se encontró la definición vigente de “${texto(datos.nombre, snapshot.id)}”.`)
-    return mapearTipoProducto(snapshot.id, texto(datos.nombre, snapshot.id), datos.activo === true, versionActual, definicion.data())
-  }))
+  const cache = cacheTipos(firebase)
+  if (cache.listado && cache.listado.vence > Date.now()) return cache.listado.valor
+  if (cache.listadoPendiente) return cache.listadoPendiente
+  const lectura = (async () => {
+    const resultado = await getDocsFromServer(query(
+      collection(firebase.db, 'tiposProducto'),
+      where('activo', '==', true),
+      orderBy(documentId()),
+      limit(200),
+    ))
+    const tipos = await Promise.all(resultado.docs.map((snapshot) => {
+      const datos = snapshot.data()
+      const versionActual = Number(datos.versionActual)
+      if (!Number.isSafeInteger(versionActual) || versionActual < 1) {
+        throw new Error(`El tipo de producto “${texto(datos.nombre, snapshot.id)}” no tiene una versión válida.`)
+      }
+      return leerDefinicionTipo(firebase, snapshot.id, texto(datos.nombre, snapshot.id), datos.activo === true, versionActual)
+    }))
+    cache.listado = { valor: tipos, vence: Date.now() + 30_000 }
+    return tipos
+  })()
+  cache.listadoPendiente = lectura
+  try {
+    return await lectura
+  } finally {
+    if (cache.listadoPendiente === lectura) cache.listadoPendiente = undefined
+  }
 }
 
 export async function leerTipoProductoEmprendedora(firebase: ServiciosCliente, id: string, version: number): Promise<TipoProductoEmprendedoraWeb> {
   const referencia = doc(firebase.db, 'tiposProducto', id)
-  const [tipo, definicion] = await Promise.all([
-    getDocFromServer(referencia),
-    getDocFromServer(doc(firebase.db, 'tiposProducto', id, 'versiones', String(version))),
-  ])
-  if (!tipo.exists() || !definicion.exists()) throw new Error('No se encontró la definición de este producto. Actualiza la página e inténtalo de nuevo.')
+  const tipo = await getDocFromServer(referencia)
+  if (!tipo.exists()) throw new Error('No se encontró la definición de este producto. Actualiza la página e inténtalo de nuevo.')
   const datos = tipo.data()
-  return mapearTipoProducto(id, texto(datos.nombre, id), datos.activo === true, version, definicion.data())
+  return leerDefinicionTipo(firebase, id, texto(datos.nombre, id), datos.activo === true, version)
+}
+
+function mapearProducto(id: string, datos: Record<string, unknown>): ProductoEmprendedoraWeb {
+  const original = texto(datos.estadoPublicacion, 'borrador')
+  return {
+    id,
+    nombre: texto(datos.nombre, 'Producto sin nombre'),
+    descripcion: texto(datos.descripcion),
+    estado: original === 'publicado' ? 'publicado' : original === 'archivado' ? 'archivado' : 'borrador',
+    versionEsperada: versionProducto(datos.actualizadoEn),
+    tipoProductoId: texto(datos.tipoProductoId),
+    versionTipoProducto: Number.isSafeInteger(datos.versionTipoProducto) ? Number(datos.versionTipoProducto) : 1,
+    categoriaId: texto(datos.categoriaId),
+    atributosEspecificos: mapaDeTextos(datos.atributosEspecificos),
+    tieneVariantes: datos.tieneVariantes === true,
+    precioBase: numero(datos.precioBase),
+    stock: numero(datos.stock),
+    manejaStock: datos.manejaStock === true,
+    modalidad: texto(datos.modalidad),
+    alAgotarse: texto(datos.alAgotarse, 'mostrar_agotado'),
+    disponible: datos.disponible !== false,
+    piezaUnicaVendida: datos.piezaUnicaVendida === true,
+    imagenes: listaDeTextos(datos.imagenes),
+    variantes: [],
+    variantesCargadas: datos.tieneVariantes !== true,
+  }
+}
+
+function mapearVariante(id: string, datos: Record<string, unknown>): VarianteEmprendedoraWeb {
+  return {
+    id,
+    opciones: mapaDeTextos(datos.opciones),
+    precio: numero(datos.precio) ?? 0,
+    stock: numero(datos.stock),
+    activa: datos.activa !== false,
+    tieneImagen: typeof datos.imagen === 'string' && datos.imagen !== '',
+    ...(typeof datos.imagenPublica === 'string' && datos.imagenPublica ? { imagenPublica: datos.imagenPublica } : {}),
+  }
+}
+
+async function conImagenPublica(firebase: ServiciosCliente, tiendaId: string, mostrarPrecios: boolean, producto: ProductoEmprendedoraWeb): Promise<ProductoEmprendedoraWeb> {
+  if (producto.estado !== 'publicado') return producto
+  try {
+    const nombreColeccion = mostrarPrecios ? 'productos' : 'productosConsulta'
+    const publico = await getDocFromServer(doc(firebase.db, 'tiendasPublicas', tiendaId, nombreColeccion, producto.id))
+    if (!publico.exists()) return producto
+    const datos = publico.data()
+    const rutas = Array.isArray(datos.miniaturas) ? datos.miniaturas : datos.imagenes
+    const primera = Array.isArray(rutas) ? rutas.find((ruta): ruta is string => typeof ruta === 'string' && ruta.trim() !== '') : undefined
+    return primera ? { ...producto, imagenPublica: primera } : producto
+  } catch {
+    return producto
+  }
+}
+
+export async function contarProductosEmprendedora(firebase: ServiciosCliente, tiendaId: string): Promise<ResumenProductosEmprendedora> {
+  const productos = collection(firebase.db, 'tiendasPrivadas', tiendaId, 'productos')
+  const [publicados, borradores, retirados] = await Promise.all([
+    getCountFromServer(query(productos, where('estadoPublicacion', '==', 'publicado'))),
+    getCountFromServer(query(productos, where('estadoPublicacion', '==', 'borrador'))),
+    getCountFromServer(query(productos, where('estadoPublicacion', '==', 'archivado'))),
+  ])
+  return {
+    publicados: publicados.data().count,
+    borradores: borradores.data().count,
+    retirados: retirados.data().count,
+  }
+}
+
+export async function listarPaginaProductosEmprendedora(
+  firebase: ServiciosCliente,
+  tiendaId: string,
+  mostrarPrecios: boolean,
+  filtro: FiltroProductosEmprendedora,
+  cursor: string | null = null,
+  incluirImagenes = true,
+): Promise<PaginaProductosEmprendedora> {
+  const productos = collection(firebase.db, 'tiendasPrivadas', tiendaId, 'productos')
+  const restricciones = [
+    ...(filtro === 'todos' ? [] : [where('estadoPublicacion', '==', filtro)]),
+    orderBy(documentId()),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(21),
+  ]
+  const resultado = await getDocsFromServer(query(productos, ...restricciones))
+  const pagina = resultado.docs.slice(0, 20)
+  const siguienteCursor = resultado.docs.length > 20 ? pagina.at(-1)?.id ?? null : null
+  const visibles = pagina.filter((snapshot) => snapshot.data().estadoPublicacion !== 'eliminado')
+    .map((snapshot) => mapearProducto(snapshot.id, snapshot.data()))
+  return {
+    productos: incluirImagenes
+      ? await Promise.all(visibles.map((producto) => conImagenPublica(firebase, tiendaId, mostrarPrecios, producto)))
+      : visibles,
+    siguienteCursor,
+  }
+}
+
+export async function leerProductoEmprendedora(
+  firebase: ServiciosCliente,
+  tiendaId: string,
+  mostrarPrecios: boolean,
+  productoId: string,
+): Promise<ProductoEmprendedoraWeb> {
+  const productoDoc = await getDocFromServer(doc(firebase.db, 'tiendasPrivadas', tiendaId, 'productos', productoId))
+  if (!productoDoc.exists() || productoDoc.data().estadoPublicacion === 'eliminado') throw new Error('No se encontró este producto. Actualiza la lista e inténtalo de nuevo.')
+  const producto = mapearProducto(productoDoc.id, productoDoc.data())
+  const [variantes, conImagen] = await Promise.all([
+    producto.tieneVariantes
+      ? getDocsFromServer(query(collection(firebase.db, 'tiendasPrivadas', tiendaId, 'productos', productoId, 'variantes'), limit(20)))
+      : Promise.resolve(null),
+    conImagenPublica(firebase, tiendaId, mostrarPrecios, producto),
+  ])
+  return {
+    ...conImagen,
+    variantes: variantes?.docs.map((snapshot) => mapearVariante(snapshot.id, snapshot.data())) ?? [],
+    variantesCargadas: true,
+  }
+}
+
+export async function leerFichaProductoEmprendedora(
+  firebase: ServiciosCliente,
+  tiendaId: string,
+  productoId: string,
+): Promise<ProductoEmprendedoraWeb> {
+  const productoDoc = await getDocFromServer(doc(firebase.db, 'tiendasPrivadas', tiendaId, 'productos', productoId))
+  if (!productoDoc.exists() || productoDoc.data().estadoPublicacion === 'eliminado') throw new Error('No se encontró este producto. Actualiza la lista e inténtalo de nuevo.')
+  return mapearProducto(productoDoc.id, productoDoc.data())
+}
+
+export async function leerVariantesProductoEmprendedora(
+  firebase: ServiciosCliente,
+  tiendaId: string,
+  productoId: string,
+): Promise<VarianteEmprendedoraWeb[]> {
+  const resultado = await getDocsFromServer(query(
+    collection(firebase.db, 'tiendasPrivadas', tiendaId, 'productos', productoId, 'variantes'),
+    limit(20),
+  ))
+  return resultado.docs.map((snapshot) => mapearVariante(snapshot.id, snapshot.data()))
 }
 
 export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: string): Promise<CuentaEmprendedoraWeb> {
@@ -182,10 +381,9 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
   if (!perfilDoc.exists()) throw new Error('No se encontró el perfil de emprendedora.')
   if (perfilDoc.data().tiendaId !== tiendaId) throw new Error('El perfil y el acceso no coinciden con la tienda asignada.')
 
-  const [tiendaDoc, usuarioDoc, productosDocs, configuracionDoc] = await Promise.all([
+  const [tiendaDoc, usuarioDoc, configuracionDoc] = await Promise.all([
     getDocFromServer(doc(db, 'tiendasPrivadas', tiendaId)),
     getDocFromServer(doc(db, 'usuarios', uid)),
-    getDocsFromServer(collection(db, 'tiendasPrivadas', tiendaId, 'productos')),
     getDocFromServer(doc(db, 'tiendasPrivadas', tiendaId, 'configuracion', 'general')),
   ])
   if (!tiendaDoc.exists()) throw new Error('No se encontró la ficha privada de la tienda.')
@@ -247,74 +445,21 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
     } catch {}
   }
 
-  const baseProductos = (await Promise.all(productosDocs.docs.map(async (productoDoc): Promise<ProductoEmprendedoraWeb | null> => {
-      const datos = productoDoc.data()
-      const original = texto(datos.estadoPublicacion, 'borrador')
-      if (original === 'eliminado') return null
-      const estado = original === 'publicado' ? 'publicado' : original === 'archivado' ? 'archivado' : 'borrador'
-      const tieneVariantes = datos.tieneVariantes === true
-      const variantesSnapshot = tieneVariantes
-        ? await getDocsFromServer(collection(db, 'tiendasPrivadas', tiendaId, 'productos', productoDoc.id, 'variantes'))
-        : null
-      const variantes = variantesSnapshot?.docs.map((varianteDoc): VarianteEmprendedoraWeb => {
-        const variante = varianteDoc.data()
-        return {
-          id: varianteDoc.id,
-          opciones: mapaDeTextos(variante.opciones),
-          precio: numero(variante.precio) ?? 0,
-          stock: numero(variante.stock),
-          activa: variante.activa !== false,
-          tieneImagen: typeof variante.imagen === 'string' && variante.imagen !== '',
-          ...(typeof variante.imagenPublica === 'string' && variante.imagenPublica ? { imagenPublica: variante.imagenPublica } : {}),
-        }
-      }) ?? []
-      return {
-        id: productoDoc.id,
-        nombre: texto(datos.nombre, 'Producto sin nombre'),
-        descripcion: texto(datos.descripcion),
-        estado,
-        versionEsperada: versionProducto(datos.actualizadoEn),
-        tipoProductoId: texto(datos.tipoProductoId),
-        versionTipoProducto: Number.isSafeInteger(datos.versionTipoProducto) ? Number(datos.versionTipoProducto) : 1,
-        categoriaId: texto(datos.categoriaId),
-        atributosEspecificos: mapaDeTextos(datos.atributosEspecificos),
-        tieneVariantes,
-        precioBase: numero(datos.precioBase),
-        stock: numero(datos.stock),
-        manejaStock: datos.manejaStock === true,
-        modalidad: texto(datos.modalidad),
-        alAgotarse: texto(datos.alAgotarse, 'mostrar_agotado'),
-        disponible: datos.disponible !== false,
-        piezaUnicaVendida: datos.piezaUnicaVendida === true,
-        imagenes: listaDeTextos(datos.imagenes),
-        variantes,
-      }
-    })))
-    .filter((producto): producto is ProductoEmprendedoraWeb => producto !== null)
-
-  const imagenesPublicas = new Map<string, string>()
-  if (tienda.estadoPublicacion === 'publicado') {
-    try {
-      const publicos = await getDocsFromServer(query(
-        collection(db, 'tiendasPublicas', tiendaId, mostrarPrecios ? 'productos' : 'productosConsulta'),
-        where('estadoPublicacion', '==', 'publicado'),
-      ))
-      for (const productoDoc of publicos.docs) {
-        const datos = productoDoc.data()
-        const rutas = Array.isArray(datos.miniaturas) ? datos.miniaturas : datos.imagenes
-        if (Array.isArray(rutas)) {
-          const primera = rutas.find((ruta): ruta is string => typeof ruta === 'string' && ruta.trim() !== '')
-          if (primera) imagenesPublicas.set(productoDoc.id, primera)
-        }
-      }
-    } catch {}
-  }
-
-  const productos = baseProductos
-    .map((producto) => ({ ...producto, ...(imagenesPublicas.has(producto.id) ? { imagenPublica: imagenesPublicas.get(producto.id) } : {}) }))
-    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
-
   const datosUsuario = usuarioDoc.exists() ? usuarioDoc.data() : {}
+  const puntoRetiroDatos = tienda.puntoRetiro && typeof tienda.puntoRetiro === 'object'
+    ? tienda.puntoRetiro as Record<string, unknown>
+    : null
+  const puntoRetiro = puntoRetiroDatos
+    && typeof puntoRetiroDatos.latitud === 'number' && Number.isFinite(puntoRetiroDatos.latitud)
+    && puntoRetiroDatos.latitud >= -90 && puntoRetiroDatos.latitud <= 90
+    && typeof puntoRetiroDatos.longitud === 'number' && Number.isFinite(puntoRetiroDatos.longitud)
+    && puntoRetiroDatos.longitud >= -180 && puntoRetiroDatos.longitud <= 180
+    ? {
+        latitud: puntoRetiroDatos.latitud,
+        longitud: puntoRetiroDatos.longitud,
+        descripcion: texto(puntoRetiroDatos.descripcion),
+      }
+    : null
   return {
     uid,
     correo: usuario.email ?? '',
@@ -328,6 +473,7 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       mostrarPrecios,
       contacto,
       canalesContacto,
+      puntoRetiro,
       mostrarContacto: tienda.mostrarContacto === true,
       versionEsperada: versionTienda(tienda.actualizadoEn),
       estadoPublicacion: texto(tienda.estadoPublicacion, 'borrador'),
@@ -335,29 +481,6 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
       logoPublico,
       contactoVisible: canalesContacto.whatsapp.habilitado || canalesContacto.formulario.habilitado || canalesContacto.correo.habilitado,
     },
-    productos,
+    productos: [],
   }
-}
-
-export function observarImagenesProductosPublicas(
-  firebase: ServiciosCliente,
-  tiendaId: string,
-  mostrarPrecios: boolean,
-  alCambiar: (imagenes: Map<string, string>) => void,
-  alFallar?: (error: Error) => void,
-): () => void {
-  const coleccionPublica = mostrarPrecios ? 'productos' : 'productosConsulta'
-  return onSnapshot(query(
-    collection(firebase.db, 'tiendasPublicas', tiendaId, coleccionPublica),
-    where('estadoPublicacion', '==', 'publicado'),
-  ), (snapshot) => {
-    const imagenes = new Map<string, string>()
-    for (const producto of snapshot.docs) {
-      const datos = producto.data()
-      const rutas = Array.isArray(datos.miniaturas) ? datos.miniaturas : datos.imagenes
-      const primera = Array.isArray(rutas) ? rutas.find((ruta): ruta is string => typeof ruta === 'string' && ruta.trim() !== '') : undefined
-      if (primera) imagenes.set(producto.id, primera)
-    }
-    alCambiar(imagenes)
-  }, (error) => alFallar?.(error instanceof Error ? error : new Error('No se pudieron mantener actualizadas las imágenes públicas.')))
 }

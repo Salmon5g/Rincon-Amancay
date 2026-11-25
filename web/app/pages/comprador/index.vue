@@ -52,7 +52,6 @@ let avisoTimer: ReturnType<typeof setTimeout> | undefined;
 let pausaSincronizacionRuta = 0;
 let temporizadorRuta: ReturnType<typeof setTimeout> | undefined;
 let rutaInicializada = false;
-let detenerObservadoresProductos: (() => void)[] = [];
 
 function valorRuta(valor: unknown): string {
     if (Array.isArray(valor)) return typeof valor[0] === 'string' ? valor[0] : '';
@@ -632,13 +631,14 @@ async function cargarDestacados(tiendas: FichaComprador[], revisionDestacados: n
         if (revisionDestacados === revision) {
             destacados.value = [];
             fotosCarrusel.value = {};
+            fotosCarruselCargadas.clear();
         }
         return;
     }
     type ResultadoCarrusel = { tienda: FichaComprador; producto: FichaComprador | null; fotos: string[] };
     const resultados: (ResultadoCarrusel | null)[] = await Promise.all(candidatas.map(async (t) => {
         try {
-            const r = await $catalogoPublico.listarProductos(t.id, null);
+            const r = await $catalogoPublico.listarProductos(t.id, null, 1);
             const primero = r.elementos[0];
             const fotos = r.elementos
                 .map((producto) => producto.imagenes?.[0])
@@ -654,7 +654,10 @@ async function cargarDestacados(tiendas: FichaComprador[], revisionDestacados: n
     destacados.value = cargados
         .flatMap(({ tienda, producto }) => producto ? [{ tienda, producto }] : [])
         .slice(0, 4);
-    fotosCarrusel.value = Object.fromEntries(cargados.map(({ tienda, fotos }) => [tienda.id, fotos]));
+    fotosCarrusel.value = Object.fromEntries(cargados.map(({ tienda, fotos }) => [
+        tienda.id,
+        fotosCarruselCargadas.has(tienda.id) ? fotosCarrusel.value[tienda.id] ?? fotos : fotos,
+    ]));
 }
 
 async function cargar(destino = pagina.value) {
@@ -706,6 +709,8 @@ const ubicacionCarrusel = computed(() => ubicacionTienda(tiendaCarrusel.value?.d
 
 // Fotos de productos por tienda para la cinta animada de fondo.
 const fotosCarrusel = ref<Record<string, string[]>>({});
+const fotosCarruselCargadas = new Set<string>();
+const fotosCarruselEnCurso = new Set<string>();
 const cintaCarrusel = computed(() => {
     const fotos = tiendaCarrusel.value ? fotosCarrusel.value[tiendaCarrusel.value.id] ?? [] : [];
     if (!fotos.length) return [];
@@ -828,29 +833,32 @@ watch(() => tienda.value?.id, (tiendaId, _, alLimpiar) => {
         if (tiendaContacto.value?.id === tiendaId) tiendaContacto.value = ficha;
     }));
 });
-watch(() => JSON.stringify(tienda.value
-    ? [tienda.value.id, filas.value.map((ficha) => ficha.id)]
-    : destacados.value.map(({ tienda: fichaTienda, producto: fichaProducto }) => [fichaTienda.id, fichaProducto.id])), () => {
-    detenerObservadoresProductos.forEach((detener) => detener());
-    detenerObservadoresProductos = [];
-    if (!import.meta.client) return;
-    const observados = tienda.value
-        ? filas.value.map((ficha) => ({ tiendaId: tienda.value!.id, productoId: ficha.id }))
-        : destacados.value.map(({ tienda: fichaTienda, producto: fichaProducto }) => ({ tiendaId: fichaTienda.id, productoId: fichaProducto.id }));
-    for (const { tiendaId, productoId } of observados) {
-        detenerObservadoresProductos.push($catalogoPublico.observarProducto(tiendaId, productoId, (actualizado) => {
-            if (!actualizado) return;
-            const ficha = fichaProducto(actualizado);
-            if (tienda.value?.id === tiendaId) {
-                filas.value = filas.value.map((fila) => fila.id === productoId ? ficha : fila);
-                if (producto.value?.id === productoId) producto.value = ficha;
-                if (tiendaContacto.value?.id === tiendaId && productoContacto.value?.id === productoId) productoContacto.value = ficha;
-            }
-            destacados.value = destacados.value.map((destacado) => destacado.tienda.id === tiendaId && destacado.producto.id === productoId
-                ? { ...destacado, producto: ficha }
-                : destacado);
-        }));
-    }
+watch(() => tiendaCarrusel.value?.id, (tiendaId) => {
+    if (!import.meta.client || !tiendaId || fotosCarruselCargadas.has(tiendaId) || fotosCarruselEnCurso.has(tiendaId)) return;
+    fotosCarruselEnCurso.add(tiendaId);
+    void $catalogoPublico.listarProductos(tiendaId, null, 8).then((paginaFotos) => {
+        const fotos = paginaFotos.elementos
+            .map((item) => item.imagenes?.[0])
+            .filter((foto): foto is string => typeof foto === 'string')
+            .slice(0, 8);
+        fotosCarrusel.value = { ...fotosCarrusel.value, [tiendaId]: fotos };
+        fotosCarruselCargadas.add(tiendaId);
+    }).catch(() => undefined).finally(() => fotosCarruselEnCurso.delete(tiendaId));
+});
+watch(() => JSON.stringify([tienda.value?.id ?? '', producto.value?.id ?? '']), (_, __, alLimpiar) => {
+    const tiendaId = tienda.value?.id;
+    const productoId = producto.value?.id;
+    if (!import.meta.client || !tiendaId || !productoId) return;
+    alLimpiar($catalogoPublico.observarProducto(tiendaId, productoId, (actualizado) => {
+        if (!actualizado || tienda.value?.id !== tiendaId || producto.value?.id !== productoId) return;
+        const ficha = fichaProducto(actualizado);
+        producto.value = ficha;
+        filas.value = filas.value.map((fila) => fila.id === productoId ? ficha : fila);
+        if (tiendaContacto.value?.id === tiendaId && productoContacto.value?.id === productoId) productoContacto.value = ficha;
+        destacados.value = destacados.value.map((destacado) => destacado.tienda.id === tiendaId && destacado.producto.id === productoId
+            ? { ...destacado, producto: ficha }
+            : destacado);
+    }));
 }, { immediate: true });
 
 watch([busqueda, categoriaSeleccionada, pagina], () => {
@@ -905,8 +913,6 @@ onNuxtReady(() => {
 });
 onBeforeUnmount(() => {
     revision++;
-    detenerObservadoresProductos.forEach((detener) => detener());
-    detenerObservadoresProductos = [];
     clearTimeout(avisoTimer);
     clearTimeout(temporizadorRuta);
     window.removeEventListener('keydown', alTeclearEscape);

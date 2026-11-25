@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -99,8 +100,10 @@ fun StepScaffold(
     onDiscardDraft: (() -> Unit)? = null,
     totalPasos: Int = 5,
     dibujarBajoBarraSistema: Boolean = false,
+    scrollResetKey: Any? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val contentScrollState = remember(pasoActual, scrollResetKey) { ScrollState(0) }
     Box(Modifier.fillMaxSize()) {
         BotanicalBackdrop(lowerAreaCompleta = dibujarBajoBarraSistema)
         Column(
@@ -115,7 +118,7 @@ fun StepScaffold(
             Spacer(Modifier.height(12.dp))
             StepProgressBar(actual = pasoActual, total = totalPasos)
             Spacer(Modifier.height(14.dp))
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), content = content)
+            Column(Modifier.weight(1f).verticalScroll(contentScrollState), content = content)
             Spacer(Modifier.height(8.dp))
             if (showSaveExit && onDiscardDraft != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1019,114 +1022,111 @@ fun PhotoStep(
     continuarHabilitado: Boolean = true,
     errorImagenSeleccionada: String? = null
 ) {
-    StepScaffold("Paso 1 de $totalPasos", "Agrega una foto", "Te guiaremos para que tu producto se vea claro y atractivo.", onNext, onBack, onSaveExit, nextLabel = if (draft.fotoLista || imagenExistente) "Usar esta foto" else "Continuar", nextEnabled = continuarHabilitado, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft, totalPasos = totalPasos, dibujarBajoBarraSistema = dibujarBajoBarraSistema) {
-        Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
-            if (lista) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    ProductImage(
-                        fallback = Fig.VASE_BIG, size = 188.dp,
-                        uri = draft.photoUri,
-                        bitmap = when {
-                            draft.fotoLista -> if (compararOriginal) imagenOriginalSeleccionada else imagenPreparada ?: imagenOriginalSeleccionada ?: draft.photoBitmap
-                            else -> imagenPrevia
-                        },
-                        hasPhoto = draft.fotoLista || imagenExistente,
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
-                        Text(
-                            if (draft.fotoLista) "Foto elegida" else "Foto actual",
-                            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GreenText,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
+    val tieneFoto = draft.fotoLista || imagenExistente
+    StepScaffold("Paso 1 de $totalPasos", "Agrega una foto", "Te guiaremos para que tu producto se vea claro y atractivo.", onNext, onBack, onSaveExit, nextLabel = if (tieneFoto) "Usar esta foto" else "Continuar", nextEnabled = continuarHabilitado, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft, totalPasos = totalPasos, dibujarBajoBarraSistema = dibujarBajoBarraSistema, scrollResetKey = draft.photoUri ?: draft.photoBitmap ?: tieneFoto) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            ProductImage(
+                fallback = Fig.VASE_BIG,
+                size = 168.dp,
+                uri = draft.photoUri,
+                bitmap = when {
+                    draft.fotoLista -> if (compararOriginal) imagenOriginalSeleccionada else imagenPreparada ?: imagenOriginalSeleccionada ?: draft.photoBitmap
+                    else -> imagenPrevia
+                },
+                hasPhoto = tieneFoto,
+                corner = 18.dp,
+                contentScale = ContentScale.Crop
+            )
+            Spacer(Modifier.height(8.dp))
+            if (tieneFoto) {
+                Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
                     Text(
-                            if (draft.fotoLista) "Así se verá la imagen principal de tu producto en la tienda."
-                            else mensajeImagenExistente ?: "La foto está guardada de forma privada. Puedes reemplazarla desde la cámara o la galería.",
-                        fontSize = 14.sp, color = Muted, textAlign = TextAlign.Center
+                        if (draft.fotoLista) "Foto elegida" else "Foto actual",
+                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GreenText,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
-                    if (draft.fotoLista && imagenOriginalSeleccionada != null) {
-                        Spacer(Modifier.height(10.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
-                            shape = RoundedCornerShape(20.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Line)
-                        ) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Ajusta la foto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
-                                Text("Usaremos el mismo formato cuadrado para que las fotos se vean parejas en la tienda.", fontSize = 14.sp, color = Muted)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text("Mejorar luz", color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                        Text("Ajuste suave y reversible", color = Muted, fontSize = 13.sp)
-                                    }
-                                    Switch(checked = mejorarLuz, onCheckedChange = onMejorarLuz)
-                                }
-                                OutlinedButton(
-                                    onClick = { onCompararOriginal(!compararOriginal) },
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text(if (compararOriginal) "Ver foto ajustada" else "Comparar con el original", color = Wine, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                    if (draft.fotoLista && errorImagenSeleccionada != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(errorImagenSeleccionada, color = Color(0xFFB3261E), fontSize = 14.sp, textAlign = TextAlign.Center)
-                    }
-                    if (draft.fotoLista && procesandoImagen) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                            CircularProgressIndicator(color = Wine, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Preparando vista previa…", color = Muted, fontSize = 13.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PrimaryButton(if (draft.fotoLista) "Tomar otra" else "Tomar foto", onTakePhoto, modifier = Modifier.weight(1f), fontSize = 14.sp)
-                        OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) {
-                            Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
-                            Spacer(Modifier.width(5.dp))
-                            Text("Galería", color = Wine, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    }
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (draft.fotoLista) "Así se verá la imagen principal de tu producto en la tienda."
+                    else mensajeImagenExistente ?: "La foto está guardada de forma privada. Puedes reemplazarla desde la cámara o la galería.",
+                    fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
+                )
             } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
-                    shape = RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Line)
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Para que se vea bonita", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
-                        listOf(
-                            "Luz natural de frente, cerca de una ventana.",
-                            "Fondo sencillo que contraste con tu producto.",
-                            "Centra el producto y muéstralo completo."
-                        ).forEachIndexed { index, consejo ->
-                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                Surface(color = Color(0xFFFFE8D8), shape = CircleShape, modifier = Modifier.size(24.dp)) {
-                                    Box(contentAlignment = Alignment.Center) { Text("${index + 1}", color = Wine, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-                                }
-                                Text(consejo, color = Dark, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, modifier = Modifier.weight(1f).padding(top = 2.dp))
-                            }
+                Text("Vista previa de la foto", color = Muted, fontSize = 13.sp)
+            }
+        }
+        if (draft.fotoLista && errorImagenSeleccionada != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(errorImagenSeleccionada, color = Color(0xFFB3261E), fontSize = 14.sp, textAlign = TextAlign.Center)
+        }
+        if (draft.fotoLista && procesandoImagen) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                CircularProgressIndicator(color = Wine, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Preparando vista previa…", color = Muted, fontSize = 13.sp)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)) {
+                Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Galería", color = Wine, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+            PrimaryButton(if (tieneFoto) "Tomar otra" else "Tomar foto", onTakePhoto, modifier = Modifier.weight(1f), fontSize = 14.sp)
+        }
+        Spacer(Modifier.height(14.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
+            shape = RoundedCornerShape(20.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Consejos para la foto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
+                listOf(
+                    "Buena luz" to "Luz natural de frente, cerca de una ventana.",
+                    "Fondo simple" to "Usa un fondo sencillo que contraste con tu producto.",
+                    "Bien encuadrado" to "Centra el producto y muéstralo completo."
+                ).forEachIndexed { index, consejo ->
+                    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Surface(color = Color(0xFFFFE8D8), shape = CircleShape, modifier = Modifier.size(24.dp)) {
+                            Box(contentAlignment = Alignment.Center) { Text("${index + 1}", color = Wine, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(consejo.first, color = Wine, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(consejo.second, color = Dark, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PrimaryButton("Tomar foto", onTakePhoto, modifier = Modifier.weight(1f), fontSize = 14.sp)
-                    OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) {
-                        Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Galería", color = Wine, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        }
+        if (draft.fotoLista && imagenOriginalSeleccionada != null) {
+            Spacer(Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Ajusta la foto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
+                    Text("Usaremos el mismo formato cuadrado para que las fotos se vean parejas en la tienda.", fontSize = 14.sp, color = Muted)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Mejorar luz", color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text("Ajuste suave y reversible", color = Muted, fontSize = 13.sp)
+                        }
+                        Switch(checked = mejorarLuz, onCheckedChange = onMejorarLuz)
+                    }
+                    OutlinedButton(
+                        onClick = { onCompararOriginal(!compararOriginal) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(if (compararOriginal) "Ver foto ajustada" else "Comparar con el original", color = Wine, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1329,7 +1329,11 @@ fun ProductsScreen(
     onAccionPublicacion: ((Product) -> Unit)? = null,
     onAjustarStock: ((Product) -> Unit)? = null,
     mensajeEliminar: ((String) -> String)? = null,
-    onOrganizeCatalog: (() -> Unit)? = null
+    onOrganizeCatalog: (() -> Unit)? = null,
+    hayMasProductos: Boolean = false,
+    cargandoMasProductos: Boolean = false,
+    onCargarMasProductos: () -> Unit = {},
+    onProductVisibilityChanged: ((String, Boolean) -> Unit)? = null
 ) {
     var tab by remember { mutableStateOf(0) }
     var busqueda by remember { mutableStateOf("") }
@@ -1382,6 +1386,10 @@ fun ProductsScreen(
             Spacer(Modifier.height(16.dp))
         }
         items(filtrados, key = { it.id }) { p ->
+            DisposableEffect(p.id) {
+                onProductVisibilityChanged?.invoke(p.id, true)
+                onDispose { onProductVisibilityChanged?.invoke(p.id, false) }
+            }
             var menuAbierto by remember(p.id) { mutableStateOf(false) }
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1442,6 +1450,17 @@ fun ProductsScreen(
                     color = Muted,
                     modifier = Modifier.padding(18.dp)
                 )
+            }
+        }
+        if (hayMasProductos) item {
+            OutlinedButton(
+                onClick = onCargarMasProductos,
+                enabled = !cargandoMasProductos,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                if (cargandoMasProductos) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Cargar más productos")
             }
         }
         item { Spacer(Modifier.height(16.dp)) }

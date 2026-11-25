@@ -2,7 +2,7 @@ import { collection, doc, documentId, getDoc, getDocs, limit, onSnapshot, orderB
 import { getBlob, ref as storageRef } from 'firebase/storage'
 import type { DocumentData, DocumentSnapshot, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
-import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio } from '~/repositories/catalogo-publico'
+import type { CatalogoPublicoRepository, CatalogosPublicos, ElementoEtiqueta, PaginaRepositorio, PoliticaNavegacion } from '~/repositories/catalogo-publico'
 import type { AsociacionPublica, FeriaPublica, ContactoPublico, CanalesContactoPublico, IntegranteAsociacionPublica, MuestraCatalogoFeria, ParticipantePublicoFeria, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico'
 
 const TAMANO_PAGINA = 20
@@ -215,16 +215,28 @@ function mapearAsociacion(documento: QueryDocumentSnapshot<DocumentData>): Asoci
   }
 }
 
-function cursorSiguiente<T>(documentos: QueryDocumentSnapshot<DocumentData>[], elementos: T[]): PaginaRepositorio<T> {
+function cursorSiguiente<T>(documentos: QueryDocumentSnapshot<DocumentData>[], elementos: T[], tamanoPagina = TAMANO_PAGINA): PaginaRepositorio<T> {
   return {
     elementos,
-    cursorSiguiente: documentos.length === TAMANO_PAGINA ? documentos.at(-1)?.id ?? null : null,
+    cursorSiguiente: documentos.length === tamanoPagina ? documentos.at(-1)?.id ?? null : null,
   }
 }
 
 export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabaseUrl = ''): CatalogoPublicoRepository {
   const db = firebase.db
   const storage = firebase.storage
+  const modosTienda = new Map<string, { coleccion: 'productos' | 'productosConsulta'; vence: number }>()
+  const consultasModo = new Map<string, Promise<'productos' | 'productosConsulta'>>()
+  const paginasTiendasEnMemoria = new Map<string, { valor: PaginaRepositorio<TiendaPublica>; vence: number }>()
+  const lecturasTiendasPendientes = new Map<string, Promise<PaginaRepositorio<TiendaPublica>>>()
+  let catalogosEnMemoria: { valor: CatalogosPublicos; vence: number } | null = null
+  let lecturaCatalogosPendiente: Promise<CatalogosPublicos> | null = null
+  let asociacionesEnMemoria: { valor: AsociacionPublica[]; vence: number } | null = null
+  let lecturaAsociacionesPendiente: Promise<AsociacionPublica[]> | null = null
+  let feriasEnMemoria: { valor: FeriaPublica[]; vence: number } | null = null
+  let lecturaFeriasPendiente: Promise<FeriaPublica[]> | null = null
+  let politicaEnMemoria: { valor: PoliticaNavegacion; vence: number } | null = null
+  let lecturaPoliticaPendiente: Promise<PoliticaNavegacion> | null = null
   const baseSupabase = (() => {
     try {
       const parsed = new URL(supabaseUrl)
@@ -253,12 +265,33 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
     return `${baseSupabase}/storage/v1/object/public/amancay-catalogo/${segmentos.map(encodeURIComponent).join('/')}`
   }
 
-  async function coleccionPublicaProductos(tiendaId: string): Promise<'productos' | 'productosConsulta'> {
-    const tienda = await getDoc(doc(db, 'tiendasPublicas', validarId(tiendaId)))
-    if (!tienda.exists() || tienda.data().estadoPublicacion !== 'publicado' || tienda.data().habilitada !== true) {
-      throw Object.assign(new Error('La tienda solicitada ya no está disponible.'), { code: 'no-encontrado' })
+  function guardarModoTienda(id: string, datos: DocumentData): void {
+    if (datos.estadoPublicacion !== 'publicado' || datos.habilitada !== true) {
+      modosTienda.delete(id)
+      return
     }
-    return tienda.data().mostrarPrecios === true ? 'productos' : 'productosConsulta'
+    modosTienda.set(id, {
+      coleccion: datos.mostrarPrecios === true ? 'productos' : 'productosConsulta',
+      vence: Date.now() + 30_000,
+    })
+  }
+
+  async function coleccionPublicaProductos(tiendaId: string): Promise<'productos' | 'productosConsulta'> {
+    const id = validarId(tiendaId)
+    const modo = modosTienda.get(id)
+    if (modo && modo.vence > Date.now()) return modo.coleccion
+    const pendiente = consultasModo.get(id)
+    if (pendiente) return pendiente
+    const consulta = getDoc(doc(db, 'tiendasPublicas', id)).then((tienda) => {
+      if (!tienda.exists() || tienda.data().estadoPublicacion !== 'publicado' || tienda.data().habilitada !== true) {
+        modosTienda.delete(id)
+        throw Object.assign(new Error('La tienda solicitada ya no está disponible.'), { code: 'no-encontrado' })
+      }
+      guardarModoTienda(id, tienda.data())
+      return modosTienda.get(id)!.coleccion
+    }).finally(() => consultasModo.delete(id))
+    consultasModo.set(id, consulta)
+    return consulta
   }
 
   async function leerMuestraCatalogo(tiendaId: string): Promise<MuestraCatalogoFeria | null> {
@@ -282,10 +315,16 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
   }
 
   async function cargarCatalogoParticipantes(participantes: ParticipantePublicoFeria[]): Promise<ParticipantePublicoFeria[]> {
+    const muestrasPendientes = new Map<string, Promise<MuestraCatalogoFeria | null>>()
     return Promise.all(participantes.map(async (participante) => {
       const catalogo: MuestraCatalogoFeria[] = []
       for (const tiendaId of participante.tiendaIds ?? []) {
-        const muestra = await leerMuestraCatalogo(tiendaId)
+        let muestraPendiente = muestrasPendientes.get(tiendaId)
+        if (!muestraPendiente) {
+          muestraPendiente = leerMuestraCatalogo(tiendaId)
+          muestrasPendientes.set(tiendaId, muestraPendiente)
+        }
+        const muestra = await muestraPendiente
         if (!muestra) continue
         catalogo.push(muestra)
         break
@@ -296,7 +335,12 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
 
   return {
     async listarTiendas(cursor = null) {
-      return ejecutarConErrorNormalizado(async () => {
+      const clave = cursor ?? ''
+      const cacheada = paginasTiendasEnMemoria.get(clave)
+      if (cacheada && cacheada.vence > Date.now()) return cacheada.valor
+      const pendiente = lecturasTiendasPendientes.get(clave)
+      if (pendiente) return pendiente
+      const lectura = ejecutarConErrorNormalizado(async () => {
         const consulta = query(
           collection(db, 'tiendasPublicas'),
           where('estadoPublicacion', '==', 'publicado'),
@@ -306,23 +350,33 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
           limit(TAMANO_PAGINA),
         )
         const resultado = await getDocs(consulta)
-        return cursorSiguiente(resultado.docs, resultado.docs.map(mapearTienda))
+        for (const tienda of resultado.docs) guardarModoTienda(tienda.id, tienda.data())
+        const pagina = cursorSiguiente(resultado.docs, resultado.docs.map(mapearTienda))
+        paginasTiendasEnMemoria.set(clave, { valor: pagina, vence: Date.now() + 15_000 })
+        return pagina
       })
+      lecturasTiendasPendientes.set(clave, lectura)
+      try {
+        return await lectura
+      } finally {
+        if (lecturasTiendasPendientes.get(clave) === lectura) lecturasTiendasPendientes.delete(clave)
+      }
     },
 
-    async listarProductos(tiendaId, cursor = null) {
+    async listarProductos(tiendaId, cursor = null, tamanoPagina = TAMANO_PAGINA) {
       return ejecutarConErrorNormalizado(async () => {
         const tienda = validarId(tiendaId)
         const coleccion = await coleccionPublicaProductos(tienda)
+        const cantidad = Number.isSafeInteger(tamanoPagina) ? Math.max(1, Math.min(TAMANO_PAGINA, tamanoPagina)) : TAMANO_PAGINA
         const consulta = query(
           collection(db, 'tiendasPublicas', tienda, coleccion),
           where('estadoPublicacion', '==', 'publicado'),
           orderBy(documentId()),
           ...(cursor ? [startAfter(cursor)] : []),
-          limit(TAMANO_PAGINA),
+          limit(cantidad),
         )
         const resultado = await getDocs(consulta)
-        return cursorSiguiente(resultado.docs, resultado.docs.map(mapearProducto))
+        return cursorSiguiente(resultado.docs, resultado.docs.map(mapearProducto), cantidad)
       })
     },
 
@@ -332,6 +386,7 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
         if (!documento.exists() || documento.data().estadoPublicacion !== 'publicado' || documento.data().habilitada !== true) {
           throw Object.assign(new Error('La tienda solicitada ya no está disponible.'), { code: 'no-encontrado' })
         }
+        guardarModoTienda(documento.id, documento.data())
         return mapearTienda(documento)
       })
     },
@@ -339,7 +394,10 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
     observarTienda(tiendaId, alCambiar) {
       return onSnapshot(doc(db, 'tiendasPublicas', validarId(tiendaId)), (documento) => {
         if (documento.exists() && documento.data().estadoPublicacion === 'publicado' && documento.data().habilitada === true) {
+          guardarModoTienda(documento.id, documento.data())
           alCambiar(mapearTienda(documento))
+        } else {
+          modosTienda.delete(validarId(tiendaId))
         }
       }, () => {
         // La ficha también se puede volver a consultar al abrir la tienda.
@@ -398,7 +456,9 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
     },
 
     async listarCatalogosPublicos() {
-      return ejecutarConErrorNormalizado(async () => {
+      if (catalogosEnMemoria && catalogosEnMemoria.vence > Date.now()) return catalogosEnMemoria.valor
+      if (lecturaCatalogosPendiente) return lecturaCatalogosPendiente
+      const lectura = ejecutarConErrorNormalizado(async () => {
         const leerNombres = async (coleccion: string): Promise<ElementoEtiqueta[]> => {
           const consulta = query(collection(db, coleccion), where('activo', '==', true), orderBy(documentId()), limit(200))
           const resultado = await getDocs(consulta)
@@ -419,12 +479,21 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
           leerNombres('categorias'),
         ])
         const catalogos: CatalogosPublicos = { sectores, tiposEmprendimiento, categorias }
+        catalogosEnMemoria = { valor: catalogos, vence: Date.now() + 30_000 }
         return catalogos
       })
+      lecturaCatalogosPendiente = lectura
+      try {
+        return await lectura
+      } finally {
+        if (lecturaCatalogosPendiente === lectura) lecturaCatalogosPendiente = null
+      }
     },
 
     async listarAsociacionesPublicas() {
-      return ejecutarConErrorNormalizado(async () => {
+      if (asociacionesEnMemoria && asociacionesEnMemoria.vence > Date.now()) return asociacionesEnMemoria.valor
+      if (lecturaAsociacionesPendiente) return lecturaAsociacionesPendiente
+      const lectura = ejecutarConErrorNormalizado(async () => {
         const asociaciones: AsociacionPublica[] = []
         let cursor: string | null = null
         let cantidad = 0
@@ -441,16 +510,34 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
           cantidad = resultado.docs.length
           cursor = resultado.docs.at(-1)?.id ?? null
         } while (cantidad === TAMANO_PAGINA && cursor)
-        return asociaciones.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'))
+        const resultado = asociaciones.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-CL'))
+        asociacionesEnMemoria = { valor: resultado, vence: Date.now() + 30_000 }
+        return resultado
       })
+      lecturaAsociacionesPendiente = lectura
+      try {
+        return await lectura
+      } finally {
+        if (lecturaAsociacionesPendiente === lectura) lecturaAsociacionesPendiente = null
+      }
     },
 
     async listarFeriasPublicas() {
-      return ejecutarConErrorNormalizado(async () => {
+      if (feriasEnMemoria && feriasEnMemoria.vence > Date.now()) return feriasEnMemoria.valor
+      if (lecturaFeriasPendiente) return lecturaFeriasPendiente
+      const lectura = ejecutarConErrorNormalizado(async () => {
         const resultado = await getDocs(query(collection(db, 'ferias'), where('estado', '==', 'publicada'), limit(100)))
-        return resultado.docs.map(mapearFeria)
+        const ferias = resultado.docs.map(mapearFeria)
           .sort((a, b) => (a.fechaInicio?.getTime() ?? Infinity) - (b.fechaInicio?.getTime() ?? Infinity))
+        feriasEnMemoria = { valor: ferias, vence: Date.now() + 30_000 }
+        return ferias
       })
+      lecturaFeriasPendiente = lectura
+      try {
+        return await lectura
+      } finally {
+        if (lecturaFeriasPendiente === lectura) lecturaFeriasPendiente = null
+      }
     },
 
     async leerFeria(feriaId) {
@@ -467,11 +554,19 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
 
     resolverUrlImagen,
 
-    async leerPoliticaNavegacion() {
-      return ejecutarConErrorNormalizado(async () => {
+    leerPoliticaNavegacion() {
+      if (politicaEnMemoria && politicaEnMemoria.vence > Date.now()) return Promise.resolve(politicaEnMemoria.valor)
+      if (lecturaPoliticaPendiente) return lecturaPoliticaPendiente
+      const lectura = ejecutarConErrorNormalizado(async () => {
         const documento = await getDoc(doc(db, 'configuracionAplicacion', 'navegacion'))
         const modo = documento.data()?.modo
-        return modo === 'invitar' || modo === 'exigir' ? modo : 'permitir'
+        const politica = modo === 'invitar' || modo === 'exigir' ? modo : 'permitir'
+        politicaEnMemoria = { valor: politica, vence: Date.now() + 30_000 }
+        return politica
+      })
+      lecturaPoliticaPendiente = lectura
+      return lectura.finally(() => {
+        if (lecturaPoliticaPendiente === lectura) lecturaPoliticaPendiente = null
       })
     },
 

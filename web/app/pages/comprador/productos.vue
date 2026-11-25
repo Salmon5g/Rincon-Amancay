@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import '~/assets/amancay-tokens.css'
 import type { ProductoPublico, TiendaPublica } from '~/types/comprador-publico'
 import { categoriasProductoVigentes } from '~/repositories/catalogo-publico'
-import type { CatalogosPublicos, ElementoEtiqueta } from '~/repositories/catalogo-publico'
+import type { CatalogosPublicos } from '~/repositories/catalogo-publico'
 
 type ProductoCatalogo = { producto: ProductoPublico; tienda: TiendaPublica }
 
@@ -25,9 +25,25 @@ const categoriaSeleccionada = ref('')
 const tiendaSeleccionada = ref('')
 const disponibilidadSeleccionada = ref('')
 const cargando = ref(false)
+const cargandoMas = ref(false)
 const error = ref(false)
 const tiendasConError = ref(0)
-const tiendasProcesadas = ref(0)
+const revisionPaginas = ref(0)
+const cursoresProductos = new Map<string, string | null>()
+const productosPorTienda = new Map<string, ProductoCatalogo[]>()
+const cargasEnCurso = new Map<string, Promise<void>>()
+const erroresPorTienda = new Set<string>()
+let indiceSiguienteTienda = 0
+let revisionCatalogo = 0
+
+const filtrosActivos = computed(() => Boolean(busqueda.value.trim() || categoriaSeleccionada.value || tiendaSeleccionada.value || disponibilidadSeleccionada.value))
+const hayMasProductos = computed(() => {
+  revisionPaginas.value
+  const tiendasARevisar = tiendaSeleccionada.value
+    ? tiendas.value.filter((tienda) => tienda.id === tiendaSeleccionada.value)
+    : tiendas.value
+  return tiendasARevisar.some((tienda) => !erroresPorTienda.has(tienda.id) && (!cursoresProductos.has(tienda.id) || cursoresProductos.get(tienda.id) !== null))
+})
 
 function normalizar(valor: string) {
   return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-CL').trim()
@@ -60,64 +76,106 @@ function limpiarFiltros() {
   disponibilidadSeleccionada.value = ''
 }
 
-async function listarTodasLasTiendas(): Promise<TiendaPublica[]> {
+async function listarTodasLasTiendas(revision: number): Promise<TiendaPublica[]> {
   const resultado: TiendaPublica[] = []
   let cursor: string | null = null
   do {
+    if (revision !== revisionCatalogo) break
     const pagina = await $catalogoPublico.listarTiendas(cursor)
+    if (revision !== revisionCatalogo) break
     resultado.push(...pagina.elementos)
     cursor = pagina.cursorSiguiente
   } while (cursor)
   return resultado
 }
 
-async function listarProductosTienda(tienda: TiendaPublica): Promise<ProductoCatalogo[]> {
-  const resultado: ProductoCatalogo[] = []
-  let cursor: string | null = null
-  do {
-    const pagina = await $catalogoPublico.listarProductos(tienda.id, cursor)
-    resultado.push(...pagina.elementos.map((producto) => ({ producto, tienda })))
-    cursor = pagina.cursorSiguiente
-  } while (cursor)
-  return resultado
+function siguienteGrupo(cantidad: number): TiendaPublica[] {
+  const grupo: TiendaPublica[] = []
+  for (let revisadas = 0; revisadas < tiendas.value.length && grupo.length < cantidad; revisadas++) {
+    const tienda = tiendas.value[indiceSiguienteTienda]
+    indiceSiguienteTienda = (indiceSiguienteTienda + 1) % tiendas.value.length
+    if (tienda && !erroresPorTienda.has(tienda.id) && (!cursoresProductos.has(tienda.id) || cursoresProductos.get(tienda.id) !== null)) grupo.push(tienda)
+  }
+  return grupo
+}
+
+async function cargarPaginaTienda(tienda: TiendaPublica, revision: number): Promise<void> {
+  const curso = cargasEnCurso.get(tienda.id)
+  if (curso) return curso
+  if (erroresPorTienda.has(tienda.id) || (cursoresProductos.has(tienda.id) && cursoresProductos.get(tienda.id) === null)) return
+  const tarea = (async () => {
+    try {
+      const pagina = await $catalogoPublico.listarProductos(tienda.id, cursoresProductos.get(tienda.id) ?? null)
+      if (revision !== revisionCatalogo) return
+      const anteriores = productosPorTienda.get(tienda.id) ?? []
+      const ids = new Set(anteriores.map(({ producto }) => producto.id))
+      productosPorTienda.set(tienda.id, [...anteriores, ...pagina.elementos.filter((producto) => !ids.has(producto.id)).map((producto) => ({ producto, tienda }))])
+      cursoresProductos.set(tienda.id, pagina.cursorSiguiente)
+      productos.value = tiendas.value.flatMap((item) => productosPorTienda.get(item.id) ?? [])
+      revisionPaginas.value++
+    } catch {
+      if (revision !== revisionCatalogo) return
+      erroresPorTienda.add(tienda.id)
+      tiendasConError.value = erroresPorTienda.size
+      revisionPaginas.value++
+    }
+  })()
+  cargasEnCurso.set(tienda.id, tarea)
+  try { await tarea } finally {
+    if (cargasEnCurso.get(tienda.id) === tarea) cargasEnCurso.delete(tienda.id)
+  }
+}
+
+async function cargarGrupo(cantidad: number, revision: number): Promise<void> {
+  const grupo = siguienteGrupo(cantidad)
+  await Promise.all(grupo.map((tienda) => cargarPaginaTienda(tienda, revision)))
+}
+
+async function cargarMas(): Promise<void> {
+  if (cargandoMas.value || !hayMasProductos.value) return
+  cargandoMas.value = true
+  try {
+    const revision = revisionCatalogo
+    const tienda = tiendas.value.find((item) => item.id === tiendaSeleccionada.value)
+    if (tienda) await cargarPaginaTienda(tienda, revision)
+    else await cargarGrupo(2, revision)
+  }
+  finally { cargandoMas.value = false }
 }
 
 async function cargar() {
+  revisionCatalogo++
+  const revision = revisionCatalogo
   cargando.value = true
   error.value = false
   tiendasConError.value = 0
-  tiendasProcesadas.value = 0
   productos.value = []
+  tiendas.value = []
+  cursoresProductos.clear()
+  productosPorTienda.clear()
+  cargasEnCurso.clear()
+  erroresPorTienda.clear()
+  indiceSiguienteTienda = 0
+  revisionPaginas.value++
   try {
     const [catalogosCargados, tiendasCargadas] = await Promise.all([
       $catalogoPublico.listarCatalogosPublicos(),
-      listarTodasLasTiendas(),
+      listarTodasLasTiendas(revision),
     ])
+    if (revision !== revisionCatalogo) return
     catalogos.value = catalogosCargados
     tiendas.value = tiendasCargadas
-
-    const acumulado: ProductoCatalogo[] = []
-    for (let inicio = 0; inicio < tiendasCargadas.length; inicio += 4) {
-      const grupo = tiendasCargadas.slice(inicio, inicio + 4)
-      const resultados = await Promise.all(grupo.map(async (tienda) => {
-        try {
-          return await listarProductosTienda(tienda)
-        } catch {
-          tiendasConError.value++
-          return []
-        }
-      }))
-      acumulado.push(...resultados.flat())
-      productos.value = [...acumulado]
-      tiendasProcesadas.value += grupo.length
-    }
-    productos.value = acumulado
+    if (tiendasCargadas.length) await cargarGrupo(2, revision)
   } catch {
-    error.value = true
+    if (revision === revisionCatalogo) error.value = true
   } finally {
-    cargando.value = false
+    if (revision === revisionCatalogo) cargando.value = false
   }
 }
+
+onUnmounted(() => {
+  revisionCatalogo++
+})
 
 function disponibilidad(valor: string) {
   if (valor === 'disponible') return 'Disponible'
@@ -187,21 +245,22 @@ onMounted(() => void cargar())
         <button v-if="busqueda || categoriaSeleccionada || tiendaSeleccionada || disponibilidadSeleccionada" class="limpiar" type="button" @click="limpiarFiltros">Limpiar filtros</button>
       </section>
 
-      <div class="resumen-catalogo" aria-live="polite">
-        <span>{{ productosFiltrados.length }} {{ productosFiltrados.length === 1 ? 'producto' : 'productos' }}</span>
+      <div v-if="!cargando" class="resumen-catalogo" aria-live="polite">
+        <span>{{ productosFiltrados.length }} {{ productosFiltrados.length === 1 ? 'producto mostrado' : 'productos mostrados' }}</span>
         <span v-if="busqueda || categoriaSeleccionada || tiendaSeleccionada || disponibilidadSeleccionada">con los filtros actuales</span>
+        <span v-if="filtrosActivos && hayMasProductos">El filtro considera lo cargado; puedes ampliar la búsqueda por páginas.</span>
       </div>
       <p v-if="tiendasConError && !cargando" class="aviso-parcial" role="status">No se pudo cargar el catálogo de {{ tiendasConError }} {{ tiendasConError === 1 ? 'tienda' : 'tiendas' }}. Los demás productos sí están disponibles.</p>
 
-      <p v-if="cargando" class="estado-catalogo" role="status">Cargando productos… {{ tiendasProcesadas }} de {{ tiendas.length }} tiendas revisadas.</p>
+      <p v-if="cargando" class="estado-catalogo" role="status">Cargando productos…</p>
       <div v-else-if="error" class="estado-catalogo estado-error" role="alert">
         <p>No pudimos cargar los productos. Revisa tu conexión e inténtalo otra vez.</p>
         <button class="accion-secundaria" type="button" @click="cargar">Reintentar</button>
       </div>
       <div v-else-if="!productosFiltrados.length" class="estado-catalogo estado-vacio">
         <span aria-hidden="true">🌼</span>
-        <h2>No encontramos productos</h2>
-        <p>{{ productos.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Todavía no hay productos publicados.' }}</p>
+        <h2>{{ hayMasProductos ? (filtrosActivos ? 'Sigue buscando en el catálogo' : 'Sigue explorando productos') : 'No encontramos productos' }}</h2>
+        <p>{{ hayMasProductos ? (filtrosActivos ? 'No hay coincidencias entre las páginas cargadas. Carga más para ampliar la búsqueda.' : 'Hay más tiendas y productos por cargar.') : productos.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Todavía no hay productos publicados.' }}</p>
         <button v-if="busqueda || categoriaSeleccionada || tiendaSeleccionada || disponibilidadSeleccionada" class="accion-secundaria" type="button" @click="limpiarFiltros">Limpiar filtros</button>
       </div>
       <div v-else class="rejilla-productos">
@@ -222,6 +281,9 @@ onMounted(() => void cargar())
             <strong>{{ precio(producto, tienda) }}</strong>
           </div>
         </article>
+      </div>
+      <div v-if="hayMasProductos && !cargando && !error" class="mas-productos">
+        <button class="accion-secundaria" type="button" :disabled="cargandoMas" @click="cargarMas">{{ cargandoMas ? 'Cargando más productos…' : tiendaSeleccionada ? 'Cargar más productos de esta tienda' : filtrosActivos ? 'Cargar más para ampliar la búsqueda' : 'Cargar más productos' }}</button>
       </div>
     </main>
   </div>
@@ -246,6 +308,9 @@ h1 { margin: 0; color: var(--amancay-bordo); font-family: 'DM Serif Display', Ge
 .limpiar, .accion-secundaria { min-height: 44px; padding: .65rem .9rem; border: 1px solid var(--amancay-borde); border-radius: 13px; background: var(--amancay-superficie); color: var(--amancay-bordo); font: inherit; font-weight: 700; cursor: pointer; }
 .resumen-catalogo { display: flex; gap: .35rem; margin: 1.2rem 0 .8rem; color: var(--amancay-tinta-suave); font-size: .88rem; }
 .resumen-catalogo span:first-child { color: var(--amancay-bordo); font-weight: 800; }
+.mas-productos { display: flex; justify-content: center; margin: 1.4rem 0 0; }
+.mas-productos .accion-secundaria { min-width: 220px; }
+.mas-productos .accion-secundaria:disabled { cursor: progress; opacity: .7; }
 .aviso-parcial { padding: .8rem 1rem; border-radius: 13px; background: #fff1dc; color: #6f421d; }
 .estado-catalogo { display: grid; justify-items: center; gap: .65rem; min-height: 220px; align-content: center; padding: 2rem; border: 1px dashed var(--amancay-borde); border-radius: 22px; color: var(--amancay-tinta-suave); text-align: center; }
 .estado-catalogo p, .estado-catalogo h2 { margin: 0; }

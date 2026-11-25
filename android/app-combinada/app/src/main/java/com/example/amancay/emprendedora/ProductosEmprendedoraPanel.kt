@@ -955,9 +955,10 @@ private fun EditorProductoEmprendedora(
     onSave: (ProductoSolicitud, ImagenSeleccionadaProducto?, Map<String, ImagenSeleccionadaProducto>, Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val editorInstanceKey = if (original == null) "alta" else "producto:${original.id}:${original.versionEsperada}"
     val puedeContinuar = if (enviando) false else true
-    val borradorGuardado = remember(context, tiendaId, original?.id) { if (original == null) leerBorradorAlta(context, tiendaId) else null }
-    val valoresDefecto = remember(context, tiendaId, original?.id) { PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, tiendaId) }
+    val borradorGuardado = remember(context, tiendaId, editorInstanceKey) { if (original == null) leerBorradorAlta(context, tiendaId) else null }
+    val valoresDefecto = remember(context, tiendaId, editorInstanceKey) { PreferenciasCatalogoEmprendedora.leerValoresDefecto(context, tiendaId) }
     val ordenTiposApp = listOf(
         "alimento_reposteria", "artesania_manualidad", "plantas", "producto_agricola",
         "vestuario", "accesorio", "cosmetica_natural"
@@ -972,29 +973,29 @@ private fun EditorProductoEmprendedora(
     val initialCategory = original?.categoriaId
         ?: borradorGuardado?.categoriaId?.takeIf { id -> categorias.any { it.id == id && it.activo && it.tipoProductoId == initialTipo } }
         ?: categoriaInicialPorTipo
-    var tipoId by remember(original?.id) { mutableStateOf(initialTipo) }
-    var categoriaId by remember(original?.id) { mutableStateOf(initialCategory) }
-    var nombre by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.nombre ?: original?.nombre.orEmpty()) }
-    var descripcion by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.descripcion ?: original?.descripcion.orEmpty()) }
-    var modalidad by remember(original?.id) { mutableStateOf(borradorGuardado?.modalidad ?: original?.modalidad ?: valoresDefecto.modalidad) }
-    var manejaStock by remember(original?.id) { mutableStateOf(borradorGuardado?.manejaStock ?: original?.manejaStock ?: if (valoresDefecto.modalidad == "pieza_unica") true else valoresDefecto.manejaStock) }
-    var alAgotarse by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.alAgotarse ?: original?.alAgotarse ?: valoresDefecto.alAgotarse) }
-    var precioBase by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.precio ?: original?.precioBase?.toString().orEmpty()) }
-    var stockInicial by remember(original?.id) { mutableStateOf(borradorGuardado?.stock ?: original?.stock?.toString().orEmpty()) }
-    var paso by remember(original?.id) { mutableIntStateOf(borradorGuardado?.paso ?: 1) }
-    val fotoLocal = remember(original?.id) { DraftState().apply { photoUri = borradorGuardado?.foto?.let(Uri::parse); fotoLista = photoUri != null } }
-    val estadoFoto = remember(original?.id) { EstadoFotoProducto(borradorGuardado) }
+    var tipoId by remember(editorInstanceKey) { mutableStateOf(initialTipo) }
+    var categoriaId by remember(editorInstanceKey) { mutableStateOf(initialCategory) }
+    var nombre by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.nombre ?: original?.nombre.orEmpty()) }
+    var descripcion by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.descripcion ?: original?.descripcion.orEmpty()) }
+    var modalidad by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.modalidad ?: original?.modalidad ?: valoresDefecto.modalidad) }
+    var manejaStock by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.manejaStock ?: original?.manejaStock ?: if (valoresDefecto.modalidad == "pieza_unica") true else valoresDefecto.manejaStock) }
+    var alAgotarse by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.alAgotarse ?: original?.alAgotarse ?: valoresDefecto.alAgotarse) }
+    var precioBase by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.precio ?: original?.precioBase?.toString().orEmpty()) }
+    var stockInicial by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.stock ?: original?.stock?.toString().orEmpty()) }
+    var paso by remember(editorInstanceKey) { mutableIntStateOf(borradorGuardado?.paso ?: 1) }
+    val fotoLocal = remember(editorInstanceKey) { DraftState().apply { photoUri = borradorGuardado?.foto?.let(Uri::parse); fotoLista = photoUri != null } }
+    val estadoFoto = remember(editorInstanceKey) { EstadoFotoProducto(borradorGuardado) }
     var camaraProductoVisible by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var capturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
     var varianteConFotoTemporal by remember { mutableStateOf<String?>(null) }
     var varianteCapturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
-    var imagenPrivada by remember(original?.id, original?.imagenes) { mutableStateOf<Bitmap?>(null) }
-    var cargandoVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf(false) }
-    var errorVistaPrevia by remember(original?.id, original?.imagenes) { mutableStateOf<String?>(null) }
-    var archivoId by remember(original?.id) { mutableStateOf(borradorGuardado?.archivoId ?: UUID.randomUUID().toString()) }
+    var imagenPrivada by remember(editorInstanceKey, original?.imagenes) { mutableStateOf<Bitmap?>(null) }
+    var cargandoVistaPrevia by remember(editorInstanceKey, original?.imagenes) { mutableStateOf(false) }
+    var errorVistaPrevia by remember(editorInstanceKey, original?.imagenes) { mutableStateOf<String?>(null) }
+    var archivoId by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.archivoId ?: UUID.randomUUID().toString()) }
     var error by remember { mutableStateOf<String?>(null) }
-    var variantes by remember(original?.id, original?.versionEsperada) {
+    var variantes by remember(editorInstanceKey) {
         mutableStateOf(original?.variantes?.map { v ->
             VarianteBorrador(v.id, v.opciones, v.precio.toString(), v.stock?.toString().orEmpty(), v.activa, true, imagen = v.imagen)
         } ?: borradorGuardado?.variantes.orEmpty())
@@ -1088,10 +1089,10 @@ private fun EditorProductoEmprendedora(
         if (original == null) context.getSharedPreferences("borradores_productos", Context.MODE_PRIVATE).edit().remove(tiendaId).apply()
         onCancel()
     }
-    var atributos by remember(original?.id, original?.versionEsperada) { mutableStateOf(borradorGuardado?.atributos ?: original?.atributosEspecificos.orEmpty()) }
-    var tipoHistorico by remember(original?.id, original?.versionEsperada) { mutableStateOf<TipoProductoEmprendedora?>(null) }
-    var falloTipoHistorico by remember(original?.id) { mutableStateOf<String?>(null) }
-    LaunchedEffect(tiendaId, original?.id, original?.imagenes) {
+    var atributos by remember(editorInstanceKey) { mutableStateOf(borradorGuardado?.atributos ?: original?.atributosEspecificos.orEmpty()) }
+    var tipoHistorico by remember(editorInstanceKey) { mutableStateOf<TipoProductoEmprendedora?>(null) }
+    var falloTipoHistorico by remember(editorInstanceKey) { mutableStateOf<String?>(null) }
+    LaunchedEffect(tiendaId, editorInstanceKey, original?.imagenes) {
         val producto = original?.takeIf { it.imagenes.isNotEmpty() } ?: return@LaunchedEffect
         cargandoVistaPrevia = true
         errorVistaPrevia = null
@@ -1105,7 +1106,7 @@ private fun EditorProductoEmprendedora(
             cargandoVistaPrevia = false
         }
     }
-    LaunchedEffect(tiendaId, original?.id, original?.imagenes, variantes.map { it.id to it.imagen }) {
+    LaunchedEffect(tiendaId, editorInstanceKey, original?.imagenes, variantes.map { it.id to it.imagen }) {
         val producto = original ?: return@LaunchedEffect
         variantes = cargarFotosVariantesPrivadas(repository, tiendaId, producto, variantes)
     }
@@ -1122,7 +1123,7 @@ private fun EditorProductoEmprendedora(
     } else tipoActual
     val campos = tipo?.campos.orEmpty()
     val opciones = tipo?.opcionesVariante.orEmpty()
-    var conVariantes by remember(original?.id) {
+    var conVariantes by remember(editorInstanceKey) {
         mutableStateOf(borradorGuardado?.conVariantes ?: original?.tieneVariantes ?: (tipos.firstOrNull { it.id == tipoId }?.opcionesVariante?.isNotEmpty() ?: false))
     }
     val categoriasDisponibles = categorias.filter {
@@ -1133,12 +1134,12 @@ private fun EditorProductoEmprendedora(
             categoriaId = categoriasDisponibles.firstOrNull()?.id.orEmpty()
         }
     }
-    var identidadAlta by remember(original?.id) { mutableStateOf(identidadAltaInicial(borradorGuardado)) }
-    val operacionIdEdicion = remember(original?.id, original?.versionEsperada, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) {
+    var identidadAlta by remember(editorInstanceKey) { mutableStateOf(identidadAltaInicial(borradorGuardado)) }
+    val operacionIdEdicion = remember(editorInstanceKey, nombre, descripcion, tipoId, categoriaId, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, atributos, variantes) {
         UUID.randomUUID().toString()
     }
     val operacionId = if (original == null) identidadAlta.operacionId else operacionIdEdicion
-    var confirmarDescarte by rememberSaveable(original?.id) { mutableStateOf(false) }
+    var confirmarDescarte by rememberSaveable(editorInstanceKey) { mutableStateOf(false) }
     fun guardarLocalYSalir() {
         if (original == null) {
             guardarBorradorAlta(
@@ -1183,11 +1184,11 @@ private fun EditorProductoEmprendedora(
             estadoFoto.procesandoPreviaSeleccionada = false
         }
     }
-    LaunchedEffect(original?.id, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta, estadoFoto.mejorarLuz) {
+    LaunchedEffect(editorInstanceKey, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta, estadoFoto.mejorarLuz) {
         if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz))
     }
 
-    LaunchedEffect(tipoId, original?.id) {
+    LaunchedEffect(tipoId, editorInstanceKey) {
         if (original == null && (borradorGuardado == null || tipoId != borradorGuardado.tipoId)) {
             atributos = emptyMap()
             conVariantes = opciones.isNotEmpty()

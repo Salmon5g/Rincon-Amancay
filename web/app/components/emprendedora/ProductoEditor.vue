@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { cargarCuentaEmprendedora, leerTipoProductoEmprendedora, listarTiposProductoEmprendedora, type CuentaEmprendedoraWeb, type ProductoEmprendedoraWeb, type TipoProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
+import { leerProductoEmprendedora, leerTipoProductoEmprendedora, listarTiposProductoEmprendedora, type CuentaEmprendedoraWeb, type ProductoEmprendedoraWeb, type TipoProductoEmprendedoraWeb } from '~/repositories/firebase/emprendedora'
 import type { ServiciosCliente, Operacion } from '~/lib/cliente-base'
 import type { ElementoEtiqueta } from '~/repositories/catalogo-publico'
 import { enteroNoNegativoFormulario, textoNumericoFormulario, type ValorNumericoFormulario } from '~/lib/numeros-producto'
@@ -652,13 +652,15 @@ async function cargarFormulario() {
   error.value = ''
   try {
     const servicio = cliente()
-    const [tiposDisponibles, catalogos] = await Promise.all([
+    const [tiposDisponibles, catalogos, original] = await Promise.all([
       listarTiposProductoEmprendedora(servicio.firebase as ServiciosCliente),
       $catalogoPublico.listarCatalogosPublicos(),
+      props.productoId
+        ? leerProductoEmprendedora(servicio.firebase as ServiciosCliente, props.cuenta.tienda.id, props.cuenta.tienda.mostrarPrecios, props.productoId)
+        : Promise.resolve(null),
     ])
     tipos.value = tiposDisponibles
     categorias.value = catalogos.categorias
-    const original = props.productoId ? props.cuenta.productos.find((producto) => producto.id === props.productoId) : null
     productoOriginal.value = original ?? null
     idProductoActivo.value = original?.id ?? null
     versionEsperada.value = original?.versionEsperada ?? ''
@@ -802,9 +804,12 @@ async function descartarAvance() {
 }
 
 async function releerProducto(servicio: ReturnType<typeof cliente>, productoId: string, mensaje: string) {
-  const actualizada = await cargarCuentaEmprendedora(servicio.firebase as ServiciosCliente, props.cuenta.uid)
-  const producto = actualizada.productos.find((elemento) => elemento.id === productoId)
-  if (!producto) throw new Error(mensaje)
+  let producto: ProductoEmprendedoraWeb
+  try {
+    producto = await leerProductoEmprendedora(servicio.firebase as ServiciosCliente, props.cuenta.tienda.id, props.cuenta.tienda.mostrarPrecios, productoId)
+  } catch {
+    throw new Error(mensaje)
+  }
   productoOriginal.value = producto
   versionEsperada.value = producto.versionEsperada
   return producto

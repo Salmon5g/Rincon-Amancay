@@ -403,10 +403,6 @@ fun ModoEmprendedoraConectada(
         }
     }
 
-    DisposableEffect(productosRepository, sesion.tiendaId) {
-        productosRepository.observar(sesion.tiendaId)
-        onDispose { productosRepository.cerrar() }
-    }
     LaunchedEffect(productosRepository, sesion.tiendaId) {
         runCatching { productosRepository.restaurarAvisosContacto(sesion.tiendaId) }
     }

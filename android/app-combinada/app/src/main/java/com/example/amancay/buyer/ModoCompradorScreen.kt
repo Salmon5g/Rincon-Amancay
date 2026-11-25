@@ -62,6 +62,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -119,8 +122,27 @@ fun ModoCompradorScreen(
     feriaIdPush: String? = null,
     alConsumirFeriaPush: () -> Unit = {}
 ) {
+    val ciclo = LocalLifecycleOwner.current
+    DisposableEffect(repositorio, ciclo) {
+        val observador = LifecycleEventObserver { _, evento ->
+            when (evento) {
+                Lifecycle.Event.ON_START -> repositorio.iniciar()
+                Lifecycle.Event.ON_STOP -> repositorio.pausar()
+                else -> Unit
+            }
+        }
+        ciclo.lifecycle.addObserver(observador)
+        if (ciclo.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) repositorio.iniciar()
+        onDispose {
+            ciclo.lifecycle.removeObserver(observador)
+            repositorio.pausar()
+        }
+    }
     val productos by repositorio.productos.collectAsState()
     val cargando by repositorio.cargando.collectAsState()
+    val cargandoProductos by repositorio.cargandoProductos.collectAsState()
+    val hayMasProductos by repositorio.hayMasProductos.collectAsState()
+    val productoDetalle by repositorio.productoEnDetalle.collectAsState()
     val error by repositorio.error.collectAsState()
     val directorio by repositorio.directorio.collectAsState()
     val asociaciones by repositorio.asociaciones.collectAsState()
@@ -169,6 +191,17 @@ fun ModoCompradorScreen(
     var mostrarAyuda by remember { mutableStateOf(false) }
     val objetivosGuia = remember { mutableStateMapOf<PestanaComprador, Rect>() }
     var objetivoAyudaGuia by remember { mutableStateOf<Rect?>(null) }
+
+    DisposableEffect(repositorio, productoSeleccionado?.tiendaId, productoSeleccionado?.id) {
+        productoSeleccionado?.let(repositorio::observarDetalle)
+        onDispose { repositorio.cerrarDetalle() }
+    }
+
+    LaunchedEffect(pestana, directorio, productos) {
+        if ((pestana == PestanaComprador.INICIO || pestana == PestanaComprador.EXPLORAR) && productos.isEmpty() && directorio.isNotEmpty()) {
+            repositorio.cargarMasProductos()
+        }
+    }
 
     suspend fun actualizarRespuestas(consultas: List<ConsultaSeguida>, maximo: Int? = null): List<ConsultaSeguida> {
         val pendientes = consultas.filter { it.respuesta == null }.let { if (maximo == null) it else it.take(maximo) }
@@ -711,6 +744,9 @@ fun ModoCompradorScreen(
                 categoriaSeleccionada = categoriaSeleccionada,
                 alSeleccionarCategoria = { categoriaSeleccionada = it },
                 alAbrirProducto = { productoSeleccionado = it },
+                cargandoMas = cargandoProductos,
+                hayMasProductos = hayMasProductos,
+                alCargarMas = { repositorio.cargarMasProductos() },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(inset)
@@ -908,7 +944,12 @@ fun ModoCompradorScreen(
             usuarioId = uid,
             firestore = firestore,
             alCerrar = { mostrarDirectorio = false; asociacionInicialId = null },
-            alAbrir = { tiendaSeleccionada = it; mostrarDirectorio = false; asociacionInicialId = null },
+            alAbrir = {
+                tiendaSeleccionada = it
+                mostrarDirectorio = false
+                asociacionInicialId = null
+                repositorio.cargarProductos(it)
+            },
             alPedirInicioSesion = { asociacionId, nombre ->
                 pedirInicioSesionParaSeguir("asociacion", asociacionId, nombre)
             }
@@ -920,6 +961,9 @@ fun ModoCompradorScreen(
             tipo = tiposEmprendimiento[tienda.tipoId].orEmpty(),
             sector = sectores[tienda.sectorId].orEmpty(),
             productos = productos.filter { it.tiendaId == tienda.id },
+            cargandoProductos = cargandoProductos,
+            hayMasProductos = repositorio.tieneMasProductos(tienda.id),
+            alCargarMas = { repositorio.cargarMasProductos(tienda.id) },
             usuarioId = uid,
             firestore = firestore,
             alPedirInicioSesion = { pedirInicioSesionParaSeguir("tienda", tienda.id, tienda.nombre) },
@@ -945,21 +989,25 @@ fun ModoCompradorScreen(
         )
     }
     productoSeleccionado?.let { seleccionado ->
-        val producto = productos.firstOrNull { it.id == seleccionado.id && it.tiendaId == seleccionado.tiendaId } ?: seleccionado
+        val producto = productoDetalle?.takeIf { it.id == seleccionado.id && it.tiendaId == seleccionado.tiendaId }
+            ?: productos.firstOrNull { it.id == seleccionado.id && it.tiendaId == seleccionado.tiendaId }
+            ?: seleccionado
         DialogoDetalleProducto(
             producto = producto,
             calificacionesActivas = directorio.firstOrNull { it.id == producto.tiendaId }?.calificacionesHabilitadas == true,
             usuarioId = uid,
             firestore = firestore,
-            alCerrar = { productoSeleccionado = null },
+            alCerrar = { productoSeleccionado = null; repositorio.cerrarDetalle() },
             alEncargar = { varianteElegida ->
                 productoSeleccionado = null
+                repositorio.cerrarDetalle()
                 val tienda = directorio.firstOrNull { it.id == producto.tiendaId }
                 if (tienda == null) avisoContacto = "No encontramos los datos públicos de contacto de esta tienda."
                 else contactar(tienda, producto.nombre, varianteElegida)
             },
             alVerProductoCompleto = {
                 productoSeleccionado = null
+                repositorio.cerrarDetalle()
                 abrirEnlace(Uri.parse(com.example.amancay.ui.EnlacesPublicos.producto(producto.tiendaId, producto.id)))
             }
         )
@@ -1082,7 +1130,7 @@ private fun PantallaInicio(
             }
 
             productos.isEmpty() -> item {
-                MensajeCatalogo("Aún no hay productos publicados para comprar.")
+                MensajeCatalogo("Abre Explorar o elige un emprendimiento para cargar productos en páginas.")
             }
 
             filtrados.isEmpty() -> item {
@@ -1155,6 +1203,9 @@ private fun PantallaExplorar(
     categoriaSeleccionada: String?,
     alSeleccionarCategoria: (String?) -> Unit,
     alAbrirProducto: (ProductoCatalogoComprador) -> Unit,
+    cargandoMas: Boolean,
+    hayMasProductos: Boolean,
+    alCargarMas: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -1208,6 +1259,16 @@ private fun PantallaExplorar(
                 productos = filtrados,
                 alAbrir = alAbrirProducto
             )
+        }
+        if (hayMasProductos) item {
+            TextButton(
+                onClick = alCargarMas,
+                enabled = !cargandoMas,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (cargandoMas) CircularProgressIndicator(Modifier.size(18.dp), color = AmancayBordo)
+                else Text("Cargar más productos", color = AmancayBordo, fontWeight = FontWeight.SemiBold)
+            }
         }
         item { Spacer(Modifier.height(8.dp)) }
     }
