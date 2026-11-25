@@ -20,7 +20,7 @@ function inicializar(nombre: string) {
 export type FirebaseLocal = ReturnType<typeof inicializar>;
 // Cache en globalThis para conservar la conexión durante HMR de Nuxt.
 const runtime = globalThis as typeof globalThis & { __amancayLocal?: Map<string, FirebaseLocal> };
-export function obtenerFirebaseLocal(nombre = 'rincon-amancay-web-local'): FirebaseLocal {
+export function obtenerFirebaseLocal(nombre = 'amancay-web-local'): FirebaseLocal {
   const cache = runtime.__amancayLocal ??= new Map();
   const existing = cache.get(nombre);
   if (existing) return existing;

@@ -1,6 +1,6 @@
 # Demo del administrador contra Firebase real
 
-Este modo usa Authentication, Firestore y Firebase Admin del proyecto `rincon-amancay` y ejecuta la API en el computador del responsable. No usa emuladores ni requiere Blaze para esa ejecución local. La API escucha solo en `127.0.0.1`; otros computadores no pueden conectarse directamente. El proveedor para una futura URL HTTPS compartida aún debe decidirse por el grupo; se ha mencionado Railway u otro servicio compatible. No desplegar en Cloud Run sin un nuevo acuerdo sobre costos.
+Este modo usa Authentication, Firestore y Firebase Admin del proyecto configurado explícitamente en `backend/.env.compartido.local`. Configura `AMANCAY_PROJECT_ID` y `AMANCAY_PROJECT_ID_ESPERADO` con el mismo ID del proyecto nuevo. No copies valores de una instalación anterior.
 
 ## Preparar la identidad local
 
@@ -8,7 +8,9 @@ Instala Google Cloud CLI y autentica la cuenta que tiene acceso IAM al proyecto:
 
 ```powershell
 gcloud auth application-default login
-gcloud config set project rincon-amancay
+$env:AMANCAY_PROJECT_ID = Read-Host 'ID del proyecto Firebase nuevo'
+$env:AMANCAY_PROJECT_ID_ESPERADO = $env:AMANCAY_PROJECT_ID
+gcloud config set project $env:AMANCAY_PROJECT_ID
 ```
 
 La identidad de Google Cloud que ejecuta el backend necesita permisos IAM para Firestore (por ejemplo, `roles/datastore.user`) y para administrar usuarios de Authentication. La desactivación/reactivación usa `getUser`, `updateUser` y revocación de tokens; concede el rol de Identity Toolkit adecuado o un rol personalizado de menor privilegio con los permisos requeridos (`firebaseauth.users.get` y `firebaseauth.users.update`). El rol `administrador` en `accesos/{uid}` autoriza a la persona usuaria dentro de la aplicación; no reemplaza los permisos IAM de la identidad del proceso backend. No crear ni compartir claves de cuenta de servicio.
@@ -22,7 +24,7 @@ Copy-Item backend/.env.compartido.local.example backend/.env.compartido.local
 npm.cmd --prefix backend run start:compartido:local
 ```
 
-La configuración fija el proyecto y el bucket esperados, limita CORS a localhost y prohíbe variables de emulador. El endpoint `http://localhost:8080/health` debe mostrar `entorno: compartido` y `proyecto: rincon-amancay`.
+La configuración fija el proyecto esperado, limita CORS a localhost y prohíbe variables de emulador. El endpoint `http://localhost:8080/health` debe mostrar `entorno: compartido` y el ID nuevo que configuraste.
 
 ## Conectar el panel
 

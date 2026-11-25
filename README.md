@@ -2,14 +2,14 @@
 
 Aplicación web y Android para el catálogo de emprendedoras de la feria Rincón Amancay. El proyecto utiliza Firebase Authentication y Firestore como identidad y base compartida; la API autenticada local realiza las operaciones privilegiadas y Supabase Storage guarda las imágenes.
 
-La web pública está en [rincon-amancay.web.app](https://rincon-amancay.web.app). Para probar la integración completa con una API local, ejecuta también la web en tu computador: una web publicada no puede conectarse a la API `localhost` de otro integrante.
+El Hosting del proyecto nuevo se configurará al registrar la app web. Para probar la integración completa con una API local, ejecuta también la web en tu computador: una web publicada no puede conectarse a la API `localhost` de otro integrante.
 
 ## Qué está conectado
 
 - **Web Nuxt:** el catálogo comprador lee tiendas, productos y variantes públicos de Firestore, sin exigir inicio de sesión. Convierte las rutas `catalogo/...` en URLs públicas de Supabase. El panel `/admin` lee y escribe mediante la API autenticada en modo `real-api`.
 - **Android unificado:** está en `android/app-combinada`. El comprador lee el catálogo público e imágenes; la emprendedora inicia sesión con Firebase Auth, valida rol y tienda, edita la ficha, crea y edita productos, carga fotos privadas, ve su vista previa, publica/retira y ajusta stock. La huella es opcional y desbloquea la sesión guardada en el dispositivo.
 - **API local:** opera sobre el Firebase real mediante ADC y las políticas de Storage de Supabase. Autoriza cada operación con el ID token de Firebase. Administra, entre otros, productos, publicación, imágenes y stock. Escucha solo en el propio computador; no está desplegada en una URL compartida.
-- **Datos comunes:** web y Android leen/escriben el mismo proyecto `rincon-amancay`. Las imágenes originales permanecen privadas en Supabase; al publicar, la API crea derivadas WebP públicas y Firestore guarda sus rutas.
+- **Datos comunes:** web y Android leen/escriben el proyecto Firebase configurado para el entorno. Las imágenes originales permanecen privadas en Supabase; al publicar, la API crea derivadas WebP públicas y Firestore guarda sus rutas.
 
 El modelo de datos sigue siendo provisional. Coordina cambios de colecciones, campos y estados entre web, Android, API y contratos. Las ventas y las invitaciones a ferias en la app todavía no están conectadas a Firestore.
 
@@ -43,7 +43,9 @@ La API usa Firebase Admin y requiere que la identidad de Google Cloud tenga perm
 
 ```powershell
 gcloud auth application-default login
-gcloud config set project rincon-amancay
+$env:AMANCAY_PROJECT_ID = Read-Host 'ID del proyecto Firebase nuevo'
+$env:AMANCAY_PROJECT_ID_ESPERADO = $env:AMANCAY_PROJECT_ID
+gcloud config set project $env:AMANCAY_PROJECT_ID
 ```
 
 Completa el consentimiento en el navegador con tu propia cuenta Google autorizada por el responsable del proyecto. La contraseña de Firebase Authentication no concede permisos a la API: el propietario del proyecto debe otorgar a cada integrante los permisos IAM necesarios para que Firebase Admin acceda a Firestore y Authentication. Si la API informa `EADDRINUSE`, ya hay algo usando el puerto 8080; comprueba que sea la API de este proyecto antes de continuar. No generes ni compartas claves JSON de cuentas de servicio.
@@ -70,7 +72,7 @@ En una terminal desde la raíz:
 npm.cmd --prefix backend run start:compartido:local
 ```
 
-Déjala abierta. Comprueba `http://localhost:8080/health`; debe responder con estado `ok`, entorno `compartido` y proyecto `rincon-amancay`. No arranques emuladores ni ejecutes `seed`, scripts demo o pruebas automatizadas mientras trabajas con este modo. Si el puerto 8080 ya está ocupado, comprueba si la API correcta ya está activa antes de iniciar otra instancia.
+Déjala abierta. Comprueba `http://localhost:8080/health`; debe responder con estado `ok`, entorno `compartido` y el mismo ID de proyecto que configuraste. No arranques emuladores ni ejecutes `seed`, scripts demo o pruebas automatizadas mientras trabajas con este modo. Si el puerto 8080 ya está ocupado, comprueba si la API correcta ya está activa antes de iniciar otra instancia.
 
 ### 5. Configurar y arrancar la web
 
@@ -82,7 +84,7 @@ if (!(Test-Path web/.env)) {
 }
 ```
 
-Completa las variables `NUXT_PUBLIC_FIREBASE_*` con la configuración de la aplicación web del proyecto Firebase `rincon-amancay`. Para permitir operaciones desde el panel local, asegúrate de tener:
+Completa las variables `NUXT_PUBLIC_FIREBASE_*` con la configuración de la aplicación web del proyecto nuevo. `NUXT_PUBLIC_FIREBASE_PROJECT_ID` debe coincidir con `NUXT_PUBLIC_FIREBASE_PROJECT_ID_ESPERADO`. Para permitir operaciones desde el panel local, asegúrate de tener:
 
 ```ini
 NUXT_PUBLIC_FIREBASE_MODO=real-api
@@ -153,6 +155,6 @@ firebase.json            Configuración Firebase y Hosting
 
 No subas `.env`, `.env.compartido.local`, `google-services.json`, contraseñas, claves de cuentas de servicio ni credenciales de Supabase. La configuración web de Firebase identifica el cliente; nunca sustituye Authentication, las reglas ni IAM del backend.
 
-Las pruebas automatizadas y semillas pueden reponer datos ficticios. No las ejecutes contra el proyecto Firebase compartido `rincon-amancay`. La carga cloud ficticia solo se permite en el proyecto separado de desarrollo descrito en [Entrega 4 — Capa de datos](docs/Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/6-capa-datos-y-datos-prueba.md). Las instrucciones para el modelo y las operaciones están en [contratos](contratos/README.md), [integración de equipos](docs/integracion-equipos.md) y [reglas Firebase](firebase/README.md).
+Las pruebas automatizadas y semillas pueden reponer datos ficticios. No las ejecutes contra ningún proyecto compartido con datos reales. La carga cloud ficticia solo se permite en un proyecto separado de desarrollo descrito en [Entrega 4 — Capa de datos](docs/Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/6-capa-datos-y-datos-prueba.md). Las instrucciones para el modelo y las operaciones están en [contratos](contratos/README.md), [integración de equipos](docs/integracion-equipos.md) y [reglas Firebase](firebase/README.md).
 
 Los entregables y el informe de la Entrega 4 están en [docs/Entrega 4 — Acceso, administración y tienda](docs/Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/README.md), incluido el [informe consolidado en Word](docs/Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/informe-entrega-4.docx).

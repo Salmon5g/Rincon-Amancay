@@ -8,7 +8,7 @@ const TAMANO_PAGINA = 50;
 const PROYECTO = exigirEntornoCompartido(process.env);
 const [modo, proyectoConfirmado, ...argumentosExtra] = process.argv.slice(2);
 if (argumentosExtra.length || !['--dry-run', '--aplicar'].includes(modo ?? '') || proyectoConfirmado !== PROYECTO) {
-  throw new Error('Uso: npm run catalogo:sincronizar-stock-publico -- --dry-run|--aplicar rincon-amancay');
+  throw new Error('Uso: npm run catalogo:sincronizar-stock-publico -- --dry-run|--aplicar <ID_PROYECTO_CONFIRMADO>');
 }
 
 const aplicar = modo === '--aplicar';

@@ -9,4 +9,4 @@ Documentación de los entregables técnicos 5, 6 y 7. Describe las reglas de seg
 | 6. Capa de datos y carga de datos ficticios | [6-capa-datos-y-datos-prueba.md](6-capa-datos-y-datos-prueba.md) | Las operaciones Firestore de la interfaz web y Android están centralizadas en repositorios. Hay seed local y un procedimiento restringido para una instancia Firebase de desarrollo separada. |
 | 7. Presentación del modelo Firestore | [7-modelo-datos-firestore.pptx](7-modelo-datos-firestore.pptx) | Presenta colecciones, relaciones, privacidad, índices y la demostración de conexión. La diapositiva de ferias refleja la consulta actual de Android. |
 
-No ejecutar la semilla de desarrollo en `rincon-amancay`: ese proyecto es el entorno compartido y no es el destino de fixtures. No se incluyen contraseñas, claves ni archivos de configuración locales.
+No ejecutar la semilla de desarrollo en el proyecto Firebase compartido; no es el destino de fixtures. No se incluyen contraseñas, claves ni archivos de configuración locales.

@@ -12,7 +12,7 @@ export function obtenerFirebaseCliente(config: FirebaseOptions) {
   for (const campo of ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'appId'] as const) {
     if (!config[campo]) throw new Error(`Falta configuración Firebase: ${campo}`);
   }
-  const nombre = 'rincon-amancay-web';
+  const nombre = 'amancay-web';
   const app = getApps().some((actual) => actual.name === nombre)
     ? getApp(nombre)
     : initializeApp(config, nombre);

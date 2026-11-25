@@ -13,8 +13,12 @@ export default defineNuxtPlugin(() => {
   const modo = config.firebaseModo;
   if (!['local', 'real-lectura', 'real-api'].includes(modo)) throw new Error('FIREBASE_MODO debe ser local, real-lectura o real-api.');
   if (modo === 'local' && !import.meta.dev) throw new Error('Los emuladores solo se usan en desarrollo.');
-  if (modo !== 'local' && config.firebaseProjectId !== 'rincon-amancay') {
-    throw new Error('El entorno real debe usar rincon-amancay.');
+  if (modo !== 'local') {
+    const projectId = String(config.firebaseProjectId ?? '').trim();
+    const expectedProjectId = String(config.firebaseProjectIdEsperado ?? '').trim();
+    if (!projectId || !expectedProjectId || projectId !== expectedProjectId || projectId.startsWith('demo-')) {
+      throw new Error('Configura el ID del nuevo proyecto Firebase y repítelo como ID esperado.');
+    }
   }
   const firebase = modo === 'local' ? obtenerFirebaseLocal() : obtenerFirebaseCliente({
     apiKey: config.firebaseApiKey, authDomain: config.firebaseAuthDomain,
@@ -30,7 +34,7 @@ export default defineNuxtPlugin(() => {
   const clienteApi = modo === 'local'
     ? crearClienteLocal(firebase)
     : modo === 'real-api'
-      ? crearClienteCompartido(firebase, { apiUrl: config.apiUrl, permitirHttpLocal: import.meta.dev })
+      ? crearClienteCompartido(firebase, { apiUrl: config.apiUrl, projectIdEsperado: config.firebaseProjectIdEsperado, permitirHttpLocal: import.meta.dev })
       : undefined;
   const amancay = clienteApi ? { ...clienteApi, ...lecturas } : lecturas;
   const accesoComprador = crearAccesoComprador(firebase, clienteApi?.llamar);

@@ -7,7 +7,7 @@ import { construirProyeccionAsociacionPublica } from '../src/modules/proyeccione
 const PROYECTO = exigirEntornoCompartido(process.env);
 const [modo, proyectoConfirmado, ...extras] = process.argv.slice(2);
 if (extras.length || !['--dry-run', '--aplicar'].includes(modo ?? '') || proyectoConfirmado !== PROYECTO) {
-  throw new Error('Uso: npm run asociaciones:sincronizar-publicas -- --dry-run|--aplicar rincon-amancay');
+  throw new Error('Uso: npm run asociaciones:sincronizar-publicas -- --dry-run|--aplicar <ID_PROYECTO_CONFIRMADO>');
 }
 const aplicar = modo === '--aplicar';
 const app = initializeApp({ projectId: PROYECTO, credential: applicationDefault() }, `sincronizar-asociaciones-${randomUUID()}`);

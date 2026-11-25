@@ -60,7 +60,7 @@ Los errores de versión (`conflicto`) requieren actualizar los datos antes de vo
 - Los listados de esta primera versión están limitados a 200 asociaciones, integrantes y cuentas candidatas por solicitud; superar el límite devuelve error y requiere implementar paginación.
 - `logoUrl` es una referencia HTTPS. La carga y eliminación de archivos en Firebase Storage todavía no está implementada en este módulo.
 - Las mutaciones administrativas regeneran la proyección pública; publicar/retirar o editar una tienda actualiza los enlaces de sus asociaciones.
-- Para materializar el estado ya existente, `npm.cmd --prefix backend run catalogo:sincronizar-vistas-publicas -- --dry-run rincon-amancay` simula la creación de proyecciones de asociaciones y tiendas. Revisar el resumen antes de ejecutar con `--aplicar`.
+- Para materializar el estado ya existente, `npm.cmd --prefix backend run catalogo:sincronizar-vistas-publicas -- --dry-run TU_PROJECT_ID` simula la creación de proyecciones de asociaciones y tiendas. Revisar el resumen antes de ejecutar con `--aplicar`.
 
 ## Evolución
 

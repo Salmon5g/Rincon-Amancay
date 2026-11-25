@@ -4,7 +4,7 @@
 
 La identidad y autorización de la aplicación se mantienen en Firebase Authentication y Firestore. Las fotos, logos y derivadas visibles del catálogo se gestionan en Supabase Storage.
 
-El 1 de noviembre de 2026 se consultó el release activo de reglas de `rincon-amancay` mediante Firebase Rules API. El release `projects/rincon-amancay/releases/cloud.firestore` apunta al ruleset `4005f7fb-84a4-43ce-bedc-166b2ae2431c`, y su contenido coincide con `firebase/firestore.rules`. Por tanto, las reglas de Firestore de este repositorio están publicadas en ese proyecto.
+El 1 de noviembre de 2026 se consultó el release activo de reglas de `TU_PROJECT_ID` mediante Firebase Rules API. El release `projects/TU_PROJECT_ID/releases/cloud.firestore` apunta al ruleset `<RULESET_ANTERIOR>`, y su contenido coincide con `firebase/firestore.rules`. Por tanto, las reglas de Firestore de este repositorio están publicadas en ese proyecto.
 
 El grupo confirmó que ejecutó `infra/supabase/storage-imagenes.sql` en el Studio de la instancia del curso y obtuvo `Success. No rows returned`. En las comprobaciones manuales con una cuenta normal de Supabase, el inicio de sesión funcionó y Storage rechazó con HTTP 400 la lectura de un original privado, la carga de un PNG nuevo en `amancay-originales` y la carga de un WebP nuevo en `amancay-catalogo`. Como control de lectura pública, una solicitud sin sesión descargó una derivada del catálogo con HTTP 200.
 

@@ -16,6 +16,7 @@ import com.google.firebase.storage.FirebaseStorage
 object ConexionCompartida {
     // firebaseAppId es mobilesdk_app_id de Firebase, NO el applicationId de Gradle.
     data class Configuracion(
+        val projectIdEsperado: String,
         val projectId: String,
         val firebaseAppId: String,
         val apiKey: String,
@@ -38,7 +39,10 @@ object ConexionCompartida {
 
     @Synchronized
     fun obtener(context: Context, config: Configuracion): Servicios {
-        require(config.projectId == "rincon-amancay") { "El adaptador compartido exige el proyecto rincon-amancay" }
+        require(config.projectIdEsperado.isNotBlank() && !config.projectIdEsperado.startsWith("demo-") &&
+            config.projectId == config.projectIdEsperado) {
+            "El ID Firebase debe coincidir con el proyecto nuevo configurado explícitamente"
+        }
         validarApiUrl(config.apiUrl)
         require(config.firebaseAppId.matches(Regex("1:[0-9]+:android:[a-zA-Z0-9]+"))) {
             "firebaseAppId debe ser mobilesdk_app_id de Firebase (1:…:android:…), no el package name"

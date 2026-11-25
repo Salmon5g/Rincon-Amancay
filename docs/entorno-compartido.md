@@ -8,7 +8,7 @@ Este documento conserva una propuesta técnica del 9 de octubre; no es un despli
 
 Usar **Cloud Run para una API compartida** y mantener Firebase Authentication, Firestore y Storage para ambos clientes. La API actual es un servidor Node HTTP y usa Sharp; un contenedor permite conservar ese código y controlar su entorno nativo. Esta elección es una recomendación técnica, pendiente de tu revisión. Cloud Functions también es viable, pero exigiría adaptar la entrada HTTP y no elimina la necesidad de coordinar operaciones entre procesos.
 
-Proponer Santiago (`southamerica-west1`) para API y Storage, junto al Firestore existente. Confirmar disponibilidad, tarifas y ubicación del bucket antes de crearlo. No trasladar Firestore ni crear otro proyecto automáticamente. El proyecto `rincon-amancay` se usaría como desarrollo compartido con cuentas/datos de prueba; separar producción antes del uso con datos reales.
+Proponer Santiago (`southamerica-west1`) para API y Storage. Confirmar disponibilidad, tarifas y la ubicación elegida para Firestore antes de crear recursos; estas decisiones no se heredan del proyecto anterior.
 
 | Parte | Dónde se ejecutaría | Qué comparte el grupo |
 | --- | --- | --- |
@@ -67,7 +67,8 @@ Docker y gcloud no están disponibles en el equipo de preparación, así que la 
 docker build -t amancay-api-dev ./backend
 docker run --rm -p 8080:8080 \
   -e AMANCAY_ENTORNO=compartido \
-  -e AMANCAY_PROJECT_ID=rincon-amancay \
+  -e AMANCAY_PROJECT_ID="$PROJECT_ID_NUEVO" \
+  -e AMANCAY_PROJECT_ID_ESPERADO="$PROJECT_ID_NUEVO" \
   -e AMANCAY_STORAGE_BUCKET=<bucket-confirmado> \
   -e AMANCAY_ORIGENES_WEB=<origen-https> \
   amancay-api-dev
@@ -77,11 +78,12 @@ Falta construir en Linux, verificar el binario nativo de Sharp, revisar el tama�
 
 ## Primer administrador (procedimiento propuesto)
 
-`backend/scripts/admin-compartido.ts` crea la primera cuenta administradora real usando Application Default Credentials. Rechaza emuladores y `GOOGLE_APPLICATION_CREDENTIALS`, exige el proyecto `rincon-amancay` y `--confirmar`, no modifica identidades existentes y revierte lo creado si falla. Genera el enlace de configuración de contraseña (un solo uso) sin escribir credenciales en disco.
+`backend/scripts/admin-compartido.ts` crea la primera cuenta administradora real usando Application Default Credentials. Rechaza emuladores y `GOOGLE_APPLICATION_CREDENTIALS`, exige que `AMANCAY_PROJECT_ID` coincida con `AMANCAY_PROJECT_ID_ESPERADO` y `--confirmar`, no modifica identidades existentes y revierte lo creado si falla. Genera el enlace de configuración de contraseña (un solo uso) sin escribir credenciales en disco.
 
 ```sh
 cd backend
-$env:AMANCAY_ENTORNO='compartido'; $env:AMANCAY_PROJECT_ID='rincon-amancay'
+$env:AMANCAY_ENTORNO='compartido'; $env:AMANCAY_PROJECT_ID=Read-Host 'ID del proyecto Firebase nuevo'
+$env:AMANCAY_PROJECT_ID_ESPERADO=$env:AMANCAY_PROJECT_ID
 $env:AMANCAY_ADMIN_EMAIL='<correo real>'; $env:AMANCAY_ADMIN_NOMBRE='<nombre>'
 npm run admin:compartido -- --confirmar
 ```

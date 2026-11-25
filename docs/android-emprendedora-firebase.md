@@ -4,7 +4,7 @@ La app Android unificada usa Firebase Authentication y Firestore. Las escrituras
 
 ## Requisitos previos
 
-- Abrir `android/app-combinada` en Android Studio y tener una aplicación Android Firebase para `com.example.amancay`.
+- Abrir `android/app-combinada` en Android Studio y registrar en el proyecto nuevo la aplicación Android `com.example.amancay2`.
 - Guardar el archivo `google-services.json` en `android/app-combinada/app/`. Está ignorado por Git; no subirlo.
 - La cuenta de prueba debe existir en Authentication y contar con documentos coherentes `accesos/{uid}`, `emprendedoras/{uid}` y `tiendasPrivadas/{tiendaId}`. `accesos` debe tener `estado: "activo"`, `roles` con `emprendedora` y `tiendaId`; el perfil debe apuntar al mismo `tiendaId`, y la ficha privada debe tener `propietarioUid` igual al UID.
 - Firestore debe tener las reglas desplegadas desde `firebase/firestore.rules`. No conceder escrituras al cliente para reemplazar la API.
@@ -15,7 +15,7 @@ En Android Studio, abre la carpeta `android/app-combinada` y espera la sincroniz
 
 ## Google y recuperación de contraseña
 
-Firebase Authentication debe tener habilitados **Google** y **Correo electrónico/contraseña**. Cada integrante registra su propia huella SHA-1 `debug` en la app Android `com.example.amancay` de Firebase y descarga un `google-services.json` actualizado en `android/app-combinada/app/`; las huellas debug varían por computador y el archivo no se sube a Git. Se obtiene la huella con `.\gradlew.bat :app:signingReport` desde `android/app-combinada`. Después se sincroniza Gradle y se vuelve a ejecutar la app. Credential Manager usa el cliente OAuth web incluido en el archivo descargado.
+Firebase Authentication debe tener habilitados **Google** y **Correo electrónico/contraseña**. Cada integrante registra su propia huella SHA-1 `debug` en la app Android `com.example.amancay2` del proyecto nuevo y descarga un `google-services.json` actualizado en `android/app-combinada/app/`; las huellas debug varían por computador y el archivo no se sube a Git. Se obtiene la huella con `.\gradlew.bat :app:signingReport` desde `android/app-combinada`. Después se sincroniza Gradle y se vuelve a ejecutar la app. Credential Manager usa el cliente OAuth web incluido en el archivo descargado.
 
 La cuenta de emprendedora conserva su UID, rol y tienda: para vincular Google por primera vez, ingresa el correo y la contraseña entregados por administración y pulsa **Iniciar sesión con Google**. La dirección elegida en Google debe coincidir con ese correo. Si se pulsa Google sin escribir credenciales, la app intenta un ingreso normal y valida el mismo rol y tienda.
 
@@ -29,7 +29,9 @@ Esta opción conecta el emulador Android con Authentication/Firestore reales y c
 
    ```powershell
    gcloud auth application-default login
-   gcloud config set project rincon-amancay
+   $env:AMANCAY_PROJECT_ID = Read-Host 'ID del proyecto Firebase nuevo'
+   $env:AMANCAY_PROJECT_ID_ESPERADO = $env:AMANCAY_PROJECT_ID
+   gcloud config set project $env:AMANCAY_PROJECT_ID
    ```
 
    No crees ni compartas claves de cuenta de servicio. El rol de administrador de la app no concede permisos IAM al proceso local.
@@ -41,7 +43,7 @@ Esta opción conecta el emulador Android con Authentication/Firestore reales y c
    npm.cmd --prefix backend run start:compartido:local
    ```
 
-   Deja abierta esta terminal. `http://localhost:8080/health` debe indicar el proyecto `rincon-amancay` y entorno `compartido`. No arranques emuladores al mismo tiempo.
+   Deja abierta esta terminal. `http://localhost:8080/health` debe indicar el ID del proyecto nuevo y entorno `compartido`. No arranques emuladores al mismo tiempo.
 
 3. Conservando la línea `sdk.dir` que Android Studio creó, agrega en `android/app-combinada/local.properties`:
 

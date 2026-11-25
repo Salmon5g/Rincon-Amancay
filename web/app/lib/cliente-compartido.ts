@@ -1,9 +1,8 @@
 import { crearCliente } from './cliente-base.ts';
 import type { ServiciosCliente } from './cliente-base.ts';
 
-// El cliente compartido habla con el proyecto real y la API desplegada.
-// Rechaza el proyecto demo/local por diseño: usar cliente-local.ts para emuladores.
-const PROYECTO_COMPARTIDO = 'rincon-amancay';
+// El cliente compartido exige un ID esperado explícito y rechaza proyectos demo.
+// Para emuladores se usa cliente-local.ts.
 
 export { ErrorApi, versionDocumento } from './cliente-base.ts';
 export type { Operacion } from './cliente-base.ts';
@@ -19,9 +18,11 @@ function apiCompartida(apiUrl: string, permitirHttpLocal = false): string {
   return `${url.origin}/api/v1/`;
 }
 
-export function crearClienteCompartido(firebase: ServiciosCliente, config: { apiUrl: string; permitirHttpLocal?: boolean }) {
-  if (firebase.app.options.projectId !== PROYECTO_COMPARTIDO) {
-    throw new Error(`Este cliente solo admite el proyecto compartido ${PROYECTO_COMPARTIDO}.`);
+export function crearClienteCompartido(firebase: ServiciosCliente, config: { apiUrl: string; projectIdEsperado: string; permitirHttpLocal?: boolean }) {
+  const projectId = firebase.app.options.projectId;
+  const projectIdEsperado = config.projectIdEsperado.trim();
+  if (!projectIdEsperado || projectIdEsperado.startsWith('demo-') || projectId !== projectIdEsperado) {
+    throw new Error('El cliente compartido requiere un proyecto que coincida con el ID esperado.');
   }
   return crearCliente(firebase, apiCompartida(config.apiUrl, config.permitirHttpLocal));
 }

@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import { crearClienteCompartido } from '../app/lib/cliente-compartido.ts';
 
 const firebase = {
-  app: { options: { projectId: 'rincon-amancay' } },
+  app: { options: { projectId: 'amancay-test-project' } },
   auth: { authStateReady: async () => {}, currentUser: { getIdToken: async () => 'token-de-prueba' } },
 };
 test('cliente compartido rechaza proyecto demo y destinos ambiguos antes de enviar tokens', () => {
-  assert.throws(() => crearClienteCompartido({ app: { options: { projectId: 'demo-rincon-amancay' } } }, { apiUrl: 'https://api.example.test' }));
+  assert.throws(() => crearClienteCompartido({ app: { options: { projectId: 'demo-amancay-test' } } }, { apiUrl: 'https://api.example.test', projectIdEsperado: 'demo-amancay-test' }));
   for (const apiUrl of ['http://localhost:8787', 'http://api.example.test', 'https://user:pass@api.example.test', 'https://api.example.test/api/v1/', 'https://api.example.test?x=1', 'https://api.example.test#x', '/relativa']) {
-    assert.throws(() => crearClienteCompartido(firebase, { apiUrl }));
+    assert.throws(() => crearClienteCompartido(firebase, { apiUrl, projectIdEsperado: 'amancay-test-project' }));
   }
   for (const apiUrl of ['http://127.0.0.1:8080', 'http://localhost:8080']) {
-    assert.throws(() => crearClienteCompartido(firebase, { apiUrl }));
-    assert.doesNotThrow(() => crearClienteCompartido(firebase, { apiUrl, permitirHttpLocal: true }));
+    assert.throws(() => crearClienteCompartido(firebase, { apiUrl, projectIdEsperado: 'amancay-test-project' }));
+    assert.doesNotThrow(() => crearClienteCompartido(firebase, { apiUrl, projectIdEsperado: 'amancay-test-project', permitirHttpLocal: true }));
   }
 });
 test('cliente compartido construye la ruta HTTPS y conserva intención y token', async t => {
@@ -23,7 +23,7 @@ test('cliente compartido construye la ruta HTTPS y conserva intención y token',
     return new Response(JSON.stringify({ datos: { estado: 'ok' } }), { status: 200 });
   });
   for (const apiUrl of ['https://api.example.test', 'https://api.example.test/']) {
-    const cliente = crearClienteCompartido(firebase, { apiUrl });
+    const cliente = crearClienteCompartido(firebase, { apiUrl, projectIdEsperado: 'amancay-test-project' });
     const solicitud = { operacionId: 'intencion-original', tiendaId: 't' };
     assert.deepEqual(await cliente.llamar('publicarTienda', solicitud), { estado: 'ok' });
     assert.equal(llamada.url, 'https://api.example.test/api/v1/publicarTienda');

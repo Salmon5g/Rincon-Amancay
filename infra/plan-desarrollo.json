@@ -1,28 +1,28 @@
 {
-  "estado": "propuesta_no_desplegable",
+  "estado": "migracion_proyecto_nuevo_pendiente",
   "fechaRevision": "2026-10-09",
-  "fechaVerificacionConsola": "2026-10-09",
-  "proyecto": "rincon-amancay",
-  "numeroProyecto": "980190819335",
+  "fechaVerificacionConsola": null,
+  "proyecto": null,
+  "numeroProyecto": null,
   "planActual": "Spark",
   "regionPropuesta": "southamerica-west1",
-  "regionConfirmada": "southamerica-west1",
+    "regionConfirmada": null,
   "firestore": {
     "base": "(default)",
-    "region": "southamerica-west1",
-    "estado": "lista_reglas_no_desplegadas"
+      "region": null,
+      "estado": "pendiente_de_creacion"
   },
   "webApp": {
-    "nombre": "rincon-amancay-web",
-    "appId": "1:980190819335:web:f9d4dabed7a776f4d5a6a2",
-    "authDomain": "rincon-amancay.firebaseapp.com"
+    "nombre": null,
+    "appId": null,
+    "authDomain": null
   },
   "auth": {
-    "correoContrasena": "habilitado",
-    "dominiosAutorizados": ["localhost", "rincon-amancay.firebaseapp.com", "rincon-amancay.web.app"]
+    "correoContrasena": "pendiente_de_configurar",
+    "dominiosAutorizados": ["localhost"]
   },
-  "bucketConfirmado": "rincon-amancay.firebasestorage.app",
-  "storageEstado": "requiere_activar_blaze_no_creado",
+  "bucketConfirmado": null,
+  "storageEstado": "pendiente_de_configurar",
   "apiUrlConfirmada": null,
   "androidApplicationId": null,
   "androidFirebaseAppId": null,

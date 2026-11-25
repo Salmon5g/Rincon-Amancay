@@ -2,7 +2,7 @@
 
 La web Nuxt se genera como archivos estáticos y se publica con Firebase Hosting. El catálogo consulta Firestore desde el navegador al abrir la página, así que las tiendas publicadas no quedan congeladas dentro de la generación.
 
-**Último estado publicado verificado (20 de noviembre de 2026):** [https://rincon-amancay.web.app](https://rincon-amancay.web.app) está en modo `real-lectura`, con la configuración Firebase Web actualizada tras la rotación de la clave. `/comprador/ferias` responde HTTP 200 y el bundle publicado ya no contiene el ID anterior de la app web ni la URL local de la API. Se desplegó solo Hosting; no se leyeron documentos de Firestore ni se cambiaron reglas, datos, API o Storage. La página sigue cargando sus datos públicos desde Firestore en el navegador, sujetos a las reglas desplegadas.
+**Último estado publicado verificado (20 de noviembre de 2026):** [https://TU_PROJECT_ID.web.app](https://TU_PROJECT_ID.web.app) está en modo `real-lectura`, con la configuración Firebase Web actualizada tras la rotación de la clave. `/comprador/ferias` responde HTTP 200 y el bundle publicado ya no contiene el ID anterior de la app web ni la URL local de la API. Se desplegó solo Hosting; no se leyeron documentos de Firestore ni se cambiaron reglas, datos, API o Storage. La página sigue cargando sus datos públicos desde Firestore en el navegador, sujetos a las reglas desplegadas.
 
 ## Antes de generar
 
@@ -18,14 +18,14 @@ Desde la raíz del repositorio, ejecutar:
 
 ```powershell
 npm.cmd --prefix web run generate
-.\firebase\node_modules\.bin\firebase.cmd deploy --only hosting --project rincon-amancay
+.\firebase\node_modules\.bin\firebase.cmd deploy --only hosting --project TU_PROJECT_ID
 ```
 
 `generate` produce `web/.output/public`; esa carpeta es la única que Firebase Hosting publica. El `firebase.json` conserva las reglas de Firestore y Storage y añade Hosting sin alterar sus configuraciones. La raíz redirige al catálogo comprador y las páginas `/comprador`, `/admin` y `/invitacion-emprendedora` se generan como rutas estáticas. El enlace de invitación lleva el ID por query string, por lo que no requiere reescrituras dinámicas de Hosting. Publicar Hosting no despliega por sí solo la API ni cambia las reglas Firestore.
 
-Para que la verificación del correo vuelva a la invitación, agrega el dominio usado por la web (por ejemplo `rincon-amancay.web.app`) en **Firebase Console → Authentication → Configuración → Dominios autorizados**. El enlace compartido lleva `invitacionId`; la autorización final se valida en la API con el correo de Authentication verificado.
+Para que la verificación del correo vuelva a la invitación, agrega el dominio usado por la web (por ejemplo `TU_PROJECT_ID.web.app`) en **Firebase Console → Authentication → Configuración → Dominios autorizados**. El enlace compartido lleva `invitacionId`; la autorización final se valida en la API con el correo de Authentication verificado.
 
-La segunda orden usa la [Firebase CLI](https://firebase.google.com/docs/cli) incluida en `firebase/` y una cuenta con permiso para publicar Hosting en `rincon-amancay`. Puede usar las credenciales ADC creadas por `gcloud auth application-default login`; comprueba el acceso con `.\firebase\node_modules\.bin\firebase.cmd projects:list`. Si prefieres una instalación global con sesión propia:
+La segunda orden usa la [Firebase CLI](https://firebase.google.com/docs/cli) incluida en `firebase/` y una cuenta con permiso para publicar Hosting en `TU_PROJECT_ID`. Puede usar las credenciales ADC creadas por `gcloud auth application-default login`; comprueba el acceso con `.\firebase\node_modules\.bin\firebase.cmd projects:list`. Si prefieres una instalación global con sesión propia:
 
 ```powershell
 npm install -g firebase-tools
@@ -33,7 +33,7 @@ firebase login
 firebase projects:list
 ```
 
-El proyecto local se especifica explícitamente para evitar desplegar al proyecto equivocado. Después de publicar, abre la URL `https://rincon-amancay.web.app` y comprueba `/`, `/comprador` y `/admin`.
+El proyecto local se especifica explícitamente para evitar desplegar al proyecto equivocado. Después de publicar, abre la URL `https://TU_PROJECT_ID.web.app` y comprueba `/`, `/comprador` y `/admin`.
 
 ## Alcance publicado
 

@@ -25,9 +25,6 @@ function validateProject(projectId, confirmation) {
   if (!/^rincon-amancay-dev-[a-z0-9][a-z0-9-]{2,9}[a-z0-9]$/.test(projectId)) {
     throw new Error('El ID debe ser un proyecto separado rincon-amancay-dev-<sufijo> de hasta 30 caracteres; no se admite el proyecto compartido.');
   }
-  if (projectId === 'rincon-amancay' || projectId.startsWith('demo-')) {
-    throw new Error('Se rechazó el proyecto de producción o el proyecto de emuladores.');
-  }
   if (confirmation !== projectId) {
     throw new Error(`Confirma el destino repitiendo exactamente el ID: --confirm-dev-project ${projectId}`);
   }

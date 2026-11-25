@@ -51,7 +51,7 @@ El primer comando no debe encontrar acceso al SDK desde pantallas/componentes. E
 
 ## Datos ficticios: emuladores locales
 
-Es el camino más simple y aislado. No necesita crear otro proyecto Cloud y nunca modifica `rincon-amancay`.
+Es el camino más simple y aislado. No necesita crear otro proyecto Cloud y nunca modifica `TU_PROJECT_ID`.
 
 1. Desde la raíz, instalar herramientas Firebase si aún no están instaladas:
 
@@ -77,11 +77,11 @@ La semilla fija el proyecto `demo-rincon-amancay`, verifica que Firestore escuch
 
 ## Datos ficticios: proyecto Firebase Cloud de desarrollo
 
-Cuando se requiera mostrar lecturas y escrituras contra Firebase Cloud, usar un proyecto distinto del compartido. El cargador valida el destino y solo acepta IDs con el prefijo `rincon-amancay-dev-`; rechaza expresamente `rincon-amancay` y `demo-*`.
+Cuando se requiera mostrar lecturas y escrituras contra Firebase Cloud, usar un proyecto separado para desarrollo. El cargador valida el destino y solo acepta IDs con el prefijo `rincon-amancay-dev-`; rechaza los proyectos que no cumplen ese formato y los `demo-*`.
 
 ### Preparar el proyecto una vez
 
-1. Crear en Firebase Console un proyecto separado con ID único, por ejemplo `rincon-amancay-dev-fixmol26`. No reutilizar el ID `rincon-amancay`.
+1. Crear en Firebase Console un proyecto separado con ID único, por ejemplo `rincon-amancay-dev-fixmol26`. No reutilizar el proyecto compartido.
 2. Crear Firestore Database y habilitar Email/Password en Authentication. Si se probarán clientes, registrar una aplicación web/Android para este proyecto y usar sus archivos de configuración locales; no copiarlos al repositorio.
 3. Conceder a la identidad local que ejecutará el seed permisos suficientes para crear usuarios de Authentication y escribir en Firestore en **este proyecto de desarrollo**. Usar ADC y no crear ni compartir claves JSON de cuentas de servicio.
 4. Desde la raíz, desplegar las reglas e índices con el ID explícito del proyecto de desarrollo:
@@ -90,7 +90,7 @@ Cuando se requiera mostrar lecturas y escrituras contra Firebase Cloud, usar un 
    .\firebase\node_modules\.bin\firebase.cmd deploy --only firestore:rules,firestore:indexes --project rincon-amancay-dev-fixmol26
    ```
 
-   Si se cambia el sufijo, reemplazar el ID de ejemplo por el ID real. El alias `development` de `.firebaserc` actualmente apunta a `rincon-amancay`; por seguridad, no usar ese alias para estos pasos.
+   Si se cambia el sufijo, reemplazar el ID de ejemplo por el ID real. `.firebaserc` queda sin alias de nube; especificar el ID de desarrollo en cada comando.
 5. Autenticar ADC con una identidad autorizada en el proyecto de desarrollo. El cargador rechaza si hay variables de emulador activas o si `GCLOUD_PROJECT`/`GOOGLE_CLOUD_PROJECT` apuntan a otro proyecto:
 
    ```powershell
@@ -104,9 +104,9 @@ Cuando se requiera mostrar lecturas y escrituras contra Firebase Cloud, usar un 
 
    ```ini
    AMANCAY_DEV_PROJECT_ID=rincon-amancay-dev-fixmol26
-   AMANCAY_DEV_ADMIN_EMAIL=admin@rincon-amancay.test
+   AMANCAY_DEV_ADMIN_EMAIL=admin@TU_PROJECT_ID.test
    AMANCAY_DEV_ADMIN_PASSWORD=CLAVE_TEMPORAL_ADMIN_DE_12_CARACTERES
-   AMANCAY_DEV_OWNER_EMAIL=emprendedora@rincon-amancay.test
+   AMANCAY_DEV_OWNER_EMAIL=emprendedora@TU_PROJECT_ID.test
    AMANCAY_DEV_OWNER_PASSWORD=CLAVE_TEMPORAL_EMPRENDEDORA
    ```
 
@@ -120,7 +120,7 @@ La carga importa los 29 documentos de `datos-prueba/catalogo-local.json` y crea/
 
 El proceso usa Firebase Admin y, por ello, omite las reglas al escribir la fixture. Esto solo es aceptable porque el script restringe proyecto, rutas y tamaño de lote. Después de cargar, probar los clientes normalmente para confirmar que sus lecturas y escrituras respetan las reglas publicadas. Los productos ficticios no traen imágenes; para probar imágenes se necesita configurar por separado una ruta de desarrollo para Supabase y no usar archivos privados de personas.
 
-Al terminar, cerrar la sesión de prueba y eliminar el proyecto Firebase dev si ya no se necesita. No ejecutar este seed en `rincon-amancay` ni mientras el backend local esté configurado para el proyecto compartido.
+Al terminar, cerrar la sesión de prueba y eliminar el proyecto Firebase dev si ya no se necesita. No ejecutar este seed en el proyecto compartido ni mientras el backend local esté configurado para ese entorno.
 
 ## Límites conocidos para presentar
 

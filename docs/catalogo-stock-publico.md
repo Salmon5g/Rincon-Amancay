@@ -7,14 +7,15 @@ La herramienta requiere ADC de una identidad autorizada para leer las fichas pri
 ```powershell
 gcloud auth application-default login
 $env:AMANCAY_ENTORNO = "compartido"
-$env:AMANCAY_PROJECT_ID = "rincon-amancay"
-npm.cmd --prefix backend run catalogo:sincronizar-stock-publico -- --dry-run rincon-amancay
+$env:AMANCAY_PROJECT_ID = Read-Host "ID del proyecto Firebase nuevo"
+$env:AMANCAY_PROJECT_ID_ESPERADO = $env:AMANCAY_PROJECT_ID
+npm.cmd --prefix backend run catalogo:sincronizar-stock-publico -- --dry-run $env:AMANCAY_PROJECT_ID
 ```
 
 Revisa el resumen. Si corresponde a los productos publicados esperados, ejecuta la escritura explícita:
 
 ```powershell
-npm.cmd --prefix backend run catalogo:sincronizar-stock-publico -- --aplicar rincon-amancay
+npm.cmd --prefix backend run catalogo:sincronizar-stock-publico -- --aplicar $env:AMANCAY_PROJECT_ID
 ```
 
 Solo modifica fichas ya publicadas y sus variantes ya existentes en `tiendasPublicas`: escribe `manejaStock` en el producto y los saldos actuales en productos simples o en cada variante. No crea productos ni variantes, no publica campos del borrador y no cambia precios, disponibilidad, imágenes ni estados. Cuando el stock no se controla, escribe `stock: null`. La operación es idempotente; si se interrumpe, puede volver a ejecutarse.

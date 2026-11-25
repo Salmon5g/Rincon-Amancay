@@ -1,12 +1,14 @@
 # Administración: conexión real de lectura
 
+> Registro histórico del proyecto anterior. No uses sus identificadores ni su región para configurar el proyecto nuevo; verifica los recursos en la nueva consola.
+
 Para ejecutar operaciones reales de backend en una demo local, usar [API local contra Firebase real](admin-firebase-real-api-local.md); este documento cubre solo login y lecturas.
 
 Actualizado el 13 de octubre de 2026. Este modo permite usar Authentication y Firestore reales sin API desplegada; por sí solo no habilita operaciones de negocio ni imágenes.
 
 ## Estado verificado en consola
 
-La base `(default)` de `rincon-amancay` existe en `southamerica-west1`. El responsable confirmó que habilitó correo/contraseña, creó una cuenta con sus documentos `usuarios/{uid}` y `accesos/{uid}`, publicó reglas y pudo entrar a la web y leer su acceso de administrador. El contenido actual de las reglas en consola debe compararse con `firebase/firestore.rules`; no se verificó aquí que ambos archivos estén sincronizados.
+La base `(default)` de `TU_PROJECT_ID` existe en `southamerica-west1`. El responsable confirmó que habilitó correo/contraseña, creó una cuenta con sus documentos `usuarios/{uid}` y `accesos/{uid}`, publicó reglas y pudo entrar a la web y leer su acceso de administrador. El contenido actual de las reglas en consola debe compararse con `firebase/firestore.rules`; no se verificó aquí que ambos archivos estén sincronizados.
 
 ## Preparación del responsable de Firebase
 

@@ -14,7 +14,7 @@ export async function crearIdentidadEmprendedora(
   correo: string,
   contrasenaInicial: string,
 ): Promise<string> {
-  const app = initializeApp(firebase.app.options, `rincon-amancay-alta-${crypto.randomUUID()}`)
+  const app = initializeApp(firebase.app.options, `amancay-alta-${crypto.randomUUID()}`)
   const auth = getAuth(app)
   try {
     if (firebase.app.options.projectId === 'demo-rincon-amancay') {

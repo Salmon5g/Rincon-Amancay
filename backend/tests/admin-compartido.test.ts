@@ -4,7 +4,8 @@ import { crearPrimerAdministrador } from '../scripts/admin-compartido.ts';
 
 const base = {
   AMANCAY_ENTORNO: 'compartido',
-  AMANCAY_PROJECT_ID: 'rincon-amancay',
+  AMANCAY_PROJECT_ID: 'amancay-test-project',
+  AMANCAY_PROJECT_ID_ESPERADO: 'amancay-test-project',
 };
 
 test('admin compartido exige entorno seguro y datos válidos antes de tocar la red', async () => {

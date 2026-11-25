@@ -43,7 +43,7 @@ Para registros antiguos sin `solicitud`, usar el cuerpo que conservó el cliente
 
 ## Entorno compartido futuro
 
-El mismo comando admite `--entorno compartido`, con `AMANCAY_ENTORNO=compartido`, `AMANCAY_PROJECT_ID=rincon-amancay` e identidad técnica ADC autorizada. Rechaza variables de emuladores y archivos de credenciales de servicio. Nunca otorgar esos permisos a web o Android. Todavía no se probó esta intervención contra servicios desplegados; debe validarse en desarrollo remoto antes del uso real.
+El mismo comando admite `--entorno compartido`, con `AMANCAY_ENTORNO=compartido`, `AMANCAY_PROJECT_ID` igual a `AMANCAY_PROJECT_ID_ESPERADO` e identidad técnica ADC autorizada. Rechaza variables de emuladores y archivos de credenciales de servicio. Nunca otorgar esos permisos a web o Android. Todavía no se probó esta intervención contra servicios desplegados; debe validarse en desarrollo remoto antes del uso real.
 
 ## Verificación automatizada
 

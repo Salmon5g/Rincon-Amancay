@@ -1,6 +1,6 @@
 # Pruebas locales de reglas Firestore
 
-Este documento describe las pruebas históricas ejecutadas con los emuladores; no es el indicador del estado remoto actual. El 1 de noviembre de 2026 se comprobó que el release Firestore de `rincon-amancay` coincide con `firebase/firestore.rules`. El resumen vigente, incluidos los permisos del almacenamiento de imágenes Supabase, está en [Entrega 4 — Seguridad](Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/5-seguridad-firestore-storage.md).
+Este documento describe las pruebas históricas ejecutadas con los emuladores; no es el indicador del estado remoto actual. El 1 de noviembre de 2026 se comprobó que el release Firestore de `TU_PROJECT_ID` coincide con `firebase/firestore.rules`. El resumen vigente, incluidos los permisos del almacenamiento de imágenes Supabase, está en [Entrega 4 — Seguridad](Entrega%204%20%E2%80%94%20Acceso,%20administraci%C3%B3n%20y%20tienda/5-seguridad-firestore-storage.md).
 
 ## Acceso implementado
 

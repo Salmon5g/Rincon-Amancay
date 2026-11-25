@@ -22,11 +22,13 @@ for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
 const configured = (key) => process.env[key] ?? values.get(key)
 const modo = configured('NUXT_PUBLIC_FIREBASE_MODO')
 const proyecto = configured('NUXT_PUBLIC_FIREBASE_PROJECT_ID')
+const proyectoEsperado = configured('NUXT_PUBLIC_FIREBASE_PROJECT_ID_ESPERADO')
 const apiKey = configured('NUXT_PUBLIC_FIREBASE_API_KEY')
 const apiUrl = configured('NUXT_PUBLIC_API_URL') ?? ''
 const faltantes = [
   'NUXT_PUBLIC_FIREBASE_API_KEY',
   'NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
+  'NUXT_PUBLIC_FIREBASE_PROJECT_ID_ESPERADO',
   'NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
   'NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
   'NUXT_PUBLIC_FIREBASE_APP_ID',
@@ -35,8 +37,8 @@ const faltantes = [
 if (!['real-lectura', 'real-api'].includes(modo)) {
   throw new Error('Hosting solo admite Firebase real: configura NUXT_PUBLIC_FIREBASE_MODO como real-lectura o real-api.')
 }
-if (proyecto !== 'rincon-amancay') {
-  throw new Error('La generación para este Hosting debe apuntar al proyecto Firebase rincon-amancay.')
+if (!proyecto || !proyectoEsperado || proyecto !== proyectoEsperado || proyecto.startsWith('demo-')) {
+  throw new Error('El ID de Firebase debe coincidir con NUXT_PUBLIC_FIREBASE_PROJECT_ID_ESPERADO.')
 }
 if (!apiKey || apiKey === 'REEMPLAZAR_DESDE_FIREBASE' || faltantes.length) {
   throw new Error('Completa la configuración pública de Firebase Web en web/.env antes de generar Hosting.')

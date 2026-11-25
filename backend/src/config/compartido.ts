@@ -6,7 +6,10 @@ export function exigirEntornoCompartido(env:NodeJS.ProcessEnv):string {
     if(env[key]!==undefined)throw new Error(`Variable incompatible con identidad de servicio: ${key}.`);
   }
   const proyecto=env.AMANCAY_PROJECT_ID;
-  if(proyecto!=='rincon-amancay')throw new Error('Proyecto compartido no autorizado por esta configuración.');
+  const proyectoEsperado=env.AMANCAY_PROJECT_ID_ESPERADO;
+  if(!proyecto || !proyectoEsperado || proyecto!==proyectoEsperado) {
+    throw new Error('El proyecto Firebase debe coincidir con AMANCAY_PROJECT_ID_ESPERADO.');
+  }
   for(const key of ['GCLOUD_PROJECT','GOOGLE_CLOUD_PROJECT'])if(env[key] && env[key]!==proyecto)throw new Error('Proyectos de entorno inconsistentes.');
   return proyecto;
 }

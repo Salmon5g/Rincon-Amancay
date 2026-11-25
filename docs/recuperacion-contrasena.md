@@ -8,11 +8,11 @@ La página retira los parámetros de la barra del navegador después de leerlos,
 
 La ruta debe estar publicada antes de seleccionarla en Firebase:
 
-1. Genera y publica la web de Rincón Amancay en Firebase Hosting con la configuración del proyecto `rincon-amancay`.
+1. Genera y publica la web de Rincón Amancay en Firebase Hosting con la configuración del proyecto `TU_PROJECT_ID`.
 2. Abre **Firebase Console → Authentication → Plantillas**.
 3. Edita las plantillas de restablecimiento de contraseña y verificación de correo. Configura el idioma español y, si se desea, un asunto y texto que nombren a Rincón Amancay. Por ejemplo, asunto: `Restablece tu contraseña de Rincón Amancay`.
-4. En **Personalizar URL de acción**, configura `https://rincon-amancay.web.app/auth/accion` y guarda.
-5. Confirma en **Authentication → Configuración → Dominios autorizados** que `rincon-amancay.web.app` esté autorizado.
+4. En **Personalizar URL de acción**, configura `https://TU_PROJECT_ID.web.app/auth/accion` y guarda.
+5. Confirma en **Authentication → Configuración → Dominios autorizados** que `TU_PROJECT_ID.web.app` esté autorizado.
 6. Solicita un correo nuevo y comprueba que el enlace abra `/auth/accion`, muestre la página con la marca y termine el cambio. Los enlaces anteriores pueden conservar la configuración anterior.
 
 Firebase aplica la URL de acción personalizada a sus correos de gestión de cuentas. La página contempla restablecimiento de contraseña, verificación de correo y recuperación de una dirección anterior. No cambies esta URL a una página que solo soporte uno de esos modos.

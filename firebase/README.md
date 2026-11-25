@@ -8,8 +8,8 @@ Desde esta carpeta, `npm ci` instala las herramientas. `npm run emulators` inici
 
 `npm run seed:cloud` rechaza la fixture. Para probar Firestore Cloud con datos ficticios, usar exclusivamente un proyecto separado cuyo ID empiece con `rincon-amancay-dev-` y seguir `6-capa-datos-y-datos-prueba.md`. El cargador cloud usa Firebase Admin/ADC y reemplaza solo documentos de esa fixture, por lo que sus credenciales y permisos no deben compartirse.
 
-El release Firestore del proyecto `rincon-amancay` se verificó el 1 de noviembre de 2026: apunta al ruleset `4005f7fb-84a4-43ce-bedc-166b2ae2431c`, cuyo contenido coincide con `firebase/firestore.rules`. No se encontró release de Firebase Storage; el flujo real de imágenes usa las políticas RLS del archivo `../infra/supabase/storage-imagenes.sql`. La API y el Hosting tienen procesos de publicación separados.
+El release de Firestore descrito en [el registro histórico](../docs/firebase-desarrollo.md) corresponde al proyecto anterior. No lo uses como destino de despliegue. El flujo de imágenes documentado usa las políticas RLS de `../infra/supabase/storage-imagenes.sql`; la API y el Hosting tienen procesos de publicación separados.
 
-`firebase.json` referencia reglas, índices y puertos. `firestore.indexes.json` contiene el índice compuesto de ferias. `.firebaserc` conserva el alias `development = rincon-amancay`, que actualmente apunta al proyecto compartido: para cualquier operación cloud especifica siempre el ID completo del proyecto y no uses ese alias para cargar fixtures.
+`firebase.json` referencia reglas, índices y puertos. `firestore.indexes.json` contiene el índice compuesto de ferias. `.firebaserc` no conserva ningún proyecto predeterminado; para operaciones cloud, usa el ID explícito del proyecto nuevo y revisa el destino antes de desplegar.
 
 No guardar `.env`, claves, contraseñas ni credenciales de cuentas de servicio en el repositorio. Las credenciales locales del cargador de desarrollo deben quedar en `firebase/secrets/development.env`, que está excluido de Git.

@@ -130,7 +130,11 @@ function nombreParticipante(value: unknown, fallback: string) { return typeof va
 function fechaIso(data: DocumentData, campo: string) { const value = data[campo]; return value instanceof Timestamp ? value.toDate().toISOString() : null; }
 
 export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => Promise<boolean | void>, auth?: Auth, enviarCorreo?: (solicitud: SolicitudCorreoFeria) => Promise<string>, notificarInvitacion?: (uid: string, feriaId: string, nombreFeria: string) => Promise<void>, notificarRecordatorio?: (uid: string, feriaId: string, nombreFeria: string, operacionId: string) => Promise<string>, notificarAvisoConfirmadas?: (uid: string, feriaId: string, datos: { nombre: string; fechaInicio: string; direccion: string; organizador: string }, operacionId: string) => Promise<string>) {
-  const origenWeb = (process.env.AMANCAY_WEB_URL?.trim() || 'https://rincon-amancay.web.app').replace(/\/+$/, '');
+  const origenWebConfigurado = process.env.AMANCAY_WEB_URL?.trim();
+  if (process.env.AMANCAY_ENTORNO === 'compartido' && !origenWebConfigurado) {
+    throw new Error('AMANCAY_WEB_URL debe apuntar al Hosting configurado para el proyecto nuevo.');
+  }
+  const origenWeb = (origenWebConfigurado || 'http://localhost:3000').replace(/\/+$/, '');
   const avisarPorCorreo = async (uid: string, tipo: 'tienda' | 'asociacion', entidadId: string, feriaId: string, nombreFeria: string) => {
     if (!auth || !enviarCorreo) return;
     try {

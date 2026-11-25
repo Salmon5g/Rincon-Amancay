@@ -7,6 +7,7 @@
 //     public: {
 //       firebaseApiKey: '', firebaseAuthDomain: '', firebaseProjectId: '',
 //       firebaseStorageBucket: '', firebaseMessagingSenderId: '', firebaseAppId: '',
+//       firebaseProjectIdEsperado: '',
 //       apiUrl: '', // URL HTTPS del servicio Cloud Run, sin /api/v1/
 //     },
 //   }
@@ -23,5 +24,5 @@ export default defineNuxtPlugin(() => {
     messagingSenderId: publico.firebaseMessagingSenderId,
     appId: publico.firebaseAppId,
   });
-  return { provide: { amancay: crearClienteCompartido(firebase, { apiUrl: publico.apiUrl }) } };
+  return { provide: { amancay: crearClienteCompartido(firebase, { apiUrl: publico.apiUrl, projectIdEsperado: publico.firebaseProjectIdEsperado }) } };
 });

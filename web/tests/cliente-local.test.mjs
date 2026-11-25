@@ -22,7 +22,7 @@ test('cliente compartido web contra SDK, API y emuladores',async t=>{
     await store.collection('configuracion').doc('general').set({mostrarPrecios:true});
     await adminDb.doc(`sectores/${tiendaId}`).set({activo:true});await adminDb.doc(`tiposEmprendimiento/${tiendaId}`).set({activo:true});
     await adminDb.doc(`tiposProducto/${tiendaId}`).set({activo:true});await adminDb.doc(`tiposProducto/${tiendaId}/versiones/1`).set({campos:[],opcionesVariante:[]});await adminDb.doc(`categorias/${tiendaId}`).set({activo:true});
-    await t.test('inicialización reutilizable y solo demo',()=>{assert.equal(obtenerFirebaseLocal('test_'+suffix),local);assert.throws(()=>crearClienteLocal({app:{options:{projectId:'rincon-amancay'}}}));});
+    await t.test('inicialización reutilizable y solo demo',()=>{assert.equal(obtenerFirebaseLocal('test_'+suffix),local);assert.throws(()=>crearClienteLocal({app:{options:{projectId:'proyecto-cloud-ajeno'}}}));});
     await t.test('catálogo público se consulta sin iniciar sesión',async()=>{const result=await client.listarTiendas();assert(result.docs.every(d=>d.data().habilitada===true));assert.equal(await client.consultarAcceso(),null);});
     await t.test('sin sesión no llama operaciones privadas',async()=>{await assert.rejects(client.llamar('publicarTienda',{}),e=>e instanceof ErrorApi&&e.status===401);});
     await t.test('login obtiene roles desde Firestore',async()=>{await client.iniciarSesion(email,password);assert.equal((await client.consultarAcceso()).tiendaId,tiendaId);});

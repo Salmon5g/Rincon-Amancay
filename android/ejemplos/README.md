@@ -92,14 +92,15 @@ No se han creado pantallas ni manejadores de enlaces Android. El ejemplo sigue p
 
 ## Conexión compartida (proyecto real)
 
-`ConexionCompartida`, `ClienteCompartido` y `ErrorApi` (error común a ambos clientes) apuntan al proyecto `rincon-amancay` y a la API HTTPS desplegada; no usan emuladores. Copiarlos al `src/main/` del proyecto del equipo (no a `debug`) y aportar la `Configuracion` desde ese proyecto:
+`ConexionCompartida`, `ClienteCompartido` y `ErrorApi` (error común a ambos clientes) conectan con los valores que se configuren para el proyecto nuevo y su API HTTPS; no usan emuladores. Copiarlos al `src/main/` del proyecto del equipo (no a `debug`) y aportar la `Configuracion` desde ese proyecto:
 
 ```kotlin
 val config = ConexionCompartida.Configuracion(
-    projectId = "rincon-amancay",
+    projectIdEsperado = "TU_PROJECT_ID",
+    projectId = "TU_PROJECT_ID",
     firebaseAppId = "<mobilesdk_app_id de google-services.json>", // 1:…:android:…
     apiKey = "<API key de la app Android en Firebase>",
-    storageBucket = "rincon-amancay.firebasestorage.app",
+    storageBucket = "TU_PROJECT_ID.firebasestorage.app",
     apiUrl = "<URL HTTPS de Cloud Run>",            // pendiente de desplegar
 )
 val cliente = ClienteCompartido(
