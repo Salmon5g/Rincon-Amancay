@@ -51,6 +51,10 @@ export function crearCuentas(db: Firestore, auth: Auth) {
     }
     const firma = createHash('sha256').update(JSON.stringify(d)).digest('hex');
     const receiptRef = db.doc(`operacionesCuentas/${identidad.uid}_${d.operacionId}`);
+    const auditId = invitacion
+      ? `${identidad.uid}_alta_${createHash('sha256').update(invitacion.id).digest('hex')}`
+      : `${identidad.uid}_${d.operacionId}`;
+    const auditRef = db.doc(`auditoriaAdministracion/${auditId}`);
     const userRef = db.doc(`usuarios/${d.uidDestino}`);
     const accessRef = db.doc(`accesos/${d.uidDestino}`);
     const profileRef = db.doc(`emprendedoras/${d.uidDestino}`);
@@ -95,6 +99,14 @@ export function crearCuentas(db: Firestore, auth: Auth) {
       const resultado = {uid: d.uidDestino, tiendaId: d.tiendaId, operacionId: d.operacionId};
       if(inviteRef) tx.update(inviteRef,{estado:'aceptada',aceptadaPor:d.uidDestino,aceptadaEn:now});
       tx.create(receiptRef, {firma, resultado, creadaPor: identidad.uid, creadoEn: now});
+      tx.create(auditRef, {
+        actorUid: identidad.uid,
+        accion: 'altaEmprendedora',
+        documentoId: d.uidDestino,
+        antes: null,
+        despues: { estado: 'activo', tiendaId: d.tiendaId },
+        creadoEn: now,
+      });
       return resultado;
     });
   };

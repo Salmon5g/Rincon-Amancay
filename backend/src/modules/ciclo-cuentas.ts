@@ -238,6 +238,7 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
       const {correo: _correo,...resto}=d;
       const solicitud=validarAlta({...resto,uidDestino:'pendiente',tiendaId:`i_${invitacionId}`});
       const firma=huella([correo,solicitud]), ref=db.doc(`invitaciones/${invitacionId}`);
+      const auditoriaRef=db.doc(`auditoriaAdministracion/${uid}_${d.operacionId}`);
       return db.runTransaction(async tx=>{
         const [who,previous,sector,tipo]=await tx.getAll(actor,ref,db.doc(`sectores/${solicitud.sectorId}`),db.doc(`tiposEmprendimiento/${solicitud.tipoEmprendimientoId}`));
         exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
@@ -249,7 +250,9 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
         const venceEn=Timestamp.fromMillis(Date.now()+7*24*60*60*1000);
         // El correo no es público. En desarrollo el administrador entrega el ID
         // manualmente. No se envían mensajes ni se crean contraseñas en servidor.
-        tx.create(ref,{correo,alta:solicitud,firma,creadaPor:uid,estado:'pendiente',creadoEn:FieldValue.serverTimestamp(),venceEn});
+        const now=FieldValue.serverTimestamp();
+        tx.create(ref,{correo,alta:solicitud,firma,creadaPor:uid,estado:'pendiente',creadoEn:now,venceEn});
+        tx.create(auditoriaRef,{actorUid:uid,accion,documentoId:invitacionId,antes:null,despues:{estado:'pendiente',nombreTienda:solicitud.nombreTienda},creadoEn:now});
         return {invitacionId,tiendaId:solicitud.tiendaId,estado:'pendiente',venceEn:venceEn.toDate().toISOString()};
       });
     }
@@ -258,11 +261,16 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
       exigir(id(d.invitacionId),'datos-invalidos','ID de invitación inválido.');
       const ref=db.doc(`invitaciones/${d.invitacionId}`);
       if(accion==='cancelarInvitacion') return db.runTransaction(async tx=>{
-        const [who,invite]=await tx.getAll(actor,ref);
+        const auditoriaRef=db.doc(`auditoriaAdministracion/${uid}_${huella(['cancelarInvitacion',d.invitacionId])}`);
+        const [who,invite]=await tx.getAll(actor,ref,auditoriaRef);
         exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
         exigir(invite.exists,'no-encontrado','Invitación no encontrada.');
         exigir(['pendiente','cancelada'].includes(invite.data()!.estado),'conflicto','No se puede cancelar una invitación aceptada.');
-        if(invite.data()!.estado==='pendiente') tx.update(ref,{estado:'cancelada',canceladaPor:uid,canceladaEn:FieldValue.serverTimestamp()});
+        if(invite.data()!.estado==='pendiente') {
+          const now=FieldValue.serverTimestamp();
+          tx.update(ref,{estado:'cancelada',canceladaPor:uid,canceladaEn:now});
+          tx.create(auditoriaRef,{actorUid:uid,accion,documentoId:d.invitacionId,antes:{estado:'pendiente'},despues:{estado:'cancelada'},creadoEn:now});
+        }
         return {invitacionId:d.invitacionId,estado:'cancelada'};
       });
       const correo=await verificada(uid), invite=(await ref.get()).data();
@@ -309,13 +317,16 @@ export function crearCicloCuentas(db: Firestore, auth: Auth) {
           throw new ErrorOperacion('pendiente','La gestión sigue bloqueada. Revisar Authentication y reintentar la misma solicitud. No se recrean identidades eliminadas.');
         }
         return db.runTransaction(async tx=>{
-          const [who,previous,access]=await tx.getAll(actor,receipt,target);
+          const auditRef=db.doc(`auditoriaAdministracion/${uid}_${d.operacionId}`);
+          const [who,previous,access]=await tx.getAll(actor,receipt,target,auditRef);
           exigir(admin(who.data()),'sin-permiso','Se requiere administrador activo.');
           exigir(previous.data()?.firma===firma && access.data()?.operacionCuentaPendiente===receipt.path && access.data()?.estado==='desactivado' && access.data()?.tiendaId===phase.tiendaId && !access.data()?.roles?.includes('administrador'),'conflicto','La cuenta cambió durante la reactivación.');
           const resultado={uid:destino,tiendaId:phase.tiendaId,operacionId:d.operacionId,estado:'completada',autenticacion:'habilitada'};
           const now=FieldValue.serverTimestamp();
           tx.update(target,{estado:'activo',sesionesRevocadasHasta:Math.floor(Date.now()/1000),operacionCuentaPendiente:FieldValue.delete(),actualizadoEn:now});
-          tx.update(receipt,{estado:'completada',resultado,actualizadoEn:now});return resultado;
+          tx.update(receipt,{estado:'completada',resultado,actualizadoEn:now});
+          tx.create(auditRef,{actorUid:uid,accion,documentoId:destino,antes:{estado:'desactivado'},despues:{estado:'activo'},creadoEn:now});
+          return resultado;
         });
       });
     }

@@ -143,6 +143,28 @@ export interface ConfiguracionNavegacion {
   actualizadoEn: string | null
 }
 
+export type AreaAuditoriaAdmin = 'Cuentas' | 'Asociaciones' | 'Ferias y eventos'
+
+export interface CursorAuditoriaAdmin {
+  seconds: number
+  nanoseconds: number
+  id: string
+}
+
+export interface AccionAuditoriaAdmin {
+  id: string
+  actorUid: string
+  area: AreaAuditoriaAdmin
+  accion: string
+  objetivo: string
+  creadoEn: string
+}
+
+export interface PaginaAuditoriaAdmin {
+  acciones: AccionAuditoriaAdmin[]
+  siguiente: CursorAuditoriaAdmin | null
+}
+
 export type EstadoFeria = 'borrador' | 'publicada' | 'cancelada'
 export type TipoParticipanteFeria = 'emprendedora' | 'asociacion'
 export type EstadoParticipanteFeria = 'invitada' | 'confirmada' | 'rechazada' | 'agregada_admin' | 'retirada'

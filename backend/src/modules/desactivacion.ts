@@ -46,7 +46,7 @@ export function crearDesactivacion(db: Firestore, auth: Pick<Auth,'updateUser'|'
         const [store,profile,publicStore]=await tx.getAll(shop,db.doc(`emprendedoras/${uid}`),pub);
         exigir(store.data()?.propietarioUid===uid && profile.data()?.tiendaId===a.tiendaId,'conflicto','La propiedad de la tienda no coincide.');
         const now=FieldValue.serverTimestamp();
-        const state={firma,uidDestino:uid,tiendaId:a.tiendaId,operacionId,motivo:d.motivo,solicitud:d,realizadaPor:identidad.uid,estado:'pendienteAuth',creadoEn:now,actualizadoEn:now};
+        const state={firma,uidDestino:uid,tiendaId:a.tiendaId,operacionId,motivo:d.motivo,solicitud:d,realizadaPor:identidad.uid,estadoAnterior:a.estado,estado:'pendienteAuth',creadoEn:now,actualizadoEn:now};
         tx.update(target,{estado:'desactivado',operacionCuentaPendiente:receipt.path,actualizadoEn:now});
         if(publicStore.exists) tx.update(pub,{habilitada:false,actualizadoEn:now});
         tx.create(receipt,state);
@@ -65,12 +65,16 @@ export function crearDesactivacion(db: Firestore, auth: Pick<Auth,'updateUser'|'
         else throw new ErrorOperacion('pendiente','La gestión y el catálogo ya están bloqueados. Falta completar Authentication; reintentar la misma solicitud.');
       }
       return db.runTransaction(async tx=>{
-        const [previous,access]=await tx.getAll(receipt,target);
+        const auditRef=db.doc(`auditoriaAdministracion/${identidad.uid}_${operacionId}`);
+        const [previous,access,actor]=await tx.getAll(receipt,target,db.doc(`accesos/${identidad.uid}`));
+        exigir(admin(actor.data()),'sin-permiso','Se requiere una cuenta administradora activa.');
         exigir(access.data()?.operacionCuentaPendiente===receipt.path && previous.data()?.firma===firma && access.data()?.estado==='desactivado' && access.data()?.tiendaId===phase.tiendaId,'conflicto','El estado cambió durante la desactivación; requiere revisión administrativa.');
         if(previous.data()!.estado==='completada') return previous.data()!.resultado as Resultado;
         const resultado: Resultado={uid,tiendaId:phase.tiendaId,operacionId,estado:'completada',autenticacion};
-        tx.update(target,{operacionCuentaPendiente:FieldValue.delete(),actualizadoEn:FieldValue.serverTimestamp()});
-        tx.update(receipt,{estado:'completada',resultado,actualizadoEn:FieldValue.serverTimestamp()});
+        const now=FieldValue.serverTimestamp();
+        tx.update(target,{operacionCuentaPendiente:FieldValue.delete(),actualizadoEn:now});
+        tx.update(receipt,{estado:'completada',resultado,actualizadoEn:now});
+        tx.create(auditRef,{actorUid:identidad.uid,accion:'desactivarEmprendedora',documentoId:uid,antes:{estado:phase.estadoAnterior ?? 'activo'},despues:{estado:'desactivado'},creadoEn:now});
         return resultado;
       });
     });

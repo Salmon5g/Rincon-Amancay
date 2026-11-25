@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import type { Auth } from 'firebase-admin/auth';
 import { ErrorOperacion, version } from './publicacion.ts';
 
-export const accionesAdministracion = ['leerConfiguracionNavegacion', 'guardarConfiguracionNavegacion', 'listarAdministradores', 'agregarAdministrador', 'quitarAdministrador'] as const;
+export const accionesAdministracion = ['leerConfiguracionNavegacion', 'guardarConfiguracionNavegacion', 'listarAdministradores', 'agregarAdministrador', 'quitarAdministrador', 'listarAuditoriaAdministracion'] as const;
 export type AccionAdministracion = typeof accionesAdministracion[number];
 export type ModoNavegacion = 'permitir' | 'invitar' | 'exigir';
 
@@ -20,12 +20,102 @@ function correo(value: unknown) {
   return value.trim().toLowerCase();
 }
 
+const etiquetasAuditoria: Record<string, { area: 'Cuentas' | 'Asociaciones' | 'Ferias y eventos'; accion: string }> = {
+  altaEmprendedora: { area: 'Cuentas', accion: 'Alta de emprendedora' },
+  invitarEmprendedora: { area: 'Cuentas', accion: 'Invitación de emprendedora' },
+  cancelarInvitacion: { area: 'Cuentas', accion: 'Cancelación de invitación' },
+  editarCuentaEmprendedora: { area: 'Cuentas', accion: 'Edición de cuenta emprendedora' },
+  desactivarEmprendedora: { area: 'Cuentas', accion: 'Desactivación de cuenta emprendedora' },
+  reactivarEmprendedora: { area: 'Cuentas', accion: 'Reactivación de cuenta emprendedora' },
+  agregarAdministrador: { area: 'Cuentas', accion: 'Asignación de rol administrador' },
+  quitarAdministrador: { area: 'Cuentas', accion: 'Retiro de rol administrador' },
+  crearAsociacion: { area: 'Asociaciones', accion: 'Creación de asociación' },
+  editarAsociacion: { area: 'Asociaciones', accion: 'Edición de asociación' },
+  cambiarEstadoAsociacion: { area: 'Asociaciones', accion: 'Cambio de estado de asociación' },
+  asignarEmprendedora: { area: 'Asociaciones', accion: 'Asignación de integrante' },
+  quitarEmprendedora: { area: 'Asociaciones', accion: 'Retiro de integrante' },
+  crearFeria: { area: 'Ferias y eventos', accion: 'Creación de feria' },
+  editarFeria: { area: 'Ferias y eventos', accion: 'Edición de feria' },
+  cambiarEstadoFeria: { area: 'Ferias y eventos', accion: 'Cambio de estado de feria' },
+  invitarParticipanteFeria: { area: 'Ferias y eventos', accion: 'Invitación a participante' },
+  agregarParticipanteFeria: { area: 'Ferias y eventos', accion: 'Ingreso de participante' },
+  cancelarInvitacionFeria: { area: 'Ferias y eventos', accion: 'Cancelación de invitación' },
+  retirarParticipanteFeria: { area: 'Ferias y eventos', accion: 'Retiro de participante' },
+  registrarAsistenciaFeria: { area: 'Ferias y eventos', accion: 'Registro de asistencia' },
+  enviarRecordatorioFeria: { area: 'Ferias y eventos', accion: 'Envío de recordatorio' },
+  enviarAvisoConfirmadasFeria: { area: 'Ferias y eventos', accion: 'Aviso a participantes confirmadas' },
+};
+
+function objetivoAuditoria(accion: string, documentoId: unknown): string {
+  const idDocumento = typeof documentoId === 'string' ? documentoId : '';
+  const segmento = idDocumento.split('/');
+  const etiqueta = etiquetasAuditoria[accion];
+  if (etiqueta?.area === 'Ferias y eventos') {
+    const participante = segmento.length > 2 ? ` · participante ${segmento[2].slice(0, 8)}` : '';
+    return `Feria ${segmento[0]?.slice(0, 48) || 'sin identificador'}${participante}`;
+  }
+  if (etiqueta?.area === 'Asociaciones') {
+    const asociacion = segmento[0] || 'sin identificador';
+    const integrante = segmento.length > 1 ? ` · integrante ${segmento[1].slice(0, 8)}` : '';
+    return `Asociación ${asociacion.slice(0, 48)}${integrante}`;
+  }
+  if (accion === 'invitarEmprendedora' || accion === 'cancelarInvitacion') {
+    return `Invitación ${idDocumento.slice(0, 8) || 'sin identificador'}`;
+  }
+  return `Cuenta ${idDocumento.slice(0, 8) || 'sin identificador'}`;
+}
+
 export function crearAdministracionPlataforma(db: Firestore, auth: Auth) {
   return async (accion: AccionAdministracion, identidad: { uid: string }, input: unknown) => {
     exigir(accionesAdministracion.includes(accion), 'datos-invalidos', 'Acción administrativa desconocida.');
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
     const data = objeto(input);
     const actorRef = db.doc(`accesos/${identidad.uid}`);
+
+    if (accion === 'listarAuditoriaAdministracion') {
+      exactos(data, ['cursor']);
+      exigir(admin((await actorRef.get()).data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
+      const cursorData = data.cursor;
+      let cursor: { seconds: number; nanoseconds: number; id: string } | null = null;
+      if (cursorData !== null) {
+        const value = objeto(cursorData);
+        exactos(value, ['seconds', 'nanoseconds', 'id']);
+        exigir(Number.isSafeInteger(value.seconds) && Number(value.seconds) >= 0 && Number(value.seconds) <= 253_402_300_799
+          && Number.isSafeInteger(value.nanoseconds) && Number(value.nanoseconds) >= 0 && Number(value.nanoseconds) < 1_000_000_000
+          && typeof value.id === 'string' && /^[a-zA-Z0-9_-]{1,512}$/.test(value.id),
+        'datos-invalidos', 'Cursor de auditoría inválido.');
+        cursor = { seconds: Number(value.seconds), nanoseconds: Number(value.nanoseconds), id: value.id };
+      }
+
+      const pageSize = 30;
+      let consulta = db.collection('auditoriaAdministracion')
+        .orderBy('creadoEn', 'desc')
+        .orderBy(FieldPath.documentId(), 'desc');
+      if (cursor) consulta = consulta.startAfter(new Timestamp(cursor.seconds, cursor.nanoseconds), cursor.id);
+      const snapshot = await consulta.limit(pageSize + 1).get();
+      const documentos = snapshot.docs.slice(0, pageSize);
+      const acciones = documentos.flatMap(documento => {
+        const registro = documento.data();
+        const actorUid = typeof registro.actorUid === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(registro.actorUid) ? registro.actorUid : '';
+        const metadatos = etiquetasAuditoria[String(registro.accion ?? '')];
+        const momento = registro.creadoEn instanceof Timestamp ? registro.creadoEn.toDate().toISOString() : null;
+        if (!actorUid || !metadatos || !momento) return [];
+        return [{
+          id: documento.id,
+          actorUid,
+          area: metadatos.area,
+          accion: metadatos.accion,
+          objetivo: objetivoAuditoria(String(registro.accion), registro.documentoId),
+          creadoEn: momento,
+        }];
+      });
+      const ultimo = documentos.at(-1);
+      const ultimoMomento = ultimo?.data().creadoEn;
+      const siguiente = snapshot.docs.length > pageSize && ultimoMomento instanceof Timestamp
+        ? { seconds: ultimoMomento.seconds, nanoseconds: ultimoMomento.nanoseconds, id: ultimo!.id }
+        : null;
+      return { acciones, siguiente };
+    }
 
     if (accion === 'leerConfiguracionNavegacion') {
       exactos(data, []);

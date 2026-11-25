@@ -18,7 +18,9 @@ La [edición de cuentas emprendedoras](14-edicion-cuentas-emprendedoras.md) perm
 
 La [configuración de acceso y administración de cuentas](15-configuracion-y-administradores.md) permite guardar la política global de navegación y asignar o retirar el rol de administrador de cuentas de Authentication existentes.
 
-La [administración de ferias](16-administracion-ferias.md) cubre fichas, publicación/cancelación, participantes, respuestas a invitaciones y asistencia; no implementa envío de notificaciones, carga de fotos ni página pública de ferias.
+La [administración de ferias](16-administracion-ferias.md) cubre fichas, publicación/cancelación, participantes, respuestas a invitaciones, asistencia y notificaciones administrativas.
+
+El [registro de acciones de administración](23-registro-acciones-administracion.md) permite consultar de forma paginada y autenticada quién realizó cambios sobre cuentas, asociaciones y ferias, cuándo y sobre qué registro. La respuesta excluye campos privados del historial.
 
 El [seguimiento de tiendas del comprador](19-seguimiento-tiendas-comprador.md) documenta el guardado privado de A09 en la app y los permisos de Firestore.
 

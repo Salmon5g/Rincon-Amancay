@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import FeriasAdmin from '~/components/admin/FeriasAdmin.vue'
 import ConfiguracionAdmin from '~/components/admin/ConfiguracionAdmin.vue'
 import AdministradoresAdmin from '~/components/admin/AdministradoresAdmin.vue'
+import RegistroAccionesAdmin from '~/components/admin/RegistroAccionesAdmin.vue'
 import { esAdministrador, type SeccionLectura } from '~/lib/admin-lecturas'
 import {
   asignarEmprendedora,
@@ -112,6 +113,7 @@ const secciones = ref<Seccion[]>([
   { id: 'emprendedoras', icono: '👩‍🎨', titulo: 'Emprendedoras', descripcion: 'Altas con credenciales o invitación, edición y estado de las cuentas.', accion: '+ Agregar emprendedora', items: [] },
   { id: 'asociaciones', icono: '🤝', titulo: 'Asociaciones', descripcion: 'Ficha, estado e integrantes de cada asociación.', accion: '+ Crear asociación', items: [] },
   { id: 'ferias', icono: '🎪', titulo: 'Ferias y eventos', descripcion: 'Crear actividades, gestionar participantes y registrar asistencia.', accion: '+ Crear feria', items: [] },
+  { id: 'registro-acciones', icono: '📋', titulo: 'Registro de acciones', descripcion: 'Consulta quién hizo cambios en cuentas, asociaciones y ferias, y cuándo.', accion: '', items: [] },
   { id: 'catalogos', icono: '🗂️', titulo: 'Catálogos', descripcion: 'Sectores, tipos de emprendimiento, tipos de producto y categorías.', accion: '+ Nuevo valor', items: [] },
   { id: 'configuracion', icono: '⚙️', titulo: 'Configuración general', descripcion: 'Preferencias globales para el acceso y la navegación del comprador.', accion: 'Guardar configuración', items: [] },
   { id: 'administradores', icono: '🛡️', titulo: 'Administradores', descripcion: 'Gestionar otras cuentas administradoras de la plataforma.', accion: '+ Agregar administrador', items: [] },
@@ -470,7 +472,7 @@ onMounted(() => {
 onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.(); liberarVistaPreviaLogoAsociacion() })
 
 const resumen = computed(() =>
-  secciones.value.slice(0, 4).map((s) => ({
+  secciones.value.filter((s) => s.id !== 'registro-acciones').slice(0, 4).map((s) => ({
     id: s.id,
     icono: s.icono,
     titulo: s.titulo,
@@ -1430,7 +1432,7 @@ async function guardarEdicionCuentaEmprendedora() {
             <p class="sub">{{ seccion.descripcion }}</p>
           </div>
           <button
-            v-if="!['ferias', 'configuracion', 'administradores'].includes(seccion.id) && (seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true)"
+            v-if="!['ferias', 'configuracion', 'administradores', 'registro-acciones'].includes(seccion.id) && (seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true)"
             class="boton boton-primario" type="button"
             :disabled="seccion.id === 'emprendedoras' && !!cuentaEmprendedoraEnEdicion"
             @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : seccion.id === 'asociaciones' ? prepararNuevaAsociacion() : abrirFormulario()"
@@ -1442,6 +1444,7 @@ async function guardarEdicionCuentaEmprendedora() {
         <FeriasAdmin v-if="seccion.id === 'ferias'" />
         <ConfiguracionAdmin v-else-if="seccion.id === 'configuracion'" />
         <AdministradoresAdmin v-else-if="seccion.id === 'administradores'" />
+        <RegistroAccionesAdmin v-else-if="seccion.id === 'registro-acciones'" />
         <template v-else>
 
         <section v-if="formularioAbierto" class="formulario" aria-labelledby="titulo-formulario">

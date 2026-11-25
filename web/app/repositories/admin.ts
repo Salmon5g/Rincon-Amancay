@@ -21,6 +21,9 @@ import type {
   ModoNavegacionComprador,
   FeriaAdmin,
   ParticipantesFeria,
+  AccionAuditoriaAdmin,
+  CursorAuditoriaAdmin,
+  PaginaAuditoriaAdmin,
 } from '~/types/admin'
 
 // Estas lecturas requieren solo Firestore y funcionan con cliente local o real.
@@ -338,6 +341,47 @@ export function agregarAdministradorPlataforma(cliente: ClienteAdminConApi, soli
 
 export function quitarAdministradorPlataforma(cliente: ClienteAdminConApi, solicitud: { operacionId: string; uidDestino: string; versionEsperada: string }) {
   return cliente.llamar('quitarAdministrador', solicitud)
+}
+
+export async function listarAuditoriaAdministracion(
+  cliente: ClienteAdminConApi,
+  cursor: CursorAuditoriaAdmin | null = null,
+): Promise<PaginaAuditoriaAdmin> {
+  // La API comprueba el rol en servidor; el navegador no lee la colección cruda.
+  const data = await cliente.llamar('listarAuditoriaAdministracion', { cursor })
+  if (!Array.isArray(data.acciones)) throw new Error('La API no devolvió el registro de acciones.')
+  const areas = ['Cuentas', 'Asociaciones', 'Ferias y eventos'] as const
+  const acciones = data.acciones.map((value): AccionAuditoriaAdmin => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una acción inválida.')
+    const item = value as Record<string, unknown>
+    if (typeof item.id !== 'string' || typeof item.actorUid !== 'string'
+      || !areas.includes(item.area as typeof areas[number])
+      || typeof item.accion !== 'string' || typeof item.objetivo !== 'string'
+      || typeof item.creadoEn !== 'string' || !Number.isFinite(Date.parse(item.creadoEn))) {
+      throw new Error('La API devolvió una acción incompleta.')
+    }
+    return {
+      id: item.id,
+      actorUid: item.actorUid,
+      area: item.area as AccionAuditoriaAdmin['area'],
+      accion: item.accion,
+      objetivo: item.objetivo,
+      creadoEn: item.creadoEn,
+    }
+  })
+  let siguiente: CursorAuditoriaAdmin | null = null
+  if (data.siguiente !== null) {
+    if (!data.siguiente || typeof data.siguiente !== 'object' || Array.isArray(data.siguiente)) throw new Error('La API devolvió un cursor inválido.')
+    const cursorDatos = data.siguiente as Record<string, unknown>
+    if (!Number.isSafeInteger(cursorDatos.seconds) || !Number.isSafeInteger(cursorDatos.nanoseconds)
+      || typeof cursorDatos.id !== 'string') throw new Error('La API devolvió un cursor inválido.')
+    siguiente = {
+      seconds: cursorDatos.seconds as number,
+      nanoseconds: cursorDatos.nanoseconds as number,
+      id: cursorDatos.id,
+    }
+  }
+  return { acciones, siguiente }
 }
 
 export async function leerConfiguracionNavegacion(cliente: ClienteAdminConApi): Promise<ConfiguracionNavegacion> {
