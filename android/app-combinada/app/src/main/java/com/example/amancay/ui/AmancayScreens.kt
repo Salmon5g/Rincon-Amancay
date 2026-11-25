@@ -1014,10 +1014,9 @@ fun PhotoStep(
     onDiscardDraft: (() -> Unit)? = null,
     imagenOriginalSeleccionada: Bitmap? = null,
     imagenPreparada: Bitmap? = null,
+    onAjustarEncuadre: () -> Unit = {},
     mejorarLuz: Boolean = false,
     onMejorarLuz: (Boolean) -> Unit = {},
-    compararOriginal: Boolean = false,
-    onCompararOriginal: (Boolean) -> Unit = {},
     procesandoImagen: Boolean = false,
     continuarHabilitado: Boolean = true,
     errorImagenSeleccionada: String? = null
@@ -1029,13 +1028,11 @@ fun PhotoStep(
                 fallback = Fig.VASE_BIG,
                 size = 168.dp,
                 uri = draft.photoUri,
-                bitmap = when {
-                    draft.fotoLista -> if (compararOriginal) imagenOriginalSeleccionada else imagenPreparada ?: imagenOriginalSeleccionada ?: draft.photoBitmap
-                    else -> imagenPrevia
-                },
+                bitmap = if (draft.fotoLista) imagenPreparada ?: imagenOriginalSeleccionada ?: draft.photoBitmap else imagenPrevia,
                 hasPhoto = tieneFoto,
                 corner = 18.dp,
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                onPhotoClick = if (draft.fotoLista && imagenOriginalSeleccionada != null && !procesandoImagen) onAjustarEncuadre else null
             )
             Spacer(Modifier.height(8.dp))
             if (tieneFoto) {
@@ -1048,7 +1045,7 @@ fun PhotoStep(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (draft.fotoLista) "Así se verá la imagen principal de tu producto en la tienda."
+                    if (draft.fotoLista) "Así se verá la imagen principal de tu producto en la tienda. Tócala para ajustar el encuadre."
                     else mensajeImagenExistente ?: "La foto está guardada de forma privada. Puedes reemplazarla desde la cámara o la galería.",
                     fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center
                 )
@@ -1113,20 +1110,13 @@ fun PhotoStep(
             ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Ajusta la foto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
-                    Text("Usaremos el mismo formato cuadrado para que las fotos se vean parejas en la tienda.", fontSize = 14.sp, color = Muted)
+                    Text("La imagen mantiene un formato cuadrado para verse pareja en la tienda. Toca la vista previa si quieres mover o acercar el producto.", fontSize = 14.sp, color = Muted)
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text("Mejorar luz", color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             Text("Ajuste suave y reversible", color = Muted, fontSize = 13.sp)
                         }
                         Switch(checked = mejorarLuz, onCheckedChange = onMejorarLuz)
-                    }
-                    OutlinedButton(
-                        onClick = { onCompararOriginal(!compararOriginal) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text(if (compararOriginal) "Ver foto ajustada" else "Comparar con el original", color = Wine, fontWeight = FontWeight.Bold)
                     }
                 }
             }

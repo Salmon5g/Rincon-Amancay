@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.RadioButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checkroom
@@ -105,6 +106,7 @@ import com.example.amancay.ui.SelectableChip
 import com.example.amancay.ui.AmancayField
 import com.example.amancay.ui.Fig
 import com.example.amancay.ui.PhotoStep
+import com.example.amancay.ui.AjusteEncuadreFotoDialog
 import com.example.amancay.ui.CamaraProductoGuiada
 import com.example.amancay.ui.ProductImage
 import com.example.amancay.ui.StepScaffold
@@ -236,7 +238,6 @@ private data class BorradorAlta(
 private class EstadoFotoProducto(borrador: BorradorAlta?) {
     val recorteCuadrado = true
     var mejorarLuz by mutableStateOf(borrador?.mejorarLuz ?: false)
-    var compararOriginal by mutableStateOf(false)
     var imagenOriginalSeleccionada by mutableStateOf<Bitmap?>(null)
     var imagenOriginalCuadrada by mutableStateOf<Bitmap?>(null)
     var imagenPreparada by mutableStateOf<Bitmap?>(null)
@@ -986,6 +987,7 @@ private fun EditorProductoEmprendedora(
     val fotoLocal = remember(editorInstanceKey) { DraftState().apply { photoUri = borradorGuardado?.foto?.let(Uri::parse); fotoLista = photoUri != null } }
     val estadoFoto = remember(editorInstanceKey) { EstadoFotoProducto(borradorGuardado) }
     var camaraProductoVisible by rememberSaveable { mutableStateOf(false) }
+    var mostrarAjusteEncuadre by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var capturaPendiente by rememberSaveable { mutableStateOf<String?>(null) }
     var varianteConFotoTemporal by remember { mutableStateOf<String?>(null) }
@@ -1019,7 +1021,6 @@ private fun EditorProductoEmprendedora(
                 fotoLocal.photoBitmap = null
                 fotoLocal.fotoLista = true
                 estadoFoto.mejorarLuz = false
-                estadoFoto.compararOriginal = false
                 archivoId = UUID.randomUUID().toString()
                 eliminarFotoTemporalProducto(context, fotoAnterior)
             }
@@ -1187,6 +1188,37 @@ private fun EditorProductoEmprendedora(
     LaunchedEffect(editorInstanceKey, tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, archivoId, fotoLocal.photoUri, atributos, variantes, conVariantes, operacionId, identidadAlta, estadoFoto.mejorarLuz) {
         if (original == null) guardarBorradorAlta(context, tiendaId, BorradorAlta(tipoId, categoriaId, nombre, descripcion, modalidad, manejaStock, alAgotarse, precioBase, stockInicial, paso, fotoLocal.photoUri?.toString(), archivoId, atributos, variantes, conVariantes, operacionId.takeIf { identidadAlta.firma.isNotBlank() }.orEmpty(), identidadAlta.productoId, identidadAlta.firma, estadoFoto.recorteCuadrado, estadoFoto.mejorarLuz))
     }
+    if (mostrarAjusteEncuadre) {
+        val imagenEncuadre = estadoFoto.imagenOriginalSeleccionada
+        if (imagenEncuadre != null) {
+            AjusteEncuadreFotoDialog(
+                imagen = imagenEncuadre,
+                onCancelar = { mostrarAjusteEncuadre = false },
+                onConfirmar = { recorte ->
+                    mostrarAjusteEncuadre = false
+                    estadoFoto.procesandoPreviaSeleccionada = true
+                    scope.launch {
+                        val uriAnterior = fotoLocal.photoUri
+                        val nuevaUri = runCatching {
+                            withContext(Dispatchers.IO) { guardarBitmapPersistente(context, recorte) }
+                        }.getOrElse {
+                            estadoFoto.errorPreviaSeleccionada = it.message ?: "No se pudo guardar el encuadre elegido. Inténtalo otra vez."
+                            null
+                        }
+                        if (nuevaUri != null) {
+                            fotoLocal.photoUri = nuevaUri
+                            fotoLocal.photoBitmap = null
+                            fotoLocal.fotoLista = true
+                            archivoId = UUID.randomUUID().toString()
+                            estadoFoto.mejorarLuz = false
+                            eliminarFotoTemporalProducto(context, uriAnterior)
+                        }
+                        estadoFoto.procesandoPreviaSeleccionada = false
+                    }
+                }
+            )
+        } else mostrarAjusteEncuadre = false
+    }
 
     LaunchedEffect(tipoId, editorInstanceKey) {
         if (original == null && (borradorGuardado == null || tipoId != borradorGuardado.tipoId)) {
@@ -1282,7 +1314,6 @@ private fun EditorProductoEmprendedora(
                         fotoLocal.photoBitmap = null
                         fotoLocal.fotoLista = true
                         estadoFoto.mejorarLuz = false
-                        estadoFoto.compararOriginal = false
                         archivoId = UUID.randomUUID().toString()
                         eliminarFotoTemporalProducto(context, fotoAnterior)
                     }
@@ -1303,10 +1334,9 @@ private fun EditorProductoEmprendedora(
             continuarHabilitado=!(estadoFoto.cargandoPreviaSeleccionada || estadoFoto.procesandoPreviaSeleccionada) && (!fotoLocal.fotoLista || estadoFoto.imagenPreparada != null),
             imagenOriginalSeleccionada=estadoFoto.imagenOriginalCuadrada,
             imagenPreparada=estadoFoto.imagenPreparada,
+            onAjustarEncuadre={ mostrarAjusteEncuadre = true },
             mejorarLuz=estadoFoto.mejorarLuz,
-            onMejorarLuz={ estadoFoto.mejorarLuz = it; estadoFoto.compararOriginal = false },
-            compararOriginal=estadoFoto.compararOriginal,
-            onCompararOriginal={ estadoFoto.compararOriginal = it },
+            onMejorarLuz={ estadoFoto.mejorarLuz = it },
             procesandoImagen=estadoFoto.cargandoPreviaSeleccionada || estadoFoto.procesandoPreviaSeleccionada,
             errorImagenSeleccionada=estadoFoto.errorPreviaSeleccionada,
             imagenExistente=original?.imagenes?.isNotEmpty() == true,
@@ -1502,54 +1532,90 @@ private fun EditorProductoEmprendedora(
             onNext={ guardarBorrador(publicar = original == null && tiendaPublicada) }, onBack={ paso=6 }, onSaveExit={ guardarBorrador(false) },
             nextLabel=when { original != null -> "Guardar cambios"; tiendaPublicada -> "Publicar producto"; else -> "Guardar borrador" }, nextEnabled=puedeContinuar,
             pasoActual=6, showSaveExit=original==null, onExit={ guardarLocalYSalir() }, onDiscardDraft=onDiscardDraft, totalPasos=6, dibujarBajoBarraSistema=true) {
-            Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color.White), shape=RoundedCornerShape(20.dp), border=BorderStroke(1.dp,Line)) {
-                Column(Modifier.padding(16.dp)) {
-                    if (identidadAlta.avisoIntentoAnterior) {
-                        AvisoEmprendedora("Al cambiar los datos después de un intento de guardado, se usará un producto nuevo para no mezclar solicitudes. Si el intento anterior llegó a Firebase, quedará como borrador separado en Mis productos.", false)
-                        Spacer(Modifier.height(10.dp))
-                    }
+            if (identidadAlta.avisoIntentoAnterior) {
+                AvisoEmprendedora("Al cambiar los datos después de un intento de guardado, se usará un producto nuevo para no mezclar solicitudes. Si el intento anterior llegó a Firebase, quedará como borrador separado en Mis productos.", false)
+                Spacer(Modifier.height(10.dp))
+            }
+            Card(
+                Modifier.fillMaxWidth(),
+                colors=CardDefaults.cardColors(containerColor=Color.White),
+                shape=RoundedCornerShape(24.dp),
+                border=BorderStroke(1.dp,Color(0xFFF0D6CB))
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         ProductImage(
                             fallback=Fig.VASE_REVIEW,
-                            size=92.dp,
-                            uri=fotoLocal.photoUri,
-                            bitmap=if (fotoLocal.fotoLista) fotoLocal.photoBitmap else imagenPrivada,
-                            hasPhoto=true
+                            size=88.dp,
+                            uri=if (fotoLocal.fotoLista) null else fotoLocal.photoUri,
+                            bitmap=if (fotoLocal.fotoLista) estadoFoto.imagenPreparada ?: fotoLocal.photoBitmap else imagenPrivada,
+                            hasPhoto=true,
+                            corner=18.dp
                         )
-                        Spacer(Modifier.size(14.dp))
-                        Column {
-                            Text(tipo?.nombre?.uppercase() ?: "PRODUCTO", fontSize=12.sp, fontWeight=FontWeight.Bold, color=Wine)
-                            Text(nombre.ifBlank { "Nombre del producto" }, fontSize=22.sp, color=Dark)
-                            Text(categoriasDisponibles.firstOrNull { it.id == categoriaId }?.nombre.orEmpty(), fontSize=14.sp, color=Muted)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Text(tipo?.nombre?.uppercase() ?: "PRODUCTO", fontSize=11.sp, fontWeight=FontWeight.Bold, color=Wine, letterSpacing=0.8.sp)
+                            Text(nombre.ifBlank { "Nombre del producto" }, fontSize=21.sp, lineHeight=25.sp, fontWeight=FontWeight.Bold, color=Dark)
+                            Text(categoriasDisponibles.firstOrNull { it.id == categoriaId }?.nombre ?: "Sin categoría", fontSize=13.sp, color=Muted)
                         }
                     }
-                    Text(descripcion.ifBlank { "Sin descripción." }, color=Dark, modifier=Modifier.padding(top=10.dp))
-                    Text(if (conVariantes) "${variantes.size} ${if (variantes.size == 1) "variante" else "variantes"}" else "Precio: " + (precioBase.toLongOrNull()?.let(::pesos) ?: "Pendiente"), color=Muted, modifier=Modifier.padding(top=8.dp))
-                    Text("Modalidad: " + modalidad.replace('_',' '), color=Muted)
-                    Text("Control de stock: " + if (manejaStock) "Activado" else "No se controla", color=Muted)
-                    if (manejaStock) Text("Al agotarse: " + when (alAgotarse) {
-                        "ocultar" -> "ocultar el producto"
-                        "pasar_a_pedido" -> "pasar a pedido"
-                        else -> "mostrarlo como agotado"
-                    }, color=Muted)
-                    Text(
-                        "Disponibilidad inicial: " + if (original?.disponible == false) "No disponible" else "Disponible",
-                        color=Muted
-                    )
-                    campos.filter { !atributos[it.clave].isNullOrBlank() }.forEach { field ->
-                        Text(field.etiqueta + ": " + atributos[field.clave], color=Muted, modifier=Modifier.padding(top=4.dp))
+                    Surface(color=Color(0xFFFFF0E7), shape=RoundedCornerShape(15.dp), modifier=Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(horizontal=13.dp, vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Sell, contentDescription=null, tint=Wine, modifier=Modifier.size(19.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (conVariantes) "${variantes.size} ${if (variantes.size == 1) "variante" else "variantes"}"
+                                else precioBase.toLongOrNull()?.let(::pesos) ?: "Precio pendiente",
+                                color=Wine, fontSize=16.sp, fontWeight=FontWeight.Bold
+                            )
+                        }
                     }
-                    if (conVariantes) variantes.forEach { variante ->
-                        val nombreVariante = opciones.mapNotNull { variante.opciones[it]?.takeIf(String::isNotBlank) }.joinToString(" / ")
-                        Text(
-                            (nombreVariante.ifBlank { "Variante" }) + " · " + (variante.precio.toLongOrNull()?.let(::pesos) ?: "Precio pendiente") +
-                                if (manejaStock) " · stock inicial " + (variante.stock.ifBlank { "pendiente" }) else "",
-                            color=Muted, modifier=Modifier.padding(top=4.dp)
-                        )
-                    } else if (manejaStock) {
-                        Text("Stock inicial: " + (stockInicial.ifBlank { original?.stock?.toString() ?: "pendiente" }), color=Muted)
-                    }
+                    Text(descripcion.ifBlank { "Sin descripción." }, color=Dark, fontSize=14.sp, lineHeight=20.sp)
                 }
+            }
+            ResumenSeccionProducto("Detalles del producto", Icons.Filled.Storefront) {
+                FilaRevisionProducto("Modalidad", modalidad.replace('_',' ').replaceFirstChar { it.uppercase() })
+                campos.filter { !atributos[it.clave].isNullOrBlank() }.forEach { field ->
+                    FilaRevisionProducto(field.etiqueta, atributos[field.clave].orEmpty())
+                }
+            }
+            ResumenSeccionProducto("Precio y variantes", Icons.Filled.Sell) {
+                if (conVariantes) {
+                    variantes.forEachIndexed { indice, variante ->
+                        val nombreVariante = opciones.mapNotNull { variante.opciones[it]?.takeIf(String::isNotBlank) }.joinToString(" · ")
+                        Card(
+                            Modifier.fillMaxWidth().padding(top=if (indice == 0) 0.dp else 8.dp),
+                            colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF8F2)),
+                            shape=RoundedCornerShape(15.dp),
+                            border=BorderStroke(1.dp,Color(0xFFF5E5DC))
+                        ) {
+                            Column(Modifier.padding(horizontal=13.dp, vertical=11.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                Text(nombreVariante.ifBlank { "Variante ${indice + 1}" }, color=Dark, fontSize=15.sp, fontWeight=FontWeight.Bold)
+                                Text(
+                                    buildList {
+                                        add(variante.precio.toLongOrNull()?.let(::pesos) ?: "Precio pendiente")
+                                        if (manejaStock) add("Stock inicial: ${variante.stock.ifBlank { "pendiente" }}")
+                                    }.joinToString("  ·  "),
+                                    color=Muted, fontSize=13.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    FilaRevisionProducto("Precio", precioBase.toLongOrNull()?.let(::pesos) ?: "Pendiente")
+                }
+            }
+            ResumenSeccionProducto("Stock y disponibilidad", Icons.Filled.Inventory2) {
+                FilaRevisionProducto("Control de stock", if (manejaStock) "Activado" else "No se controla")
+                if (manejaStock) {
+                    FilaRevisionProducto("Stock inicial", if (conVariantes) "Definido por variante" else stockInicial.ifBlank { original?.stock?.toString() ?: "Pendiente" })
+                    FilaRevisionProducto("Al agotarse", when (alAgotarse) {
+                        "ocultar" -> "Ocultar producto"
+                        "pasar_a_pedido" -> "Pasar a pedido"
+                        else -> "Mostrar como agotado"
+                    })
+                }
+                FilaRevisionProducto("Disponibilidad inicial", if (original?.disponible == false) "No disponible" else "Disponible")
             }
             Spacer(Modifier.height(12.dp))
             val mensajeImagen = when {
@@ -1592,6 +1658,45 @@ private fun EditorProductoEmprendedora(
             error?.let { AvisoEmprendedora(it, true) }
         }
     }}
+
+@Composable
+private fun ResumenSeccionProducto(
+    titulo: String,
+    icono: ImageVector,
+    contenido: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    Card(
+        modifier=Modifier.fillMaxWidth(),
+        colors=CardDefaults.cardColors(containerColor=Color.White),
+        shape=RoundedCornerShape(20.dp),
+        border=BorderStroke(1.dp,Color(0xFFF0D6CB))
+    ) {
+        Column(Modifier.padding(horizontal=15.dp, vertical=14.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(38.dp).background(Color(0xFFFFE9E0), RoundedCornerShape(50)),
+                    contentAlignment=Alignment.Center
+                ) { Icon(icono, contentDescription=null, tint=Wine, modifier=Modifier.size(20.dp)) }
+                Text(titulo, color=Wine, fontSize=16.sp, fontWeight=FontWeight.Bold, modifier=Modifier.padding(start=10.dp))
+            }
+            androidx.compose.foundation.layout.Column(verticalArrangement=Arrangement.spacedBy(2.dp), content=contenido)
+        }
+    }
+}
+
+@Composable
+private fun FilaRevisionProducto(etiqueta: String, valor: String) {
+    Column {
+        Row(
+            modifier=Modifier.fillMaxWidth().padding(vertical=7.dp),
+            verticalAlignment=Alignment.Top
+        ) {
+            Text(etiqueta, color=Muted, fontSize=13.sp, modifier=Modifier.weight(0.42f).padding(end=8.dp))
+            Text(valor, color=Dark, fontSize=14.sp, fontWeight=FontWeight.Medium, modifier=Modifier.weight(0.58f))
+        }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF4E8E1)))
+    }
+}
 
 @Composable
 private fun OpcionDisponibilidad(

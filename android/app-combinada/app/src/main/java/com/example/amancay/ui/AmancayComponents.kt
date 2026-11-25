@@ -411,7 +411,8 @@ fun ProductImage(
     hasPhoto: Boolean = false,
     modifier: Modifier = Modifier,
     corner: Dp = 20.dp,
-    contentScale: ContentScale = ContentScale.Fit
+    contentScale: ContentScale = ContentScale.Fit,
+    onPhotoClick: (() -> Unit)? = null
 ) {
     val puedeAmpliar = hasPhoto && (bitmap != null || uri != null)
     var mostrarAmpliada by remember(uri, bitmap, hasPhoto) { mutableStateOf(false) }
@@ -431,18 +432,18 @@ fun ProductImage(
             .size(size)
             .clip(RoundedCornerShape(corner))
             .background(CardPink)
-            .clickable(enabled = puedeAmpliar, onClick = ::abrirAmpliada),
+            .clickable(enabled = puedeAmpliar, onClick = onPhotoClick ?: ::abrirAmpliada),
         contentAlignment = Alignment.Center
     ) {
         Crossfade(targetState = hasPhoto, label = "foto") { foto ->
         if (foto && bitmap != null) {
             Image(
-                bitmap = bitmap.asImageBitmap(), contentDescription = if (puedeAmpliar) "Ampliar foto del producto" else null,
+                bitmap = bitmap.asImageBitmap(), contentDescription = if (onPhotoClick != null) "Toca para ajustar el encuadre" else if (puedeAmpliar) "Ampliar foto del producto" else null,
                 modifier = Modifier.fillMaxSize(), contentScale = contentScale
             )
         } else if (foto && uri != null) {
             AsyncImage(
-                model = uri, contentDescription = if (puedeAmpliar) "Ampliar foto del producto" else null,
+                model = uri, contentDescription = if (onPhotoClick != null) "Toca para ajustar el encuadre" else if (puedeAmpliar) "Ampliar foto del producto" else null,
                 modifier = Modifier.fillMaxSize(), contentScale = contentScale
             )
         } else if (foto) {
