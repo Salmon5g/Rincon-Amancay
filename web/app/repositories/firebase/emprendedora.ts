@@ -32,6 +32,8 @@ export type VarianteEmprendedoraWeb = {
   precio: number
   stock: number | null
   activa: boolean
+  tieneImagen: boolean
+  imagenPublica?: string
 }
 
 export type CampoTipoProductoEmprendedora = {
@@ -262,6 +264,8 @@ export async function cargarCuentaEmprendedora(firebase: ServiciosCliente, uid: 
           precio: numero(variante.precio) ?? 0,
           stock: numero(variante.stock),
           activa: variante.activa !== false,
+          tieneImagen: typeof variante.imagen === 'string' && variante.imagen !== '',
+          ...(typeof variante.imagenPublica === 'string' && variante.imagenPublica ? { imagenPublica: variante.imagenPublica } : {}),
         }
       }) ?? []
       return {
