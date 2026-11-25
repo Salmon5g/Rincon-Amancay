@@ -42,6 +42,7 @@ export interface CatalogoPublicoRepository {
   listarAsociacionesPublicas(): Promise<AsociacionPublica[]>
   listarFeriasPublicas(): Promise<FeriaPublica[]>
   leerFeria(feriaId: string): Promise<FeriaPublica>
+  leerEtiquetasTipoProducto(tipoProductoId: string, version: number): Promise<Record<string, string>>
   leerPoliticaNavegacion(): Promise<PoliticaNavegacion>
   resolverUrlImagen(ruta: string): string | null
   leerImagen(ruta: string): Promise<Blob>

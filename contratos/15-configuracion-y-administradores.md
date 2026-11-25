@@ -21,3 +21,7 @@ La fuente de permisos es `accesos/{uid}` con `estado: "activo"` y `roles` que in
 La operación añade el rol y mantiene otros roles de comprador. `quitarAdministrador` exige versión vigente, no permite quitar el propio rol ni dejar cero administradores activos. Solo retira el rol; no borra ni bloquea la cuenta de Authentication. Cada cambio conserva recibo de idempotencia en `operacionesAdministracion/{actorUid}_{operacionId}` y auditoría en `auditoriaAdministracion/{actorUid}_{operacionId}`.
 
 El servidor usa Firebase Admin. Por eso una cuenta administradora de la aplicación no reemplaza los permisos IAM de la identidad de Cloud Run o de la cuenta ADC local. No se publican contraseñas ni claves de servicio.
+
+## Resumen del panel
+
+`resumenAdministracion` recibe un objeto vacío y exige una cuenta administradora activa. Devuelve totales calculados con agregaciones `count()` del servidor, sin descargar documentos: `emprendedoras` (accesos con rol `emprendedora`, activos o desactivados), `invitacionesPendientes`, `asociaciones`, `ferias` (todos los estados) y `catalogos` (suma de sectores, categorías, tipos de emprendimiento y tipos de producto, activos e inactivos). Cada conteo cuesta aproximadamente una lectura por cada 1.000 entradas de índice. El panel lo pide al mostrar Inicio.

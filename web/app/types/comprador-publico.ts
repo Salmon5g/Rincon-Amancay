@@ -98,6 +98,7 @@ export interface ProductoPublico {
   descripcion: string;
   categoriaId: string;
   tipoProductoId: string;
+  versionTipoProducto?: number;
   tieneVariantes: boolean;
   manejaStock?: boolean;
   moneda: string;
@@ -130,6 +131,8 @@ export interface FichaComprador {
     direccion?: string;
     puntoRetiro?: PuntoRetiroPublico;
     categoriaId?: string;
+    tipoProductoId?: string;
+    versionTipoProducto?: number;
     mostrarPrecios?: boolean;
     contacto?: ContactoPublico;
     canalesContacto?: CanalesContactoPublico;

@@ -177,13 +177,13 @@ export async function listarEmprendedorasAdmin(cliente: ClienteAdminConApi): Pro
   await comprobarAdmin(cliente)
   const data = await cliente.llamar('listarEmprendedorasAdmin', {})
   if (!Array.isArray(data.emprendedoras) || !Array.isArray(data.invitaciones)) {
-    throw new Error('La API no devolvió las cuentas de emprendedoras.')
+    throw new Error('No se pudieron cargar las cuentas de emprendedoras.')
   }
   const emprendedoras = data.emprendedoras.map((value): EmprendedoraAdmin => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una cuenta inválida.')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Llegó información incompleta de una cuenta. Actualiza e inténtalo de nuevo.')
     const account = value as Record<string, unknown>
     if (typeof account.uid !== 'string' || typeof account.tiendaId !== 'string' || typeof account.estado !== 'string'
-      || typeof account.consistente !== 'boolean') throw new Error('La API devolvió una cuenta incompleta.')
+      || typeof account.consistente !== 'boolean') throw new Error('Llegó información incompleta de una cuenta. Actualiza e inténtalo de nuevo.')
     return {
       uid: account.uid,
       correo: typeof account.correo === 'string' ? account.correo : '',
@@ -197,9 +197,9 @@ export async function listarEmprendedorasAdmin(cliente: ClienteAdminConApi): Pro
     }
   })
   const invitaciones = data.invitaciones.map((value): InvitacionEmprendedoraAdmin => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una invitación inválida.')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Llegó información incompleta de una invitación. Actualiza e inténtalo de nuevo.')
     const invite = value as Record<string, unknown>
-    if (typeof invite.invitacionId !== 'string' || typeof invite.estado !== 'string') throw new Error('La API devolvió una invitación incompleta.')
+    if (typeof invite.invitacionId !== 'string' || typeof invite.estado !== 'string') throw new Error('Llegó información incompleta de una invitación. Actualiza e inténtalo de nuevo.')
     return {
       invitacionId: invite.invitacionId,
       correo: typeof invite.correo === 'string' ? invite.correo : '',
@@ -245,12 +245,12 @@ export async function listarCatalogosAdmin(cliente: ClienteAmancay): Promise<Cat
 }
 
 function mapearAsociacion(value: unknown): Asociacion {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una asociación inválida.')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Llegó información incompleta de una asociación. Actualiza e inténtalo de nuevo.')
   const data = value as Record<string, unknown>
   const contacto = data.contacto as Partial<ContactoAsociacion> | undefined
   if (typeof data.id !== 'string' || typeof data.nombre !== 'string' || typeof data.sectorId !== 'string'
     || typeof data.activo !== 'boolean' || !contacto || !['whatsapp', 'correo', 'web'].includes(String(contacto.tipo))
-    || typeof contacto.valor !== 'string') throw new Error('La API devolvió una asociación incompleta.')
+    || typeof contacto.valor !== 'string') throw new Error('Llegó información incompleta de una asociación. Actualiza e inténtalo de nuevo.')
   return {
     id: data.id,
     nombre: data.nombre,
@@ -266,14 +266,14 @@ function mapearAsociacion(value: unknown): Asociacion {
 export async function listarAsociacionesAdmin(cliente: ClienteAdminConApi): Promise<Asociacion[]> {
   await comprobarAdmin(cliente)
   const data = await cliente.llamar('listarAsociaciones', {})
-  if (!Array.isArray(data.asociaciones)) throw new Error('La API no devolvió el listado de asociaciones.')
+  if (!Array.isArray(data.asociaciones)) throw new Error('No se pudo cargar el listado de asociaciones.')
   return data.asociaciones.map(mapearAsociacion)
 }
 
 export async function leerIntegrantesAsociacion(cliente: ClienteAdminConApi, asociacionId: string): Promise<IntegrantesAsociacion> {
   const data = await cliente.llamar('leerIntegrantesAsociacion', { asociacionId })
   if (!data.asociacion || !Array.isArray(data.miembros) || !Array.isArray(data.disponibles)) {
-    throw new Error('La API no devolvió los integrantes de la asociación.')
+    throw new Error('No se pudieron cargar los integrantes de la asociación.')
   }
   return data as unknown as IntegrantesAsociacion
 }
@@ -318,11 +318,11 @@ export function quitarEmprendedora(cliente: ClienteAdminConApi, solicitud: {
 export async function listarAdministradoresPlataforma(cliente: ClienteAdminConApi): Promise<AdministradorPlataforma[]> {
   await comprobarAdmin(cliente)
   const data = await cliente.llamar('listarAdministradores', {})
-  if (!Array.isArray(data.administradores)) throw new Error('La API no devolvió las cuentas administradoras.')
+  if (!Array.isArray(data.administradores)) throw new Error('No se pudieron cargar las cuentas administradoras.')
   return data.administradores.map((value): AdministradorPlataforma => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una cuenta administradora inválida.')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Llegó información incompleta de una cuenta administradora. Actualiza e inténtalo de nuevo.')
     const item = value as Record<string, unknown>
-    if (typeof item.uid !== 'string' || typeof item.estado !== 'string' || typeof item.consistente !== 'boolean') throw new Error('La API devolvió una cuenta administradora incompleta.')
+    if (typeof item.uid !== 'string' || typeof item.estado !== 'string' || typeof item.consistente !== 'boolean') throw new Error('Llegó información incompleta de una cuenta administradora. Actualiza e inténtalo de nuevo.')
     return {
       uid: item.uid,
       correo: texto(item.correo),
@@ -349,20 +349,21 @@ export async function listarAuditoriaAdministracion(
 ): Promise<PaginaAuditoriaAdmin> {
   // La API comprueba el rol en servidor; el navegador no lee la colección cruda.
   const data = await cliente.llamar('listarAuditoriaAdministracion', { cursor })
-  if (!Array.isArray(data.acciones)) throw new Error('La API no devolvió el registro de acciones.')
+  if (!Array.isArray(data.acciones)) throw new Error('No se pudo cargar el registro de acciones.')
   const areas = ['Cuentas', 'Asociaciones', 'Ferias y eventos'] as const
   const acciones = data.acciones.map((value): AccionAuditoriaAdmin => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una acción inválida.')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('No se pudo leer el registro de acciones.')
     const item = value as Record<string, unknown>
     if (typeof item.id !== 'string' || typeof item.actorUid !== 'string'
       || !areas.includes(item.area as typeof areas[number])
       || typeof item.accion !== 'string' || typeof item.objetivo !== 'string'
       || typeof item.creadoEn !== 'string' || !Number.isFinite(Date.parse(item.creadoEn))) {
-      throw new Error('La API devolvió una acción incompleta.')
+      throw new Error('El registro de acciones llegó incompleto.')
     }
     return {
       id: item.id,
       actorUid: item.actorUid,
+      actorNombre: typeof item.actorNombre === 'string' ? item.actorNombre : '',
       area: item.area as AccionAuditoriaAdmin['area'],
       accion: item.accion,
       objetivo: item.objetivo,
@@ -371,10 +372,10 @@ export async function listarAuditoriaAdministracion(
   })
   let siguiente: CursorAuditoriaAdmin | null = null
   if (data.siguiente !== null) {
-    if (!data.siguiente || typeof data.siguiente !== 'object' || Array.isArray(data.siguiente)) throw new Error('La API devolvió un cursor inválido.')
+    if (!data.siguiente || typeof data.siguiente !== 'object' || Array.isArray(data.siguiente)) throw new Error('No se pudo cargar la página siguiente del registro. Actualiza e inténtalo de nuevo.')
     const cursorDatos = data.siguiente as Record<string, unknown>
     if (!Number.isSafeInteger(cursorDatos.seconds) || !Number.isSafeInteger(cursorDatos.nanoseconds)
-      || typeof cursorDatos.id !== 'string') throw new Error('La API devolvió un cursor inválido.')
+      || typeof cursorDatos.id !== 'string') throw new Error('No se pudo cargar la página siguiente del registro. Actualiza e inténtalo de nuevo.')
     siguiente = {
       seconds: cursorDatos.seconds as number,
       nanoseconds: cursorDatos.nanoseconds as number,
@@ -387,7 +388,7 @@ export async function listarAuditoriaAdministracion(
 export async function leerConfiguracionNavegacion(cliente: ClienteAdminConApi): Promise<ConfiguracionNavegacion> {
   await comprobarAdmin(cliente)
   const data = await cliente.llamar('leerConfiguracionNavegacion', {})
-  if (!['permitir', 'invitar', 'exigir'].includes(String(data.modo)) || typeof data.versionEsperada !== 'string') throw new Error('La API devolvió una configuración de acceso inválida.')
+  if (!['permitir', 'invitar', 'exigir'].includes(String(data.modo)) || typeof data.versionEsperada !== 'string') throw new Error('Llegó información incompleta de una configuración de acceso. Actualiza e inténtalo de nuevo.')
   return { modo: data.modo as ModoNavegacionComprador, versionEsperada: data.versionEsperada, actualizadoEn: typeof data.actualizadoEn === 'string' ? data.actualizadoEn : null }
 }
 
@@ -396,9 +397,9 @@ export function guardarConfiguracionNavegacion(cliente: ClienteAdminConApi, soli
 }
 
 function mapearFeria(value: unknown): FeriaAdmin {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('La API devolvió una feria inválida.')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Llegó información incompleta de una feria. Actualiza e inténtalo de nuevo.')
   const data = value as Record<string, unknown>
-  if (typeof data.id !== 'string' || typeof data.nombre !== 'string' || typeof data.estado !== 'string' || typeof data.versionEsperada !== 'string') throw new Error('La API devolvió una feria incompleta.')
+  if (typeof data.id !== 'string' || typeof data.nombre !== 'string' || typeof data.estado !== 'string' || typeof data.versionEsperada !== 'string') throw new Error('Llegó información incompleta de una feria. Actualiza e inténtalo de nuevo.')
   return {
     id: data.id, nombre: data.nombre, descripcion: texto(data.descripcion), organizador: texto(data.organizador),
     direccion: texto(data.direccion), fechaInicio: typeof data.fechaInicio === 'string' ? data.fechaInicio : null,
@@ -411,13 +412,13 @@ function mapearFeria(value: unknown): FeriaAdmin {
 export async function listarFeriasAdmin(cliente: ClienteAdminConApi): Promise<FeriaAdmin[]> {
   await comprobarAdmin(cliente)
   const data = await cliente.llamar('listarFeriasAdmin', {})
-  if (!Array.isArray(data.ferias)) throw new Error('La API no devolvió las ferias.')
+  if (!Array.isArray(data.ferias)) throw new Error('No se pudieron cargar las ferias.')
   return data.ferias.map(mapearFeria)
 }
 
 export async function leerParticipantesFeria(cliente: ClienteAdminConApi, feriaId: string): Promise<ParticipantesFeria> {
   const data = await cliente.llamar('leerParticipantesFeria', { feriaId })
-  if (!data.feria || !Array.isArray(data.participantes) || !Array.isArray(data.disponibles)) throw new Error('La API no devolvió los participantes de la feria.')
+  if (!data.feria || !Array.isArray(data.participantes) || !Array.isArray(data.disponibles)) throw new Error('No se pudieron cargar los participantes de la feria.')
   return data as unknown as ParticipantesFeria
 }
 
@@ -472,4 +473,21 @@ export async function cargarDatosAdmin(cliente: ClienteAmancay): Promise<DatosAd
     listarCatalogos(cliente),
   ])
   return { accesos, emprendedoras, invitaciones, catalogos, asociaciones: [] }
+}
+
+export type ResumenAdministracion = {
+  emprendedoras: number
+  invitacionesPendientes: number
+  asociaciones: number
+  ferias: number
+  catalogos: number
+}
+
+export async function leerResumenAdministracion(cliente: ClienteAdminConApi): Promise<ResumenAdministracion> {
+  const data = await cliente.llamar('resumenAdministracion', {})
+  const claves = ['emprendedoras', 'invitacionesPendientes', 'asociaciones', 'ferias', 'catalogos'] as const
+  if (!claves.every((clave) => Number.isSafeInteger(data[clave]) && Number(data[clave]) >= 0)) {
+    throw new Error('No se pudo cargar el resumen de administración.')
+  }
+  return Object.fromEntries(claves.map((clave) => [clave, Number(data[clave])])) as ResumenAdministracion
 }

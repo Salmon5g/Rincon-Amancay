@@ -17,9 +17,9 @@ const pendiente = ref<{ operacion: 'guardarConfiguracionNavegacion'; solicitud: 
 function explicar(cause: unknown) {
   const code = (cause as { code?: string })?.code
   if (code === 'conflicto') return 'Otra sesión cambió la configuración. Vuelve a cargarla antes de editar.'
-  if (code === 'sin-permiso') return 'La API no reconoce una cuenta administradora activa.'
-  if (code === 'conexion-interrumpida' || (cause as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó el guardado. Reintenta la misma solicitud sin cambiar el modo.'
-  return 'No se pudo guardar la configuración. Revisa la conexión y las reglas.'
+  if (code === 'sin-permiso') return 'Esta cuenta no tiene permisos de administración activos.'
+  if (code === 'conexion-interrumpida' || (cause as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó el guardado. Vuelve a intentarlo sin cambiar la opción.'
+  return 'No se pudo guardar la configuración. Revisa tu conexión e inténtalo de nuevo.'
 }
 
 async function cargar() {
@@ -35,7 +35,7 @@ async function enviar() {
   enviando.value = true; error.value = ''; aviso.value = ''
   try {
     await $amancay.llamar(pendiente.value.operacion, pendiente.value.solicitud)
-    pendiente.value = null; aviso.value = 'La preferencia se guardó en Firebase.'
+    pendiente.value = null; aviso.value = 'La preferencia se guardó.'
     await cargar()
   } catch (cause) {
     error.value = explicar(cause)
@@ -58,8 +58,8 @@ onMounted(() => { void cargar() })
       <div><p class="sobre">Preferencias de acceso</p><h2>Navegación del comprador</h2><p>Define la política que se guarda en la configuración central de la plataforma.</p></div>
       <button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Leyendo…' : 'Volver a cargar' }}</button>
     </div>
-    <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para guardar preferencias.</p>
-    <p v-if="cargando" role="status">Leyendo configuración desde Firebase…</p>
+    <p v-if="!habilitado" class="nota" role="status">Este panel está en modo de solo consulta; no se pueden guardar preferencias.</p>
+    <p v-if="cargando" role="status">Cargando…</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="aviso" class="exito" role="status">{{ aviso }}</p>
     <template v-if="configuracion">
@@ -69,9 +69,9 @@ onMounted(() => { void cargar() })
         <label class="opcion" :class="{ seleccionada: modo === 'invitar' }"><input v-model="modo" type="radio" value="invitar" /><span><strong>Sugerir que inicie sesión</strong><small>La visita sigue disponible. La web muestra una sugerencia no bloqueante y Android ofrece iniciar con Google u omitir.</small></span></label>
         <label class="opcion" :class="{ seleccionada: modo === 'exigir' }"><input v-model="modo" type="radio" value="exigir" /><span><strong>Solicitar una cuenta</strong><small>La web y Android bloquean el catálogo hasta que la persona inicie sesión con Google.</small></span></label>
       </fieldset>
-      <div class="nota importante"><span aria-hidden="true">ℹ️</span><p>La preferencia queda guardada en <code>configuracionAplicacion/navegacion</code> y se aplica en la web y Android del comprador. Si la lectura falla en la web, se mantiene la exploración libre.</p></div>
+      <div class="nota importante"><span aria-hidden="true">ℹ️</span><p>La preferencia se aplica en la web y en la app para compradoras. Si no se puede cargar, se permite explorar libremente.</p></div>
       <div class="acciones"><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente || !configuracion || modo === configuracion.modo" @click="guardar">{{ enviando ? 'Guardando…' : 'Guardar configuración' }}</button><span v-if="configuracion.actualizadoEn">Último cambio: {{ new Date(configuracion.actualizadoEn).toLocaleString('es-CL') }}</span></div>
-      <div v-if="pendiente" class="nota pendiente" role="status"><p>No se recibió confirmación. Mantén la opción seleccionada y reintenta la misma operación.</p><button class="boton" type="button" :disabled="enviando" @click="enviar">{{ enviando ? 'Procesando…' : 'Reintentar guardado' }}</button></div>
+      <div v-if="pendiente" class="nota pendiente" role="status"><p>No se confirmó el guardado. Mantén la opción seleccionada y vuelve a intentarlo.</p><button class="boton" type="button" :disabled="enviando" @click="enviar">{{ enviando ? 'Procesando…' : 'Reintentar guardado' }}</button></div>
     </template>
   </section>
 </template>

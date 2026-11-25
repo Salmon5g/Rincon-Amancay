@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import '~/assets/amancay-tokens.css';
 import type { FichaComprador, ProductoPublico, TiendaPublica, VariantePublica } from '~/types/comprador-publico';
 import { categoriasProductoVigentes } from '~/repositories/catalogo-publico';
+import { atributosConEtiqueta } from '~/lib/atributos-producto';
 import { compartirEnlacePublico } from '~/utils/compartir-enlace-publico';
 useHead({
     title: 'Comprar local — Rincón Amancay',
@@ -18,6 +19,14 @@ const route = useRoute();
 const router = useRouter();
 const tienda = ref<FichaComprador | null>(null);
 const producto = ref<FichaComprador | null>(null);
+const etiquetasAtributos = ref<Record<string, string>>({});
+const atributosFicha = computed(() => atributosConEtiqueta(producto.value?.datos.atributosEspecificos ?? {}, etiquetasAtributos.value));
+watch(() => [producto.value?.datos.tipoProductoId, producto.value?.datos.versionTipoProducto] as const, async ([tipoId, version]) => {
+    etiquetasAtributos.value = {};
+    if (!tipoId || !version) return;
+    const etiquetas = await $catalogoPublico.leerEtiquetasTipoProducto(tipoId, version);
+    if (producto.value?.datos.tipoProductoId === tipoId && producto.value?.datos.versionTipoProducto === version) etiquetasAtributos.value = etiquetas;
+});
 const filas = ref<FichaComprador[]>([]);
 const variantes = ref<FichaComprador[]>([]);
 const destacados = ref<{ tienda: FichaComprador; producto: FichaComprador }[]>([]);
@@ -177,6 +186,8 @@ function fichaProducto(elemento: ProductoPublico): FichaComprador {
             nombre: elemento.nombre,
             descripcion: elemento.descripcion,
             categoriaId: elemento.categoriaId,
+            tipoProductoId: elemento.tipoProductoId,
+            versionTipoProducto: elemento.versionTipoProducto,
             imagenes: elemento.imagenes,
             tieneVariantes: elemento.tieneVariantes,
             manejaStock: elemento.manejaStock,
@@ -1310,10 +1321,10 @@ onBeforeUnmount(() => {
                             variante?.datos.precio : producto.datos.precioBase) : 'Consultar precio en la tienda' }}
               </p>
             </div>
-            <dl v-if="Object.keys(producto.datos.atributosEspecificos ?? {}).length" class="ficha-atributos">
-              <template v-for="(valor, campo) in producto.datos.atributosEspecificos" :key="campo">
-                <dt>{{ campo }}</dt>
-                <dd>{{ valor }}</dd>
+            <dl v-if="atributosFicha.length" class="ficha-atributos">
+              <template v-for="atributo in atributosFicha" :key="atributo.clave">
+                <dt>{{ atributo.etiqueta }}</dt>
+                <dd>{{ atributo.valor }}</dd>
               </template>
             </dl>
             <div class="ficha-acciones">

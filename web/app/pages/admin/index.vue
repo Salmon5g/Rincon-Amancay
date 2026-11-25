@@ -20,6 +20,8 @@ import {
   listarEmprendedorasAdmin,
   leerIntegrantesAsociacion,
   quitarEmprendedora,
+  leerResumenAdministracion,
+  type ResumenAdministracion,
 } from '~/repositories/admin'
 import { crearIdentidadEmprendedora } from '~/repositories/firebase/cuentas-admin'
 import type { ColeccionCatalogoEditable } from '~/repositories/admin'
@@ -130,8 +132,8 @@ const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'lon
 const { $amancay } = useNuxtApp()
 const config = useRuntimeConfig().public
 const entorno = config.firebaseModo === 'real-api'
-  ? 'Firebase real · API autenticada'
-  : config.firebaseModo === 'real-lectura' ? 'Firebase real · solo lectura' : 'Emuladores locales'
+  ? 'Panel de administración'
+  : config.firebaseModo === 'real-lectura' ? 'Solo consulta' : 'Modo de pruebas'
 const cargandoSesion = ref(true)
 const autorizado = ref(false)
 const sesion = ref('')
@@ -202,24 +204,24 @@ let desconectar: (() => void) | undefined
 function mensajeError(error: unknown) {
   const codigo = (error as { code?: string })?.code
   if (codigo === 'datos-invalidos') return 'Completa los campos y selecciona un sector y tipo de emprendimiento activos.'
-  if (codigo === 'sin-permiso') return 'La API no reconoce un acceso administrador activo para esta cuenta.'
+  if (codigo === 'sin-permiso') return 'Esta cuenta no tiene permisos de administración activos.'
   if (codigo === 'conflicto') return 'La cuenta cambió desde que se cargó. Actualiza la lista y revisa su estado antes de continuar.'
-  if (codigo === 'pendiente') return 'La operación quedó pendiente de completar en Authentication. Reintenta sin cambiar el motivo ni cierres el formulario.'
+  if (codigo === 'pendiente') return 'El cambio quedó a medio completar. Vuelve a intentarlo sin cambiar el motivo ni cerrar el formulario.'
   if (codigo === 'conexion-interrumpida' || (error as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Conservé la solicitud; vuelve a intentar sin cambiar los datos.'
-  if (codigo === 'id-reutilizado') return 'La solicitud cambió después de un intento interrumpido. Cierra y vuelve a abrir el formulario para crear una nueva operación.'
-  if (codigo === 'permission-denied') return 'Firestore rechazó la lectura. Revisar las reglas publicadas y los permisos de esta cuenta.'
-  if (codigo === 'auth/operation-not-allowed') return 'Habilitar correo y contraseña en Firebase Authentication.'
+  if (codigo === 'id-reutilizado') return 'Los datos cambiaron después de un intento interrumpido. Cierra y vuelve a abrir el formulario.'
+  if (codigo === 'permission-denied') return 'No tienes permiso para ver esta información.'
+  if (codigo === 'auth/operation-not-allowed') return 'El inicio de sesión con correo y contraseña no está habilitado.'
   if (codigo === 'auth/invalid-credential' || codigo === 'auth/user-not-found' || codigo === 'auth/wrong-password') return 'No se pudo iniciar sesión. Revisa el correo y la contraseña.'
-  if (codigo === 'auth/network-request-failed' || codigo === 'unavailable') return 'No se pudo contactar con Firebase. Revisa la conexión y el entorno seleccionado.'
+  if (codigo === 'auth/network-request-failed' || codigo === 'unavailable') return 'No se pudo conectar. Revisa tu conexión a internet e inténtalo de nuevo.'
   if (codigo === 'auth/too-many-requests') return 'Demasiados intentos. Espera antes de volver a intentarlo.'
-  return 'No se pudo completar la consulta. Revisa la configuración de Firebase y vuelve a intentarlo.'
+  return 'No se pudo completar la consulta. Inténtalo de nuevo en unos minutos.'
 }
 
 function mensajeErrorCatalogo(error: unknown) {
   const codigo = (error as { code?: string })?.code
   if (codigo === 'datos-invalidos') return 'Revisa el nombre y la definición del catálogo. Las claves deben ser únicas y los atributos son de texto.'
   if (codigo === 'conflicto') return 'El valor cambió desde que se cargó o ya existe un nombre igual. Actualiza el listado y vuelve a revisar.'
-  if (codigo === 'id-reutilizado') return 'La solicitud ya se intentó con otros datos. Cierra el formulario y comienza una operación nueva.'
+  if (codigo === 'id-reutilizado') return 'Esta solicitud ya se intentó con otros datos. Cierra el formulario y vuelve a empezar.'
   return mensajeError(error)
 }
 
@@ -227,25 +229,25 @@ function mensajeErrorAsociacion(error: unknown) {
   const codigo = (error as { code?: string })?.code
   if (codigo === 'datos-invalidos') return 'Revisa el nombre, sector, contacto y formato del logo.'
   if (codigo === 'conflicto') return 'La asociación o la relación cambió desde que se cargó. Actualiza el listado e inténtalo de nuevo.'
-  if (codigo === 'id-reutilizado') return 'La solicitud ya se intentó con otros datos. Inicia una operación nueva.'
+  if (codigo === 'id-reutilizado') return 'Esta solicitud ya se intentó con otros datos. Vuelve a empezar.'
   return mensajeError(error)
 }
 
 function mensajeErrorCargaLogo(error: unknown) {
   const codigo = (error as { code?: string })?.code
-  if (codigo === 'datos-invalidos' || codigo === 'tipo-no-admitido') return 'El logo debe ser JPEG, PNG o WebP y pesar hasta 5 MiB.'
+  if (codigo === 'datos-invalidos' || codigo === 'tipo-no-admitido') return 'El logo debe ser JPG, PNG o WebP de hasta 5 MB.'
   if (codigo === 'imagen-no-autorizada') return 'No se pudo procesar la imagen. Prueba con otra foto o logo.'
-  if (codigo === 'pendiente' || codigo === 'conexion-interrumpida' || (error as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'Supabase Storage no confirmó la carga. Reintenta con el mismo archivo.'
+  if (codigo === 'pendiente' || codigo === 'conexion-interrumpida' || (error as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la carga del logo. Inténtalo de nuevo con el mismo archivo.'
   return mensajeError(error)
 }
 
 function mensajeErrorEdicionCuenta(error: unknown) {
   const codigo = (error as { code?: string })?.code
   if (codigo === 'datos-invalidos') return 'Revisa el nombre visible y escribe un correo válido.'
-  if (codigo === 'correo-ocupado') return 'Ese correo ya está asociado a otra cuenta de Firebase Authentication. Prueba con otra dirección.'
+  if (codigo === 'correo-ocupado') return 'Ese correo ya pertenece a otra cuenta. Prueba con otra dirección.'
   if (codigo === 'conflicto') return 'La cuenta o el perfil cambió; actualiza el listado y revisa los datos antes de volver a guardar.'
-  if (codigo === 'no-encontrado') return 'La identidad de Authentication ya no existe; revisa la cuenta antes de editarla.'
-  if (codigo === 'id-reutilizado') return 'La solicitud se intentó con otros datos. Inicia una operación nueva antes de continuar.'
+  if (codigo === 'no-encontrado') return 'Esta cuenta ya no existe; actualiza la lista antes de editarla.'
+  if (codigo === 'id-reutilizado') return 'Esta solicitud ya se intentó con otros datos. Vuelve a empezar antes de continuar.'
   return mensajeError(error)
 }
 
@@ -289,7 +291,7 @@ function itemAsociacion(asociacion: Asociacion): Item {
   const sector = datos.value.catalogos.sectores.find((item) => item.id === asociacion.sectorId)?.nombre ?? asociacion.sectorId
   return {
     titulo: asociacion.nombre,
-    detalle: `Sector: ${sector} · ${asociacion.contacto.tipo}: ${asociacion.contacto.valor} · ID: ${asociacion.id}`,
+    detalle: `Sector: ${sector} · ${asociacion.contacto.tipo}: ${asociacion.contacto.valor}`,
     estado: asociacion.activo ? 'Activa' : 'Inactiva',
     asociacionId: asociacion.id,
     asociacion,
@@ -313,7 +315,7 @@ function seleccionarLogoAsociacion(evento: Event) {
   const archivo = input.files?.[0]
   if (!archivo) return
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(archivo.type) || archivo.size <= 0 || archivo.size > 5 * 1024 * 1024) {
-    errorOperacion.value = 'El logo debe ser JPEG, PNG o WebP y pesar hasta 5 MiB.'
+    errorOperacion.value = 'El logo debe ser JPG, PNG o WebP de hasta 5 MB.'
     input.value = ''
     return
   }
@@ -367,7 +369,7 @@ async function comprobarSesion() {
     const acceso = await $amancay.consultarAcceso()
     if (revision !== revisionSesion) return
     autorizado.value = esAdministrador(acceso)
-    if (sesion.value && !autorizado.value) errorSesion.value = 'La cuenta no tiene un documento de acceso con estado activo y rol administrador.'
+    if (sesion.value && !autorizado.value) errorSesion.value = 'Esta cuenta no tiene permisos de administración.'
     if (autorizado.value) await cargarSeccion()
   } catch (error) {
     if (revision === revisionSesion) errorSesion.value = mensajeError(error)
@@ -392,13 +394,13 @@ async function ingresar() {
 
 async function salir() {
   if (cuentaAltaPendiente.value) {
-    errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de cerrar sesión.'
+    errorOperacion.value = 'La cuenta ya se creó. Vuelve a intentar la asignación de la tienda antes de cerrar sesión.'
     return
   }
   if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
     || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
     || operacionIntegrantePendiente.value?.reintentoObligatorio || edicionCuentaReintentoObligatorio.value) {
-    errorOperacion.value = 'Completa el reintento de la operación pendiente antes de cerrar sesión.'
+    errorOperacion.value = 'Termina el cambio pendiente antes de cerrar sesión.'
     return
   }
   try { await $amancay.cerrarSesion() }
@@ -436,7 +438,7 @@ async function cargarSeccion() {
         destino.items = [
           ...listado.emprendedoras.map((cuenta): Item => ({
             titulo: cuenta.nombreMostrar || cuenta.correo || cuenta.uid,
-            detalle: `${cuenta.correo || 'Correo no disponible'} · Tienda: ${cuenta.nombreTienda} · ID: ${cuenta.tiendaId}${cuenta.consistente ? '' : ' · Revisar datos relacionados'}`,
+            detalle: `${cuenta.correo || 'Correo no disponible'} · Tienda: ${cuenta.nombreTienda}${cuenta.consistente ? '' : ' · Requiere revisión'}`,
             estado: cuenta.estado,
             uidDestino: cuenta.uid,
             tiendaId: cuenta.tiendaId,
@@ -471,15 +473,54 @@ onMounted(() => {
 })
 onBeforeUnmount(() => { revisionSesion++; revisionDatos++; desconectar?.(); liberarVistaPreviaLogoAsociacion() })
 
+const resumenServidor = ref<ResumenAdministracion | null>(null)
+const cargandoResumen = ref(false)
+const errorResumen = ref('')
+let revisionResumen = 0
+
+async function cargarResumen() {
+  const revision = ++revisionResumen
+  cargandoResumen.value = true
+  errorResumen.value = ''
+  try {
+    const resultado = await leerResumenAdministracion($amancay)
+    if (revision === revisionResumen && autorizado.value) resumenServidor.value = resultado
+  } catch (error) {
+    if (revision === revisionResumen) errorResumen.value = mensajeError(error)
+  } finally {
+    if (revision === revisionResumen) cargandoResumen.value = false
+  }
+}
+
+watch([autorizado, activa], ([sesionAdmin, seccionActiva]) => {
+  if (!import.meta.client) return
+  if (!sesionAdmin) {
+    revisionResumen++
+    resumenServidor.value = null
+    return
+  }
+  if (seccionActiva === 'inicio') void cargarResumen()
+}, { immediate: true })
+
 const resumen = computed(() =>
-  secciones.value.filter((s) => s.id !== 'registro-acciones').slice(0, 4).map((s) => ({
-    id: s.id,
-    icono: s.icono,
-    titulo: s.titulo,
-    total: s.id === 'catalogos'
-      ? Object.values(datos.value.catalogos).reduce((total, valores) => total + valores.length, 0)
-      : s.items.length,
-  })),
+  secciones.value.filter((s) => s.id !== 'registro-acciones').slice(0, 4).map((s) => {
+    const servidor = resumenServidor.value
+    const total = servidor
+      ? s.id === 'emprendedoras' ? servidor.emprendedoras
+        : s.id === 'asociaciones' ? servidor.asociaciones
+          : s.id === 'ferias' ? servidor.ferias
+            : s.id === 'catalogos' ? servidor.catalogos : s.items.length
+      : null
+    return {
+      id: s.id,
+      icono: s.icono,
+      titulo: s.titulo,
+      total,
+      detalle: s.id === 'emprendedoras' && servidor?.invitacionesPendientes
+        ? `${servidor.invitacionesPendientes} ${servidor.invitacionesPendientes === 1 ? 'invitación pendiente' : 'invitaciones pendientes'}`
+        : '',
+    }
+  }),
 )
 
 const estados = computed(() => activa.value === 'catalogos'
@@ -531,13 +572,13 @@ watch(() => route.query.seccion, (valor) => {
 
 async function ir(id: string) {
   if (cuentaAltaPendiente.value) {
-    errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de cambiar de sección.'
+    errorOperacion.value = 'La cuenta ya se creó. Vuelve a intentar la asignación de la tienda antes de cambiar de sección.'
     return
   }
   if (catalogoReintentoObligatorio.value || catalogoEstadoPendiente.value?.reintentoObligatorio
     || asociacionReintentoObligatorio.value || asociacionEstadoPendiente.value?.reintentoObligatorio
     || operacionIntegrantePendiente.value?.reintentoObligatorio || edicionCuentaReintentoObligatorio.value) {
-    errorOperacion.value = 'Completa el reintento de la operación pendiente antes de cambiar de sección.'
+    errorOperacion.value = 'Termina el cambio pendiente antes de cambiar de sección.'
     return
   }
   asociacionEnGestion.value = null
@@ -635,7 +676,7 @@ async function guardarAsociacion() {
   const accion = asociacionEnEdicion.value ? 'editarAsociacion' : 'crearAsociacion'
   const solicitud = JSON.stringify([accion, contenido, asociacionEnEdicion.value?.id ?? null, asociacionEnEdicion.value?.versionEsperada ?? null])
   if (asociacionReintentoObligatorio.value && asociacionOperacionPendiente.value?.solicitud !== solicitud) {
-    errorOperacion.value = 'El servidor pudo guardar la solicitud. Reintenta exactamente los mismos datos antes de editar el formulario.'
+    errorOperacion.value = 'Es posible que el cambio se haya guardado. Vuelve a intentarlo con los mismos datos antes de editar el formulario.'
     return
   }
   if (!asociacionOperacionPendiente.value || asociacionOperacionPendiente.value.solicitud !== solicitud) {
@@ -660,7 +701,7 @@ async function guardarAsociacion() {
     asociacionReintentoObligatorio.value = false
     formularioAbierto.value = false
     limpiarSeleccionLogoAsociacion()
-    aviso.value = `Asociación ${estado} en Firebase.`
+    aviso.value = `Asociación ${estado}.`
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 5000)
     await cargarDatosAsociaciones()
@@ -674,7 +715,7 @@ async function guardarAsociacion() {
 
 function prepararCambioEstadoAsociacion(item: Item, activo: boolean) {
   if (!escrituraAsociacionesDisponible.value || !item.asociacionId || !item.versionEsperada) {
-    errorDatos.value = 'Falta la versión vigente de la asociación. Actualiza el listado antes de operar.'
+    errorDatos.value = 'Los datos de esta asociación están desactualizados. Actualiza la lista e inténtalo de nuevo.'
     return
   }
   asociacionEstadoPendiente.value = { item, activo, operacionId: crypto.randomUUID(), reintentoObligatorio: false }
@@ -706,7 +747,7 @@ async function confirmarCambioEstadoAsociacion() {
 
 async function gestionarIntegrantes(asociacion: Asociacion) {
   if (operacionIntegrantePendiente.value?.reintentoObligatorio) {
-    errorOperacion.value = 'Reintenta la operación pendiente antes de cambiar de asociación.'
+    errorOperacion.value = 'Termina el cambio pendiente antes de cambiar de asociación.'
     return
   }
   asociacionEnGestion.value = asociacion
@@ -807,7 +848,7 @@ async function enviarOperacionIntegrante() {
 
 function cerrarGestionAsociacion() {
   if (operacionIntegrantePendiente.value?.reintentoObligatorio) {
-    errorOperacion.value = 'Reintenta la operación pendiente antes de cerrar esta asociación.'
+    errorOperacion.value = 'Termina el cambio pendiente antes de cerrar esta asociación.'
     return
   }
   asociacionEnGestion.value = null
@@ -833,7 +874,7 @@ function prepararNuevoCatalogo() {
 
 function cerrarFormulario() {
   if (cuentaAltaPendiente.value) {
-    errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de cerrar el formulario.'
+    errorOperacion.value = 'La cuenta ya se creó. Vuelve a intentar la asignación de la tienda antes de cerrar el formulario.'
     return
   }
   if (catalogoReintentoObligatorio.value || asociacionReintentoObligatorio.value) {
@@ -849,7 +890,7 @@ function cerrarFormulario() {
 function protegerSalidaAlta(event: MouseEvent) {
   if (!cuentaAltaPendiente.value) return
   event.preventDefault()
-  errorOperacion.value = 'Authentication creó la cuenta. Reintenta la asignación de la tienda antes de salir del panel.'
+  errorOperacion.value = 'La cuenta ya se creó. Vuelve a intentar la asignación de la tienda antes de salir del panel.'
 }
 
 function guardarVistaPrevia() {
@@ -864,14 +905,14 @@ function guardarVistaPrevia() {
 function itemCatalogo(coleccion: ColeccionCatalogoEditable, elemento: ElementoCatalogo): Item {
   const tituloColeccion = tiposCatalogo.find((tipo) => tipo.id === coleccion)?.nombre ?? coleccion
   const definicion = coleccion === 'tiposProducto'
-    ? ` · versión ${elemento.versionActual ?? '?'} · ${elemento.campos?.length ?? 0} campos · ${elemento.opcionesVariante?.length ?? 0} opciones`
+    ? ` · ${elemento.campos?.length ?? 0} campos · ${elemento.opcionesVariante?.length ?? 0} opciones de variante`
     : ''
   const tipoProducto = coleccion === 'categorias' && elemento.tipoProductoId
     ? datos.value.catalogos.tiposProducto.find((tipo) => tipo.id === elemento.tipoProductoId)?.nombre ?? elemento.tipoProductoId
     : ''
   return {
     titulo: elemento.nombre,
-    detalle: `${tituloColeccion} · ID: ${elemento.id}${tipoProducto ? ` · Tipo: ${tipoProducto}` : ''}${definicion}`,
+    detalle: `${tituloColeccion}${tipoProducto ? ` · Tipo: ${tipoProducto}` : ''}${definicion}`,
     estado: elemento.activo ? 'Activo' : 'Inactivo',
     catalogo: coleccion,
     catalogoId: elemento.id,
@@ -883,7 +924,7 @@ function itemCatalogo(coleccion: ColeccionCatalogoEditable, elemento: ElementoCa
 function prepararEdicionCatalogo(item: Item) {
   if (!escrituraCatalogosDisponible.value || !item.catalogo || !item.elementoCatalogo) return
   if (!item.versionEsperada) {
-    errorDatos.value = 'Este valor no tiene una versión de actualización. Revísalo en Firestore antes de editarlo.'
+    errorDatos.value = 'Este valor no se puede editar ahora. Actualiza la lista e inténtalo de nuevo.'
     return
   }
   catalogoEnEdicion.value = { coleccion: item.catalogo, elemento: item.elementoCatalogo }
@@ -909,7 +950,7 @@ function quitarCampoCatalogo(index: number) {
 
 function prepararCambioEstadoCatalogo(item: Item, activo: boolean) {
   if (!escrituraCatalogosDisponible.value || !item.catalogo || !item.catalogoId || !item.versionEsperada) {
-    errorDatos.value = 'No se puede modificar este valor porque falta su versión de Firestore. Actualiza el listado.'
+    errorDatos.value = 'Este valor no se puede modificar ahora. Actualiza la lista e inténtalo de nuevo.'
     return
   }
   catalogoEstadoPendiente.value = { item, activo, operacionId: crypto.randomUUID(), reintentoObligatorio: false }
@@ -930,7 +971,7 @@ async function confirmarCambioEstadoCatalogo() {
       activo: pendiente.activo,
     })
     catalogoEstadoPendiente.value = null
-    aviso.value = pendiente.activo ? 'Valor de catálogo reactivado en Firestore.' : 'Valor desactivado en Firestore. Se conserva para las fichas existentes.'
+    aviso.value = pendiente.activo ? 'Valor de catálogo reactivado.' : 'Valor desactivado. Se conserva en las fichas existentes.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 5000)
     await cargarDatosCatalogos()
@@ -964,7 +1005,7 @@ async function guardarCatalogo() {
   const accion = catalogoEnEdicion.value ? 'editarElementoCatalogo' : 'crearElementoCatalogo'
   const firma = JSON.stringify([accion, solicitud])
   if (catalogoReintentoObligatorio.value && catalogoOperacionPendiente.value?.solicitud !== firma) {
-    errorOperacion.value = 'El servidor pudo guardar la solicitud. Reintenta exactamente los mismos datos antes de cambiar el formulario.'
+    errorOperacion.value = 'Es posible que el cambio se haya guardado. Vuelve a intentarlo con los mismos datos antes de cambiar el formulario.'
     return
   }
   if (!catalogoOperacionPendiente.value || catalogoOperacionPendiente.value.solicitud !== firma) {
@@ -993,7 +1034,7 @@ async function guardarCatalogo() {
     catalogoOperacionPendiente.value = null
     catalogoReintentoObligatorio.value = false
     formularioAbierto.value = false
-    aviso.value = `Valor de catálogo ${estado} en Firestore.`
+    aviso.value = `Valor de catálogo ${estado}.`
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 5000)
     await cargarDatosCatalogos()
@@ -1034,7 +1075,7 @@ async function guardarFormulario() {
   const tipoAlta = modoAltaEmprendedora.value
   const firma = JSON.stringify([tipoAlta, contenido])
   if (cuentaAltaPendiente.value && (operacionPendiente.value?.tipo !== 'cuenta' || operacionPendiente.value.solicitud !== firma)) {
-    errorOperacion.value = 'Authentication ya creó la cuenta. Conserva los datos y la contraseña para terminar la asignación de la tienda.'
+    errorOperacion.value = 'La cuenta ya se creó. Conserva los datos y la contraseña para terminar de asignar la tienda.'
     return
   }
   if (!operacionPendiente.value || operacionPendiente.value.tipo !== tipoAlta || operacionPendiente.value.solicitud !== firma) {
@@ -1094,7 +1135,7 @@ async function guardarFormulario() {
       formularioAbierto.value = false
       aviso.value = invitacionCreada.value
         ? 'Invitación registrada. Comparte el enlace con la destinataria; ella creará su contraseña y verificará su correo.'
-        : 'Invitación registrada en Firebase.'
+        : 'Invitación registrada.'
     }
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 12000)
@@ -1161,7 +1202,7 @@ async function confirmarCancelacionInvitacion() {
     await $amancay.llamar('cancelarInvitacion', { invitacionId: item.invitacionId })
     invitacionPendiente.value = null
     invitacionCreada.value = ''
-    aviso.value = 'Invitación cancelada en Firebase.'
+    aviso.value = 'Invitación cancelada.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 3500)
     await cargarSeccion()
@@ -1174,7 +1215,7 @@ async function confirmarCancelacionInvitacion() {
 
 function prepararAccionCuenta(item: Item, accion: AccionCuentaAdmin) {
   if (!item.uidDestino || !item.versionEsperada || config.firebaseModo !== 'real-api') {
-    errorDatos.value = 'Falta la versión actual de la cuenta. Actualiza la lista antes de operar.'
+    errorDatos.value = 'Los datos de esta cuenta están desactualizados. Actualiza la lista e inténtalo de nuevo.'
     return
   }
   errorOperacion.value = ''
@@ -1229,7 +1270,7 @@ function prepararEdicionCuentaEmprendedora(item: Item) {
     return
   }
   if (!item.versionPerfilEsperada) {
-    errorDatos.value = 'El perfil no tiene una versión de actualización. Actualiza la cuenta antes de editarla.'
+    errorDatos.value = 'Esta cuenta no se puede editar ahora. Actualiza la lista e inténtalo de nuevo.'
     return
   }
   cuentaEmprendedoraEnEdicion.value = item
@@ -1265,7 +1306,7 @@ async function guardarEdicionCuentaEmprendedora() {
   const correoEsperado = (cuenta.correo ?? '').trim().toLowerCase()
   const solicitud = JSON.stringify([cuenta.uidDestino, cuenta.versionPerfilEsperada, nombreMostrar, correoEsperado, correo])
   if (edicionCuentaReintentoObligatorio.value && edicionCuentaOperacion.value?.solicitud !== solicitud) {
-    errorOperacion.value = 'La operación pudo guardarse. Reintenta exactamente el mismo nombre para confirmar el resultado.'
+    errorOperacion.value = 'Es posible que el cambio se haya guardado. Vuelve a intentarlo con el mismo nombre para confirmarlo.'
     return
   }
   if (!edicionCuentaOperacion.value || edicionCuentaOperacion.value.solicitud !== solicitud) {
@@ -1293,7 +1334,7 @@ async function guardarEdicionCuentaEmprendedora() {
     aviso.value = correoActualizado
       ? enlaceVerificacion
         ? 'Correo actualizado en Firebase Authentication. Falta que la emprendedora verifique la nueva dirección.'
-        : 'Correo actualizado en Firebase Authentication. La emprendedora deberá iniciar sesión nuevamente.'
+        : 'Correo actualizado. La emprendedora deberá iniciar sesión nuevamente.'
       : 'Datos de la cuenta actualizados.'
     clearTimeout(temporizador)
     temporizador = setTimeout(() => (aviso.value = ''), 5000)
@@ -1399,11 +1440,13 @@ async function guardarEdicionCuentaEmprendedora() {
           <div class="destacada-arte" aria-hidden="true"><img src="/logo-amancay.png" alt="" /></div>
         </section>
 
-        <p>Los contadores muestran registros cargados en esta sesión, no totales globales.</p>
-        <section class="resumen" aria-label="Resumen">
+        <p v-if="errorResumen" class="resumen-aviso" role="alert">No se pudieron calcular los totales: {{ errorResumen }} <button type="button" class="resumen-reintentar" @click="cargarResumen">Reintentar</button></p>
+        <p v-else class="resumen-aviso">Totales de la plataforma; emprendedoras incluye cuentas activas y desactivadas.</p>
+        <section class="resumen" aria-label="Resumen" :aria-busy="cargandoResumen">
           <button v-for="r in resumen" :key="r.id" type="button" class="dato" @click="ir(r.id)">
-            <span class="dato-num">{{ r.total }}</span>
+            <span class="dato-num">{{ r.total ?? (cargandoResumen ? '…' : '—') }}</span>
             <span class="dato-txt">{{ r.titulo }}</span>
+            <span v-if="r.detalle" class="dato-detalle">{{ r.detalle }}</span>
           </button>
         </section>
 
@@ -1451,8 +1494,8 @@ async function guardarEdicionCuentaEmprendedora() {
           <div class="formulario-encabezado">
             <div>
               <h2 id="titulo-formulario">{{ seccion.id === 'catalogos' ? catalogoEnEdicion ? 'Editar valor de catálogo' : 'Nuevo valor de catálogo' : seccion.id === 'asociaciones' ? asociacionEnEdicion ? 'Editar asociación' : 'Crear asociación' : seccion.accion }}</h2>
-              <p v-if="seccion.id === 'catalogos'">Los cambios se guardan en Firestore mediante la API autenticada. Los nombres deben ser únicos dentro de cada catálogo.</p>
-              <p v-else-if="seccion.id === 'asociaciones'">La ficha se guarda mediante la API autenticada. El contacto y el logo se consideran información pública.</p>
+              <p v-if="seccion.id === 'catalogos'">Los nombres deben ser únicos dentro de cada catálogo.</p>
+              <p v-else-if="seccion.id === 'asociaciones'">El contacto y el logo serán visibles para el público.</p>
               <p v-else-if="seccion.id === 'emprendedoras' && ['local', 'real-api'].includes(config.firebaseModo)">Puedes crear ahora el acceso con una contraseña inicial o registrar una invitación para que la emprendedora cree su propia contraseña.</p>
               <p v-else>Vista previa: estos datos todavía no se guardan ni se envían.</p>
             </div>
@@ -1466,8 +1509,8 @@ async function guardarEdicionCuentaEmprendedora() {
                   <option value="invitacion">Enviar invitación para crear contraseña</option>
                 </select>
               </label>
-              <p v-if="!['local', 'real-api'].includes(config.firebaseModo)" class="campo-completo">Este entorno es de solo lectura; puedes completar una vista previa, pero no creará cuentas ni invitaciones.</p>
-              <p v-else-if="modoAltaEmprendedora === 'cuenta'" class="campo-completo">La contraseña se envía directamente a Firebase Authentication; no se guarda en Firestore ni se manda a la API. Entrégala a la emprendedora por un medio privado.</p>
+              <p v-if="!['local', 'real-api'].includes(config.firebaseModo)" class="campo-completo">Este panel está en modo de solo consulta: puedes ver una vista previa, pero no se crearán cuentas ni invitaciones.</p>
+              <p v-else-if="modoAltaEmprendedora === 'cuenta'" class="campo-completo">La contraseña no queda guardada en el panel. Entrégala a la emprendedora por un medio privado.</p>
               <p v-else class="campo-completo">Comparte manualmente el enlace. La invitación vence y la destinataria define su propia contraseña.</p>
               <div class="subencabezado-formulario campo-completo">
                 <h3>Acceso de la emprendedora</h3>
@@ -1519,7 +1562,7 @@ async function guardarEdicionCuentaEmprendedora() {
               </p>
               <div v-if="borrador.tipoCatalogo === 'tiposProducto'" class="campo-completo editor-tipo-producto">
                 <h3>Datos que tendrá la ficha de este tipo de producto</h3>
-                <p>Al cambiar estos campos se crea una nueva versión. Los productos existentes conservan la definición con que fueron creados.</p>
+                <p>Los productos existentes conservan los campos con que fueron creados.</p>
                 <div v-for="(campo, index) in catalogoCampos" :key="index" class="campo-tipo-producto">
                   <label>Clave técnica<input v-model="campo.clave" maxlength="40" placeholder="material" required :disabled="enviando || catalogoReintentoObligatorio" /></label>
                   <label>Nombre que verá la persona<input v-model="campo.etiqueta" maxlength="80" placeholder="Material" required :disabled="enviando || catalogoReintentoObligatorio" /></label>
@@ -1558,17 +1601,16 @@ async function guardarEdicionCuentaEmprendedora() {
                 <div class="logo-asociacion-carga">
                   <label for="archivo-logo-asociacion">Logo de la asociación (opcional)</label>
                   <input id="archivo-logo-asociacion" type="file" accept="image/png,image/jpeg,image/webp" :disabled="enviando || asociacionReintentoObligatorio || config.firebaseModo !== 'real-api'" @change="seleccionarLogoAsociacion" />
-                  <small v-if="config.firebaseModo === 'real-api'">El archivo se procesa y guarda en Supabase al guardar la asociación, y reemplaza la URL de abajo. JPEG, PNG o WebP, hasta 5 MiB.</small>
-                  <small v-else>La carga desde archivo usa la API compartida real-api. En este entorno puedes usar una URL HTTPS pública.</small>
+                  <small v-if="config.firebaseModo === 'real-api'">El archivo se guarda al guardar la asociación y reemplaza el enlace de abajo. JPG, PNG o WebP, hasta 5 MB.</small>
+                  <small v-else>En este modo solo puedes usar el enlace de una imagen publicada en internet.</small>
                   <div class="acciones-logo">
                     <button v-if="logoAsociacionArchivo" class="editar" type="button" :disabled="enviando || asociacionReintentoObligatorio" @click="limpiarSeleccionLogoAsociacion">Cancelar cambio de archivo</button>
                     <button v-if="borrador.logoUrl || logoAsociacionArchivo" class="editar" type="button" :disabled="enviando || asociacionReintentoObligatorio" @click="quitarLogoAsociacion">Quitar logo</button>
                   </div>
                 </div>
               </div>
-              <label class="campo-completo">O URL HTTPS pública<input v-model="borrador.logoUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || asociacionReintentoObligatorio" @input="logoAsociacionPreviewError = false" /></label>
+              <label class="campo-completo">O enlace de una imagen en internet<input v-model="borrador.logoUrl" type="url" maxlength="2048" placeholder="https://…" :disabled="enviando || asociacionReintentoObligatorio" @input="logoAsociacionPreviewError = false" /></label>
               <p v-if="!activos(datos.catalogos.sectores).length" class="campo-completo aviso-carga" role="status">Primero crea un sector activo en Catálogos para asociarlo a esta ficha.</p>
-              <p class="campo-completo">Los logos cargados desde archivo se guardan como WebP público en Supabase Storage; también puedes mantener una imagen alojada en otra URL HTTPS.</p>
             </template>
             <template v-else-if="seccion.id === 'ferias'">
               <label>Nombre de la feria<input v-model="borrador.nombre" required /></label>
@@ -1586,8 +1628,8 @@ async function guardarEdicionCuentaEmprendedora() {
               <button class="editar" type="button" :disabled="enviando || catalogoReintentoObligatorio || asociacionReintentoObligatorio" @click="cerrarFormulario">Cerrar</button>
             </div>
             <p v-if="catalogoReintentoObligatorio" class="campo-completo" role="status">No se recibió confirmación. Reintenta sin cambiar los datos para evitar duplicar operaciones.</p>
-            <p v-if="asociacionReintentoObligatorio" class="campo-completo" role="status">No se confirmó el resultado. Reintenta sin cambiar los datos para conservar la misma operación.</p>
-            <p v-if="cuentaAltaPendiente" class="campo-completo" role="status">La cuenta ya existe en Authentication. Mantén estos datos y reintenta para terminar de crear su tienda y permisos.</p>
+            <p v-if="asociacionReintentoObligatorio" class="campo-completo" role="status">No se confirmó si el cambio se guardó. Vuelve a intentarlo sin cambiar los datos.</p>
+            <p v-if="cuentaAltaPendiente" class="campo-completo" role="status">La cuenta ya se creó. Mantén estos datos y vuelve a intentarlo para terminar de crear su tienda y permisos.</p>
             <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
           </form>
         </section>
@@ -1600,7 +1642,7 @@ async function guardarEdicionCuentaEmprendedora() {
         </section>
         <section v-if="correoCambioConfirmado" class="aviso-carga" aria-live="polite">
           <strong>Verificación del nuevo correo</strong>
-          <p>La dirección {{ correoCambioConfirmado.correo }} ya quedó en Firebase Authentication, pero la emprendedora debe verificarla. Las sesiones anteriores se cerraron y tendrá que iniciar sesión nuevamente.</p>
+          <p>La dirección {{ correoCambioConfirmado.correo }} ya quedó guardada, pero la emprendedora debe verificarla. Las sesiones anteriores se cerraron y tendrá que iniciar sesión nuevamente.</p>
           <p>Comparte este enlace solo en privado con la emprendedora:</p>
           <a :href="correoCambioConfirmado.enlaceVerificacion" target="_blank" rel="noopener noreferrer">Abrir enlace de verificación</a>
           <button class="editar" type="button" @click="copiarEnlaceVerificacionCuenta">Copiar enlace</button>
@@ -1617,7 +1659,7 @@ async function guardarEdicionCuentaEmprendedora() {
           <div class="formulario-encabezado">
             <div>
               <h2 id="titulo-edicion-cuenta">Editar datos de la cuenta</h2>
-              <p>{{ cuentaEmprendedoraEnEdicion.nombreTienda }} · ID {{ cuentaEmprendedoraEnEdicion.uidDestino }}</p>
+              <p>{{ cuentaEmprendedoraEnEdicion.nombreTienda }}</p>
             </div>
             <button class="editar" type="button" :disabled="enviando || edicionCuentaReintentoObligatorio" @click="cerrarEdicionCuentaEmprendedora">Cerrar</button>
           </div>
@@ -1625,12 +1667,12 @@ async function guardarEdicionCuentaEmprendedora() {
             <label>Nombre visible<input v-model="nombreCuentaBorrador" maxlength="100" autocomplete="name" required :disabled="enviando || edicionCuentaReintentoObligatorio" /></label>
             <label>Correo de acceso<input v-model="correoCuentaBorrador" type="email" maxlength="254" autocomplete="email" required :disabled="enviando || edicionCuentaReintentoObligatorio" /></label>
             <label class="campo-completo">Tienda asignada (solo lectura)<input :value="cuentaEmprendedoraEnEdicion.nombreTienda || cuentaEmprendedoraEnEdicion.tiendaId || 'Sin tienda'" disabled /></label>
-            <p class="campo-completo">El correo se cambia en Firebase Authentication. Si lo modificas, se invalidan las sesiones anteriores y la emprendedora deberá iniciar sesión con la dirección nueva y verificarla mediante un enlace que podrás compartir en privado. La contraseña y la ficha de la tienda se gestionan por separado.</p>
+            <p class="campo-completo">Si cambias el correo, se invalidan las sesiones anteriores y la emprendedora deberá iniciar sesión con la dirección nueva y verificarla mediante un enlace que podrás compartir en privado. La contraseña y la ficha de la tienda se gestionan por separado.</p>
             <div class="acciones-formulario">
               <button class="boton boton-primario" type="submit" :disabled="enviando || !nombreCuentaBorrador.trim() || !correoCuentaBorrador.trim()">{{ enviando ? 'Guardando…' : edicionCuentaReintentoObligatorio ? 'Reintentar guardado' : 'Guardar cambios' }}</button>
               <button class="editar" type="button" :disabled="enviando || edicionCuentaReintentoObligatorio" @click="cerrarEdicionCuentaEmprendedora">Cancelar</button>
             </div>
-            <p v-if="edicionCuentaReintentoObligatorio" class="campo-completo" role="status">No se confirmó el resultado en Authentication. Reintenta sin cambiar el nombre ni el correo para completar la operación.</p>
+            <p v-if="edicionCuentaReintentoObligatorio" class="campo-completo" role="status">No se confirmó si el cambio se guardó. Vuelve a intentarlo sin cambiar el nombre ni el correo.</p>
             <p v-if="errorOperacion" class="campo-completo" role="alert">{{ errorOperacion }}</p>
           </form>
         </section>
@@ -1659,8 +1701,8 @@ async function guardarEdicionCuentaEmprendedora() {
           </div>
           <form class="campos-formulario" @submit.prevent="confirmarAccionCuenta">
             <label class="campo-completo">Motivo<textarea v-model="cuentaPendiente.motivo" rows="3" maxlength="500" required :disabled="enviando || cuentaPendiente.reintentoObligatorio" /></label>
-            <p class="campo-completo">La operación se registra en Firebase. {{ cuentaPendiente.accion === 'desactivarEmprendedora' ? 'La cuenta se deshabilitará y su tienda se ocultará.' : 'La cuenta se habilitará, pero la tienda seguirá oculta hasta que la emprendedora la publique.' }}</p>
-            <p v-if="cuentaPendiente.reintentoObligatorio" class="campo-completo" role="status">El servidor no confirmó el resultado o dejó pasos pendientes. Reintenta esta misma solicitud; el motivo queda bloqueado para conservar su identificador.</p>
+            <p class="campo-completo">{{ cuentaPendiente.accion === 'desactivarEmprendedora' ? 'La cuenta se deshabilitará y su tienda se ocultará.' : 'La cuenta se habilitará, pero la tienda seguirá oculta hasta que la emprendedora la publique.' }}</p>
+            <p v-if="cuentaPendiente.reintentoObligatorio" class="campo-completo" role="status">No se confirmó si el cambio terminó. Vuelve a intentarlo; el motivo no se puede modificar mientras tanto.</p>
             <div class="acciones-formulario">
               <button class="boton boton-primario" type="submit" :disabled="enviando">{{ enviando ? 'Procesando…' : cuentaPendiente.accion === 'desactivarEmprendedora' ? 'Confirmar desactivación' : 'Confirmar reactivación' }}</button>
               <button class="editar" type="button" :disabled="enviando || cuentaPendiente.reintentoObligatorio" @click="cuentaPendiente = null">Cancelar</button>
@@ -1677,7 +1719,7 @@ async function guardarEdicionCuentaEmprendedora() {
             </div>
           </div>
           <p>El registro no se elimina. Los productos ya creados conservan sus referencias y su definición histórica.</p>
-          <p v-if="catalogoEstadoPendiente.reintentoObligatorio" role="status">El servidor pudo completar el cambio. Reintenta esta misma acción para confirmar el resultado.</p>
+          <p v-if="catalogoEstadoPendiente.reintentoObligatorio" role="status">Es posible que el cambio se haya guardado. Vuelve a intentarlo para confirmarlo.</p>
           <div class="acciones-formulario">
             <button class="boton boton-primario" type="button" :disabled="enviando" @click="confirmarCambioEstadoCatalogo">{{ enviando ? 'Guardando…' : catalogoEstadoPendiente.activo ? 'Confirmar reactivación' : 'Confirmar desactivación' }}</button>
             <button class="editar" type="button" :disabled="enviando || catalogoEstadoPendiente.reintentoObligatorio" @click="catalogoEstadoPendiente = null">Cancelar</button>
@@ -1693,7 +1735,7 @@ async function guardarEdicionCuentaEmprendedora() {
             </div>
           </div>
           <p>{{ asociacionEstadoPendiente.activo ? 'La asociación volverá a estar activa para la administración.' : 'La asociación dejará de estar disponible. Sus integrantes y registros históricos se conservarán.' }}</p>
-          <p v-if="asociacionEstadoPendiente.reintentoObligatorio" role="status">No se confirmó la respuesta. Reintenta esta misma operación para verificar el resultado.</p>
+          <p v-if="asociacionEstadoPendiente.reintentoObligatorio" role="status">No se confirmó si el cambio se guardó. Vuelve a intentarlo para confirmarlo.</p>
           <div class="acciones-formulario">
             <button class="boton boton-primario" type="button" :disabled="enviando" @click="confirmarCambioEstadoAsociacion">{{ enviando ? 'Guardando…' : asociacionEstadoPendiente.activo ? 'Confirmar reactivación' : 'Confirmar desactivación' }}</button>
             <button class="editar" type="button" :disabled="enviando || asociacionEstadoPendiente.reintentoObligatorio" @click="asociacionEstadoPendiente = null">Cancelar</button>
@@ -1713,7 +1755,7 @@ async function guardarEdicionCuentaEmprendedora() {
             </div>
           </div>
 
-          <p v-if="!escrituraAsociacionesDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. Conecta la API autenticada para modificar integrantes.</p>
+          <p v-if="!escrituraAsociacionesDisponible" class="aviso-carga" role="status">Este panel está en modo de solo consulta; no se pueden modificar integrantes.</p>
           <p v-if="!detalleIntegrantes && cargandoDatos" role="status">Cargando integrantes y emprendedoras activas…</p>
           <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
 
@@ -1731,8 +1773,8 @@ async function guardarEdicionCuentaEmprendedora() {
 
             <section v-if="operacionIntegrantePendiente" class="aviso-carga" aria-live="polite">
               <p>{{ operacionIntegrantePendiente.accion === 'asignarEmprendedora' ? 'Asignando' : 'Retirando' }}: <strong>{{ operacionIntegrantePendiente.nombre }}</strong>.</p>
-              <p v-if="operacionIntegrantePendiente.reintentoObligatorio">No se confirmó el resultado. Reintenta esta solicitud sin cambiar de asociación ni iniciar otra operación.</p>
-              <button class="editar" type="button" :disabled="enviando" @click="enviarOperacionIntegrante">{{ enviando ? 'Procesando…' : 'Reintentar / confirmar operación' }}</button>
+              <p v-if="operacionIntegrantePendiente.reintentoObligatorio">No se confirmó si el cambio se guardó. Vuelve a intentarlo sin cambiar de asociación.</p>
+              <button class="editar" type="button" :disabled="enviando" @click="enviarOperacionIntegrante">{{ enviando ? 'Procesando…' : 'Reintentar' }}</button>
               <p v-if="errorOperacion" role="alert">{{ errorOperacion }}</p>
             </section>
 
@@ -1761,12 +1803,11 @@ async function guardarEdicionCuentaEmprendedora() {
           </template>
         </section>
 
-        <p v-if="seccion.id === 'catalogos' && !escrituraCatalogosDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. Para administrar valores, conecta el panel a la API autenticada real.</p>
-        <p v-if="seccion.id === 'asociaciones' && !escrituraAsociacionesDisponible" class="aviso-carga" role="status">Este entorno está en modo de solo lectura. La ficha y los integrantes solo se pueden cambiar con la API autenticada.</p>
-        <p v-if="seccion.id === 'catalogos'">Los sectores se usan al invitar emprendedoras. Desactiva los valores que ya no deban seleccionarse; se conservan para no borrar referencias históricas.</p>
-        <p v-if="seccion.id === 'asociaciones'">Las asociaciones guardan una ficha administrativa y relaciones de integrantes. Las bajas son lógicas para conservar historial.</p>
+        <p v-if="seccion.id === 'catalogos' && !escrituraCatalogosDisponible" class="aviso-carga" role="status">Este panel está en modo de solo consulta; no se pueden modificar los catálogos.</p>
+        <p v-if="seccion.id === 'asociaciones' && !escrituraAsociacionesDisponible" class="aviso-carga" role="status">Este panel está en modo de solo consulta; no se pueden modificar asociaciones.</p>
+        <p v-if="seccion.id === 'catalogos'">Los sectores se usan al invitar emprendedoras. Desactiva los valores que ya no deban usarse; los productos que ya los tienen no se ven afectados.</p>
+        <p v-if="seccion.id === 'asociaciones'">Cada asociación tiene su ficha y sus integrantes. Al desactivarla se conserva su historial.</p>
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
-        <p v-else-if="seccion.id !== 'catalogos'">Hasta 50 registros por colección. Se muestran identificadores cuando el perfil privado no es legible.</p>
         <div v-if="lecturaDisponible" class="acciones-listado">
           <button class="editar" type="button" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
           <select v-if="seccion.id === 'catalogos'" v-model="filtroCatalogo" class="filtro-catalogo" aria-label="Tipo de catálogo">
@@ -1777,7 +1818,7 @@ async function guardarEdicionCuentaEmprendedora() {
             <option value="tiposProducto">Tipo de productos</option>
           </select>
         </div>
-        <p v-if="cargandoDatos || cargandoCatalogos" role="status">Leyendo Firestore…</p>
+        <p v-if="cargandoDatos || cargandoCatalogos" role="status">Cargando…</p>
         <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
         <div class="herramientas">
           <label class="buscar">
@@ -1827,7 +1868,7 @@ async function guardarEdicionCuentaEmprendedora() {
               <button class="editar" type="button" @click="prepararCancelacionInvitacion(item)">Cancelar invitación</button>
             </template>
             <template v-else-if="seccion.id === 'emprendedoras' && item.uidDestino && config.firebaseModo === 'real-api'">
-              <button class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionPerfilEsperada" :title="!item.consistente ? 'El acceso, perfil y tienda requieren revisión' : !item.versionPerfilEsperada ? 'El perfil no tiene una versión de actualización' : ''" @click="prepararEdicionCuentaEmprendedora(item)">Editar cuenta</button>
+              <button class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionPerfilEsperada" :title="!item.consistente ? 'Los datos de esta cuenta requieren revisión' : !item.versionPerfilEsperada ? 'Esta cuenta no se puede editar ahora' : ''" @click="prepararEdicionCuentaEmprendedora(item)">Editar cuenta</button>
               <button v-if="item.estado === 'activo'" class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionEsperada" @click="prepararAccionCuenta(item, 'desactivarEmprendedora')">Desactivar</button>
               <button v-else-if="item.estado === 'desactivado'" class="editar" type="button" :disabled="enviando || !item.consistente || !item.versionEsperada" @click="prepararAccionCuenta(item, 'reactivarEmprendedora')">Reactivar</button>
               <button v-else class="editar" type="button" disabled title="El estado de la cuenta requiere revisión">Revisar</button>
@@ -1837,7 +1878,7 @@ async function guardarEdicionCuentaEmprendedora() {
               <button v-if="escrituraAsociacionesDisponible" class="editar" type="button" :disabled="enviando || !!asociacionEstadoPendiente || !!asociacionEnGestion" @click="prepararEdicionAsociacion(item)">Editar</button>
               <button v-if="escrituraAsociacionesDisponible" class="editar" type="button" :disabled="enviando || !!asociacionEstadoPendiente || !!asociacionEnGestion" @click="prepararCambioEstadoAsociacion(item, item.estado !== 'Activa')">{{ item.estado === 'Activa' ? 'Desactivar' : 'Reactivar' }}</button>
             </template>
-            <button v-else-if="seccion.id !== 'catalogos'" class="editar" type="button" disabled :title="item.versionEsperada ? 'Acción no disponible en este entorno o pendiente de integrar' : 'El registro no tiene una versión válida para modificar'">Sin acción</button>
+            <button v-else-if="seccion.id !== 'catalogos'" class="editar" type="button" disabled :title="'Acción no disponible por ahora'">Sin acción</button>
           </li>
         </ul>
         <div v-else-if="!cargandoDatos && !cargandoCatalogos && !errorDatos" class="vacio">
@@ -2675,6 +2716,28 @@ h1 {
   font-size: 0.8rem;
   color: var(--suave);
   font-weight: 600;
+}
+
+.dato-detalle {
+  font-size: 0.72rem;
+  color: var(--vino);
+}
+
+.resumen-aviso {
+  color: var(--suave);
+  font-size: 0.82rem;
+}
+
+.resumen-reintentar {
+  margin-left: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vino);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* Tarjetas */

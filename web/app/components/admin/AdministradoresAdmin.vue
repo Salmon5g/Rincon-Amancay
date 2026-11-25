@@ -20,11 +20,11 @@ function idOperacion() { return crypto.randomUUID().replaceAll('-', '') }
 function explicar(errorValue: unknown) {
   const code = (errorValue as { code?: string })?.code
   if (code === 'sin-permiso') return 'La cuenta no tiene permisos de administrador activos.'
-  if (code === 'no-encontrado') return 'Primero crea y verifica esa cuenta en Firebase Authentication.'
+  if (code === 'no-encontrado') return 'No existe una cuenta con ese correo. La persona debe registrarse y verificar su correo primero.'
   if (code === 'conflicto') return 'La cuenta ya tiene ese estado o requiere revisión. Actualiza el listado.'
-  if (code === 'conexion-interrumpida' || (errorValue as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Reintenta la misma operación sin cambiar los datos.'
-  if (code === 'permission-denied') return 'Firestore rechazó la lectura. Revisa las reglas y permisos publicados.'
-  return 'No se pudo completar la operación. Actualiza el listado y revisa el mensaje antes de volver a intentarlo.'
+  if (code === 'conexion-interrumpida' || (errorValue as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó si el cambio se guardó. Vuelve a intentarlo sin cambiar los datos.'
+  if (code === 'permission-denied') return 'No tienes permiso para ver esta información.'
+  return 'No se pudo completar el cambio. Actualiza la lista e inténtalo de nuevo.'
 }
 
 async function cargar() {
@@ -70,30 +70,30 @@ onMounted(() => { void cargar() })
   <section class="cuentas-admin">
     <div class="nota">
       <span aria-hidden="true">🛡️</span>
-      <p>Para otorgar este rol, la persona debe tener una cuenta de Firebase Authentication con correo verificado. Aquí se asignan permisos; las contraseñas no se ven ni se modifican. Se conserva al menos una cuenta administradora activa.</p>
+      <p>Para otorgar este rol, la persona debe tener una cuenta registrada con su correo verificado. Aquí solo se asignan permisos; las contraseñas no se ven ni se modifican. Se conserva al menos una cuenta administradora activa.</p>
     </div>
-    <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para gestionar cuentas.</p>
+    <p v-if="!habilitado" class="nota" role="status">Este panel está en modo de solo consulta; no se pueden gestionar cuentas.</p>
     <form class="formulario" @submit.prevent="agregar">
       <h2>Agregar otra cuenta administradora</h2>
       <label>Correo de la cuenta existente<input v-model="correo" type="email" autocomplete="email" required :disabled="!habilitado || enviando || !!pendiente" placeholder="persona@correo.cl" /></label>
-      <p>Primero debe estar registrada y verificar su correo desde Firebase Authentication. No se crea ni se envía una contraseña desde esta pantalla.</p>
+      <p>Primero debe estar registrada y haber verificado su correo. No se crea ni se envía una contraseña desde esta pantalla.</p>
       <button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !correo.trim()">Asignar rol</button>
     </form>
     <div class="encabezado-lista">
       <div><h2>Cuentas con rol administrador</h2><p>{{ cuentas.length }} cargadas</p></div>
       <button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar listado' }}</button>
     </div>
-    <p v-if="cargando" role="status">Consultando Authentication y Firestore…</p>
+    <p v-if="cargando" role="status">Cargando…</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="exito" class="exito" role="status">{{ exito }}</p>
     <div v-if="pendiente" class="nota pendiente" role="status">
-      <p>La operación no tuvo confirmación. Usa el mismo envío para comprobar el resultado; no cambies el correo ni abras otra operación.</p>
-      <button class="boton" type="button" :disabled="enviando" @click="enviarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar operación' }}</button>
+      <p>No se confirmó si el cambio se guardó. Vuelve a intentarlo sin cambiar el correo.</p>
+      <button class="boton" type="button" :disabled="enviando" @click="enviarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar' }}</button>
     </div>
     <ul v-if="cuentas.length" class="lista">
       <li v-for="cuenta in cuentas" :key="cuenta.uid" class="fila">
         <span class="avatar" aria-hidden="true">{{ (cuenta.nombreMostrar || cuenta.correo || '?').slice(0, 1).toUpperCase() }}</span>
-        <div class="detalle"><strong>{{ cuenta.nombreMostrar || cuenta.correo || 'Cuenta sin nombre' }}</strong><small>{{ cuenta.correo || 'Correo no disponible' }} · UID {{ cuenta.uid }}</small><small v-if="!cuenta.consistente" class="error">Authentication deshabilitado, correo sin verificar o acceso inactivo; revisar la cuenta.</small></div>
+        <div class="detalle"><strong>{{ cuenta.nombreMostrar || cuenta.correo || 'Cuenta sin nombre' }}</strong><small>{{ cuenta.correo || 'Correo no disponible' }}</small><small v-if="!cuenta.consistente" class="error">Cuenta deshabilitada, correo sin verificar o acceso inactivo; revisa la cuenta.</small></div>
         <span class="estado" :class="cuenta.consistente ? 'activo' : 'inconsistente'">{{ cuenta.consistente ? 'Activa' : 'Revisar' }}</span>
         <button v-if="cuenta.uid !== actualUid && cuenta.estado === 'activo'" class="secundario" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="cuentaPorQuitar = cuenta">Quitar rol</button>
         <span v-else-if="cuenta.uid === actualUid" class="propia">Tu cuenta</span>
@@ -101,7 +101,7 @@ onMounted(() => { void cargar() })
     </ul>
     <p v-else-if="!cargando" class="vacio">No hay cuentas administradoras cargadas.</p>
     <div v-if="cuentaPorQuitar" class="confirmacion" role="group" aria-label="Confirmar retiro del rol">
-      <div><strong>¿Quitar el rol a {{ cuentaPorQuitar.correo || cuentaPorQuitar.uid }}?</strong><p>Su usuario de Authentication y otros roles se conservan. Esta acción no se puede aplicar a tu propia cuenta.</p></div>
+      <div><strong>¿Quitar el rol a {{ cuentaPorQuitar.correo || 'esta cuenta' }}?</strong><p>Su cuenta y sus otros roles se conservan. Esta acción no se puede aplicar a tu propia cuenta.</p></div>
       <button class="boton" type="button" :disabled="enviando || !!pendiente" @click="quitar(cuentaPorQuitar)">{{ enviando ? 'Procesando…' : 'Confirmar retiro' }}</button>
       <button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cuentaPorQuitar = null">Cancelar</button>
     </div>

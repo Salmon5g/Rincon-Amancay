@@ -163,6 +163,7 @@ function mapearProducto(documento: DocumentSnapshot<DocumentData>): ProductoPubl
     descripcion: texto(datos.descripcion),
     categoriaId: texto(datos.categoriaId),
     tipoProductoId: texto(datos.tipoProductoId),
+    ...(Number.isSafeInteger(datos.versionTipoProducto) ? { versionTipoProducto: Number(datos.versionTipoProducto) } : {}),
     tieneVariantes: datos.tieneVariantes === true,
     ...(typeof datos.manejaStock === 'boolean' ? { manejaStock: datos.manejaStock } : {}),
     moneda: texto(datos.moneda, 'CLP'),
@@ -237,6 +238,7 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
   let lecturaFeriasPendiente: Promise<FeriaPublica[]> | null = null
   let politicaEnMemoria: { valor: PoliticaNavegacion; vence: number } | null = null
   let lecturaPoliticaPendiente: Promise<PoliticaNavegacion> | null = null
+  const etiquetasTipoEnMemoria = new Map<string, Promise<Record<string, string>>>()
   const baseSupabase = (() => {
     try {
       const parsed = new URL(supabaseUrl)
@@ -538,6 +540,30 @@ export function crearCatalogoPublicoFirebase(firebase: ServiciosCliente, supabas
       } finally {
         if (lecturaFeriasPendiente === lectura) lecturaFeriasPendiente = null
       }
+    },
+
+    leerEtiquetasTipoProducto(tipoProductoId, version) {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(tipoProductoId) || !Number.isSafeInteger(version) || version < 1) return Promise.resolve({})
+      const clave = `${tipoProductoId}:${version}`
+      const enMemoria = etiquetasTipoEnMemoria.get(clave)
+      if (enMemoria) return enMemoria
+      const lectura = getDoc(doc(db, 'tiposProducto', tipoProductoId, 'versiones', String(version)))
+        .then((documento) => {
+          const campos = documento.data()?.campos
+          if (!Array.isArray(campos)) return {}
+          return Object.fromEntries(campos.flatMap((campo) => {
+            const datos = campo as { clave?: unknown; etiqueta?: unknown }
+            return typeof datos.clave === 'string' && typeof datos.etiqueta === 'string' && datos.etiqueta.trim()
+              ? [[datos.clave, datos.etiqueta.trim()]]
+              : []
+          }))
+        })
+        .catch(() => {
+          etiquetasTipoEnMemoria.delete(clave)
+          return {}
+        })
+      etiquetasTipoEnMemoria.set(clave, lectura)
+      return lectura
     },
 
     async leerFeria(feriaId) {

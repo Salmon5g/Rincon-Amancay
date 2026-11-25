@@ -154,6 +154,7 @@ export interface CursorAuditoriaAdmin {
 export interface AccionAuditoriaAdmin {
   id: string
   actorUid: string
+  actorNombre: string
   area: AreaAuditoriaAdmin
   accion: string
   objetivo: string

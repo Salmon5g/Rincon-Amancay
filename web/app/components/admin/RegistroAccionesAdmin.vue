@@ -98,7 +98,7 @@ onBeforeUnmount(() => { revision++ })
             <span class="registro-area">{{ item.area }}</span>
           </div>
           <span class="registro-objetivo">{{ item.objetivo }}</span>
-          <small class="registro-autor" :title="`UID completo: ${item.actorUid}`">Administrador {{ item.actorUid.slice(0, 10) }}…</small>
+          <small class="registro-autor">Por {{ item.actorNombre || 'una cuenta administradora' }}</small>
         </div>
         <time class="registro-fecha" :datetime="item.creadoEn">{{ fechaLegible(item.creadoEn) }}</time>
       </li>

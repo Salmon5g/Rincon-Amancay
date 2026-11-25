@@ -165,13 +165,13 @@ function opId() { return crypto.randomUUID().replaceAll('-', '') }
 function mensajeError(cause: unknown) {
   const code = (cause as { code?: string })?.code
   const detalle = cause instanceof Error ? cause.message.trim() : ''
-  if (code === 'sin-permiso') return 'La API no reconoce una cuenta administradora activa.'
+  if (code === 'sin-permiso') return 'Esta cuenta no tiene permisos de administración activos.'
   if (code === 'datos-invalidos') return detalle || 'Revisa los campos: nombre, descripción, lugar, fecha, horario e imagen son obligatorios; el término debe ser posterior al inicio.'
-  if (code === 'pendiente' || code === 'cuota-firestore' || code === 'imagen-no-autorizada') return detalle || 'La API no pudo completar la carga. Conserva los datos y reintenta.'
+  if (code === 'pendiente' || code === 'cuota-firestore' || code === 'imagen-no-autorizada') return detalle || 'No se pudo completar la carga. Conserva los datos y vuelve a intentarlo.'
   if (code === 'conflicto') return detalle || 'La feria o el participante cambió, o la acción ya no corresponde a su estado. Actualiza el módulo.'
-  if (code === 'conexion-interrumpida' || (cause as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó la respuesta. Reintenta la misma solicitud sin cambiar sus datos.'
+  if (code === 'conexion-interrumpida' || (cause as { resultadoIncierto?: boolean })?.resultadoIncierto) return 'No se confirmó si el cambio se guardó. Vuelve a intentarlo sin cambiar los datos.'
   if (code === 'no-encontrado') return 'La feria, asociación o cuenta ya no existe. Actualiza el listado.'
-  return 'No se pudo completar la operación. Revisa la conexión y vuelve a cargar el módulo.'
+  return 'No se pudo completar el cambio. Revisa tu conexión y actualiza la página.'
 }
 
 async function cargar() {
@@ -246,7 +246,7 @@ function seleccionarImagen(event: Event) {
   const archivo = input.files?.[0] ?? null
   if (!archivo) return
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(archivo.type) || archivo.size <= 0 || archivo.size > 5 * 1024 * 1024) {
-    error.value = 'Usa una imagen JPEG, PNG o WebP de hasta 5 MiB.'
+    error.value = 'Usa una imagen JPG, PNG o WebP de hasta 5 MB.'
     input.value = ''
     return
   }
@@ -310,7 +310,7 @@ async function procesarPendiente() {
     if (current.operacion === 'invitarParticipanteFeria' || current.operacion === 'agregarParticipanteFeria') candidata.value = ''
     pendiente.value = null; formulario.value = false; retiro.value = null
     limpiarArchivoImagen()
-    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'El servidor aceptó el recordatorio en Firebase Cloud Messaging. La entrega depende de que el dispositivo pueda recibir notificaciones.' : 'Los cambios de la feria se guardaron en Firebase.'
+    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'Recordatorio enviado. Llegará si su teléfono puede recibir notificaciones.' : 'Los cambios de la feria se guardaron.'
     await cargar()
   } catch (cause) {
     error.value = mensajeError(cause)
@@ -427,7 +427,7 @@ async function prepararAvisosConfirmadas() {
   const feria = feriaSeleccionada.value
   if (!feria || !detalle.value || pendiente.value || enviando.value || loteAvisosConfirmadas.value) return
   if (feria.estado !== 'publicada' || !feria.fechaInicio || new Date(feria.fechaInicio).getTime() <= Date.now()) {
-    error.value = 'Los avisos push están disponibles para ferias publicadas que aún no comienzan.'
+    error.value = 'Los avisos solo se pueden enviar para ferias publicadas que aún no comienzan.'
     return
   }
   const destinatarias = emprendedorasConfirmadas.value
@@ -481,7 +481,7 @@ async function procesarLoteAvisosConfirmadas() {
           feriaId: lote.feriaId,
           participanteId: destinataria.id,
         })
-        if (resultado.estado !== 'aceptado') throw new Error('La API no confirmó la aceptación del aviso push.')
+        if (resultado.estado !== 'aceptado') throw new Error('No se confirmó el envío del aviso.')
         lote.aceptadas += 1
         lote.indice += 1
       } catch (cause) {
@@ -497,12 +497,12 @@ async function procesarLoteAvisosConfirmadas() {
     }
     if (lote.indice >= lote.destinatarias.length) {
       aviso.value = lote.aceptadas
-        ? `Firebase aceptó ${lote.aceptadas} aviso${lote.aceptadas === 1 ? '' : 's'} push para “${lote.feriaNombre}”. La entrega depende de que cada dispositivo pueda recibir notificaciones.`
-        : 'No se pudo enviar ningún aviso push.'
+        ? `Se enviaron ${lote.aceptadas} aviso${lote.aceptadas === 1 ? '' : 's'} para “${lote.feriaNombre}”. Llegarán a los teléfonos que puedan recibir notificaciones.`
+        : 'No se pudo enviar ningún aviso.'
       if (lote.fallidas.length) errorFinal = `No se pudieron enviar a: ${lote.fallidas.join(', ')}.`
       loteAvisosConfirmadas.value = null
     } else if (lote.aceptadas) {
-      aviso.value = `Firebase aceptó ${lote.aceptadas} aviso${lote.aceptadas === 1 ? '' : 's'} antes de una respuesta incierta.`
+      aviso.value = `Se enviaron ${lote.aceptadas} aviso${lote.aceptadas === 1 ? '' : 's'} antes de perder la confirmación.`
     }
     await cargar()
     if (errorFinal) error.value = errorFinal
@@ -604,7 +604,7 @@ async function prepararRecordatorioFeria(persona: ParticipanteFeria) {
   }
 
   if (persona.tipo !== 'emprendedora') {
-    error.value = 'Los recordatorios push están disponibles para invitaciones de emprendedoras con acceso a la app.'
+    error.value = 'Los recordatorios solo se pueden enviar a emprendedoras con acceso a la app.'
     return
   }
 
@@ -666,19 +666,19 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="ferias-admin">
-    <p v-if="!habilitado" class="nota" role="status">Este entorno es de solo lectura. Conecta la API autenticada para administrar ferias.</p>
+    <p v-if="!habilitado" class="nota" role="status">Este panel está en modo de solo consulta; no se pueden administrar ferias.</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="aviso" class="exito" role="status">{{ aviso }}</p>
-    <div v-if="pendiente" class="nota pendiente" role="status" tabindex="-1"><p>La respuesta de la API no se confirmó. Conservé el mismo identificador para evitar duplicar la operación.</p><button class="boton" type="button" :disabled="enviando" @click="procesarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar operación' }}</button></div>
+    <div v-if="pendiente" class="nota pendiente" role="status" tabindex="-1"><p>No se confirmó si el cambio se guardó. Vuelve a intentarlo; no se duplicará.</p><button class="boton" type="button" :disabled="enviando" @click="procesarPendiente">{{ enviando ? 'Procesando…' : 'Reintentar' }}</button></div>
     <div v-if="loteAvisosConfirmadas" class="nota pendiente" role="status" aria-live="polite">
       <p v-if="enviando">Enviando aviso {{ loteAvisosConfirmadas.indice + 1 }} de {{ loteAvisosConfirmadas.destinatarias.length }} a las emprendedoras seleccionadas.</p>
       <p v-else>El resultado del aviso a {{ loteAvisosConfirmadas.destinatarias[loteAvisosConfirmadas.indice]?.nombre }} no se confirmó. Puedes reintentar la misma solicitud.</p>
       <button class="boton" type="button" :disabled="enviando" @click="procesarLoteAvisosConfirmadas">{{ enviando ? 'Enviando…' : 'Reintentar avisos pendientes' }}</button>
     </div>
     <template v-if="!selectedId">
-    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. La imagen se sube al almacenamiento y queda asociada a la feria. Las invitaciones se registran en Firebase. El recordatorio de una invitación pendiente se envía como notificación push a la emprendedora y abre su apartado de invitaciones; Firebase confirma que aceptó el mensaje, no que llegó al dispositivo.</p></div>
-    <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} registros</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
-    <p v-if="cargando" role="status">Leyendo ferias desde Firebase…</p>
+    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. El recordatorio de una invitación pendiente llega como notificación a la emprendedora y abre su apartado de invitaciones.</p></div>
+    <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} {{ ferias.length === 1 ? 'feria' : 'ferias' }}</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
+    <p v-if="cargando" role="status">Cargando ferias…</p>
 
     <section v-if="formulario" ref="formularioRef" class="formulario apartado-desplegable">
       <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cerrar</button></div>
@@ -706,7 +706,7 @@ onBeforeUnmount(() => {
         <div class="completo imagen-campo">
           <p class="etiqueta">Imagen de la feria</p>
           <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="enviando || !!pendiente" @change="seleccionarImagen" />
-          <small>Se sube al almacenamiento y se guarda su URL en la feria. JPEG, PNG o WebP de hasta 5 MiB.</small>
+          <small>JPG, PNG o WebP de hasta 5 MB.</small>
           <img v-if="vistaImagen || borrador.imagenUrl" :src="vistaImagen || borrador.imagenUrl" alt="Vista previa de la imagen de la feria" />
         </div>
         <div class="acciones completo"><button class="boton" type="submit" :disabled="guardadoFeriaDeshabilitado">{{ subiendoImagen ? 'Subiendo imagen…' : enviando ? 'Guardando…' : feriaEditando ? 'Guardar cambios' : 'Crear borrador' }}</button><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cancelar</button></div>
@@ -793,7 +793,7 @@ onBeforeUnmount(() => {
               <span
                 v-if="persona.avisoConfirmacion?.estado === 'aceptado' && persona.avisoConfirmacion.canal === 'push'"
                 class="estado asistencia"
-                :title="'Firebase aceptó el aviso' + (persona.avisoConfirmacion.enviadoEn ? ': ' + fechaBonita(persona.avisoConfirmacion.enviadoEn) : '') + '. La entrega en Android no está confirmada.'"
+                :title="'Aviso enviado' + (persona.avisoConfirmacion.enviadoEn ? ': ' + fechaBonita(persona.avisoConfirmacion.enviadoEn) : '')"
               >Aviso enviado</span>
               <span v-else-if="persona.avisoConfirmacion?.estado === 'reservado' && persona.avisoConfirmacion.canal === 'push'" class="estado asistencia">Aviso en proceso</span>
             </div>
@@ -925,7 +925,7 @@ onBeforeUnmount(() => {
             </svg>
           </div>
           <p class="confirmacion-sobre">Invitaciones a ferias</p>
-          <h3 id="confirmacion-recordatorio-titulo">¿Enviar recordatorio push?</h3>
+          <h3 id="confirmacion-recordatorio-titulo">¿Enviar recordatorio?</h3>
           <p id="confirmacion-recordatorio-descripcion" class="confirmacion-descripcion">
             Enviaremos una notificación a <strong>{{ confirmacionRecordatorio.persona.nombreTienda || confirmacionRecordatorio.persona.nombre }}</strong>
             sobre su invitación a <strong>“{{ confirmacionRecordatorio.feria.nombre }}”</strong>.
@@ -965,7 +965,7 @@ onBeforeUnmount(() => {
           <p class="confirmacion-sobre">Aviso de feria</p>
           <h3 id="confirmacion-avisos-titulo">Avisar a emprendedoras confirmadas</h3>
           <p id="confirmacion-avisos-descripcion" class="confirmacion-descripcion">
-            Selecciona quiénes recibirán un aviso push con los datos de <strong>“{{ confirmacionAvisos.feria.nombre }}”</strong>.
+            Selecciona quiénes recibirán un aviso con los datos de <strong>“{{ confirmacionAvisos.feria.nombre }}”</strong>.
             Al pulsarlo, se abrirá Invitaciones a ferias con esta feria destacada.
           </p>
           <p
@@ -973,8 +973,7 @@ onBeforeUnmount(() => {
             class="aviso-plazo"
             role="status"
           >
-            Firebase aceptó los avisos anteriores, pero eso no confirma que aparecieran en los teléfonos.
-            Para evitar duplicados, el servidor habilitará otro envío cuando se cumplan 24 horas.
+            Ya se enviaron avisos antes. Para evitar duplicados, podrás enviar otro cuando se cumplan 24 horas.
           </p>
           <div class="selector-destinatarias">
             <div class="destinatarias-cabecera">
@@ -988,8 +987,8 @@ onBeforeUnmount(() => {
                 <input v-model="participantesAvisoSeleccionados" type="checkbox" :value="persona.id" :disabled="avisoPushBloqueado(persona)" />
                 <span>
                   <strong>{{ persona.nombreTienda || persona.nombre }}</strong>
-                  <small v-if="avisoPushBloqueado(persona) && persona.avisoConfirmacion?.estado === 'aceptado'">Aceptado por Firebase: {{ fechaBonita(persona.avisoConfirmacion.enviadoEn) }} · nuevo envío después de 24 horas</small>
-                  <small v-else-if="avisoPushBloqueado(persona)">Aviso push en proceso o resultado por verificar</small>
+                  <small v-if="avisoPushBloqueado(persona) && persona.avisoConfirmacion?.estado === 'aceptado'">Enviado: {{ fechaBonita(persona.avisoConfirmacion.enviadoEn) }} · nuevo envío después de 24 horas</small>
+                  <small v-else-if="avisoPushBloqueado(persona)">Aviso en proceso</small>
                   <small v-else>{{ persona.nombre }}</small>
                 </span>
               </label>
@@ -998,7 +997,7 @@ onBeforeUnmount(() => {
           <div class="confirmacion-acciones">
             <button class="secundario" type="button" @click="cerrarConfirmacionAvisos">Cancelar</button>
             <button ref="enviarAvisosRef" class="boton" type="button" :disabled="!habilitado || !cantidadAvisosSeleccionados || enviando || !!pendiente" @click="confirmarEnvioAvisosConfirmadas">
-              Enviar {{ cantidadAvisosSeleccionados ? `a ${cantidadAvisosSeleccionados}` : 'avisos push' }}
+              Enviar {{ cantidadAvisosSeleccionados ? `a ${cantidadAvisosSeleccionados}` : 'avisos' }}
             </button>
           </div>
         </section>

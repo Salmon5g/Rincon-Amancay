@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { DocumentData, Firestore } from 'firebase-admin/firestore';
+import type { DocumentData, Firestore, Query } from 'firebase-admin/firestore';
 import type { Auth } from 'firebase-admin/auth';
 import { ErrorOperacion, version } from './publicacion.ts';
 
-export const accionesAdministracion = ['leerConfiguracionNavegacion', 'guardarConfiguracionNavegacion', 'listarAdministradores', 'agregarAdministrador', 'quitarAdministrador', 'listarAuditoriaAdministracion'] as const;
+export const accionesAdministracion = ['leerConfiguracionNavegacion', 'guardarConfiguracionNavegacion', 'listarAdministradores', 'agregarAdministrador', 'quitarAdministrador', 'listarAuditoriaAdministracion', 'resumenAdministracion'] as const;
 export type AccionAdministracion = typeof accionesAdministracion[number];
 export type ModoNavegacion = 'permitir' | 'invitar' | 'exigir';
 
@@ -46,23 +46,106 @@ const etiquetasAuditoria: Record<string, { area: 'Cuentas' | 'Asociaciones' | 'F
   enviarAvisoConfirmadasFeria: { area: 'Ferias y eventos', accion: 'Aviso a participantes confirmadas' },
 };
 
-function objetivoAuditoria(accion: string, documentoId: unknown): string {
+type NombresAuditoria = {
+  cuentas: Map<string, string>;
+  ferias: Map<string, string>;
+  asociaciones: Map<string, string>;
+  invitaciones: Map<string, string>;
+};
+
+function referenciasAuditoria(accion: string, documentoId: unknown) {
+  const idDocumento = typeof documentoId === 'string' ? documentoId : '';
+  const segmento = idDocumento.split('/');
+  const area = etiquetasAuditoria[accion]?.area;
+  const cuentas: string[] = [];
+  const ferias: string[] = [];
+  const asociaciones: string[] = [];
+  const invitaciones: string[] = [];
+  const participante = (valor: string | undefined) => {
+    if (valor?.startsWith('emprendedora_')) cuentas.push(valor.slice('emprendedora_'.length));
+    else if (valor?.startsWith('asociacion_')) asociaciones.push(valor.slice('asociacion_'.length));
+  };
+  if (area === 'Ferias y eventos') {
+    if (segmento[0]) ferias.push(segmento[0]);
+    if (segmento.length > 2) participante(segmento[2]);
+  } else if (area === 'Asociaciones') {
+    if (segmento[0]) asociaciones.push(segmento[0]);
+    if (segmento[1]) cuentas.push(segmento[1]);
+  } else if (accion === 'invitarEmprendedora' || accion === 'cancelarInvitacion') {
+    if (idDocumento) invitaciones.push(idDocumento);
+  } else if (idDocumento) {
+    cuentas.push(idDocumento);
+  }
+  const valido = (valor: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(valor);
+  return { cuentas: cuentas.filter(valido), ferias: ferias.filter(valido), asociaciones: asociaciones.filter(valido), invitaciones: invitaciones.filter(valido) };
+}
+
+function objetivoAuditoria(accion: string, documentoId: unknown, nombres: NombresAuditoria): string {
   const idDocumento = typeof documentoId === 'string' ? documentoId : '';
   const segmento = idDocumento.split('/');
   const etiqueta = etiquetasAuditoria[accion];
+  const participante = (valor: string | undefined) => {
+    if (valor?.startsWith('emprendedora_')) return nombres.cuentas.get(valor.slice('emprendedora_'.length)) ?? 'una emprendedora';
+    if (valor?.startsWith('asociacion_')) return nombres.asociaciones.get(valor.slice('asociacion_'.length)) ?? 'una asociación';
+    return 'un participante';
+  };
   if (etiqueta?.area === 'Ferias y eventos') {
-    const participante = segmento.length > 2 ? ` · participante ${segmento[2].slice(0, 8)}` : '';
-    return `Feria ${segmento[0]?.slice(0, 48) || 'sin identificador'}${participante}`;
+    const feria = nombres.ferias.get(segmento[0] ?? '');
+    const base = feria ? `Feria «${feria}»` : 'Una feria';
+    return segmento.length > 2 ? `${base} · ${participante(segmento[2])}` : base;
   }
   if (etiqueta?.area === 'Asociaciones') {
-    const asociacion = segmento[0] || 'sin identificador';
-    const integrante = segmento.length > 1 ? ` · integrante ${segmento[1].slice(0, 8)}` : '';
-    return `Asociación ${asociacion.slice(0, 48)}${integrante}`;
+    const asociacion = nombres.asociaciones.get(segmento[0] ?? '');
+    const base = asociacion ? `Asociación «${asociacion}»` : 'Una asociación';
+    return segmento.length > 1 ? `${base} · ${nombres.cuentas.get(segmento[1] ?? '') ?? 'una integrante'}` : base;
   }
   if (accion === 'invitarEmprendedora' || accion === 'cancelarInvitacion') {
-    return `Invitación ${idDocumento.slice(0, 8) || 'sin identificador'}`;
+    const correoInvitacion = nombres.invitaciones.get(idDocumento);
+    return correoInvitacion ? `Invitación a ${correoInvitacion}` : 'Una invitación';
   }
-  return `Cuenta ${idDocumento.slice(0, 8) || 'sin identificador'}`;
+  const cuenta = nombres.cuentas.get(idDocumento);
+  return cuenta ? `Cuenta de ${cuenta}` : 'Una cuenta';
+}
+
+async function resolverNombresAuditoria(db: Firestore, auth: Auth, actores: string[], registros: DocumentData[]): Promise<NombresAuditoria> {
+  const cuentas = new Set(actores);
+  const ferias = new Set<string>();
+  const asociaciones = new Set<string>();
+  const invitaciones = new Set<string>();
+  for (const registro of registros) {
+    const referencias = referenciasAuditoria(String(registro.accion ?? ''), registro.documentoId);
+    referencias.cuentas.forEach(valor => cuentas.add(valor));
+    referencias.ferias.forEach(valor => ferias.add(valor));
+    referencias.asociaciones.forEach(valor => asociaciones.add(valor));
+    referencias.invitaciones.forEach(valor => invitaciones.add(valor));
+  }
+  const nombres: NombresAuditoria = { cuentas: new Map(), ferias: new Map(), asociaciones: new Map(), invitaciones: new Map() };
+  const uids = [...cuentas];
+  for (let inicio = 0; inicio < uids.length; inicio += 100) {
+    try {
+      const resultado = await auth.getUsers(uids.slice(inicio, inicio + 100).map(uid => ({ uid })));
+      for (const usuario of resultado.users) {
+        const etiqueta = usuario.email || usuario.displayName;
+        if (etiqueta) nombres.cuentas.set(usuario.uid, etiqueta);
+      }
+    } catch {}
+  }
+  const leerNombres = async (coleccion: string, ids: Set<string>, campo: string, destino: Map<string, string>) => {
+    if (!ids.size) return;
+    try {
+      const documentos = await db.getAll(...[...ids].map(valor => db.doc(`${coleccion}/${valor}`)), { fieldMask: [campo] });
+      for (const documento of documentos) {
+        const valor = documento.get(campo);
+        if (typeof valor === 'string' && valor.trim()) destino.set(documento.id, valor.trim().slice(0, 120));
+      }
+    } catch {}
+  };
+  await Promise.all([
+    leerNombres('ferias', ferias, 'nombre', nombres.ferias),
+    leerNombres('asociaciones', asociaciones, 'nombre', nombres.asociaciones),
+    leerNombres('invitaciones', invitaciones, 'correo', nombres.invitaciones),
+  ]);
+  return nombres;
 }
 
 export function crearAdministracionPlataforma(db: Firestore, auth: Auth) {
@@ -71,6 +154,29 @@ export function crearAdministracionPlataforma(db: Firestore, auth: Auth) {
     exigir(identidad && id(identidad.uid), 'no-autenticado', 'Identidad verificada requerida.');
     const data = objeto(input);
     const actorRef = db.doc(`accesos/${identidad.uid}`);
+
+    if (accion === 'resumenAdministracion') {
+      exactos(data, []);
+      exigir(admin((await actorRef.get()).data()), 'sin-permiso', 'Se requiere una cuenta administradora activa.');
+      const contar = async (consulta: Query) => (await consulta.count().get()).data().count;
+      const [emprendedoras, invitacionesPendientes, asociaciones, ferias, sectores, categorias, tiposEmprendimiento, tiposProducto] = await Promise.all([
+        contar(db.collection('accesos').where('roles', 'array-contains', 'emprendedora')),
+        contar(db.collection('invitaciones').where('estado', '==', 'pendiente')),
+        contar(db.collection('asociaciones')),
+        contar(db.collection('ferias')),
+        contar(db.collection('sectores')),
+        contar(db.collection('categorias')),
+        contar(db.collection('tiposEmprendimiento')),
+        contar(db.collection('tiposProducto')),
+      ]);
+      return {
+        emprendedoras,
+        invitacionesPendientes,
+        asociaciones,
+        ferias,
+        catalogos: sectores + categorias + tiposEmprendimiento + tiposProducto,
+      };
+    }
 
     if (accion === 'listarAuditoriaAdministracion') {
       exactos(data, ['cursor']);
@@ -94,6 +200,10 @@ export function crearAdministracionPlataforma(db: Firestore, auth: Auth) {
       if (cursor) consulta = consulta.startAfter(new Timestamp(cursor.seconds, cursor.nanoseconds), cursor.id);
       const snapshot = await consulta.limit(pageSize + 1).get();
       const documentos = snapshot.docs.slice(0, pageSize);
+      const actores = documentos
+        .map(documento => documento.data().actorUid)
+        .filter((valor): valor is string => typeof valor === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(valor));
+      const nombres = await resolverNombresAuditoria(db, auth, actores, documentos.map(documento => documento.data()));
       const acciones = documentos.flatMap(documento => {
         const registro = documento.data();
         const actorUid = typeof registro.actorUid === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(registro.actorUid) ? registro.actorUid : '';
@@ -103,9 +213,10 @@ export function crearAdministracionPlataforma(db: Firestore, auth: Auth) {
         return [{
           id: documento.id,
           actorUid,
+          actorNombre: nombres.cuentas.get(actorUid) ?? '',
           area: metadatos.area,
           accion: metadatos.accion,
-          objetivo: objetivoAuditoria(String(registro.accion), registro.documentoId),
+          objetivo: objetivoAuditoria(String(registro.accion), registro.documentoId, nombres),
           creadoEn: momento,
         }];
       });
