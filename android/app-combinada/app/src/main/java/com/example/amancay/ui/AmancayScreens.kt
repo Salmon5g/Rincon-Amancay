@@ -116,24 +116,44 @@ fun StepScaffold(
             StepProgressBar(actual = pasoActual, total = totalPasos)
             Spacer(Modifier.height(14.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), content = content)
-            Spacer(Modifier.height(12.dp))
-            if (showSaveExit) OutlineButton("Guardar borrador", onSaveExit, modifier = Modifier.fillMaxWidth(), fontSize = 14.sp)
             Spacer(Modifier.height(8.dp))
+            if (showSaveExit && onDiscardDraft != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlineButton("Guardar borrador", onSaveExit, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                    TextButton(
+                        onClick = onDiscardDraft,
+                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Icon(Icons.Filled.Delete, contentDescription = null, tint = Wine, modifier = Modifier.size(16.dp))
+                            Text("Descartar borrador", color = Wine, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+            } else if (showSaveExit) {
+                OutlineButton("Guardar borrador", onSaveExit, modifier = Modifier.fillMaxWidth(), fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            if (onDiscardDraft != null && !showSaveExit) {
+                TextButton(
+                    onClick = onDiscardDraft,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp)
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = null, tint = Wine, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Descartar borrador", color = Wine, fontSize = 13.sp)
+                }
+            }
             if (showBackButton) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlineButton("Atrás", onBack, modifier = Modifier.weight(1f), fontSize = 14.sp)
                     PrimaryButton(nextLabel, onNext, modifier = Modifier.weight(1f), enabled = nextEnabled, fontSize = 14.sp)
                 }
             } else PrimaryButton(nextLabel, onNext, enabled = nextEnabled, fontSize = 16.sp)
-            if (onDiscardDraft != null) {
-                TextButton(onClick = onDiscardDraft) {
-                    Icon(Icons.Filled.Delete, contentDescription = null, tint = Wine, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Descartar borrador", color = Wine, fontSize = 13.sp)
-                }
-            }
-            Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 9.sp, color = Wine, letterSpacing = 2.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-            Spacer(Modifier.height(8.dp))
+            Text("HECHO CON CARIÑO, CERCA DE TI", fontSize = 9.sp, color = Wine, letterSpacing = 2.sp, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -991,27 +1011,27 @@ fun PhotoStep(
     onDiscardDraft: (() -> Unit)? = null,
     imagenOriginalSeleccionada: Bitmap? = null,
     imagenPreparada: Bitmap? = null,
-    recorteCuadrado: Boolean = true,
-    onRecorteCuadrado: (Boolean) -> Unit = {},
     mejorarLuz: Boolean = false,
     onMejorarLuz: (Boolean) -> Unit = {},
     compararOriginal: Boolean = false,
     onCompararOriginal: (Boolean) -> Unit = {},
     procesandoImagen: Boolean = false,
-    continuarHabilitado: Boolean = true
+    continuarHabilitado: Boolean = true,
+    errorImagenSeleccionada: String? = null
 ) {
     StepScaffold("Paso 1 de $totalPasos", "Agrega una foto", "Te guiaremos para que tu producto se vea claro y atractivo.", onNext, onBack, onSaveExit, nextLabel = if (draft.fotoLista || imagenExistente) "Usar esta foto" else "Continuar", nextEnabled = continuarHabilitado, pasoActual = 1, showSaveExit = showSaveExit, showBackButton = false, onExit = onSaveExit, onDiscardDraft = onDiscardDraft, totalPasos = totalPasos, dibujarBajoBarraSistema = dibujarBajoBarraSistema) {
         Crossfade(targetState = draft.fotoLista || imagenExistente, label = "foto") { lista ->
             if (lista) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     ProductImage(
-                        fallback = Fig.VASE_BIG, size = 218.dp,
+                        fallback = Fig.VASE_BIG, size = 188.dp,
                         uri = draft.photoUri,
                         bitmap = when {
                             draft.fotoLista -> if (compararOriginal) imagenOriginalSeleccionada else imagenPreparada ?: imagenOriginalSeleccionada ?: draft.photoBitmap
                             else -> imagenPrevia
                         },
-                        hasPhoto = draft.fotoLista || imagenExistente
+                        hasPhoto = draft.fotoLista || imagenExistente,
+                        contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.height(8.dp))
                     Surface(color = GreenBg, shape = RoundedCornerShape(20.dp)) {
@@ -1028,7 +1048,7 @@ fun PhotoStep(
                         fontSize = 14.sp, color = Muted, textAlign = TextAlign.Center
                     )
                     if (draft.fotoLista && imagenOriginalSeleccionada != null) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F2)),
@@ -1037,16 +1057,7 @@ fun PhotoStep(
                         ) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Ajusta la foto", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
-                                Text("Elige cómo quieres mostrar el encuadre en tu catálogo.", fontSize = 14.sp, color = Muted)
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    SelectableChip("Cuadrada", recorteCuadrado) { onRecorteCuadrado(true) }
-                                    SelectableChip("Foto completa", !recorteCuadrado) { onRecorteCuadrado(false) }
-                                }
-                                Text(
-                                    if (recorteCuadrado) "Formato recomendado para que las fotos se vean parejas en la tienda."
-                                    else "Conserva toda la foto; puede quedar espacio libre alrededor en algunas tarjetas.",
-                                    fontSize = 13.sp, color = Muted
-                                )
+                                Text("Usaremos el mismo formato cuadrado para que las fotos se vean parejas en la tienda.", fontSize = 14.sp, color = Muted)
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                                     Column(Modifier.weight(1f)) {
                                         Text("Mejorar luz", color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -1064,6 +1075,10 @@ fun PhotoStep(
                             }
                         }
                     }
+                    if (draft.fotoLista && errorImagenSeleccionada != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(errorImagenSeleccionada, color = Color(0xFFB3261E), fontSize = 14.sp, textAlign = TextAlign.Center)
+                    }
                     if (draft.fotoLista && procesandoImagen) {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
@@ -1073,12 +1088,12 @@ fun PhotoStep(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PrimaryButton(if (draft.fotoLista) "Tomar otra foto" else "Reemplazar con cámara", onTakePhoto, modifier = Modifier.fillMaxWidth(), fontSize = 15.sp)
-                        OutlinedButton(onClick = onPickPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        PrimaryButton(if (draft.fotoLista) "Tomar otra" else "Tomar foto", onTakePhoto, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                        OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) {
                             Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (draft.fotoLista) "Elegir otra de la galería" else "Elegir de la galería", color = Wine, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(5.dp))
+                            Text("Galería", color = Wine, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
                 }
@@ -1092,25 +1107,27 @@ fun PhotoStep(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Para que se vea bonita", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Wine)
                         listOf(
-                            "Busca luz natural de frente, cerca de una ventana.",
-                            "Usa un fondo sencillo que contraste con tu producto.",
-                            "Muestra el producto completo y centra lo más importante."
+                            "Luz natural de frente, cerca de una ventana.",
+                            "Fondo sencillo que contraste con tu producto.",
+                            "Centra el producto y muéstralo completo."
                         ).forEachIndexed { index, consejo ->
                             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                Surface(color = Color(0xFFFFE8D8), shape = CircleShape, modifier = Modifier.size(26.dp)) {
+                                Surface(color = Color(0xFFFFE8D8), shape = CircleShape, modifier = Modifier.size(24.dp)) {
                                     Box(contentAlignment = Alignment.Center) { Text("${index + 1}", color = Wine, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                 }
-                                Text(consejo, color = Dark, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(top = 2.dp))
+                                Text(consejo, color = Dark, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, modifier = Modifier.weight(1f).padding(top = 2.dp))
                             }
                         }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                PrimaryButton("Tomar foto", onTakePhoto, modifier = Modifier.fillMaxWidth(), fontSize = 16.sp)
-                OutlinedButton(onClick = onPickPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Elegir de la galería", color = Wine, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryButton("Tomar foto", onTakePhoto, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                    OutlinedButton(onClick = onPickPhoto, modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) {
+                        Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Wine)
+                        Spacer(Modifier.width(5.dp))
+                        Text("Galería", color = Wine, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
                 }
             }
         }

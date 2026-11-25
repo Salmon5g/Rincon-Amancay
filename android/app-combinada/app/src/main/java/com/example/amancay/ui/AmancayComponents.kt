@@ -314,17 +314,20 @@ fun AmancayField(
 
 @Composable
 fun StepHeader(paso: String, titulo: String, subtitulo: String) {
+    val tituloEnUnaLinea = titulo == "Agrega una foto"
     Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
         Text("NUEVO PRODUCTO", fontSize = 13.sp, color = Color(0xFFEF5452), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
         Spacer(Modifier.height(4.dp))
         Text(
-            if (titulo == "Agrega una foto") "Agrega\nuna foto" else titulo,
-            modifier = Modifier.widthIn(max = if (titulo == "Agrega una foto") 250.dp else 380.dp),
-            fontSize = if (titulo == "Agrega una foto") 43.sp else 38.sp,
-            lineHeight = if (titulo == "Agrega una foto") 42.sp else 42.sp,
+            titulo,
+            modifier = if (tituloEnUnaLinea) Modifier.fillMaxWidth() else Modifier.widthIn(max = 380.dp),
+            fontSize = if (tituloEnUnaLinea) 36.sp else 38.sp,
+            lineHeight = 42.sp,
             color = Wine,
             fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = if (tituloEnUnaLinea) 1 else Int.MAX_VALUE,
+            softWrap = !tituloEnUnaLinea
         )
         Text(subtitulo, fontSize = 16.sp, lineHeight = 21.sp, color = Color(0xFF62515A))
         Spacer(Modifier.height(8.dp))
