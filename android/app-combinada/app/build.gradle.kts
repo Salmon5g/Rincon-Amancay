@@ -11,6 +11,10 @@ val amancayApiBaseUrl = amancayLocalProperties.getProperty(
 ).replace("\\", "\\\\").replace("\"", "\\\"")
 val amancayWebClientId = amancayLocalProperties.getProperty("amancay.google.webClientId", "")
     .replace("\\", "\\\\").replace("\"", "\\\"")
+val amancayPublicWebUrl = amancayLocalProperties.getProperty(
+    "amancay.publicWebUrl",
+    "https://rinconamancay3.web.app"
+).trim().replace("\\", "\\\\").replace("\"", "\\\"")
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
