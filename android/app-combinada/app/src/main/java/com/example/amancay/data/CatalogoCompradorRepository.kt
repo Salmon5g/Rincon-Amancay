@@ -143,7 +143,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         }
 
         listOf("tiposEmprendimiento" to _tipos, "sectores" to _sectores).forEach { (coleccion, destino) ->
-            suscripciones += db.collection(coleccion).whereEqualTo("activo", true)
+            suscripciones += db.collection(coleccion).whereEqualTo("activo", true).limit(200)
                 .addSnapshotListener { snapshot, exception ->
                     if (exception != null) informarError(exception)
                     else destino.value = snapshot?.documents.orEmpty().associate { it.id to (it.getString("nombre") ?: it.id) }
@@ -151,6 +151,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
         }
         suscripciones += db.collection("categorias")
             .whereEqualTo("activo", true)
+            .limit(200)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)
@@ -165,6 +166,7 @@ private class FirestoreCatalogoCompradorRepository(private val db: FirebaseFires
 
         suscripciones += db.collection("tiposProducto")
             .whereEqualTo("activo", true)
+            .limit(200)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)

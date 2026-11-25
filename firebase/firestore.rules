@@ -57,6 +57,7 @@ service cloud.firestore {
         allow list: if signedIn() && request.auth.uid == uid && request.query.limit <= 50;
         allow create, update: if signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['token', 'plataforma', 'actualizadoEn'])
+          && tokenId.size() <= 512
           && request.resource.data.token is string
           && request.resource.data.token == tokenId
           && request.resource.data.plataforma == 'web'
@@ -211,16 +212,32 @@ service cloud.firestore {
         allow read: if admin();
       }
     }
-    match /sectores/{id} { allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true); }
+    // Catálogos: la condición pública va primero para no cobrar la lectura de
+    // accesos/{uid} a visitantes, y cada consulta debe declarar un límite.
+    function catalogoActivo() { return catalogoPublicoHabilitado() && resource.data.activo == true; }
+    function emprendedora() { return signedIn() && hasRole(request.auth.uid, 'emprendedora'); }
+    function limiteCatalogo() { return request.query.limit <= 200; }
+    match /sectores/{id} {
+      allow get: if catalogoActivo() || emprendedora() || admin();
+      allow list: if (limiteCatalogo() && (catalogoActivo() || emprendedora())) || admin();
+    }
     // Un tipo o categoría inactiva deja de ofrecerse al crear productos, pero
     // una emprendedora puede leer su definición histórica para mantener fichas existentes.
-    match /categorias/{id} { allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true); }
-    match /tiposEmprendimiento/{id} { allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true); }
+    match /categorias/{id} {
+      allow get: if catalogoActivo() || emprendedora() || admin();
+      allow list: if (limiteCatalogo() && (catalogoActivo() || emprendedora())) || admin();
+    }
+    match /tiposEmprendimiento/{id} {
+      allow get: if catalogoActivo() || emprendedora() || admin();
+      allow list: if (limiteCatalogo() && (catalogoActivo() || emprendedora())) || admin();
+    }
     match /tiposProducto/{id} {
-      allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora')) || (catalogoPublicoHabilitado() && resource.data.activo == true);
+      allow get: if catalogoActivo() || emprendedora() || admin();
+      allow list: if (limiteCatalogo() && (catalogoActivo() || emprendedora())) || admin();
       match /versiones/{version} {
-        allow read: if admin() || (signedIn() && hasRole(request.auth.uid, 'emprendedora'))
-          || (catalogoPublicoHabilitado() && get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true);
+        allow get: if (catalogoPublicoHabilitado() && get(/databases/$(database)/documents/tiposProducto/$(id)).data.activo == true)
+          || emprendedora() || admin();
+        allow list: if admin();
       }
     }
     match /operacionesAdministracion/{operationId} { allow read: if admin(); }

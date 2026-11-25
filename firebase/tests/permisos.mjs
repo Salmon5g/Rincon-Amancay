@@ -1,14 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, getDocs, collection, query, where, updateDoc, setDoc, deleteDoc, serverTimestamp, setLogLevel, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, limit, updateDoc, setDoc, deleteDoc, serverTimestamp, setLogLevel, writeBatch } from 'firebase/firestore';
 import { seed } from '../scripts/seed.mjs';
 import { project } from '../scripts/local.mjs';
 
 setLogLevel('silent');
+const [hostEmulador, puertoEmulador] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':');
 const env = await initializeTestEnvironment({
   projectId: project,
-  firestore: { host: '127.0.0.1', port: 8080, rules: await readFile(new URL('../firestore.rules', import.meta.url), 'utf8') },
+  firestore: { host: hostEmulador, port: Number(puertoEmulador), rules: await readFile(new URL('../firestore.rules', import.meta.url), 'utf8') },
 });
 const visitor = env.unauthenticatedContext().firestore();
 const owner = env.authenticatedContext('u_emprendedora_demo').firestore();
@@ -37,12 +38,20 @@ async function serverBatch(changes) {
 try {
   await seed();
   await check('visitante lee tienda publicada', () => assertSucceeds(read(visitor, pub)));
-  await check('visitante lista tiendas publicadas habilitadas', () => assertSucceeds(getDocs(query(collection(visitor, 'tiendasPublicas'), where('estadoPublicacion', '==', 'publicado'), where('habilitada', '==', true)))));
-  await check('visitante lista productos publicados', () => assertSucceeds(getDocs(query(collection(visitor, pub + '/productos'), where('estadoPublicacion', '==', 'publicado')))));
+  await check('visitante lista tiendas publicadas habilitadas', () => assertSucceeds(getDocs(query(collection(visitor, 'tiendasPublicas'), where('estadoPublicacion', '==', 'publicado'), where('habilitada', '==', true), limit(20)))));
+  await check('visitante lista productos publicados', () => assertSucceeds(getDocs(query(collection(visitor, pub + '/productos'), where('estadoPublicacion', '==', 'publicado'), limit(20)))));
   await check('visitante lee variante pública', () => assertSucceeds(read(visitor, pub + variant)));
-  await check('visitante lista categorías activas', () => assertSucceeds(getDocs(query(collection(visitor, 'categorias'), where('activo', '==', true)))));
+  await check('visitante lista categorías activas', () => assertSucceeds(getDocs(query(collection(visitor, 'categorias'), where('activo', '==', true), limit(200)))));
+  await check('visitante no lista categorías sin límite', () => assertFails(getDocs(query(collection(visitor, 'categorias'), where('activo', '==', true)))));
+  await check('visitante no lista categorías con límite excesivo', () => assertFails(getDocs(query(collection(visitor, 'categorias'), where('activo', '==', true), limit(201)))));
+  await check('cuenta sin rol lista sectores activos con límite', () => assertSucceeds(getDocs(query(collection(other, 'sectores'), where('activo', '==', true), limit(200)))));
+  await check('emprendedora lista todos los tipos de producto con límite', () => assertSucceeds(getDocs(query(collection(owner, 'tiposProducto'), limit(200)))));
+  await check('emprendedora no lista tipos de producto sin límite', () => assertFails(getDocs(collection(owner, 'tiposProducto'))));
+  await check('visitante no lista versiones de tipos', () => assertFails(getDocs(query(collection(visitor, 'tiposProducto/tejido/versiones'), limit(10)))));
+  await check('cuenta acepta un token web de tamaño normal', () => assertSucceeds(setDoc(doc(other, 'usuarios/u_sin_accesos/dispositivosWeb/' + 'a'.repeat(200)), { token: 'a'.repeat(200), plataforma: 'web', actualizadoEn: serverTimestamp() })));
+  await check('cuenta no guarda tokens web desmesurados', () => assertFails(setDoc(doc(other, 'usuarios/u_sin_accesos/dispositivosWeb/' + 'b'.repeat(600)), { token: 'b'.repeat(600), plataforma: 'web', actualizadoEn: serverTimestamp() })));
   await check('consulta de tiendas sin filtros es rechazada', () => assertFails(getDocs(collection(visitor, 'tiendasPublicas'))));
-  await check('visitante lista variantes activas', () => assertSucceeds(getDocs(query(collection(visitor, pub + product + '/variantes'), where('activa', '==', true)))));
+  await check('visitante lista variantes activas', () => assertSucceeds(getDocs(query(collection(visitor, pub + product + '/variantes'), where('activa', '==', true), limit(100)))));
   const forged = env.authenticatedContext('u_sin_accesos', { administrador: true, roles: ['administrador'] }).firestore();
   await check('claims no sustituyen accesos autorizados', () => assertFails(read(forged, 'accesos/u_admin_demo')));
   await check('visitante no lee perfil privado', () => assertFails(read(visitor, 'usuarios/u_emprendedora_demo')));

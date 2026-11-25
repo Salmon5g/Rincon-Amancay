@@ -97,6 +97,7 @@ class RepositorioCatalogo(private val servicios: ConexionLocal.Servicios) {
         withContext(Dispatchers.IO) {
             servicios.db.collection(coleccion)
                 .whereEqualTo("activo", true)
+                .limit(200)
                 .get().await().documents.mapNotNull { documento ->
                     val nombre = documento.getString("nombre") ?: return@mapNotNull null
                     construir(documento.id, nombre)

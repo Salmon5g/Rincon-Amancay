@@ -244,7 +244,7 @@ class ProductosEmprendedoraRepository(
             }
 
         typeSubscription?.remove()
-        typeSubscription = db.collection("tiposProducto")
+        typeSubscription = db.collection("tiposProducto").limit(200)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)
@@ -268,7 +268,7 @@ class ProductosEmprendedoraRepository(
             }
 
         categorySubscription?.remove()
-        categorySubscription = db.collection("categorias")
+        categorySubscription = db.collection("categorias").limit(200)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     informarError(exception)

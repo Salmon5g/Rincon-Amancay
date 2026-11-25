@@ -1,13 +1,13 @@
 // Solo emulador: no acepta destinos remotos ni credenciales del proyecto real.
 export const project = 'demo-rincon-amancay';
-export const host = '127.0.0.1:8080';
+export const host = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
 for (const variable of ['GCLOUD_PROJECT', 'GOOGLE_CLOUD_PROJECT']) {
   if (process.env[variable] && process.env[variable] !== project) {
     throw new Error(`${variable} debe ser ${project}; no se cargan datos en la nube.`);
   }
 }
-if (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST !== host) {
-  throw new Error(`Solo se permite FIRESTORE_EMULATOR_HOST=${host}`);
+if (!/^127\.0\.0\.1:\d{2,5}$/.test(host)) {
+  throw new Error('Solo se permite un emulador local: FIRESTORE_EMULATOR_HOST=127.0.0.1:<puerto>.');
 }
 export const database = `projects/${project}/databases/(default)`;
 export const url = `http://${host}/v1/${database}/documents`;

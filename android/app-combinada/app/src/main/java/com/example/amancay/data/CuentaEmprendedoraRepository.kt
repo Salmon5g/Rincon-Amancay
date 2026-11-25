@@ -119,14 +119,14 @@ class CuentaEmprendedoraRepository(
                 _tienda.value = snapshot?.takeIf { it.exists() }?.data?.let(::mapearTienda)
             }
         sectorSubscription?.remove()
-        sectorSubscription = db.collection("sectores").whereEqualTo("activo", true)
+        sectorSubscription = db.collection("sectores").whereEqualTo("activo", true).limit(200)
             .addSnapshotListener { snapshot, _ ->
                 _sectores.value = snapshot?.documents.orEmpty()
                     .mapNotNull { doc -> doc.getString("nombre")?.let { OpcionCatalogoEmprendedora(doc.id, it) } }
                     .sortedBy { it.nombre.lowercase() }
             }
         tipoSubscription?.remove()
-        tipoSubscription = db.collection("tiposEmprendimiento").whereEqualTo("activo", true)
+        tipoSubscription = db.collection("tiposEmprendimiento").whereEqualTo("activo", true).limit(200)
             .addSnapshotListener { snapshot, _ ->
                 _tiposEmprendimiento.value = snapshot?.documents.orEmpty()
                     .mapNotNull { doc -> doc.getString("nombre")?.let { OpcionCatalogoEmprendedora(doc.id, it) } }
