@@ -7,7 +7,7 @@ val amancayLocalProperties = Properties().apply {
 val amancayFirebaseEmulators = amancayLocalProperties.getProperty("amancay.firebase.emulators", "false").toBoolean()
 val amancayApiBaseUrl = amancayLocalProperties.getProperty(
     "amancay.api.baseUrl",
-    if (amancayFirebaseEmulators) "http://10.0.2.2:8787/api/v1/" else "http://10.0.2.2:8080/api/v1/"
+    if (amancayFirebaseEmulators) "http://10.0.2.2:8787/api/v1/" else "https://rinconamancay3.web.app/api/v1/"
 ).replace("\\", "\\\\").replace("\"", "\\\"")
 val amancayWebClientId = amancayLocalProperties.getProperty("amancay.google.webClientId", "")
     .replace("\\", "\\\\").replace("\"", "\\\"")

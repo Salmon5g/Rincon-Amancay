@@ -2,19 +2,19 @@
 
 Este documento conserva una propuesta técnica del 9 de octubre; no es un despliegue ni una autorización de gasto. Su descripción de código y consola quedó desactualizada por los avances posteriores.
 
-> **Estado actualizado (31 de octubre):** el grupo decidió trabajar localmente con Firebase/Firestore y una API Node local mientras termina los clientes. Cloud Run descrito abajo fue una recomendación anterior y **no es una decisión vigente**. El hosting público de la API todavía no está elegido; el grupo ha considerado Railway. Para una prueba controlada contra datos reales, se usa [`start:compartido:local` con ADC](admin-firebase-real-api-local.md); no se desplegó ningún servicio por este documento.
+> **Estado actualizado (25 de noviembre):** se requiere que el APK funcione por Internet sin mantener un computador conectado. La propuesta para cumplirlo es alojar la API Node existente en Cloud Run, en `southamerica-west1`, y enrutar `/api/**` desde Firebase Hosting al servicio `amancay-api`; el teléfono usaría `https://rinconamancay3.web.app/api/v1/`. La ruta y escucha del contenedor están preparadas localmente, pero no se desplegó nada ni se habilitó facturación. Antes de publicar, falta integrar y validar App Check y reforzar los límites de solicitudes públicas; el perfil Firebase Android actual también apunta al proyecto anterior.
 
 ## Decisión recomendada
 
-Usar **Cloud Run para una API compartida** y mantener Firebase Authentication, Firestore y Storage para ambos clientes. La API actual es un servidor Node HTTP y usa Sharp; un contenedor permite conservar ese código y controlar su entorno nativo. Esta elección es una recomendación técnica, pendiente de tu revisión. Cloud Functions también es viable, pero exigiría adaptar la entrada HTTP y no elimina la necesidad de coordinar operaciones entre procesos.
+Usar **Cloud Run para una API compartida** y mantener Firebase Authentication, Firestore y Storage para ambos clientes. La API actual es un servidor Node HTTP y usa Sharp; el contenedor conserva ese código y sus dependencias nativas. Firebase Hosting ofrece una URL HTTPS estable para el APK y la web, y enruta las llamadas al servicio. Esta es la propuesta para el requisito de usar el teléfono sin conexión al computador; el despliegue y su facturación siguen pendientes.
 
 Proponer Santiago (`southamerica-west1`) para API y Storage. Confirmar disponibilidad, tarifas y la ubicación elegida para Firestore antes de crear recursos; estas decisiones no se heredan del proyecto anterior.
 
 | Parte | Dónde se ejecutaría | Qué comparte el grupo |
 | --- | --- | --- |
-| Web Nuxt | Por ahora, computador de cada equipo; alojamiento web posterior. | Configuración pública Firebase y URL de la API. |
-| Android | Emulador/dispositivo del equipo. | Mismo proyecto Firebase y URL de API; applicationId propio pendiente. |
-| API | Cloud Run, servicio propuesto `amancay-api-dev`. | Validación de tokens, permisos y operaciones de negocio. |
+| Web Nuxt | Firebase Hosting. | Configuración pública Firebase y mismo origen HTTPS de la API. |
+| Android | Teléfono conectado por Wi-Fi o datos móviles. | Mismo proyecto Firebase y URL HTTPS de Hosting; paquete `com.example.amancay2`. |
+| API | Cloud Run, servicio propuesto `amancay-api`. | Validación de tokens, permisos y operaciones de negocio. |
 | Identidades/datos/fotos | Auth, Firestore y Storage del mismo proyecto. | UID, colecciones, reglas y contratos comunes. |
 
 La URL HTTPS del servicio no equivale a acceso libre a operaciones: la API debe seguir verificando el ID token Firebase y el acceso Firestore. El patrón de autenticación de usuarios está descrito en [Cloud Run con Firebase Auth](https://docs.cloud.google.com/run/docs/authenticating/end-users). CORS limita orígenes de navegador; no sustituye la autorización de Android ni del backend.
@@ -36,10 +36,10 @@ Propongo **una alerta inicial de US$5 al mes**, con avisos al 50%, 80% y 100%, p
 ## Bloqueos técnicos encontrados
 
 1. **Cuentas:** reserva persistente y cola por UID implementadas. Hay herramienta de inspección/liberación con auditoría y [procedimiento de recuperación](recuperacion-cuentas.md). La prueba local termina un proceso Node y retoma la operación desde otro, con Auth simulado para controlar el corte. Antes de la nube validar el procedimiento en el entorno remoto, especialmente la detención de todas las instancias y las peticiones Auth en vuelo. La reserva no vence automáticamente.
-2. **Servidor:** `src/server-compartido.ts` ya existe: ADC, proyecto/bucket explícitos, rechazo de variables de emuladores, escucha en `0.0.0.0:$PORT` y cierre por señales. `npm run dev` mantiene el adaptador local; `npm run start:compartido` selecciona el real. La configuración está probada; el servicio real no está desplegado ni verificado.
+2. **Servidor:** `src/server-compartido.ts` usa ADC, el proyecto explícito, rechaza variables de emuladores y cierra por señales. Se preparó la escucha en `0.0.0.0` cuando Cloud Run define `K_SERVICE`; localmente sigue limitada a `127.0.0.1`. El servicio real no está desplegado ni verificado.
 3. **Contenedor:** Dockerfile preparado para Node 24 y Sharp en Linux, lockfile, usuario sin privilegios y exclusión de .env/credenciales/datos. Docker y gcloud no se encontraron en PATH; la imagen sigue pendiente de construcción y prueba.
-4. **Clientes:** los adaptadores compartidos ya existen separados de los locales — web `cliente-compartido.ts` (sobre `cliente-base.ts`, proyecto real + API HTTPS) y Android `ConexionCompartida.kt`/`ClienteCompartido.kt` — y se verificaron los locales (18 tests) y `typecheck`. Falta la URL de API y el applicationId Android; el cliente local y el compartido rechazan sus proyectos opuestos por diseño.
-5. **Operación:** límites de peticiones/procesamiento de fotos, observabilidad sin datos sensibles, entrega real de invitaciones y revisión de plantillas de Auth. La creación del primer administrador ya tiene herramienta (`npm --prefix backend run admin:compartido` con ADC y `--confirmar`), todavía sin ejecutar. No ejecutar cuentas:demo ni seed local contra la nube.
+4. **Clientes:** los adaptadores compartidos existen en web y Android. La URL preparada es `https://rinconamancay3.web.app`; el `google-services.json` del equipo sigue apuntando al proyecto anterior, por lo que falta descargar el archivo correcto para Android.
+5. **Operación y abuso:** falta validar App Check en todas las rutas públicas del API y enviarlo desde web y Android; los límites actuales en mapas de memoria por proceso no son suficientes para un servicio distribuido. Revisar además métricas de App Check y reglas de Firestore antes de aplicar enforcement. Configurar máximo de instancias y alertas de presupuesto; los topes de Cloud Run limitan el costo del API, no el consumo directo de Firestore.
 
 La configuración HTTP ya permite inyectar proyecto, entorno y orígenes exactos sin cambiar los valores locales. Se probaron salud, CORS y rechazo de solicitudes sin token; esto **no inicializa Firebase real** ni resuelve los bloqueos anteriores.
 

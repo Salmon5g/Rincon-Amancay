@@ -68,6 +68,7 @@ const vistaEnUrl = typeof ruta.query.vista === 'string' && vistasValidas.has(rut
   : 'inicio'
 const seccion = ref<Seccion>(vistaEnUrl)
 const filtro = ref<Filtro>('todos')
+const busquedaProductos = ref('')
 const fecha = ref('')
 const productoEnEdicion = ref<string | null>(null)
 const editandoTienda = ref(false)
@@ -164,6 +165,9 @@ const guiaActiva = ref(false)
 const guiaIndividual = ref(false)
 const pasoActualGuia = ref(0)
 const pasosActivosGuia = ref<PasoGuiaWeb[]>([])
+const categoriasProducto = ref<ElementoCatalogo[]>([])
+const categoriasProductoCargadas = ref(false)
+let cargaCategoriasProductoPendiente: Promise<void> | null = null
 const espera = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const { $catalogoPublico } = useNuxtApp()
@@ -183,9 +187,13 @@ const progresoTienda = computed(() => {
 })
 const productosFiltrados = computed(() => {
   const productos = cuenta.value?.productos ?? []
+  const busqueda = busquedaProductos.value.trim().toLocaleLowerCase('es')
   return productosPaginaIds.value.flatMap((id) => {
     const producto = productos.find((item) => item.id === id)
-    return producto && (filtro.value === 'todos' || producto.estado === filtro.value) ? [producto] : []
+    if (!producto || (filtro.value !== 'todos' && producto.estado !== filtro.value)) return []
+    const categoria = `${nombreCategoriaProducto(producto.categoriaId)} ${producto.categoriaId}`.replaceAll('_', ' ').replaceAll('-', ' ').toLocaleLowerCase('es')
+    const coincide = !busqueda || `${producto.nombre} ${producto.descripcion} ${categoria}`.toLocaleLowerCase('es').includes(busqueda)
+    return coincide ? [producto] : []
   }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 })
 const productoStockSeleccionado = computed(() => cuenta.value?.productos.find((item) => item.id === dialogoStockProductoId.value) ?? null)
@@ -973,6 +981,29 @@ function irA(destino: Seccion) {
   error.value = ''
 }
 
+function nombreCategoriaProducto(categoriaId: string) {
+  return categoriasProducto.value.find((categoria) => categoria.id === categoriaId)?.nombre ?? ''
+}
+
+async function cargarCategoriasProducto() {
+  if (categoriasProductoCargadas.value) return
+  if (cargaCategoriasProductoPendiente) return cargaCategoriasProductoPendiente
+  const carga = $catalogoPublico.listarCatalogosPublicos()
+    .then((catalogos) => {
+      categoriasProducto.value = catalogos.categorias
+      categoriasProductoCargadas.value = true
+    })
+    .finally(() => {
+      if (cargaCategoriasProductoPendiente === carga) cargaCategoriasProductoPendiente = null
+    })
+  cargaCategoriasProductoPendiente = carga
+  try {
+    await carga
+  } catch {
+    // La búsqueda conserva el identificador como alternativa si falla el catálogo público.
+  }
+}
+
 function claveGuiaEmprendedora() {
   return `amancay:guia-web:emprendedora:${cuenta.value?.uid ?? 'sin-sesion'}`
 }
@@ -1578,6 +1609,7 @@ watch(seccion, (vista) => {
 watch(() => [seccion.value, filtro.value, cuenta.value?.tienda.id] as const, ([vista, filtroActual, tiendaId]) => {
   if (!tiendaId) return
   if (vista === 'productos') {
+    void cargarCategoriasProducto()
     const vencida = productosPaginaActualizadaEn > 0 && Date.now() - productosPaginaActualizadaEn > 60_000
     if (!productosPaginaLista || productosPaginaTiendaCargada !== tiendaId || productosPaginaFiltro !== filtroActual || vencida) void cargarPaginaProductos(true)
   }
@@ -1644,6 +1676,13 @@ function varianteBonita(variante: ProductoEmprendedoraWeb['variantes'][number]) 
 function opcionVarianteVenta(variante: ProductoEmprendedoraWeb['variantes'][number]) {
   const stock = productoVenta.value?.manejaStock ? ` · ${variante.stock ?? 0} disponibles` : ''
   return `${varianteBonita(variante)} · ${precioBonito(variante.precio)}${stock}`
+}
+
+function ajustarCantidadVenta(cambio: number) {
+  const actual = Number(cantidadVenta.value) || 1
+  const stockMaximo = productoVenta.value?.manejaStock ? stockVenta.value ?? 10_000 : 10_000
+  const maximo = Math.max(1, Math.min(10_000, stockMaximo))
+  cantidadVenta.value = String(Math.min(maximo, Math.max(1, actual + cambio)))
 }
 
 function estadoBonito(estado: ProductoEmprendedoraWeb['estado']) {
@@ -1736,7 +1775,7 @@ onMounted(async () => {
       <section v-else class="contenido-panel" :class="{ 'modo-edicion-tienda': seccion === 'mas' && editandoTienda }" @click="cerrarMenuProducto">
         <div v-if="!(seccion === 'mas' && editandoTienda)" class="cabecera-panel" :data-guia="seccion === 'inicio' ? 'emprendedora-inicio' : undefined">
           <div>
-            <span class="sobre-titulo">HOLA, {{ nombrePersona().toUpperCase() }}</span>
+            <span class="sobre-titulo saludo-panel">Hola, {{ nombrePersona() }}</span>
             <h1>{{ seccion === 'inicio' ? 'Tu tienda, paso a paso' : seccion === 'productos' ? 'Mis productos' : seccion === 'agregar' ? (productoEnEdicion ? 'Editar producto' : 'Un nuevo producto') : seccion === 'ventas' ? 'Registrar una venta' : 'Tu espacio' }}</h1>
             <p v-if="seccion === 'inicio'">Administra tus productos y revisa cómo va tu tienda.</p>
             <p v-else-if="seccion === 'productos'">Revisa el estado de los productos de tu tienda.</p>
@@ -1753,11 +1792,23 @@ onMounted(async () => {
             <button class="boton-blanco" type="button" @click="abrirNuevoProducto"><span aria-hidden="true">＋</span> Agregar producto</button>
             <span class="flor-tarjeta" aria-hidden="true">✿</span>
           </div>
-          <button class="tarjeta-resumen" type="button" @click="irA('productos')">
-            <span class="icono-resumen" aria-hidden="true">▦</span>
-            <span class="texto-resumen"><strong>Mis productos</strong><small>{{ publicados }} publicados · {{ borradores }} borradores</small></span>
-            <span class="flecha-resumen" aria-hidden="true">›</span>
-          </button>
+          <div class="resumen-inicio" aria-label="Resumen de tu tienda">
+            <button class="indicador-inicio" type="button" @click="filtro = 'publicado'; irA('productos')">
+              <span class="icono-indicador" aria-hidden="true">▦</span>
+              <span><small>Productos publicados</small><strong>{{ publicados }}</strong></span>
+              <span class="indicador-flecha" aria-hidden="true">›</span>
+            </button>
+            <button class="indicador-inicio" type="button" @click="filtro = 'borrador'; irA('productos')">
+              <span class="icono-indicador" aria-hidden="true">▣</span>
+              <span><small>Borradores</small><strong>{{ borradores }}</strong></span>
+              <span class="indicador-flecha" aria-hidden="true">›</span>
+            </button>
+            <button class="indicador-inicio indicador-estado" type="button" @click="irA('mas')">
+              <span class="icono-indicador" aria-hidden="true">◇</span>
+              <span><small>Estado de tienda</small><strong>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada' : 'En borrador' }}</strong></span>
+              <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : 'Pendiente' }}</span>
+            </button>
+          </div>
           <section class="tarjeta-tienda">
             <div class="cabecera-tienda"><div><span class="sobre-titulo">MI TIENDA</span><h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2></div>
               <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Publicada' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada del catálogo' : 'En borrador' }}</span>
@@ -1769,11 +1820,24 @@ onMounted(async () => {
               <div class="paso-progreso"><span class="check-progreso" :class="{ completado: totalProductos > 0 }">{{ totalProductos > 0 ? '✓' : '2' }}</span><span><strong>Agrega tu primer producto</strong><small>{{ totalProductos > 0 ? totalProductos + ' productos en tu lista' : 'Cada creación comienza con una idea' }}</small></span></div>
               <div class="paso-progreso"><span class="check-progreso" :class="{ completado: publicados > 0 }">{{ publicados > 0 ? '✓' : '3' }}</span><span><strong>Publica tu catálogo</strong><small>{{ publicados > 0 ? 'Ya tienes productos visibles' : 'Publica productos para mostrarlos' }}</small></span></div>
             </div>
+            <div class="acciones-inicio-tienda">
+              <NuxtLink v-if="cuenta.tienda.estadoPublicacion === 'publicado'" class="enlace-tienda-publica" :to="{ path: '/comprador', query: { tienda: cuenta.tienda.id } }" target="_blank" rel="noopener">
+                Ver tienda pública <span aria-hidden="true">↗</span>
+              </NuxtLink>
+              <button v-else class="enlace-tienda-publica" type="button" @click="irA('mas')">Ver opciones para publicar <span aria-hidden="true">→</span></button>
+            </div>
           </section>
         </template>
 
         <template v-else-if="seccion === 'productos'">
-          <div class="encabezado-seccion"><div><span class="sobre-titulo">MI CATÁLOGO</span><h2>Productos de {{ cuenta.tienda.nombre || 'mi tienda' }}</h2></div><button class="boton-vino compacto" type="button" @click="abrirNuevoProducto">＋ Agregar</button></div>
+          <div class="encabezado-seccion"><div><span class="sobre-titulo">MI CATÁLOGO</span><h2>Productos de {{ cuenta.tienda.nombre || 'mi tienda' }}</h2></div></div>
+          <div class="controles-catalogo">
+            <label class="busqueda-productos">
+              <span aria-hidden="true">⌕</span>
+              <input v-model="busquedaProductos" type="search" aria-label="Buscar productos por nombre o categoría" placeholder="Buscar por nombre o categoría" />
+            </label>
+            <button class="boton-vino boton-agregar-catalogo" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
+          </div>
           <div class="filtros-productos" role="group" aria-label="Filtrar productos">
             <button type="button" :class="{ activo: filtro === 'todos' }" @click="filtro = 'todos'">Todos · {{ totalProductos }}</button>
             <button type="button" :class="{ activo: filtro === 'publicado' }" @click="filtro = 'publicado'">Publicados · {{ publicados }}</button>
@@ -1788,12 +1852,19 @@ onMounted(async () => {
                 <ImagenPublica v-if="producto.imagenPublica" :ruta="producto.imagenPublica" :alt="producto.nombre" ajuste="contain" :zoom="false" />
                 <span v-else aria-hidden="true">{{ producto.nombre.trim().charAt(0).toUpperCase() || '✿' }}</span>
               </div>
-              <div class="datos-producto"><strong>{{ producto.nombre || 'Producto sin nombre' }}</strong><p>{{ producto.descripcion || 'Sin descripción' }}</p>
+              <div class="datos-producto"><small v-if="nombreCategoriaProducto(producto.categoriaId)" class="categoria-producto">{{ nombreCategoriaProducto(producto.categoriaId) }}</small><strong>{{ producto.nombre || 'Producto sin nombre' }}</strong><p>{{ producto.descripcion || 'Sin descripción' }}</p>
                 <div class="metadatos-producto"><span>{{ precioProductoBonito(producto) }}</span><span>·</span><span>{{ stockBonito(producto) }}</span></div>
               </div>
               <span class="estado-producto" :class="producto.estado">{{ estadoBonito(producto.estado) }}</span>
               <div class="acciones-producto">
                 <button class="boton-secundario" type="button" @click="editarProducto(producto.id)">Editar</button>
+                <NuxtLink
+                  v-if="producto.estado === 'publicado' && cuenta.tienda.estadoPublicacion === 'publicado'"
+                  class="enlace-producto-publico"
+                  :to="{ path: '/comprador', query: { tienda: cuenta.tienda.id, producto: producto.id } }"
+                  target="_blank"
+                  rel="noopener"
+                >Ver producto <span aria-hidden="true">↗</span></NuxtLink>
                 <button v-if="puedeRegistrarVenta(producto)" class="boton-vino" type="button" @click="abrirVenta(producto.id)">Registrar venta</button>
                 <div class="contenedor-menu-producto">
                   <button
@@ -1813,8 +1884,8 @@ onMounted(async () => {
               </div>
             </article>
           </div>
-          <div v-else-if="!productosPaginaCargando && !productosPaginaError" class="vacio-productos"><span aria-hidden="true">✿</span><h3>{{ filtro === 'todos' ? 'Todavía no hay productos' : 'No hay productos en esta lista' }}</h3>
-            <p>{{ filtro === 'todos' ? 'Cuando agregues tus productos, aparecerán aquí para que puedas revisar su estado.' : 'Prueba con otro filtro para ver tus productos.' }}</p>
+          <div v-else-if="!productosPaginaCargando && !productosPaginaError" class="vacio-productos"><span aria-hidden="true">✿</span><h3>{{ busquedaProductos.trim() ? 'No encontramos coincidencias' : filtro === 'todos' ? 'Todavía no hay productos' : 'No hay productos en esta lista' }}</h3>
+            <p>{{ busquedaProductos.trim() ? 'Prueba con otro nombre o categoría. La búsqueda se aplica a los productos cargados.' : filtro === 'todos' ? 'Cuando agregues tus productos, aparecerán aquí para que puedas revisar su estado.' : 'Prueba con otro filtro para ver tus productos.' }}</p>
             <button v-if="filtro === 'todos'" class="boton-vino" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
           </div>
           <div v-if="productosPaginaCursor && !productosPaginaCargando" class="mas-productos">
@@ -1829,6 +1900,11 @@ onMounted(async () => {
         <template v-else-if="seccion === 'ventas'">
           <section class="tarjeta-ventas-web">
             <header><span class="sobre-titulo">VENTA DE MI CATÁLOGO</span><h2>¿Qué producto vendiste?</h2><p>El stock se descuenta del producto o la variante seleccionada y se sincroniza con la tienda pública.</p></header>
+            <ol class="pasos-venta-web" aria-label="Pasos para registrar una venta">
+              <li class="paso-venta-activo"><span>1</span>Producto</li>
+              <li><span>2</span>Cantidad</li>
+              <li><span>3</span>Lugar</li>
+            </ol>
             <p v-if="productosVentaCargando" class="mensaje mensaje-aviso" role="status">Cargando productos publicados…</p>
             <p v-if="productosVentaError" class="mensaje mensaje-error" role="alert">{{ productosVentaError }} <button type="button" @click="cargarPaginaVentas(true)">Volver a intentar</button></p>
             <form v-if="productosFormularioVenta.length || operacionVentaPendiente" class="formulario-venta-web" @submit.prevent="registrarVentaWeb">
@@ -1852,9 +1928,14 @@ onMounted(async () => {
               <p v-if="variantesVentaCargando" class="mensaje mensaje-aviso" role="status">Cargando las variantes de este producto…</p>
               <p v-if="variantesVentaError" class="mensaje mensaje-error" role="alert">{{ variantesVentaError }}</p>
               <div class="campos-venta-web">
-                <label class="campo-venta-web">Cantidad
-                  <input v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
-                </label>
+                <div class="campo-venta-web">
+                  <label for="cantidad-venta-web">Cantidad</label>
+                  <div class="control-cantidad-venta">
+                    <button type="button" aria-label="Restar una unidad" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || Number(cantidadVenta) <= 1" @click="ajustarCantidadVenta(-1)">−</button>
+                    <input id="cantidad-venta-web" v-model="cantidadVenta" type="number" min="1" max="10000" step="1" required :disabled="guardandoVenta || Boolean(operacionVentaPendiente)" />
+                    <button type="button" aria-label="Agregar una unidad" :disabled="guardandoVenta || Boolean(operacionVentaPendiente) || Number(cantidadVenta) >= 10000 || (productoVenta?.manejaStock && stockVenta !== null && stockVenta !== undefined && Number(cantidadVenta) >= stockVenta)" @click="ajustarCantidadVenta(1)">＋</button>
+                  </div>
+                </div>
                 <div class="campo-venta-web lugar-venta-web">
                   <label for="tipo-lugar-venta">¿Dónde fue la venta?</label>
                   <select id="tipo-lugar-venta" v-model="tipoLugarVenta" :disabled="guardandoVenta || Boolean(operacionVentaPendiente)">
@@ -1884,6 +1965,7 @@ onMounted(async () => {
               </div>
               <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
               <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
+              <div class="aviso-stock-venta"><span aria-hidden="true">▣</span><span>El stock se actualizará al guardar la venta.</span></div>
               <button class="boton-vino boton-registro-venta" type="submit" :disabled="guardandoVenta || variantesVentaCargando || Boolean(variantesVentaError)">
                 {{ guardandoVenta ? 'Guardando venta…' : operacionVentaPendiente ? 'Reintentar la misma venta' : 'Registrar venta' }}
               </button>
@@ -2029,47 +2111,56 @@ onMounted(async () => {
         </template>
 
         <template v-else>
-          <section class="tarjeta-tienda tarjeta-cuenta">
-            <div class="cuenta-cabecera">
-              <div><span class="sobre-titulo">MI CUENTA</span><h2>{{ cuenta.nombreMostrar || cuenta.correo }}</h2><p>{{ cuenta.correo }}</p></div>
-              <button class="boton-secundario boton-restablecer" type="button" :disabled="enviandoCambioContrasena" @click="cambiarContrasena">
-                <span aria-hidden="true">⌑</span>{{ enviandoCambioContrasena ? 'Enviando enlace…' : 'Cambiar contraseña' }}
-              </button>
-            </div>
-            <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
-            <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
-            <div class="separador-tienda"></div>
-            <div class="cuenta-panel">
-              <div class="cuenta-ficha">
-                <span class="sobre-titulo">MI TIENDA</span>
-                <h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2>
-                <p>{{ cuenta.tienda.descripcion || 'Aún no hay una descripción para mostrar.' }}</p>
-                <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Visible para compradores' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada del catálogo' : 'Aún no aparece en el catálogo comprador' }}</span>
-                <div class="acciones-publicacion-tienda">
-                  <button
-                    ref="botonAccionPublicacionTienda"
-                    :class="cuenta.tienda.estadoPublicacion === 'publicado' ? 'boton-retirar-tienda' : 'boton-vino boton-publicar-tienda'"
-                    type="button"
-                    :disabled="guardandoPublicacionTienda || cargandoEdicionTienda || guardandoTienda"
-                    @click="abrirAccionPublicacionTienda"
-                  >{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Retirar del catálogo' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Volver a publicar tienda' : 'Publicar tienda' }}</button>
-                  <button class="boton-secundario boton-editar-tienda" type="button" :disabled="cargandoEdicionTienda || guardandoTienda || guardandoPublicacionTienda" @click="abrirEdicionTienda">Editar datos de mi tienda</button>
+          <div class="bloques-mi-espacio">
+            <section class="tarjeta-tienda tarjeta-cuenta">
+              <div class="cuenta-cabecera">
+                <div class="cuenta-identidad">
+                  <span class="avatar-cuenta" aria-hidden="true">{{ nombrePersona().slice(0, 1).toUpperCase() }}</span>
+                  <span><span class="sobre-titulo">MI CUENTA</span><strong>{{ cuenta.nombreMostrar || cuenta.correo }}</strong><small>{{ cuenta.correo }}</small></span>
                 </div>
+                <button class="boton-secundario boton-restablecer" type="button" :disabled="enviandoCambioContrasena" @click="cambiarContrasena">
+                  <span aria-hidden="true">⌑</span>{{ enviandoCambioContrasena ? 'Enviando enlace…' : 'Cambiar contraseña' }}
+                </button>
               </div>
-              <section class="cuenta-completitud" aria-label="Completa tu tienda">
-                <span class="sobre-titulo">COMPLETA TU TIENDA</span>
-                <p>Sigue estos pasos para que quienes visiten tu tienda conozcan tu trabajo.</p>
-                <ul class="lista-completitud">
-                  <li v-for="paso in progresoTienda" :key="paso.titulo" :class="{ completado: paso.completo }">
-                    <span class="check-completitud" aria-hidden="true">{{ paso.completo ? '✓' : '' }}</span>
-                    <span><strong>{{ paso.titulo }}</strong><small v-if="!paso.completo">{{ paso.detalle }}</small></span>
-                  </li>
-                </ul>
-              </section>
-            </div>
+              <p v-if="error" class="mensaje mensaje-error" role="alert">{{ error }}</p>
+              <p v-if="aviso" class="mensaje mensaje-aviso" role="status">{{ aviso }}</p>
+            </section>
+            <section class="tarjeta-tienda tarjeta-tienda-cuenta">
+              <div class="cuenta-panel">
+                <div class="cuenta-ficha">
+                  <span class="sobre-titulo">MI TIENDA</span>
+                  <h2>{{ cuenta.tienda.nombre || 'Mi emprendimiento' }}</h2>
+                  <p>{{ cuenta.tienda.descripcion || 'Aún no hay una descripción para mostrar.' }}</p>
+                  <span class="estado-tienda" :class="{ publicada: cuenta.tienda.estadoPublicacion === 'publicado' }"><span></span>{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Visible para compradores' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Retirada del catálogo' : 'Aún no aparece en el catálogo comprador' }}</span>
+                  <div class="acciones-publicacion-tienda">
+                    <button
+                      ref="botonAccionPublicacionTienda"
+                      :class="cuenta.tienda.estadoPublicacion === 'publicado' ? 'boton-retirar-tienda' : 'boton-vino boton-publicar-tienda'"
+                      type="button"
+                      :disabled="guardandoPublicacionTienda || cargandoEdicionTienda || guardandoTienda"
+                      @click="abrirAccionPublicacionTienda"
+                    >{{ cuenta.tienda.estadoPublicacion === 'publicado' ? 'Retirar del catálogo' : cuenta.tienda.estadoPublicacion === 'archivado' ? 'Volver a publicar tienda' : 'Publicar tienda' }}</button>
+                    <button class="boton-secundario boton-editar-tienda" type="button" :disabled="cargandoEdicionTienda || guardandoTienda || guardandoPublicacionTienda" @click="abrirEdicionTienda">Editar datos de mi tienda</button>
+                  </div>
+                </div>
+                <section class="cuenta-completitud" aria-label="Completa tu tienda">
+                  <span class="sobre-titulo">COMPLETA TU TIENDA</span>
+                  <p>Sigue estos pasos para que quienes visiten tu tienda conozcan tu trabajo.</p>
+                  <ul class="lista-completitud">
+                    <li v-for="paso in progresoTienda" :key="paso.titulo" :class="{ completado: paso.completo }">
+                      <span class="check-completitud" aria-hidden="true">{{ paso.completo ? '✓' : '' }}</span>
+                      <span><strong>{{ paso.titulo }}</strong><small v-if="!paso.completo">{{ paso.detalle }}</small></span>
+                    </li>
+                  </ul>
+                </section>
+              </div>
+            </section>
             <div class="control-tamano-texto" data-guia="emprendedora-texto"><SelectorTextoAccesible /></div>
-            <div class="cuenta-acciones"><button class="boton-secundario" type="button" @click="cerrarSesion">Cerrar sesión</button></div>
-          </section>
+            <div class="cuenta-acciones">
+              <button class="boton-ayuda-cuenta" type="button" @click="abrirAyudaEmprendedora"><span aria-hidden="true">?</span> Ayuda y accesibilidad</button>
+              <button class="boton-secundario boton-cerrar-cuenta" type="button" @click="cerrarSesion"><span aria-hidden="true">↗</span> Cerrar sesión</button>
+            </div>
+          </div>
         </template>
       </section>
 
@@ -2587,4 +2678,126 @@ button:focus-visible,a:focus-visible{outline:3px solid rgba(107,30,61,.52);outli
 .tarjeta-producto>.estado-producto{flex:0 0 auto}
 @media(max-width:740px){.acciones-producto{width:100%;min-width:0;flex:1 0 100%;justify-content:flex-end;margin-left:0}.acciones-producto>.boton-vino,.acciones-producto>.boton-secundario{flex:0 1 auto;padding-right:10px;padding-left:10px}.acciones-producto .contenedor-menu-producto{margin-left:0}}
 @media(max-width:400px){.acciones-producto{gap:6px}.acciones-producto>.boton-vino,.acciones-producto>.boton-secundario{padding-right:8px;padding-left:8px;font-size:9px}.acciones-producto .boton-menu-producto{flex-basis:36px;width:36px;height:36px}}
+</style>
+
+<style scoped>
+.saludo-panel{letter-spacing:.08em;text-transform:none}
+.bloques-mi-espacio{display:grid;gap:18px}
+.tarjeta-cuenta,.tarjeta-tienda-cuenta{max-width:none}
+.tarjeta-cuenta{padding:24px 28px}
+.tarjeta-tienda-cuenta{padding:12px 28px}
+
+.resumen-inicio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:0 0 18px}
+.indicador-inicio{display:flex;align-items:center;gap:15px;min-width:0;min-height:112px;padding:18px 20px;border:1px solid #edcba8;border-radius:22px;background:var(--amancay-superficie);color:var(--texto);text-align:left;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s}
+.indicador-inicio:hover{transform:translateY(-2px);border-color:var(--naranja);box-shadow:0 10px 26px rgba(109,67,34,.08)}
+.indicador-inicio:focus-visible{outline:3px solid rgba(219,133,77,.35);outline-offset:2px}
+.icono-indicador{display:grid;place-items:center;flex:0 0 58px;width:58px;height:58px;border-radius:18px;background:#fff0df;color:#dc815c;font-size:25px}
+.indicador-inicio>span:nth-child(2){display:grid;gap:5px;min-width:0;flex:1}
+.indicador-inicio small{color:var(--suave);font-size:12px;line-height:1.35}
+.indicador-inicio strong{color:var(--texto);font:400 30px/1 'DM Serif Display',Georgia,serif}
+.indicador-flecha{color:var(--vino);font:30px 'DM Serif Display',Georgia,serif}
+.indicador-estado .estado-tienda{margin-left:auto}
+.acciones-inicio-tienda{display:flex;justify-content:flex-end;margin-top:21px;padding-top:17px;border-top:1px solid var(--borde)}
+.enlace-tienda-publica{display:inline-flex;align-items:center;gap:11px;min-height:46px;padding:0 18px;border:1px solid #d8a17d;border-radius:14px;background:#fffaf4;color:var(--amancay-bordo-oscuro);font:700 13px 'Plus Jakarta Sans',sans-serif;text-decoration:none;cursor:pointer}
+.enlace-tienda-publica:hover{background:#fff0df;border-color:#d8895e}
+.enlace-tienda-publica span{font-size:17px}
+
+.controles-catalogo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;margin:0 0 17px}
+.busqueda-productos{display:flex;align-items:center;gap:12px;min-width:0;min-height:54px;padding:0 17px;border:1px solid #edcba8;border-radius:16px;background:var(--amancay-superficie);color:var(--vino)}
+.busqueda-productos>span{font-size:24px;line-height:1}
+.busqueda-productos input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--texto);font:500 14px 'Plus Jakarta Sans',sans-serif}
+.busqueda-productos input::placeholder{color:var(--suave)}
+.busqueda-productos:focus-within{border-color:#dc936a;box-shadow:0 0 0 3px rgba(220,147,106,.16)}
+.boton-agregar-catalogo{min-height:54px;padding:0 21px;border-radius:16px;background:var(--vino);font-size:13px}
+.filtros-productos button.activo{border-color:#e69b72;background:#ffe7d2;color:var(--amancay-bordo-oscuro)}
+.lista-productos{grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}
+.tarjeta-producto{display:grid;grid-template-columns:minmax(82px,104px) minmax(0,1fr);grid-template-areas:"imagen datos" "imagen estado" "acciones acciones";align-items:center;gap:7px 16px;min-width:0;min-height:0;padding:17px;border-color:#edcba8;border-radius:22px;box-shadow:0 4px 15px rgba(109,67,34,.035)}
+.tarjeta-producto:hover{border-color:#dfa981;box-shadow:0 10px 28px rgba(109,67,34,.08)}
+.imagen-producto{grid-area:imagen;display:block;width:100%;height:auto;aspect-ratio:1;border-radius:18px;overflow:hidden}
+.datos-producto{grid-area:datos;align-self:center;gap:8px}
+.categoria-producto{overflow:hidden;color:#d36f50;font-size:9px;font-weight:700;letter-spacing:.09em;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap}
+.datos-producto>strong{font-size:16px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.datos-producto p{font-size:12px;line-height:1.5;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.metadatos-producto{gap:7px;font-size:12px;line-height:1.5}
+.tarjeta-producto>.estado-producto{grid-area:estado;justify-self:start;margin:0;padding:7px 11px;font-size:10px}
+.acciones-producto{grid-area:acciones;display:flex;flex-wrap:wrap;justify-content:flex-start;gap:8px;width:100%;min-width:0;margin:7px 0 0}
+.acciones-producto>.boton-vino,.acciones-producto>.boton-secundario,.enlace-producto-publico{min-height:40px;padding:0 12px;border-radius:12px;font-size:11px}
+.enlace-producto-publico{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #e8c8aa;background:#fff8ef;color:var(--vino);font-weight:700;text-decoration:none;white-space:nowrap}
+.enlace-producto-publico:hover{background:#ffedda;border-color:#dfa981}
+.enlace-producto-publico span{font-size:14px}
+
+.pasos-venta-web{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:0;padding:0 0 14px;border-bottom:1px solid #edcba8;list-style:none}
+.pasos-venta-web li{display:flex;align-items:center;gap:8px;color:var(--suave);font-size:13px}
+.pasos-venta-web li+li{padding-left:12px}
+.pasos-venta-web li span{display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:#fff0df;color:#c66d4c;font-weight:700}
+.pasos-venta-web li.paso-venta-activo{color:var(--texto);font-weight:700}
+.pasos-venta-web li.paso-venta-activo span{background:#e98460;color:#fff}
+.tarjeta-ventas-web{border-color:#edcba8;background:rgba(255,251,242,.88);box-shadow:0 16px 40px rgba(109,67,34,.06)}
+.tarjeta-ventas-web>header h2{font-size:clamp(30px,3.2vw,42px)}
+.tarjeta-ventas-web>header p{font-size:13px}
+.campo-venta-web{gap:8px;font-size:13px}
+.campo-venta-web select,.campo-venta-web input{min-height:50px;padding:10px 13px;border-color:#e8cdb7;border-radius:12px;font-size:14px}
+.campo-venta-web select:focus,.campo-venta-web input:focus{border-color:#d98760;box-shadow:0 0 0 3px rgba(217,135,96,.16)}
+.control-cantidad-venta{display:grid;grid-template-columns:48px minmax(74px,1fr) 48px;max-width:250px;min-height:52px;padding:4px;border:1px solid #e8cdb7;border-radius:14px;background:#fffaf4}
+.control-cantidad-venta button{display:grid;place-items:center;width:40px;height:42px;border:1px solid #f1d8c2;border-radius:11px;background:#fff0df;color:var(--vino);font:700 21px 'Plus Jakarta Sans',sans-serif;cursor:pointer}
+.control-cantidad-venta button:hover:not(:disabled){background:#ffe1c4}
+.control-cantidad-venta button:disabled{opacity:.5;cursor:not-allowed}
+.campo-venta-web .control-cantidad-venta input{min-width:0;min-height:42px;height:42px;padding:0;border:0;background:transparent;text-align:center;font-size:18px;font-weight:700;appearance:textfield}
+.campo-venta-web .control-cantidad-venta input::-webkit-inner-spin-button,.campo-venta-web .control-cantidad-venta input::-webkit-outer-spin-button{margin:0;appearance:none}
+.aviso-stock-venta{display:flex;align-items:center;gap:11px;min-height:52px;padding:11px 14px;border:1px solid #edc391;border-radius:14px;background:#fff2df;color:var(--amancay-bordo-oscuro);font-size:13px;font-weight:600}
+.aviso-stock-venta>span:first-child{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border-radius:10px;background:#ffe2bd;color:#bd6946;font-size:17px}
+.boton-registro-venta{min-height:54px;border-radius:15px;font-size:14px}
+
+.cuenta-cabecera{padding:9px 0 23px;border-bottom:1px solid var(--borde)}
+.cuenta-identidad{display:flex;align-items:center;gap:21px;min-width:0}
+.avatar-cuenta{display:grid;place-items:center;flex:0 0 88px;width:88px;height:88px;border:1px solid #edcba8;border-radius:50%;background:#fff2df;color:var(--vino);font:400 39px 'DM Serif Display',Georgia,serif}
+.cuenta-identidad>span:last-child{display:grid;gap:5px;min-width:0}
+.cuenta-identidad strong{overflow:hidden;color:var(--amancay-bordo-oscuro);font:400 clamp(27px,3vw,40px)/1.1 'DM Serif Display',Georgia,serif;text-overflow:ellipsis}
+.cuenta-identidad small{overflow:hidden;color:var(--suave);font-size:14px;text-overflow:ellipsis}
+.cuenta-panel{padding:24px 0 4px}
+.cuenta-ficha h2{font-size:clamp(32px,3vw,44px)}
+.acciones-publicacion-tienda .boton-editar-tienda{border-color:#df986e;background:#e87957;color:#fff}
+.acciones-publicacion-tienda .boton-editar-tienda:hover{border-color:#ca6044;background:#ca6044}
+.boton-retirar-tienda{border-color:#e3bd9c;background:#fff8ef;color:var(--amancay-bordo-oscuro)}
+.boton-retirar-tienda:hover{background:#ffedda}
+.control-tamano-texto{max-width:none;margin-top:24px;padding:22px;border:1px solid #edcba8;border-radius:22px;background:linear-gradient(110deg,#ffe6cf,#fff1e1)}
+.cuenta-acciones{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:23px;padding:19px 0 0;border-top:1px solid var(--borde)}
+.boton-ayuda-cuenta,.boton-cerrar-cuenta{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:46px;padding:0 13px;border:0;border-radius:13px;background:transparent;color:var(--amancay-bordo-oscuro);font:700 13px 'Plus Jakarta Sans',sans-serif;cursor:pointer}
+.boton-ayuda-cuenta:hover,.boton-cerrar-cuenta:hover{background:#fff0df}
+.boton-ayuda-cuenta>span{display:grid;place-items:center;width:28px;height:28px;border:1px solid #d9a17f;border-radius:50%;font-size:17px}
+.boton-cerrar-cuenta{border-left:1px solid var(--borde);border-radius:0;padding-left:22px}
+
+@media(max-width:1120px){
+  .lista-productos{grid-template-columns:1fr}
+  .resumen-inicio{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .indicador-estado{grid-column:1/-1}
+}
+@media(max-width:740px){
+  .resumen-inicio{grid-template-columns:1fr;gap:10px}
+  .indicador-inicio{min-height:82px;padding:12px 15px;border-radius:17px}
+  .icono-indicador{flex-basis:48px;width:48px;height:48px;border-radius:14px;font-size:22px}
+  .indicador-inicio strong{font-size:25px}
+  .indicador-estado .estado-tienda{font-size:10px}
+  .acciones-inicio-tienda{justify-content:stretch}.enlace-tienda-publica{width:100%;justify-content:center}
+  .controles-catalogo{grid-template-columns:1fr;gap:10px}
+  .busqueda-productos{min-height:50px}.boton-agregar-catalogo{width:100%;min-height:49px}
+  .lista-productos{grid-template-columns:1fr}
+  .tarjeta-producto{grid-template-columns:72px minmax(0,1fr);gap:6px 12px;padding:13px;border-radius:18px}
+  .datos-producto>strong{font-size:14px}.datos-producto p,.metadatos-producto{font-size:11px}
+  .acciones-producto{justify-content:flex-start;gap:6px}
+  .acciones-producto>.boton-vino,.acciones-producto>.boton-secundario,.enlace-producto-publico{min-height:38px;padding:0 9px;font-size:10px}
+  .pasos-venta-web li{gap:6px;font-size:11px}.pasos-venta-web li+li{padding-left:5px}.pasos-venta-web li span{width:24px;height:24px;font-size:11px}
+  .campos-venta-web{grid-template-columns:1fr}
+  .control-cantidad-venta{max-width:none;width:100%;grid-template-columns:52px minmax(74px,1fr) 52px}
+  .control-cantidad-venta button{width:44px}
+  .cuenta-cabecera{align-items:flex-start;flex-direction:column;gap:18px}
+  .cuenta-identidad{gap:14px}.avatar-cuenta{flex-basis:64px;width:64px;height:64px;font-size:29px}
+  .cuenta-identidad strong{font-size:26px}.cuenta-identidad small{font-size:12px;word-break:break-word}
+  .cuenta-panel{grid-template-columns:1fr;gap:19px;padding-top:20px}
+  .tarjeta-cuenta{padding:19px}
+  .tarjeta-tienda-cuenta{padding:12px 19px}
+  .cuenta-completitud{padding:20px 0 0;border-top:1px solid var(--borde);border-left:0}
+  .control-tamano-texto{padding:16px;border-radius:18px}
+  .cuenta-acciones{align-items:stretch}.boton-ayuda-cuenta,.boton-cerrar-cuenta{gap:7px;padding:0 6px;font-size:11px}.boton-cerrar-cuenta{padding-left:12px}
+}
 </style>

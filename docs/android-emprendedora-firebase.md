@@ -1,4 +1,4 @@
-# Conexión local de la app emprendedora
+# Conexión de la app emprendedora
 
 La app Android unificada usa Firebase Authentication y Firestore. Las escrituras de tienda, catálogo, publicación y stock pasan por la API autenticada de `backend/`. En el modo real, el servidor local usa Firebase Admin con Application Default Credentials (ADC); la clave web de Firebase no sustituye esos permisos.
 
@@ -20,6 +20,14 @@ Firebase Authentication debe tener habilitados **Google** y **Correo electrónic
 La cuenta de emprendedora conserva su UID, rol y tienda: para vincular Google por primera vez, ingresa el correo y la contraseña entregados por administración y pulsa **Iniciar sesión con Google**. La dirección elegida en Google debe coincidir con ese correo. Si se pulsa Google sin escribir credenciales, la app intenta un ingreso normal y valida el mismo rol y tienda.
 
 El comprador puede ingresar directamente con Google o correo/contraseña. Si ya tenía una cuenta compradora de correo/contraseña, escribe esas credenciales y pulsa Google para vincular ambos proveedores a la misma cuenta. El enlace **¿Olvidaste tu contraseña?** usa el envío de restablecimiento de Firebase; el texto del correo se administra en **Authentication → Plantillas → Restablecimiento de contraseña**. La app muestra una confirmación genérica para no revelar si un correo está registrado.
+
+## Usar el APK sin conectar el teléfono al computador
+
+Para que el teléfono funcione desde cualquier red, la API debe estar alojada en Cloud Run. La configuración propuesta publica `/api/**` y `/health` de Firebase Hosting hacia el servicio `amancay-api` en `southamerica-west1`; por eso el APK puede usar `https://rinconamancay3.web.app/api/v1/` y no necesita `adb reverse`, USB ni que el computador permanezca encendido. Firebase Hosting admite esta integración con Cloud Run en esa región ([documentación oficial](https://firebase.google.com/docs/hosting/cloud-run)).
+
+La ruta de Hosting y el cambio del servidor para escuchar dentro del contenedor están preparados localmente, pero no desplegados. Antes de publicar la API también hay que validar App Check en el backend y enviarlo desde los clientes: hoy no se valida App Check y los límites de consultas públicas viven en memoria del proceso, que se reinicia y no es una defensa suficiente ante el abuso de lecturas. Mantén pendiente el despliegue hasta terminar esos controles y revisar las reglas de Firestore.
+
+La aplicación debe estar registrada en `rinconamancay3` como `com.example.amancay2` y usar su `google-services.json`. El archivo que había en este equipo apunta a `rincon-amancay`, así que no se debe generar un APK para uso real con ese archivo. Al desplegar, el servicio necesita una identidad de Cloud Run con permisos mínimos para Firebase y los secretos de Supabase en Secret Manager; no pongas claves de servicio en el APK ni en Git.
 
 ## Opción recomendada para comprobar con datos reales
 
