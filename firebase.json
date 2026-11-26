@@ -6,24 +6,6 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "rewrites": [
-      {
-        "source": "/api/**",
-        "run": {
-          "serviceId": "amancay-api",
-          "region": "southamerica-west1",
-          "pinTag": true
-        }
-      },
-      {
-        "source": "/health",
-        "run": {
-          "serviceId": "amancay-api",
-          "region": "southamerica-west1",
-          "pinTag": true
-        }
-      }
-    ],
     "headers": [
       {
         "source": "/auth/accion",
