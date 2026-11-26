@@ -2,10 +2,19 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import '~/assets/amancay-tokens.css'
 import type { ProductoPublico, TiendaPublica } from '~/types/comprador-publico'
-import { categoriasProductoVigentes } from '~/repositories/catalogo-publico'
 import type { CatalogosPublicos } from '~/repositories/catalogo-publico'
 
 type ProductoCatalogo = { producto: ProductoPublico; tienda: TiendaPublica }
+
+const TIPOS_PRODUCTO = [
+  { id: 'alimento_reposteria', nombre: 'Alimento/Repostería' },
+  { id: 'artesania_manualidad', nombre: 'Artesanía/Manualidad' },
+  { id: 'plantas', nombre: 'Plantas' },
+  { id: 'producto_agricola', nombre: 'Producto agrícola' },
+  { id: 'vestuario', nombre: 'Vestuario' },
+  { id: 'accesorio', nombre: 'Accesorio' },
+  { id: 'cosmetica_natural', nombre: 'Cosmética natural' },
+]
 
 useHead({
   title: 'Productos locales — Rincón Amancay',
@@ -19,9 +28,9 @@ const { $catalogoPublico } = useNuxtApp()
 const productos = ref<ProductoCatalogo[]>([])
 const tiendas = ref<TiendaPublica[]>([])
 const catalogos = ref<CatalogosPublicos>({ sectores: [], tiposEmprendimiento: [], categorias: [] })
-const categoriasFiltro = computed(() => categoriasProductoVigentes(catalogos.value.categorias))
+const tiposProductoFiltro = TIPOS_PRODUCTO
 const busqueda = ref('')
-const categoriaSeleccionada = ref('')
+const tipoProductoSeleccionado = ref('')
 const tiendaSeleccionada = ref('')
 const disponibilidadSeleccionada = ref('')
 const cargando = ref(false)
@@ -36,7 +45,7 @@ const erroresPorTienda = new Set<string>()
 let indiceSiguienteTienda = 0
 let revisionCatalogo = 0
 
-const filtrosActivos = computed(() => Boolean(busqueda.value.trim() || categoriaSeleccionada.value || tiendaSeleccionada.value || disponibilidadSeleccionada.value))
+const filtrosActivos = computed(() => Boolean(busqueda.value.trim() || tipoProductoSeleccionado.value || tiendaSeleccionada.value || disponibilidadSeleccionada.value))
 const hayMasProductos = computed(() => {
   revisionPaginas.value
   const tiendasARevisar = tiendaSeleccionada.value
@@ -52,7 +61,7 @@ function normalizar(valor: string) {
 const productosFiltrados = computed(() => {
   const termino = normalizar(busqueda.value)
   return productos.value.filter(({ producto, tienda }) => {
-    if (categoriaSeleccionada.value && producto.categoriaId !== categoriaSeleccionada.value) return false
+    if (tipoProductoSeleccionado.value && producto.tipoProductoId !== tipoProductoSeleccionado.value) return false
     if (tiendaSeleccionada.value && tienda.id !== tiendaSeleccionada.value) return false
     if (disponibilidadSeleccionada.value && producto.estadoDisponibilidad !== disponibilidadSeleccionada.value) return false
     return !termino || normalizar([
@@ -71,7 +80,7 @@ function nombreCategoria(id: string) {
 
 function limpiarFiltros() {
   busqueda.value = ''
-  categoriaSeleccionada.value = ''
+  tipoProductoSeleccionado.value = ''
   tiendaSeleccionada.value = ''
   disponibilidadSeleccionada.value = ''
 }
@@ -220,10 +229,10 @@ onMounted(() => void cargar())
           <input v-model="busqueda" type="search" placeholder="Buscar producto, descripción o tienda" aria-label="Buscar productos" />
         </label>
         <label class="campo-filtro">
-          <span>Categoría</span>
-          <select v-model="categoriaSeleccionada" aria-label="Filtrar por categoría">
-            <option value="">Todas las categorías</option>
-            <option v-for="categoria in categoriasFiltro" :key="categoria.id" :value="categoria.id">{{ categoria.nombre }}</option>
+          <span>Tipo de producto</span>
+          <select v-model="tipoProductoSeleccionado" aria-label="Filtrar por tipo de producto">
+            <option value="">Todos los tipos</option>
+            <option v-for="tipo in tiposProductoFiltro" :key="tipo.id" :value="tipo.id">{{ tipo.nombre }}</option>
           </select>
         </label>
         <label class="campo-filtro">
@@ -242,12 +251,12 @@ onMounted(() => void cargar())
             <option value="agotado">Agotado</option>
           </select>
         </label>
-        <button v-if="busqueda || categoriaSeleccionada || tiendaSeleccionada || disponibilidadSeleccionada" class="limpiar" type="button" @click="limpiarFiltros">Limpiar filtros</button>
+        <button v-if="busqueda || tipoProductoSeleccionado || tiendaSeleccionada || disponibilidadSeleccionada" class="limpiar" type="button" @click="limpiarFiltros">Limpiar filtros</button>
       </section>
 
       <div v-if="!cargando" class="resumen-catalogo" aria-live="polite">
         <span>{{ productosFiltrados.length }} {{ productosFiltrados.length === 1 ? 'producto mostrado' : 'productos mostrados' }}</span>
-        <span v-if="busqueda || categoriaSeleccionada || tiendaSeleccionada || disponibilidadSeleccionada">con los filtros actuales</span>
+        <span v-if="busqueda || tipoProductoSeleccionado || tiendaSeleccionada || disponibilidadSeleccionada">con los filtros actuales</span>
         <span v-if="filtrosActivos && hayMasProductos">El filtro considera lo cargado; puedes ampliar la búsqueda por páginas.</span>
       </div>
       <p v-if="tiendasConError && !cargando" class="aviso-parcial" role="status">No se pudo cargar el catálogo de {{ tiendasConError }} {{ tiendasConError === 1 ? 'tienda' : 'tiendas' }}. Los demás productos sí están disponibles.</p>
@@ -261,7 +270,7 @@ onMounted(() => void cargar())
         <span aria-hidden="true">🌼</span>
         <h2>{{ hayMasProductos ? (filtrosActivos ? 'Sigue buscando en el catálogo' : 'Sigue explorando productos') : 'No encontramos productos' }}</h2>
         <p>{{ hayMasProductos ? (filtrosActivos ? 'No hay coincidencias entre las páginas cargadas. Carga más para ampliar la búsqueda.' : 'Hay más tiendas y productos por cargar.') : productos.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Todavía no hay productos publicados.' }}</p>
-        <button v-if="busqueda || categoriaSeleccionada || tiendaSeleccionada || disponibilidadSeleccionada" class="accion-secundaria" type="button" @click="limpiarFiltros">Limpiar filtros</button>
+        <button v-if="busqueda || tipoProductoSeleccionado || tiendaSeleccionada || disponibilidadSeleccionada" class="accion-secundaria" type="button" @click="limpiarFiltros">Limpiar filtros</button>
       </div>
       <div v-else class="rejilla-productos">
         <article v-for="{ producto, tienda } in productosFiltrados" :key="`${tienda.id}-${producto.id}`" class="tarjeta-producto">

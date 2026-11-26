@@ -80,7 +80,7 @@ function queryVista(tiendaId = tienda.value?.id, productoId = producto.value?.id
     else delete query.producto;
     if (categoriaSeleccionada.value) query.categoria = categoriaSeleccionada.value;
     else delete query.categoria;
-    if (busqueda.value.trim()) query.buscar = busqueda.value.trim();
+    if (tiendaId && busqueda.value.trim()) query.buscar = busqueda.value.trim();
     else delete query.buscar;
     if (pagina.value > 1) query.pagina = String(pagina.value);
     else delete query.pagina;
@@ -138,7 +138,7 @@ async function restaurarVistaDesdeUrl() {
         }
 
         await cargarPaginaRestaurada(paginaGuardada);
-        busqueda.value = busquedaGuardada;
+        busqueda.value = tiendaId ? busquedaGuardada : '';
         categoriaSeleccionada.value = categoriaGuardada;
 
         if (productoId && tienda.value) {
@@ -228,13 +228,12 @@ function fichaVariante(elemento: VariantePublica): FichaComprador {
 
 // Datos derivados para la vista
 const visibles = computed(() => filas.value.filter((f) => {
-    const coincideTexto = `${f.datos.nombre} ${f.datos.descripcion ?? ''}`.toLowerCase().includes(busqueda.value.trim().toLowerCase());
-    // En Explorar los chips afectan destacados; en tienda filtran productos por categoría.
+    const coincideTexto = !tienda.value || `${f.datos.nombre} ${f.datos.descripcion ?? ''}`.toLowerCase().includes(busqueda.value.trim().toLowerCase());
+    // En la tienda, el filtro por categoría solo afecta sus productos.
     const coincideCategoria = !tienda.value || !categoriaSeleccionada.value || f.datos.categoriaId === categoriaSeleccionada.value;
     return coincideTexto && coincideCategoria;
 }));
-const destacadosVisibles = computed(() => destacados.value.filter((d) =>
-    !categoriaSeleccionada.value || d.producto.datos.categoriaId === categoriaSeleccionada.value));
+const destacadosVisibles = computed(() => destacados.value);
 const variante = computed(() => variantes.value.find(v => v.id === seleccion.value));
 const mensajeVacio = computed(() => busqueda.value
     ? 'No hay coincidencias en esta página.'
@@ -1072,40 +1071,6 @@ onBeforeUnmount(() => {
               ></button>
             </div>
           </template>
-        </div>
-
-        <label class="buscador buscador-ancho">
-          <span aria-hidden="true">⌕</span>
-          <input v-model="busqueda" type="search" placeholder="Busca una tienda por nombre o descripción" aria-label="Buscar tiendas" />
-          <button
-            class="buscador-filtro"
-            type="button"
-            :aria-expanded="filtroVisible"
-            aria-label="Filtrar por categoría"
-            @click="filtroVisible = !filtroVisible"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M4 6h16M7 12h10M10 18h4" stroke-linecap="round" />
-            </svg>
-          </button>
-        </label>
-
-        <div v-if="filtroVisible && Object.keys(categoriasFiltro).length" class="filtros" role="group" aria-label="Filtrar por categoría">
-          <span class="filtros-etiqueta">Filtrar por categoría:</span>
-          <button
-            class="chip-filtro"
-            :class="{ on: !categoriaSeleccionada }"
-            type="button"
-            @click="categoriaSeleccionada = ''"
-          >Todos</button>
-          <button
-            v-for="(nombre, id) in categoriasFiltro"
-            :key="id"
-            class="chip-filtro"
-            :class="{ on: categoriaSeleccionada === id }"
-            type="button"
-            @click="categoriaSeleccionada = categoriaSeleccionada === id ? '' : id"
-          >{{ nombre }}</button>
         </div>
 
         <AvisosFerias />
