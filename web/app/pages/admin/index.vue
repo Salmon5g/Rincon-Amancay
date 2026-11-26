@@ -125,6 +125,7 @@ const secciones = ref<Seccion[]>([
 const seccionesValidas = new Set(['inicio', ...secciones.value.map((seccion) => seccion.id)])
 const seccionEnUrl = typeof route.query.seccion === 'string' ? route.query.seccion : ''
 const activa = ref(seccionesValidas.has(seccionEnUrl) ? seccionEnUrl : 'inicio')
+const edicionFeriaActiva = ref(false)
 const busqueda = ref('')
 const filtro = ref('Todos')
 const filtroCatalogo = ref<ColeccionCatalogoEditable | ''>('')
@@ -566,6 +567,7 @@ watch(activa, (id) => {
 watch(() => route.query.seccion, (valor) => {
   const id = typeof valor === 'string' && seccionesValidas.has(valor) ? valor : 'inicio'
   if (id === activa.value) return
+  edicionFeriaActiva.value = false
   activa.value = id
   limpiarFiltros()
   if (autorizado.value) void cargarSeccion()
@@ -590,6 +592,7 @@ async function ir(id: string) {
   cuentaEmprendedoraEnEdicion.value = null
   edicionCuentaOperacion.value = null
   edicionCuentaReintentoObligatorio.value = false
+  if (id !== activa.value) edicionFeriaActiva.value = false
   activa.value = id
   formularioAbierto.value = false
   limpiarFiltros()
@@ -1418,7 +1421,6 @@ async function guardarEdicionCuentaEmprendedora() {
 
     <main class="contenido">
       <div class="estado-conexion">
-        <span><template v-if="activa !== 'catalogos' || config.firebaseModo !== 'real-api'">{{ entorno }} · </template>{{ sesion }}</span>
         <GuiaAdminWeb :autorizado="autorizado" :listo="!cargandoSesion" :correo="sesion" :seccion-actual="activa" :navegar="ir" />
         <button class="editar" @click="salir">Cerrar sesión</button>
       </div>
@@ -1464,13 +1466,13 @@ async function guardarEdicionCuentaEmprendedora() {
       </template>
 
       <template v-else>
-        <nav class="migas" aria-label="Ruta">
+        <nav v-if="!edicionFeriaActiva" class="migas" aria-label="Ruta">
           <button type="button" @click="ir('inicio')">Inicio</button>
           <span aria-hidden="true">/</span>
           <span>{{ seccion.titulo }}</span>
         </nav>
 
-        <header class="encabezado fila-encabezado" :data-guia="`admin-contenido-${seccion.id}`">
+        <header v-if="!edicionFeriaActiva" class="encabezado fila-encabezado" :data-guia="`admin-contenido-${seccion.id}`">
           <div>
             <p class="sobretitulo">Administración</p>
             <h1>{{ seccion.titulo }}</h1>
@@ -1486,7 +1488,7 @@ async function guardarEdicionCuentaEmprendedora() {
           </button>
         </header>
 
-        <FeriasAdmin v-if="seccion.id === 'ferias'" />
+        <FeriasAdmin v-if="seccion.id === 'ferias'" @cambio-edicion="edicionFeriaActiva = $event" />
         <ConfiguracionAdmin v-else-if="seccion.id === 'configuracion'" />
         <AdministradoresAdmin v-else-if="seccion.id === 'administradores'" />
         <RegistroAccionesAdmin v-else-if="seccion.id === 'registro-acciones'" />
@@ -1972,7 +1974,7 @@ async function guardarEdicionCuentaEmprendedora() {
 .acceso-admin .boton { margin-top: .35rem; color: #fff; background: var(--vino); }
 .acceso-admin .boton:hover { background: var(--vino-oscuro); }
 .acceso-admin [role="alert"] { color: #b23b3c; }
-.estado-conexion { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+.estado-conexion { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: flex-end; margin-bottom: 1rem; }
 button:disabled { opacity: .55; cursor: not-allowed; }
 
 .admin {
@@ -2182,6 +2184,7 @@ input:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  min-width: 0;
   margin-top: 0.8rem;
   padding: 0.7rem;
   background: var(--crema);
@@ -2189,10 +2192,18 @@ input:focus-visible {
 }
 
 .pie span:last-child {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   font-size: 0.85rem;
   line-height: 1.2;
+}
+
+.pie b,
+.pie small {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pie small {

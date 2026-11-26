@@ -6,6 +6,7 @@ import { enviarAvisoConfirmadasFeria, leerParticipantesFeria, listarFeriasAdmin 
 import type { FeriaAdmin, ParticipanteFeria, ParticipantesFeria, TipoParticipanteFeria } from '~/types/admin'
 
 const { $amancay } = useNuxtApp()
+const emit = defineEmits<{ (event: 'cambio-edicion', activo: boolean): void }>()
 const modoFirebase = useRuntimeConfig().public.firebaseModo
 const habilitado = ['local', 'real-api'].includes(modoFirebase)
 const ferias = ref<FeriaAdmin[]>([])
@@ -31,9 +32,10 @@ let focoAnteriorAvisos: HTMLElement | null = null
 const error = ref('')
 const aviso = ref('')
 const formulario = ref(false)
-const formularioRef = ref<HTMLElement | null>(null)
 const participantesRef = ref<HTMLElement | null>(null)
 const participantesTituloRef = ref<HTMLHeadingElement | null>(null)
+const editarTituloRef = ref<HTMLHeadingElement | null>(null)
+const vistaEdicion = ref(false)
 const agregarVisible = ref(false)
 const feriaEditando = ref<FeriaAdmin | null>(null)
 const borradorInicial = ref('')
@@ -207,6 +209,8 @@ function seleccionarTipoCandidata(tipo: TipoParticipanteFeria) {
 }
 
 function nuevo() {
+  emit('cambio-edicion', false)
+  vistaEdicion.value = false
   feriaEditando.value = null
   borrador.value = { nombre: '', descripcion: '', organizador: '', direccion: '', fecha: '', horaInicio: '', horaFin: '', imagenUrl: '', latitud: '', longitud: '' }
   borradorInicial.value = ''
@@ -216,8 +220,13 @@ function nuevo() {
 
 function cerrarFormulario() {
   if (enviando.value || pendiente.value) return
+  emit('cambio-edicion', false)
   limpiarArchivoImagen()
   formulario.value = false
+  vistaEdicion.value = false
+  feriaEditando.value = null
+  borradorInicial.value = ''
+  error.value = ''
 }
 
 function dosDigitos(valor: number) { return String(valor).padStart(2, '0') }
@@ -266,14 +275,10 @@ function actualizarUbicacion(ubicacion: { latitud: number; longitud: number; dir
   }
 }
 
-function desplazarAlApartado(elemento: HTMLElement | null) {
-  if (!elemento) return
-  const reducirMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  elemento.scrollIntoView({ behavior: reducirMovimiento ? 'auto' : 'smooth', block: 'start' })
-}
-
 async function editar(item: FeriaAdmin) {
+  emit('cambio-edicion', true)
   feriaEditando.value = item
+  vistaEdicion.value = true
   limpiarArchivoImagen()
   borrador.value = {
     nombre: item.nombre, descripcion: item.descripcion, organizador: item.organizador, direccion: item.direccion,
@@ -283,7 +288,8 @@ async function editar(item: FeriaAdmin) {
   borradorInicial.value = JSON.stringify(borrador.value)
   formulario.value = true; error.value = ''; aviso.value = ''
   await nextTick()
-  desplazarAlApartado(formularioRef.value)
+  window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  editarTituloRef.value?.focus({ preventScroll: true })
 }
 
 function payloadFeria(imagenUrl: string) {
@@ -308,7 +314,8 @@ async function procesarPendiente() {
   try {
     await $amancay.llamar(current.operacion, current.solicitud)
     if (current.operacion === 'invitarParticipanteFeria' || current.operacion === 'agregarParticipanteFeria') candidata.value = ''
-    pendiente.value = null; formulario.value = false; retiro.value = null
+    pendiente.value = null; formulario.value = false; vistaEdicion.value = false; feriaEditando.value = null; borradorInicial.value = ''; retiro.value = null
+    emit('cambio-edicion', false)
     limpiarArchivoImagen()
     aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'Recordatorio enviado. Llegará si su teléfono puede recibir notificaciones.' : 'Los cambios de la feria se guardaron.'
     await cargar()
@@ -533,6 +540,10 @@ function confirmarEnvioAvisosConfirmadas() {
 }
 
 async function gestionarParticipantes(item: FeriaAdmin) {
+  emit('cambio-edicion', false)
+  vistaEdicion.value = false
+  formulario.value = false
+  feriaEditando.value = null
   retiro.value = null
   agregarVisible.value = false
   const carga = cargarParticipantes(item.id)
@@ -543,7 +554,9 @@ async function gestionarParticipantes(item: FeriaAdmin) {
 }
 
 function cerrarParticipantes() {
+  emit('cambio-edicion', false)
   selectedId.value = ''
+  vistaEdicion.value = false
   detalle.value = null
   agregarVisible.value = false
   candidata.value = ''
@@ -676,12 +689,35 @@ onBeforeUnmount(() => {
       <button class="boton" type="button" :disabled="enviando" @click="procesarLoteAvisosConfirmadas">{{ enviando ? 'Enviando…' : 'Reintentar avisos pendientes' }}</button>
     </div>
     <template v-if="!selectedId">
-    <div class="nota" data-guia="admin-ferias-intro"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. El recordatorio de una invitación pendiente llega como notificación a la emprendedora y abre su apartado de invitaciones.</p></div>
-    <div class="barra" data-guia="admin-ferias-acciones"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} {{ ferias.length === 1 ? 'feria' : 'ferias' }}</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
-    <p v-if="cargando" role="status">Cargando ferias…</p>
+    <section v-if="vistaEdicion && feriaEditando" class="vista-edicion-feria">
+      <nav class="ruta-participantes" aria-label="Ruta de navegación">
+        <button type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Ferias y eventos</button>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Editar feria</span>
+      </nav>
+      <header class="cabecera-participantes">
+        <div class="cabecera-participantes-texto">
+          <p class="sobre">Administración · Ferias y eventos</p>
+          <h2 ref="editarTituloRef" tabindex="-1">Editar feria</h2>
+          <p class="feria-contexto">
+            <strong>{{ feriaEditando.nombre }}</strong>
+            <span>{{ feriaEditando.direccion }}</span>
+            <span>{{ fechaBonita(feriaEditando.fechaInicio) }} — {{ fechaBonita(feriaEditando.fechaFin) }}</span>
+          </p>
+        </div>
+        <div class="acciones cabecera-participantes-acciones">
+          <button class="secundario volver-feria" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Volver a las ferias</button>
+        </div>
+      </header>
+    </section>
+    <template v-else>
+      <div class="nota" data-guia="admin-ferias-intro"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imágenes y participantes. Las invitaciones y los avisos se gestionan desde este apartado.</p></div>
+      <div class="barra" data-guia="admin-ferias-acciones"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} {{ ferias.length === 1 ? 'feria' : 'ferias' }}</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
+      <p v-if="cargando" role="status">Cargando ferias…</p>
+    </template>
 
-    <section v-if="formulario" ref="formularioRef" class="formulario apartado-desplegable">
-      <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cerrar</button></div>
+    <section v-if="formulario || (vistaEdicion && feriaEditando)" class="formulario apartado-desplegable" :class="{ 'formulario-edicion': vistaEdicion }">
+      <div class="formulario-cabecera"><div><p class="sobre">{{ feriaEditando ? 'Editar información' : 'Nueva actividad' }}</p><h3>{{ feriaEditando ? feriaEditando.nombre : 'Crear feria' }}</h3></div><button v-if="!vistaEdicion" class="secundario" type="button" :disabled="enviando || !!pendiente" @click="cerrarFormulario">Cerrar</button></div>
       <form class="campos" @submit.prevent="guardarFeria">
         <label>Nombre de la feria<input v-model="borrador.nombre" maxlength="120" required :disabled="enviando || !!pendiente" /></label>
         <label>Organizador o responsable<input v-model="borrador.organizador" maxlength="120" required :disabled="enviando || !!pendiente" /></label>
@@ -713,6 +749,7 @@ onBeforeUnmount(() => {
       </form>
     </section>
 
+    <template v-if="!vistaEdicion">
     <div v-if="ferias.length" class="filtros">
       <label>Buscar<input v-model="busquedaFeria" type="search" placeholder="Feria, lugar u organizador" /></label>
       <label>Estado<select v-model="filtroEstadoFeria"><option value="todas">Todos</option><option value="borrador">Borrador</option><option value="publicada">Publicada</option><option value="cancelada">Cancelada</option></select></label>
@@ -730,6 +767,7 @@ onBeforeUnmount(() => {
       </li>
     </ul>
     <p v-else-if="!cargando" class="vacio">{{ ferias.length ? 'No hay ferias que coincidan con el filtro.' : 'Todavía no hay ferias registradas. Crea un borrador para comenzar.' }}</p>
+    </template>
     </template>
 
     <section v-else ref="participantesRef" class="participantes vista-participantes">
@@ -1082,6 +1120,8 @@ onBeforeUnmount(() => {
 @media(prefers-reduced-motion:reduce){.boton:not(:disabled):active,.secundario:not(:disabled):active,.peligro:not(:disabled):active{transform:none}}
 
 .vista-participantes{min-height:calc(100vh - 150px);align-content:start;gap:20px;padding:clamp(18px,2.4vw,32px)}
+.vista-edicion-feria{display:grid;width:100%;max-width:1200px;margin-inline:auto;align-content:start;gap:20px;padding:clamp(18px,2.4vw,32px)}
+.formulario-edicion{width:100%;max-width:1200px;margin-inline:auto}
 .ruta-participantes{display:flex;align-items:center;gap:9px;color:#927a86;font-size:.92rem}
 .ruta-participantes button{padding:0;border:0;background:transparent;color:var(--vino);font:inherit;font-weight:700;cursor:pointer}
 .ruta-participantes button:hover{text-decoration:underline}
@@ -1125,7 +1165,7 @@ onBeforeUnmount(() => {
 .panel-agregar-enter-active,.panel-agregar-leave-active{transition:opacity .18s ease,transform .18s ease}
 .panel-agregar-enter-from,.panel-agregar-leave-to{transform:translateY(-5px);opacity:0}
 @media(max-width:1100px){.cabecera-participantes{flex-direction:column}.cabecera-participantes-acciones{justify-content:flex-start;max-width:none}.participantes-filtros{grid-template-columns:repeat(2,minmax(0,1fr))}.participantes-filtros>label:first-child{grid-column:1/-1}}
-@media(max-width:760px){.vista-participantes{min-height:calc(100vh - 110px)}.resumen-participantes{grid-template-columns:1fr}.dato-resumen{padding:13px 16px}.dato-resumen+.dato-resumen{border-left:0;border-top:1px solid var(--borde)}.participante-vista{align-items:flex-start}.participante-vista .persona{flex:1 1 calc(100% - 70px)}.estados-participante,.participante-vista>.acciones{width:100%;padding-left:60px}.participante-vista>.acciones{justify-content:flex-start}.agregar-participante-toggle{white-space:normal}}
+@media(max-width:760px){.vista-participantes{min-height:calc(100vh - 110px)}.vista-edicion-feria,.formulario-edicion{max-width:none;padding:14px}.formulario-edicion{padding:16px}.resumen-participantes{grid-template-columns:1fr}.dato-resumen{padding:13px 16px}.dato-resumen+.dato-resumen{border-left:0;border-top:1px solid var(--borde)}.participante-vista{align-items:flex-start}.participante-vista .persona{flex:1 1 calc(100% - 70px)}.estados-participante,.participante-vista>.acciones{width:100%;padding-left:60px}.participante-vista>.acciones{justify-content:flex-start}.agregar-participante-toggle{white-space:normal}}
 @media(max-width:560px){.ruta-participantes{font-size:.82rem}.cabecera-participantes-acciones{width:100%;justify-content:flex-start}.cabecera-participantes-acciones button{flex:1 1 auto}.selector-lista-participantes button{gap:4px;padding:8px 4px;font-size:.82rem}.selector-lista-participantes button span{min-width:21px;height:21px;padding:0 5px}.participantes-filtros{grid-template-columns:1fr}.participantes-filtros>label:first-child{grid-column:auto}.agregar-panel{padding:14px}.participante-vista .estados-participante,.participante-vista>.acciones{padding-left:0}}
 @media(prefers-reduced-motion:reduce){.selector-lista-participantes button,.panel-agregar-enter-active,.panel-agregar-leave-active{transition:none}.panel-agregar-enter-from,.panel-agregar-leave-to{transform:none}}
 </style>
