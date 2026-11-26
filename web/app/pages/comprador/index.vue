@@ -1169,13 +1169,13 @@ onBeforeUnmount(() => {
               </span>
               <div class="tarjeta-tienda-cuerpo">
                 <h3>{{ f.datos.nombre }}</h3>
+                <button class="boton boton-secundario" type="button" :disabled="cargando" @click="navegar(f)">Visitar tienda →</button>
                 <p>{{ f.datos.descripcion }}</p>
                 <span v-if="ubicacionTienda(f.datos)" class="chip">
                   <span aria-hidden="true">📍</span>
                   {{ ubicacionTienda(f.datos) }}
                 </span>
               </div>
-              <button class="boton boton-secundario" type="button" :disabled="cargando" @click="navegar(f)">Visitar tienda →</button>
             </article>
           </div>
           <nav class="paginacion" aria-label="Paginación">
@@ -2820,10 +2820,7 @@ article.tarjeta-tienda:hover {
 .tarjeta-tienda-cuerpo {
     flex: 1;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.35rem;
+    display: flow-root;
 }
 
 .tarjeta-tienda-cuerpo h3 {
@@ -2839,17 +2836,25 @@ article.tarjeta-tienda:hover {
     font-size: 0.85rem;
     line-height: 1.5;
     color: var(--amancay-tinta-suave);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    overflow-wrap: anywhere;
 }
 
 .tarjeta-tienda .boton {
-    flex: none;
+    float: right;
+    margin: 0.15rem 0 0.4rem 0.75rem;
     min-height: 40px;
     padding: 0.5rem 1.1rem;
     font-size: 0.84rem;
+}
+
+.tarjeta-tienda-cuerpo .chip {
+    display: flex;
+    clear: both;
+    width: max-content;
+    max-width: 100%;
+    margin-top: 0.45rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* Chips */
@@ -3820,18 +3825,17 @@ article.tarjeta-tienda:hover {
         grid-column: 2;
         min-width: 0;
         width: 100%;
+        display: flow-root;
     }
 
     .tarjeta-tienda-cuerpo .chip {
-        align-self: flex-start;
         max-width: 100%;
         white-space: normal;
         overflow-wrap: break-word;
+        margin-top: 0;
     }
 
     .tarjeta-tienda .boton {
-        grid-column: 1 / -1;
-        width: 100%;
         box-sizing: border-box;
     }
 }

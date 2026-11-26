@@ -58,7 +58,7 @@ onBeforeUnmount(() => { revision++ })
 
 <template>
   <section class="registro-acciones" aria-label="Registro de acciones administrativas">
-    <div class="registro-intro">
+    <div class="registro-intro" data-guia="admin-registro-intro">
       <div class="registro-sello" aria-hidden="true">📋</div>
       <div>
         <p class="registro-sobretitulo">Trazabilidad administrativa</p>
@@ -70,7 +70,7 @@ onBeforeUnmount(() => { revision++ })
       </button>
     </div>
 
-    <div class="registro-herramientas">
+    <div class="registro-herramientas" data-guia="admin-registro-herramientas">
       <label class="registro-buscar">
         <span aria-hidden="true">⌕</span>
         <input v-model="busqueda" type="search" placeholder="Buscar acción, administrador o registro" />

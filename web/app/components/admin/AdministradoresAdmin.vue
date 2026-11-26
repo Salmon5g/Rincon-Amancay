@@ -68,18 +68,18 @@ onMounted(() => { void cargar() })
 
 <template>
   <section class="cuentas-admin">
-    <div class="nota">
+    <div class="nota" data-guia="admin-cuentas-contenido">
       <span aria-hidden="true">🛡️</span>
       <p>Para otorgar este rol, la persona debe tener una cuenta registrada con su correo verificado. Aquí solo se asignan permisos; las contraseñas no se ven ni se modifican. Se conserva al menos una cuenta administradora activa.</p>
     </div>
     <p v-if="!habilitado" class="nota" role="status">Este panel está en modo de solo consulta; no se pueden gestionar cuentas.</p>
-    <form class="formulario" @submit.prevent="agregar">
+    <form class="formulario" data-guia="admin-cuentas-formulario" @submit.prevent="agregar">
       <h2>Agregar otra cuenta administradora</h2>
       <label>Correo de la cuenta existente<input v-model="correo" type="email" autocomplete="email" required :disabled="!habilitado || enviando || !!pendiente" placeholder="persona@correo.cl" /></label>
       <p>Primero debe estar registrada y haber verificado su correo. No se crea ni se envía una contraseña desde esta pantalla.</p>
       <button class="boton" type="submit" :disabled="!habilitado || enviando || !!pendiente || !correo.trim()">Asignar rol</button>
     </form>
-    <div class="encabezado-lista">
+    <div class="encabezado-lista" data-guia="admin-cuentas-listado">
       <div><h2>Cuentas con rol administrador</h2><p>{{ cuentas.length }} cargadas</p></div>
       <button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar listado' }}</button>
     </div>

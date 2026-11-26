@@ -676,8 +676,8 @@ onBeforeUnmount(() => {
       <button class="boton" type="button" :disabled="enviando" @click="procesarLoteAvisosConfirmadas">{{ enviando ? 'Enviando…' : 'Reintentar avisos pendientes' }}</button>
     </div>
     <template v-if="!selectedId">
-    <div class="nota"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. El recordatorio de una invitación pendiente llega como notificación a la emprendedora y abre su apartado de invitaciones.</p></div>
-    <div class="barra"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} {{ ferias.length === 1 ? 'feria' : 'ferias' }}</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
+    <div class="nota" data-guia="admin-ferias-intro"><span aria-hidden="true">🎪</span><p>Administra fechas, lugar, imagen y participantes. El recordatorio de una invitación pendiente llega como notificación a la emprendedora y abre su apartado de invitaciones.</p></div>
+    <div class="barra" data-guia="admin-ferias-acciones"><div><h2>Ferias y eventos</h2><p>{{ ferias.length }} {{ ferias.length === 1 ? 'feria' : 'ferias' }}</p></div><div class="acciones"><button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button><button class="boton" type="button" :disabled="!habilitado || enviando || !!pendiente" @click="nuevo">+ Crear feria</button></div></div>
     <p v-if="cargando" role="status">Cargando ferias…</p>
 
     <section v-if="formulario" ref="formularioRef" class="formulario apartado-desplegable">

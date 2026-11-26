@@ -5,6 +5,7 @@ import FeriasAdmin from '~/components/admin/FeriasAdmin.vue'
 import ConfiguracionAdmin from '~/components/admin/ConfiguracionAdmin.vue'
 import AdministradoresAdmin from '~/components/admin/AdministradoresAdmin.vue'
 import RegistroAccionesAdmin from '~/components/admin/RegistroAccionesAdmin.vue'
+import GuiaAdminWeb from '~/components/admin/GuiaAdminWeb.vue'
 import { esAdministrador, type SeccionLectura } from '~/lib/admin-lecturas'
 import {
   asignarEmprendedora,
@@ -1418,11 +1419,12 @@ async function guardarEdicionCuentaEmprendedora() {
     <main class="contenido">
       <div class="estado-conexion">
         <span><template v-if="activa !== 'catalogos' || config.firebaseModo !== 'real-api'">{{ entorno }} · </template>{{ sesion }}</span>
+        <GuiaAdminWeb :autorizado="autorizado" :listo="!cargandoSesion" :correo="sesion" :seccion-actual="activa" :navegar="ir" />
         <button class="editar" @click="salir">Cerrar sesión</button>
       </div>
       <p v-if="errorSesion" role="alert">{{ errorSesion }}</p>
       <template v-if="!seccion">
-        <header class="encabezado">
+        <header class="encabezado" data-guia="admin-inicio">
           <p class="sobretitulo">Hola, equipo Amancay</p>
           <h1>Administra la plataforma, paso a paso</h1>
           <p class="sub">Emprendedoras, asociaciones, ferias y catálogos en un solo lugar.</p>
@@ -1442,7 +1444,7 @@ async function guardarEdicionCuentaEmprendedora() {
 
         <p v-if="errorResumen" class="resumen-aviso" role="alert">No se pudieron calcular los totales: {{ errorResumen }} <button type="button" class="resumen-reintentar" @click="cargarResumen">Reintentar</button></p>
         <p v-else class="resumen-aviso">Totales de la plataforma; emprendedoras incluye cuentas activas y desactivadas.</p>
-        <section class="resumen" aria-label="Resumen" :aria-busy="cargandoResumen">
+        <section class="resumen" data-guia="admin-resumen" aria-label="Resumen" :aria-busy="cargandoResumen">
           <button v-for="r in resumen" :key="r.id" type="button" class="dato" @click="ir(r.id)">
             <span class="dato-num">{{ r.total ?? (cargandoResumen ? '…' : '—') }}</span>
             <span class="dato-txt">{{ r.titulo }}</span>
@@ -1451,7 +1453,7 @@ async function guardarEdicionCuentaEmprendedora() {
         </section>
 
         <h2 class="titulo-bloque">Secciones</h2>
-        <div class="rejilla">
+        <div class="rejilla" data-guia="admin-secciones">
           <button v-for="s in secciones" :key="s.id" class="tarjeta" type="button" @click="ir(s.id)">
             <span class="icono" aria-hidden="true">{{ s.icono }}</span>
             <h3>{{ s.titulo }}</h3>
@@ -1468,7 +1470,7 @@ async function guardarEdicionCuentaEmprendedora() {
           <span>{{ seccion.titulo }}</span>
         </nav>
 
-        <header class="encabezado fila-encabezado">
+        <header class="encabezado fila-encabezado" :data-guia="`admin-contenido-${seccion.id}`">
           <div>
             <p class="sobretitulo">Administración</p>
             <h1>{{ seccion.titulo }}</h1>
@@ -1476,7 +1478,7 @@ async function guardarEdicionCuentaEmprendedora() {
           </div>
           <button
             v-if="!['ferias', 'configuracion', 'administradores', 'registro-acciones'].includes(seccion.id) && (seccion.id === 'catalogos' ? escrituraCatalogosDisponible : seccion.id === 'asociaciones' ? escrituraAsociacionesDisponible : true)"
-            class="boton boton-primario" type="button"
+            class="boton boton-primario" :data-guia="`admin-accion-${seccion.id}`" type="button"
             :disabled="seccion.id === 'emprendedoras' && !!cuentaEmprendedoraEnEdicion"
             @click="seccion.id === 'catalogos' ? prepararNuevoCatalogo() : seccion.id === 'asociaciones' ? prepararNuevaAsociacion() : abrirFormulario()"
           >
@@ -1810,7 +1812,7 @@ async function guardarEdicionCuentaEmprendedora() {
         <p v-if="seccion.aviso" class="aviso-carga" role="status">{{ seccion.aviso }}</p>
         <div v-if="lecturaDisponible" class="acciones-listado">
           <button class="editar" type="button" :disabled="cargandoDatos || cargandoCatalogos" @click="cargarSeccion">Actualizar listado</button>
-          <select v-if="seccion.id === 'catalogos'" v-model="filtroCatalogo" class="filtro-catalogo" aria-label="Tipo de catálogo">
+          <select v-if="seccion.id === 'catalogos'" v-model="filtroCatalogo" class="filtro-catalogo" data-guia="admin-catalogo-tipo" aria-label="Tipo de catálogo">
             <option value="">Todos</option>
             <option value="sectores">Sectores</option>
             <option value="categorias">Categorías</option>
@@ -1820,7 +1822,7 @@ async function guardarEdicionCuentaEmprendedora() {
         </div>
         <p v-if="cargandoDatos || cargandoCatalogos" role="status">Cargando…</p>
         <p v-if="errorDatos" role="alert">{{ errorDatos }}</p>
-        <div class="herramientas">
+        <div class="herramientas" :data-guia="`admin-herramientas-${seccion.id}`">
           <label class="buscar">
             <span aria-hidden="true">🔎</span>
             <input v-model="busqueda" type="search" placeholder="Buscar en esta sección" />

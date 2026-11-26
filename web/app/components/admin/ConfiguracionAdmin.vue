@@ -54,7 +54,7 @@ onMounted(() => { void cargar() })
 
 <template>
   <section class="configuracion-admin">
-    <div class="cabecera">
+    <div class="cabecera" data-guia="admin-config-cabecera">
       <div><p class="sobre">Preferencias de acceso</p><h2>Navegación del comprador</h2><p>Define la política que se guarda en la configuración central de la plataforma.</p></div>
       <button class="secundario" type="button" :disabled="cargando || enviando" @click="cargar">{{ cargando ? 'Leyendo…' : 'Volver a cargar' }}</button>
     </div>
@@ -63,7 +63,7 @@ onMounted(() => { void cargar() })
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="aviso" class="exito" role="status">{{ aviso }}</p>
     <template v-if="configuracion">
-      <fieldset :disabled="!habilitado || enviando || !!pendiente">
+      <fieldset data-guia="admin-config-opciones" :disabled="!habilitado || enviando || !!pendiente">
         <legend>¿Cómo puede entrar una persona compradora?</legend>
         <label class="opcion" :class="{ seleccionada: modo === 'permitir' }"><input v-model="modo" type="radio" value="permitir" /><span><strong>Exploración libre</strong><small>Puede recorrer la vitrina sin crear una cuenta. Es el valor actual y conserva el acceso sencillo desde enlaces y QR.</small></span></label>
         <label class="opcion" :class="{ seleccionada: modo === 'invitar' }"><input v-model="modo" type="radio" value="invitar" /><span><strong>Sugerir que inicie sesión</strong><small>La visita sigue disponible. La web muestra una sugerencia no bloqueante y Android ofrece iniciar con Google u omitir.</small></span></label>
