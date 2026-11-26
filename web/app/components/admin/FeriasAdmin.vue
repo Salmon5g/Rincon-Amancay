@@ -17,7 +17,7 @@ const cargandoDetalle = ref(false)
 const enviando = ref(false)
 const relojAsistencia = ref(Date.now())
 let intervaloRelojAsistencia: ReturnType<typeof setInterval> | undefined
-const confirmacionEstado = ref<{ item: FeriaAdmin; estado: 'publicada' | 'cancelada' } | null>(null)
+const confirmacionEstado = ref<{ item: FeriaAdmin; estado: 'publicada' | 'cancelada' | 'eliminar' } | null>(null)
 const confirmacionRecordatorio = ref<{ persona: ParticipanteFeria; feria: FeriaAdmin } | null>(null)
 const confirmacionAvisos = ref<{ feria: FeriaAdmin; participantes: ParticipanteFeria[] } | null>(null)
 const participantesAvisoSeleccionados = ref<string[]>([])
@@ -314,10 +314,17 @@ async function procesarPendiente() {
   try {
     await $amancay.llamar(current.operacion, current.solicitud)
     if (current.operacion === 'invitarParticipanteFeria' || current.operacion === 'agregarParticipanteFeria') candidata.value = ''
+    if (current.operacion === 'eliminarFeria' && selectedId.value === String(current.solicitud.feriaId ?? '')) {
+      selectedId.value = ''; detalle.value = null; agregarVisible.value = false
+    }
     pendiente.value = null; formulario.value = false; vistaEdicion.value = false; feriaEditando.value = null; borradorInicial.value = ''; retiro.value = null
     emit('cambio-edicion', false)
     limpiarArchivoImagen()
-    aviso.value = current.operacion === 'enviarRecordatorioFeria' ? 'Recordatorio enviado. Llegará si su teléfono puede recibir notificaciones.' : 'Los cambios de la feria se guardaron.'
+    aviso.value = current.operacion === 'enviarRecordatorioFeria'
+      ? 'Recordatorio enviado. Llegará si su teléfono puede recibir notificaciones.'
+      : current.operacion === 'eliminarFeria'
+        ? 'La feria se quitó del listado y del catálogo público; su historial se conservó.'
+        : 'Los cambios de la feria se guardaron.'
     await cargar()
   } catch (cause) {
     error.value = mensajeError(cause)
@@ -376,6 +383,14 @@ async function cambiarEstado(item: FeriaAdmin, estado: 'publicada' | 'cancelada'
   volverConfirmacionRef.value?.focus()
 }
 
+async function solicitarEliminacion(item: FeriaAdmin) {
+  if (!item.versionEsperada || pendiente.value) return
+  focoAnteriorConfirmacion = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  confirmacionEstado.value = { item, estado: 'eliminar' }
+  await nextTick()
+  volverConfirmacionRef.value?.focus()
+}
+
 function cerrarConfirmacionEstado() {
   confirmacionEstado.value = null
   void nextTick(() => {
@@ -389,7 +404,10 @@ function confirmarCambioEstado() {
   if (!confirmacion) return
   confirmacionEstado.value = null
   focoAnteriorConfirmacion = null
-  pendiente.value = { operacion: 'cambiarEstadoFeria', solicitud: { operacionId: opId(), feriaId: confirmacion.item.id, versionEsperada: confirmacion.item.versionEsperada, estado: confirmacion.estado } }
+  const base = { operacionId: opId(), feriaId: confirmacion.item.id, versionEsperada: confirmacion.item.versionEsperada }
+  pendiente.value = confirmacion.estado === 'eliminar'
+    ? { operacion: 'eliminarFeria', solicitud: base }
+    : { operacion: 'cambiarEstadoFeria', solicitud: { ...base, estado: confirmacion.estado } }
   void procesarPendiente()
 }
 
@@ -763,6 +781,7 @@ onBeforeUnmount(() => {
           <button v-if="item.estado !== 'cancelada' && new Date(item.fechaInicio || 0) > new Date()" class="secundario" type="button" :disabled="enviando || !!pendiente" @click="editar(item)">Editar</button>
           <button v-if="item.estado === 'borrador'" class="boton" type="button" :disabled="enviando || !!pendiente" @click="cambiarEstado(item, 'publicada')">Publicar</button>
           <button v-if="item.estado !== 'cancelada'" class="peligro" type="button" :disabled="enviando || !!pendiente" @click="cambiarEstado(item, 'cancelada')">Cancelar feria</button>
+          <button class="peligro" type="button" :disabled="enviando || !!pendiente" @click="solicitarEliminacion(item)">Eliminar feria</button>
         </div>
       </li>
     </ul>
@@ -909,7 +928,7 @@ onBeforeUnmount(() => {
           tabindex="-1"
           @keydown="mantenerFocoConfirmacion"
         >
-          <div class="confirmacion-icono" :class="{ cancelacion: confirmacionEstado.estado === 'cancelada' }" aria-hidden="true">
+          <div class="confirmacion-icono" :class="{ cancelacion: confirmacionEstado.estado !== 'publicada' }" aria-hidden="true">
             <svg v-if="confirmacionEstado.estado === 'publicada'" viewBox="0 0 24 24" fill="none">
               <path d="M5 12.5 9.2 17 19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
@@ -917,12 +936,13 @@ onBeforeUnmount(() => {
               <path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
             </svg>
           </div>
-          <p class="confirmacion-sobre">{{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : 'Cancelar feria' }}</p>
-          <h3 id="confirmacion-feria-titulo">{{ confirmacionEstado.estado === 'publicada' ? '¿Publicar esta feria?' : '¿Cancelar esta feria?' }}</h3>
+          <p class="confirmacion-sobre">{{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : confirmacionEstado.estado === 'cancelada' ? 'Cancelar feria' : 'Eliminar feria' }}</p>
+          <h3 id="confirmacion-feria-titulo">{{ confirmacionEstado.estado === 'publicada' ? '¿Publicar esta feria?' : confirmacionEstado.estado === 'cancelada' ? '¿Cancelar esta feria?' : '¿Eliminar esta feria?' }}</h3>
           <p id="confirmacion-feria-descripcion" class="confirmacion-descripcion">
             <strong>“{{ confirmacionEstado.item.nombre }}”</strong>
             <template v-if="confirmacionEstado.estado === 'publicada'"> quedará publicada y podrá aparecer en el catálogo público.</template>
-            <template v-else> dejará de estar activa. Esta acción no se puede revertir desde este módulo.</template>
+            <template v-else-if="confirmacionEstado.estado === 'cancelada'"> dejará de estar activa. Esta acción no se puede revertir desde este módulo.</template>
+            <template v-else> se quitará del panel y del catálogo público. Se conservarán sus participantes y el historial para no perder registros.</template>
           </p>
           <div class="confirmacion-acciones">
             <button ref="volverConfirmacionRef" class="secundario" type="button" @click="cerrarConfirmacionEstado">Volver</button>
@@ -932,7 +952,7 @@ onBeforeUnmount(() => {
               type="button"
               @click="confirmarCambioEstado"
             >
-              {{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : 'Confirmar cancelación' }}
+              {{ confirmacionEstado.estado === 'publicada' ? 'Publicar feria' : confirmacionEstado.estado === 'cancelada' ? 'Confirmar cancelación' : 'Eliminar feria' }}
             </button>
           </div>
         </section>

@@ -8,6 +8,7 @@ import { ErrorOperacion, version } from './publicacion.ts';
 
 export const accionesFeria = [
   'listarFeriasAdmin', 'listarInvitacionesFeria', 'crearFeria', 'editarFeria', 'cambiarEstadoFeria',
+  'eliminarFeria',
   'leerParticipantesFeria', 'invitarParticipanteFeria', 'agregarParticipanteFeria',
   'cancelarInvitacionFeria', 'retirarParticipanteFeria', 'registrarAsistenciaFeria', 'responderInvitacionFeria', 'enviarRecordatorioFeria', 'enviarAvisoConfirmadasFeria',
 ] as const;
@@ -82,6 +83,11 @@ function parsear(accion: AccionFeria, input: unknown) {
     exactos(data, ['operacionId', 'feriaId', 'versionEsperada', 'estado']);
     exigir(operationId(data.operacionId) && id(data.feriaId) && (data.estado === 'publicada' || data.estado === 'cancelada'), 'datos-invalidos', 'Estado o IDs inválidos.');
     return { accion, operacionId: data.operacionId, feriaId: data.feriaId, versionEsperada: fechaVersión(data.versionEsperada), estado: data.estado } as const;
+  }
+  if (accion === 'eliminarFeria') {
+    exactos(data, ['operacionId', 'feriaId', 'versionEsperada']);
+    exigir(operationId(data.operacionId) && id(data.feriaId), 'datos-invalidos', 'IDs inválidos.');
+    return { accion, operacionId: data.operacionId, feriaId: data.feriaId, versionEsperada: fechaVersión(data.versionEsperada) } as const;
   }
   if (accion === 'leerParticipantesFeria') {
     exactos(data, ['feriaId']); exigir(id(data.feriaId), 'datos-invalidos', 'ID de feria inválido.');
@@ -228,7 +234,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       await comprobarAdmin(db, identidad.uid);
       const snapshot = await db.collection('ferias').limit(101).get();
       exigir(snapshot.size <= 100, 'limite-local', 'Hay más de 100 ferias; se requiere paginación.');
-      const ferias = snapshot.docs.map(doc => {
+      const ferias = snapshot.docs.filter(doc => doc.data().eliminada !== true).map(doc => {
         const data = doc.data();
         return { id: doc.id, nombre: String(data.nombre ?? ''), descripcion: String(data.descripcion ?? ''), organizador: String(data.organizador ?? ''), direccion: String(data.direccion ?? ''), fechaInicio: fechaIso(data, 'fechaInicio'), fechaFin: fechaIso(data, 'fechaFin'), imagenUrl: typeof data.imagenUrl === 'string' ? data.imagenUrl : '', latitud: typeof data.latitud === 'number' ? data.latitud : null, longitud: typeof data.longitud === 'number' ? data.longitud : null, estado: estadoFeria(data.estado) ? data.estado : 'borrador', versionEsperada: version(data) };
       }).sort((a, b) => String(a.fechaInicio).localeCompare(String(b.fechaInicio)));
@@ -603,7 +609,7 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
       });
     }
 
-    if (request.accion === 'editarFeria' || request.accion === 'cambiarEstadoFeria') {
+    if (request.accion === 'editarFeria' || request.accion === 'cambiarEstadoFeria' || request.accion === 'eliminarFeria') {
       const feriaRef = db.doc(`ferias/${request.feriaId}`);
       const resultado = await db.runTransaction(async tx => {
         const [actor, receipt, fair] = await tx.getAll(actorRef, receiptRef, feriaRef);
@@ -612,7 +618,8 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
         exigir(fair.exists, 'no-encontrado', 'La feria ya no existe.');
         const current = fair.data()!;
         exigir(version(current) === request.versionEsperada, 'conflicto', 'La feria cambió. Actualiza antes de continuar.');
-        exigir(current.estado !== 'cancelada', 'conflicto', 'Una feria cancelada es histórica y no puede modificarse.');
+        exigir(current.eliminada !== true, 'no-encontrado', 'La feria ya fue eliminada del listado.');
+        if (request.accion !== 'eliminarFeria') exigir(current.estado !== 'cancelada', 'conflicto', 'Una feria cancelada es histórica y no puede modificarse.');
         const now = FieldValue.serverTimestamp(); const before = { nombre: current.nombre, estado: current.estado };
         let result: Record<string, unknown>;
         if (request.accion === 'editarFeria') {
@@ -620,12 +627,15 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
           const update: DocumentData = { ...request.datos, fechaInicio: Timestamp.fromDate(request.datos.fechaInicio), fechaFin: Timestamp.fromDate(request.datos.fechaFin), actualizadoEn: now };
           if (request.datos.latitud === undefined) { update.latitud = FieldValue.delete(); update.longitud = FieldValue.delete(); }
           tx.update(feriaRef, update); result = { feriaId: feriaRef.id, estado: current.estado };
-        } else {
+        } else if (request.accion === 'cambiarEstadoFeria') {
           exigir(request.estado !== current.estado, 'conflicto', 'La feria ya está en ese estado.');
           if (request.estado === 'publicada') {
             exigir(current.estado === 'borrador' && current.fechaInicio.toDate() > new Date(), 'conflicto', 'Solo se puede publicar un borrador cuya fecha de inicio siga pendiente.');
           }
           tx.update(feriaRef, { estado: request.estado, actualizadoEn: now }); result = { feriaId: feriaRef.id, estado: request.estado };
+        } else {
+          tx.update(feriaRef, { estado: 'cancelada', eliminada: true, eliminadoEn: now, actualizadoEn: now });
+          result = { feriaId: feriaRef.id, estado: 'cancelada', eliminada: true };
         }
         tx.create(receiptRef, { firma: signature, resultado: result, creadaPor: identidad.uid, creadoEn: now });
         tx.create(auditRef, { actorUid: identidad.uid, accion, documentoId: feriaRef.id, antes: before, despues: result, creadoEn: now });
