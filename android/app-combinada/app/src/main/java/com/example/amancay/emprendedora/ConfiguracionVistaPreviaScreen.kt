@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.data.ProductoEmprendedora
@@ -74,8 +75,9 @@ import com.example.amancay.ui.ProductWizardTopBar
 import com.example.amancay.ui.theme.Dark
 import com.example.amancay.ui.theme.GreenText
 import com.example.amancay.ui.theme.Line
-import com.example.amancay.ui.theme.Muted
 import com.example.amancay.ui.theme.Wine
+
+private val TextoSecundarioConfiguracion = Color(0xFF5B4652)
 
 @Composable
 internal fun ConfiguracionVistaPreviaScreen(
@@ -114,7 +116,7 @@ internal fun ConfiguracionVistaPreviaScreen(
             ProductWizardTopBar(onBack = alVolver)
             Text("CONFIGURACIÓN", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color(0xFFEF5452))
             Text("Configuración\ny vista previa", fontSize = 36.sp, lineHeight = 38.sp, color = Wine, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
-            Text("Define cómo funciona tu catálogo y revisa cómo se verá para tus clientes.", fontSize = 15.sp, lineHeight = 21.sp, color = Muted)
+            Text("Define cómo funciona tu catálogo y revisa cómo se verá para tus clientes.", fontSize = 15.sp, lineHeight = 21.sp, color = TextoSecundarioConfiguracion)
             Spacer(Modifier.height(16.dp))
 
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
@@ -146,7 +148,7 @@ internal fun ConfiguracionVistaPreviaScreen(
                     HorizontalDivider(color = Line.copy(alpha = .65f), modifier = Modifier.padding(start = 72.dp, end = 16.dp))
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Avisos de nuevas consultas", fontWeight = FontWeight.SemiBold, color = Dark)
-                        Text("Las consultas del formulario se guardan siempre. Recibirás avisos solo dentro del horario elegido.", color = Muted, fontSize = 13.sp)
+                        Text("Las consultas del formulario se guardan siempre. Recibirás avisos solo dentro del horario elegido.", color = TextoSecundarioConfiguracion, fontSize = 13.sp)
                         androidx.compose.material3.Switch(
                             checked = preferenciasInteraccion.avisosContacto,
                             onCheckedChange = {
@@ -187,7 +189,7 @@ internal fun ConfiguracionVistaPreviaScreen(
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF4EE)), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Valores por defecto", fontWeight = FontWeight.Bold, color = Dark, fontSize = 17.sp)
-                        Text("Cada producto nuevo nace con esta modalidad y esta regla de stock.", color = Muted, fontSize = 13.sp)
+                        Text("Cada producto nuevo nace con esta modalidad y esta regla de stock.", color = TextoSecundarioConfiguracion, fontSize = 13.sp)
                         Text("Modalidad", fontWeight = FontWeight.SemiBold, color = Dark)
                         listOf("regular" to "Regular" to "Siempre disponible de forma habitual.", "a_pedido" to "A pedido" to "Se elabora después de encargarlo.", "pieza_unica" to "Pieza única" to "No se repite.")
                             .forEach { (par, detalle) ->
@@ -231,10 +233,10 @@ internal fun ConfiguracionVistaPreviaScreen(
 
             Spacer(Modifier.height(18.dp))
             Text("Así se verá tu producto", fontSize = 22.sp, color = Dark, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
-            Text("Vista previa según modalidad, stock, agotamiento y visibilidad.", fontSize = 14.sp, color = Muted)
+            Text("Vista previa según modalidad, stock, agotamiento y visibilidad.", fontSize = 14.sp, color = TextoSecundarioConfiguracion)
             Spacer(Modifier.height(10.dp))
             if (destacado == null) {
-                Text("Cuando agregues un producto, aquí verás cómo lo verían tus clientes.", color = Muted)
+                Text("Cuando agregues un producto, aquí verás cómo lo verían tus clientes.", color = TextoSecundarioConfiguracion)
             } else {
                 TarjetaVistaCliente(destacado, miniaturas[destacado.id], mostrarPrecios)
             }
@@ -243,12 +245,12 @@ internal fun ConfiguracionVistaPreviaScreen(
             Text("Ejemplos de disponibilidad", fontSize = 18.sp, color = Dark, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MiniEstado("Agotado", Color(0xFFF0E9EC), Muted, Modifier.weight(1f))
+                MiniEstado("Agotado", Color(0xFFF0E9EC), TextoSecundarioConfiguracion, Modifier.weight(1f))
                 MiniEstado("Disponible para encargar", Color(0xFFE4F0E6), GreenText, Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
             if (productos.isEmpty()) {
-                Text("Cuando agregues productos, aquí verás cómo se verán en tu catálogo.", color = Muted)
+                Text("Cuando agregues productos, aquí verás cómo se verán en tu catálogo.", color = TextoSecundarioConfiguracion)
             }
             productos.forEach { producto ->
                 Card(
@@ -260,9 +262,9 @@ internal fun ConfiguracionVistaPreviaScreen(
                         MiniaturaProducto(miniaturas[producto.id], producto.nombre)
                         Column(Modifier.weight(1f)) {
                             Text(producto.nombre, fontWeight = FontWeight.Bold, color = Dark, maxLines = 1)
-                            Text(etiquetaCatalogoCliente(producto), color = if (visibleEnCatalogoPublico(producto)) GreenText else Muted, fontSize = 12.sp)
+                            Text(etiquetaCatalogoCliente(producto), color = if (visibleEnCatalogoPublico(producto)) GreenText else TextoSecundarioConfiguracion, fontSize = 12.sp)
                             val precioVista = if (producto.tieneVariantes) producto.variantes.filter { it.activa }.minOfOrNull { it.precio } ?: 0L else producto.precioBase ?: 0L
-                            Text(formatPrice(precioVista) + " CLP", color = Muted, fontSize = 11.sp)
+                            Text(formatPrice(precioVista) + " CLP", color = TextoSecundarioConfiguracion, fontSize = 11.sp)
                         }
                     }
                 }
@@ -273,15 +275,16 @@ internal fun ConfiguracionVistaPreviaScreen(
                     onClick = alVerTiendaPublica,
                     modifier = Modifier.weight(1f).height(52.dp),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color(0xFFEF5452))
-                ) { Text("Ver tienda pública", color = Color(0xFFEF5452), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFF2E5), contentColor = Wine),
+                    border = BorderStroke(1.dp, Color(0xFFE4C6B1))
+                ) { Text("Ver tienda pública", color = Wine, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 Button(
                     onClick = { alGuardarValoresDefecto(defecto); editandoDefecto = false },
                     enabled = !enviando,
                     modifier = Modifier.weight(1f).height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Wine),
                     shape = RoundedCornerShape(16.dp)
-                ) { Text("Guardar cambios  →", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                ) { Text("Guardar cambios", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1) }
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -300,7 +303,7 @@ private fun FilaAjuste(titulo: String, detalle: String, icono: androidx.compose.
         Spacer(Modifier.size(14.dp))
         Column(Modifier.weight(1f)) {
             Text(titulo, fontWeight = FontWeight.Bold, color = Wine, fontSize = 16.sp)
-            Text(detalle, color = Muted, fontSize = 13.sp, lineHeight = 17.sp)
+            Text(detalle, color = TextoSecundarioConfiguracion, fontSize = 13.sp, lineHeight = 17.sp)
         }
         extra?.invoke() ?: Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Wine, modifier = Modifier.size(26.dp))
     }
@@ -322,7 +325,7 @@ private fun OpcionCatalogo(titulo: String, detalle: String, seleccionado: Boolea
             }
             Column {
                 Text(titulo, fontWeight = FontWeight.Bold, color = Dark)
-                Text(detalle, color = Muted, fontSize = 12.sp)
+                Text(detalle, color = TextoSecundarioConfiguracion, fontSize = 12.sp)
             }
         }
     }
@@ -352,7 +355,7 @@ private fun TarjetaVistaCliente(producto: ProductoEmprendedora, miniatura: Bitma
                             producto.modalidad == "a_pedido" || producto.alAgotarse == "pasar_a_pedido" -> "A pedido"
                             else -> "Disponible"
                         }
-                        EtiquetaVistaCliente(estadoStock, if (puedeEncargar) Color(0xFFE4F0E6) else Color(0xFFF0E9EC), if (puedeEncargar) GreenText else Muted)
+                        EtiquetaVistaCliente(estadoStock, if (puedeEncargar) Color(0xFFE4F0E6) else Color(0xFFF0E9EC), if (puedeEncargar) GreenText else TextoSecundarioConfiguracion)
                     }
                 }
             }
@@ -379,12 +382,12 @@ private fun TarjetaVistaCliente(producto: ProductoEmprendedora, miniatura: Bitma
                     colors = ButtonDefaults.buttonColors(containerColor = Wine, disabledContainerColor = Color(0xFFE9DFE4)),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
                 ) {
-                    Text(if (agotadoVisible) "Agotado" else if (puedeEncargar) "Encargar" else "No disponible", color = if (puedeEncargar) Color.White else Muted, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(if (agotadoVisible) "Agotado" else if (puedeEncargar) "Encargar" else "No disponible", color = if (puedeEncargar) Color.White else TextoSecundarioConfiguracion, fontWeight = FontWeight.Bold, maxLines = 1)
                     if (puedeEncargar) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                 }
             }
             if (!visible) {
-                Text("Tus clientes no verían este producto ahora. Sigue en tu tienda para que lo edites.", color = Muted, fontSize = 13.sp)
+                Text("Tus clientes no verían este producto ahora. Sigue en tu tienda para que lo edites.", color = TextoSecundarioConfiguracion, fontSize = 13.sp)
             }
         }
     }
@@ -412,8 +415,12 @@ private fun MiniEstado(texto: String, fondo: Color, tinta: Color, modifier: Modi
             Box(Modifier.fillMaxWidth().height(70.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFE9DF)), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.Inventory2, contentDescription = null, tint = Color(0xFFEE845F), modifier = Modifier.size(28.dp))
             }
-            Box(Modifier.clip(RoundedCornerShape(50)).background(fondo).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                Text(texto, color = tinta, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Box(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(50)).background(fondo)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(texto, color = tinta, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 14.sp)
             }
         }
     }

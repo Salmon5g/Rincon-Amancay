@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.amancay.buyer.distanciaMetros
@@ -279,9 +280,18 @@ internal fun VentasEmprendedoraScreen(
         }
         Spacer(Modifier.height(12.dp))
         Card(colors=CardDefaults.cardColors(containerColor=if (historialActivo) Color(0xFFE2F4E4) else Color(0xFFF0E9EC)), shape=RoundedCornerShape(24.dp), modifier=Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=10.dp), horizontalArrangement=Arrangement.SpaceBetween) {
-                Text(if (historialActivo) "✓  Historial activado" else "Historial desactivado", color=if (historialActivo) Color(0xFF17643B) else Muted, fontWeight=FontWeight.Bold)
-                if (!historialActivo) Text("El stock igual se actualiza", color=Muted, fontSize=12.sp)
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    if (historialActivo) "✓  Historial activado" else "Historial desactivado",
+                    color = if (historialActivo) Color(0xFF17643B) else Dark,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                if (!historialActivo) Text("El stock igual se actualiza", color = Dark, fontSize = 12.sp, textAlign = TextAlign.Center)
             }
         }
         if (errorCarga != null || !historialConfiguracionCargada) {

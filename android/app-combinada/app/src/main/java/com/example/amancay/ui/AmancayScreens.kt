@@ -300,7 +300,7 @@ private fun TarjetaAccionInicio(icono: androidx.compose.ui.graphics.vector.Image
                 Icon(icono, contentDescription = null, tint = Color(0xFFEF6D57), modifier = Modifier.size(27.dp))
             }
             Spacer(Modifier.height(8.dp))
-            Text(titulo, color = Wine, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif, textAlign = TextAlign.Center, maxLines = 1)
+            Text(titulo, color = Wine, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 17.sp)
             Text(detalle, color = Muted, fontSize = 11.sp, lineHeight = 14.sp, textAlign = TextAlign.Center, maxLines = 2)
         }
     }

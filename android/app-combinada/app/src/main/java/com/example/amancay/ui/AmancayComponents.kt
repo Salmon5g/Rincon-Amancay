@@ -82,7 +82,7 @@ fun ProductWizardTopBar(onBack: () -> Unit) {
     Box(Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 18.dp)) {
         TextButton(
             onClick = onBack,
-            modifier = Modifier.align(Alignment.CenterStart).heightIn(min = 48.dp),
+            modifier = Modifier.align(Alignment.CenterStart).offset(x = (-8).dp).heightIn(min = 48.dp),
             contentPadding = PaddingValues(horizontal = 2.dp)
         ) {
             Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Wine, modifier = Modifier.size(23.dp))
