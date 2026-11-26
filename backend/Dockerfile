@@ -5,6 +5,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY src ./src
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV AMANCAY_HOST=0.0.0.0
 USER node
 EXPOSE 8080
 CMD ["node", "src/server-compartido.ts"]

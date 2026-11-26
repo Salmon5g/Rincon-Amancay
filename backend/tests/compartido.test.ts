@@ -41,3 +41,29 @@ test('config compartida admite proyectos de entorno coherentes y valida orígene
     ['https://a.example.test', 'https://b.example.test'],
   );
 });
+
+const cuentaServicio = (extra = {}) => ({
+  type: 'service_account',
+  project_id: 'amancay-test-project',
+  client_email: 'api@amancay-test-project.iam.gserviceaccount.com',
+  private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
+  ...extra,
+});
+
+test('config compartida elige la interfaz de escucha', () => {
+  assert.equal(leerConfigCompartida({ ...base }).host, '127.0.0.1');
+  assert.equal(leerConfigCompartida({ ...base, K_SERVICE: 'amancay-api' }).host, '0.0.0.0');
+  assert.equal(leerConfigCompartida({ ...base, AMANCAY_HOST: '0.0.0.0' }).host, '0.0.0.0');
+  assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_HOST: '192.168.1.10' }));
+});
+
+test('config compartida acepta una cuenta de servicio del mismo proyecto', () => {
+  assert.equal(leerConfigCompartida({ ...base }).credencial, null);
+  const json = JSON.stringify(cuentaServicio());
+  const esperada = { projectId: 'amancay-test-project', clientEmail: 'api@amancay-test-project.iam.gserviceaccount.com', privateKey: cuentaServicio().private_key };
+  assert.deepEqual(leerConfigCompartida({ ...base, AMANCAY_CREDENCIAL_SERVICIO: json }).credencial, esperada);
+  assert.deepEqual(leerConfigCompartida({ ...base, AMANCAY_CREDENCIAL_SERVICIO: Buffer.from(json).toString('base64') }).credencial, esperada);
+  assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_CREDENCIAL_SERVICIO: JSON.stringify(cuentaServicio({ project_id: 'otro-proyecto' })) }), /otro proyecto/);
+  assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_CREDENCIAL_SERVICIO: JSON.stringify(cuentaServicio({ type: 'authorized_user' })) }));
+  assert.throws(() => leerConfigCompartida({ ...base, AMANCAY_CREDENCIAL_SERVICIO: '{no es json' }), (error: Error) => !error.message.includes('no es json'));
+});

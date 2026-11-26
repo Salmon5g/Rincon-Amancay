@@ -2,12 +2,12 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const envPath = new URL('../.env', import.meta.url)
 
-if (!existsSync(envPath)) {
-  throw new Error('Falta web/.env. Créalo desde web/.env.example y configura Firebase real antes de generar Hosting.')
-}
-
 const values = new Map()
-for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+const lineas = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : []
+if (!lineas.length && !process.env.NUXT_PUBLIC_FIREBASE_MODO) {
+  throw new Error('Falta web/.env (o las variables NUXT_PUBLIC_* del entorno). Créalo desde web/.env.example y configura Firebase real antes de generar Hosting.')
+}
+for (const line of lineas) {
   const trimmed = line.trim()
   if (!trimmed || trimmed.startsWith('#')) continue
   const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/)
