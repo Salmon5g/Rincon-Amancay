@@ -108,8 +108,8 @@ const horarioCambiado = () => configuracion().avisosContacto.horaInicio !== avis
 </script>
 
 <template>
-  <section class="configuracion" aria-label="Configuración de la tienda">
-    <article class="bloque">
+  <section class="configuracion" data-guia="config-seccion" aria-label="Configuración de la tienda">
+    <article class="bloque" data-guia="config-historial">
       <div class="fila-interruptor">
         <span class="texto"><strong>Historial de ventas</strong><small>Guarda cada venta con su fecha, lugar y precio para revisarla después.</small></span>
         <button type="button" role="switch" class="interruptor" :aria-checked="cuenta.tienda.configuracion.historialVentasActivo" :disabled="guardando !== null" @click="cambiarHistorial(!cuenta.tienda.configuracion.historialVentasActivo)">
@@ -119,7 +119,7 @@ const horarioCambiado = () => configuracion().avisosContacto.horaInicio !== avis
       <p v-if="mensajes.historial" class="mensaje" :class="mensajes.historial.tipo" role="status">{{ mensajes.historial.texto }}</p>
     </article>
 
-    <article class="bloque">
+    <article class="bloque" data-guia="config-valores">
       <div class="texto"><strong>Valores para productos nuevos</strong><small>Se aplican al empezar un producto nuevo; siempre puedes cambiarlos en el asistente.</small></div>
       <fieldset>
         <legend>Modalidad</legend>
@@ -145,7 +145,7 @@ const horarioCambiado = () => configuracion().avisosContacto.horaInicio !== avis
       <p v-if="mensajes.valores" class="mensaje" :class="mensajes.valores.tipo" role="status">{{ mensajes.valores.texto }}</p>
     </article>
 
-    <article class="bloque">
+    <article class="bloque" data-guia="config-avisos">
       <div class="fila-interruptor">
         <span class="texto"><strong>Avisos de consultas</strong><small>Te avisa en la app del teléfono cuando una compradora te escribe, solo dentro de este horario. Las consultas se guardan siempre.</small></span>
         <button type="button" role="switch" class="interruptor" :aria-checked="cuenta.tienda.configuracion.avisosContacto.habilitado" :disabled="guardando !== null" @click="cambiarAvisos(!cuenta.tienda.configuracion.avisosContacto.habilitado)">
@@ -160,7 +160,7 @@ const horarioCambiado = () => configuracion().avisosContacto.horaInicio !== avis
       <p v-if="mensajes.avisos" class="mensaje" :class="mensajes.avisos.tipo" role="status">{{ mensajes.avisos.texto }}</p>
     </article>
 
-    <article class="bloque">
+    <article class="bloque" data-guia="config-calificaciones">
       <div class="fila-interruptor">
         <span class="texto"><strong>Calificaciones</strong><small>Permite que las compradoras con sesión califiquen tu tienda y tus productos.</small></span>
         <button type="button" role="switch" class="interruptor" :aria-checked="cuenta.tienda.configuracion.calificacionesHabilitadas" :disabled="guardando !== null" @click="cambiarCalificaciones(!cuenta.tienda.configuracion.calificacionesHabilitadas)">

@@ -182,7 +182,7 @@ onMounted(() => { void cargar(true) })
 </script>
 
 <template>
-  <section class="organizar" aria-label="Organizar catálogo">
+  <section class="organizar" data-guia="organizar-seccion" aria-label="Organizar catálogo">
     <div class="cabeza">
       <div>
         <span class="sobre">ORGANIZAR CATÁLOGO</span>
@@ -192,7 +192,7 @@ onMounted(() => { void cargar(true) })
       <button class="boton-claro" type="button" @click="emit('cerrar')">← Volver a productos</button>
     </div>
 
-    <div class="herramientas">
+    <div class="herramientas" data-guia="organizar-filtros">
       <input v-model="filtro.texto" type="search" placeholder="Buscar producto" aria-label="Buscar producto" />
       <select v-model="filtro.categoriaId" aria-label="Filtrar por categoría">
         <option value="">Todas las categorías</option>
@@ -205,7 +205,7 @@ onMounted(() => { void cargar(true) })
       </select>
     </div>
 
-    <div class="barra-acciones" :class="{ activa: seleccion.size }">
+    <div class="barra-acciones" data-guia="organizar-acciones" :class="{ activa: seleccion.size }">
       <label class="marcar-todos">
         <input type="checkbox" :checked="todosVisiblesMarcados" :disabled="!visibles.length || enviando" @change="marcarVisibles" />
         {{ seleccion.size ? `${seleccion.size} seleccionado${seleccion.size === 1 ? '' : 's'}` : `Seleccionar ${filtro.categoriaId ? 'la categoría' : 'todos'} (${visibles.length})` }}
@@ -229,7 +229,7 @@ onMounted(() => { void cargar(true) })
     <p v-else-if="!productos.length && !error" class="estado">Aún no tienes productos.</p>
     <p v-else-if="productos.length && !visibles.length" class="estado">No hay productos con estos filtros.</p>
 
-    <ul v-if="visibles.length" class="lista">
+    <ul v-if="visibles.length" class="lista" data-guia="organizar-lista">
       <li v-for="producto in visibles" :key="producto.id" class="fila" :class="{ marcada: seleccion.has(producto.id), apagado: !producto.disponible }">
         <label class="check">
           <input type="checkbox" :checked="seleccion.has(producto.id)" :disabled="enviando" @change="alternar(producto.id)" />

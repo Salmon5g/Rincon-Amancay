@@ -176,7 +176,10 @@ const ayudaAbierta = ref(false)
 const guiaActiva = ref(false)
 const guiaIndividual = ref(false)
 const pasoActualGuia = ref(0)
-const pasosActivosGuia = ref<PasoGuiaWeb[]>([])
+type PasoTutorial = PasoGuiaWeb & { preparar?: () => void; alternativo?: string; opcional?: boolean }
+const pasosActivosGuia = ref<PasoTutorial[]>([])
+const guiaTematica = ref(false)
+const buscandoPasoGuia = ref(false)
 const categoriasProducto = ref<ElementoCatalogo[]>([])
 const categoriasProductoCargadas = ref(false)
 let cargaCategoriasProductoPendiente: Promise<void> | null = null
@@ -255,6 +258,8 @@ const pasosGuiaEmprendedora = computed<PasoGuiaWeb[]>(() => cuenta.value ? [
   { id: 'productos', objetivo: '[data-guia="emprendedora-productos"]', titulo: 'Administra tus productos', explicacion: 'Aquí puedes revisar publicaciones, editar información y organizar tu catálogo.' },
   { id: 'agregar', objetivo: '[data-guia="emprendedora-agregar"]', titulo: 'Agrega productos', explicacion: 'Este botón abre el formulario para agregar o editar un producto.' },
   { id: 'ventas', objetivo: '[data-guia="emprendedora-ventas"]', titulo: 'Registra tus ventas', explicacion: 'En Ventas puedes registrar una venta y actualizar el stock. Si estás en una feria participante, podrás detectarla por ubicación.' },
+  { id: 'consultas_menu', objetivo: '[data-guia="emprendedora-consultas"]', titulo: 'Responde a tus clientas', explicacion: 'En Consultas llegan las preguntas que te dejan desde tu tienda. Puedes leerlas y responderlas aquí.' },
+  { id: 'ferias_menu', objetivo: '[data-guia="emprendedora-ferias"]', titulo: 'Tus ferias', explicacion: 'En Ferias ves las invitaciones por responder, tu próxima feria y el calendario.' },
   { id: 'mas', objetivo: '[data-guia="emprendedora-mas"]', titulo: 'Más opciones', explicacion: 'En Más puedes revisar tu cuenta, editar la ficha de tu tienda y ajustar el tamaño de texto.' },
   { id: 'texto_grande', objetivo: '[data-guia="emprendedora-texto"]', titulo: 'Ajusta el tamaño de texto', explicacion: 'Elige entre tres tamaños para leer con mayor comodidad. El cambio se conserva para tus próximas visitas.' },
   { id: 'ayuda', objetivo: '[data-guia="emprendedora-ayuda"]', titulo: 'La ayuda está aquí', explicacion: 'Toca «?» para repetir un tutorial específico o recorrer toda la web.' },
@@ -264,11 +269,53 @@ const pasosGuiaEmprendedora = computed<PasoGuiaWeb[]>(() => cuenta.value ? [
   { id: 'ayuda', objetivo: '[data-guia="emprendedora-ayuda"]', titulo: 'La ayuda está aquí', explicacion: 'Toca «?» para repetir un tutorial específico o recorrer toda la web.' },
 ])
 const pasoGuiaActual = computed(() => pasosActivosGuia.value[pasoActualGuia.value] ?? null)
+const tutorialesEmprendedora = computed<Record<string, PasoTutorial[]>>(() => ({
+  consultas: [
+    { id: 'consultas_1', objetivo: '[data-guia="emprendedora-consultas"]', titulo: 'Consultas de tus clientas', explicacion: 'Aquí llegan las preguntas que te dejan desde el formulario de tu tienda. El número te avisa cuántas son nuevas.', preparar: () => irA('consultas') },
+    { id: 'consultas_2', objetivo: '[data-guia="consultas-resumen"]', alternativo: '[data-guia="consultas-seccion"]', titulo: 'Lo nuevo primero', explicacion: 'Este resumen te dice cuántas consultas no has leído todavía.' },
+    { id: 'consultas_3', objetivo: '[data-guia="consultas-buscar"]', titulo: 'Busca y filtra', explicacion: 'Escribe un nombre, correo o producto, o elige ver solo las nuevas, las leídas o las respondidas.', opcional: true },
+    { id: 'consultas_4', objetivo: '[data-guia="consultas-lista"]', titulo: 'Abre una consulta para responder', explicacion: 'Toca una consulta para leerla completa. Se marca como leída y puedes escribir tu respuesta o contestar por correo.', opcional: true },
+  ],
+  ferias: [
+    { id: 'ferias_1', objetivo: '[data-guia="emprendedora-ferias"]', titulo: 'Tus ferias', explicacion: 'En esta sección ves las ferias a las que te invitaron y las que ya tienes confirmadas.', preparar: () => irA('ferias') },
+    { id: 'ferias_2', objetivo: '[data-guia="ferias-proxima"]', titulo: 'Tu próxima feria', explicacion: 'Aquí aparece la feria más cercana que tienes confirmada, cuánto falta y un botón para ver cómo llegar.', opcional: true },
+    { id: 'ferias_3', objetivo: '[data-guia="ferias-pendientes"]', titulo: 'Responde tus invitaciones', explicacion: 'Si te invitaron a una feria, aparece aquí. Toca «Sí, participo» para sumarla a tu agenda o «No puedo ir» para avisar.', opcional: true },
+    { id: 'ferias_4', objetivo: '[data-guia="ferias-agenda"]', alternativo: '[data-guia="ferias-seccion"]', titulo: 'Tu agenda', explicacion: 'Tus ferias confirmadas, ordenadas por mes. Toca una para ver su detalle y cómo llegar.' },
+    { id: 'ferias_5', objetivo: '[data-guia="ferias-calendario"]', titulo: 'Calendario', explicacion: 'Los días en verde son ferias confirmadas y en naranja las que faltan por responder. Toca un día para ver solo esas ferias.', opcional: true },
+  ],
+  historial: [
+    { id: 'historial_1', objetivo: '[data-guia="ventas-historial"]', titulo: 'Tu historial de ventas', explicacion: 'Dentro de Ventas, esta pestaña muestra todo lo que has vendido.', preparar: () => { irA('ventas'); vistaVentas.value = 'registrar' } },
+    { id: 'historial_2', objetivo: '[data-guia="historial-periodos"]', alternativo: '[data-guia="historial-seccion"]', titulo: 'Elige el período', explicacion: 'Mira las ventas de hoy, de esta semana, de este mes o elige tus propias fechas.', preparar: () => { vistaVentas.value = 'historial' } },
+    { id: 'historial_3', objetivo: '[data-guia="historial-resumen"]', titulo: '¿Cómo te ha ido?', explicacion: 'El total vendido, cuánto cambió respecto al período anterior, tus ventas y tu producto más vendido.', opcional: true },
+    { id: 'historial_4', objetivo: '[data-guia="historial-grafico"]', titulo: 'Ventas por día', explicacion: 'Cada barra es un día. Las bordó son días con feria. Toca una barra para ver solo las ventas de ese día.', opcional: true },
+    { id: 'historial_5', objetivo: '[data-guia="historial-filtros"]', titulo: 'Busca una venta', explicacion: 'Escribe el nombre de un producto o elige un lugar para filtrar la lista.', opcional: true },
+    { id: 'historial_6', objetivo: '[data-guia="historial-descargar"]', titulo: 'Descarga tus ventas', explicacion: 'Baja una planilla que se abre en Excel con las ventas que estás viendo.', opcional: true },
+  ],
+  configuracion: [
+    { id: 'configuracion_1', objetivo: '[data-guia="config-historial"]', alternativo: '#configuracion-tienda', titulo: 'Configuración de tu tienda', explicacion: 'En Más encuentras estos ajustes. El primero guarda tus ventas en el historial para revisarlas después.', preparar: () => irA('mas') },
+    { id: 'configuracion_2', objetivo: '[data-guia="config-valores"]', titulo: 'Valores para productos nuevos', explicacion: 'Elige cómo empiezan tus productos nuevos (modalidad y stock) para no repetirlo cada vez.', opcional: true },
+    { id: 'configuracion_3', objetivo: '[data-guia="config-avisos"]', titulo: 'Avisos de consultas', explicacion: 'Recibe un aviso en tu teléfono cuando te llegue una consulta, solo en el horario que elijas.', opcional: true },
+    { id: 'configuracion_4', objetivo: '[data-guia="config-calificaciones"]', titulo: 'Calificaciones', explicacion: 'Decide si tus clientas pueden calificar tus productos.', opcional: true },
+  ],
+  organizar: [
+    { id: 'organizar_1', objetivo: '[data-guia="productos-organizar"]', titulo: 'Organiza tu catálogo', explicacion: 'Este botón abre una vista para cambiar qué productos se muestran en tu tienda, uno por uno o varios a la vez.', preparar: () => irA('productos') },
+    { id: 'organizar_2', objetivo: '[data-guia="organizar-filtros"]', alternativo: '[data-guia="organizar-seccion"]', titulo: 'Encuentra tus productos', explicacion: 'Busca por nombre o filtra por categoría y disponibilidad.', preparar: () => { organizandoCatalogo.value = true } },
+    { id: 'organizar_3', objetivo: '[data-guia="organizar-acciones"]', titulo: 'Cambia varios a la vez', explicacion: 'Marca los productos y usa estos botones para dejarlos disponibles o no disponibles juntos.', opcional: true },
+    { id: 'organizar_4', objetivo: '[data-guia="organizar-lista"]', titulo: 'O uno por uno', explicacion: 'El interruptor de cada producto cambia su disponibilidad. Un producto no disponible deja de verse en tu tienda, pero no se borra.', opcional: true },
+  ],
+  vista_previa: [
+    { id: 'vista_previa_1', objetivo: '[data-guia="productos-vista-previa"]', alternativo: '[data-guia="emprendedora-productos"]', titulo: 'Mira tu producto como clienta', explicacion: 'Toca la foto de un producto para ver cómo lo verán en tu tienda. También está en el menú ⋮ de cada producto.', preparar: () => irA('productos') },
+    { id: 'vista_previa_2', objetivo: '[data-guia="vista-ficha"]', titulo: 'Así se ve tu ficha', explicacion: 'Revisa la foto, el precio, las variantes y los detalles antes de compartir.', opcional: true, preparar: () => { const primero = productosFiltrados.value[0]; if (primero) abrirVistaPrevia(primero.id) } },
+    { id: 'vista_previa_3', objetivo: '[data-guia="vista-compartir"]', titulo: 'Comparte tu producto', explicacion: 'Envía el enlace por WhatsApp o redes, cópialo o descarga un código QR para tu puesto en la feria.', opcional: true },
+  ],
+}))
 const seccionAyudaEmprendedora = computed(() => !cuenta.value ? 'Acceso emprendedora'
   : seccion.value === 'inicio' ? 'Inicio'
     : seccion.value === 'productos' ? 'Productos'
       : seccion.value === 'agregar' ? 'Agregar'
-        : seccion.value === 'ventas' ? 'Ventas' : 'Más')
+        : seccion.value === 'ventas' ? 'Ventas'
+          : seccion.value === 'consultas' ? 'Consultas'
+            : seccion.value === 'ferias' ? 'Ferias' : 'Más')
 const descripcionAyudaEmprendedora = computed(() => !cuenta.value
   ? 'Desde aquí puedes iniciar sesión con tus credenciales o revisar una invitación para comenzar.'
   : seccion.value === 'inicio'
@@ -278,14 +325,24 @@ const descripcionAyudaEmprendedora = computed(() => !cuenta.value
       : seccion.value === 'agregar'
         ? 'Sigue los pasos para completar o actualizar la ficha de un producto.'
         : seccion.value === 'ventas'
-          ? 'Registra ventas, selecciona una feria participante o ingresa otro lugar.'
-          : 'En Más puedes editar la información de tu tienda y cambiar el tamaño de texto.')
+          ? 'Registra ventas, selecciona una feria participante o revisa tu historial.'
+          : seccion.value === 'consultas'
+            ? 'Lee y responde las preguntas que te dejan desde tu tienda.'
+            : seccion.value === 'ferias'
+              ? 'Responde invitaciones, revisa tu agenda y mira el calendario de ferias.'
+              : 'En Más puedes editar tu tienda, configurarla y cambiar el tamaño de texto.')
 const opcionesAyudaEmprendedora = computed<OpcionAyudaWeb[]>(() => cuenta.value ? [
   { id: 'inicio', titulo: 'Inicio y tareas principales', icono: '⌂' },
   { id: 'productos', titulo: 'Mis productos', icono: '▦' },
   { id: 'agregar', titulo: 'Agregar un producto', icono: '+' },
   { id: 'ventas', titulo: 'Registrar una venta', icono: '↗' },
+  { id: 'historial', titulo: 'Historial de ventas', icono: '▤' },
+  { id: 'organizar', titulo: 'Organizar catálogo', icono: '☰' },
+  { id: 'vista_previa', titulo: 'Vista previa y compartir', icono: '◳' },
+  { id: 'consultas', titulo: 'Consultas de clientas', icono: '✉' },
+  { id: 'ferias', titulo: 'Invitaciones a ferias', icono: '✿' },
   { id: 'mas', titulo: 'Mi tienda y cuenta', icono: '◉' },
+  { id: 'configuracion', titulo: 'Configuración de la tienda', icono: '⚙' },
   { id: 'texto_grande', titulo: 'Tamaño de texto', icono: 'Aa' },
 ] : [
   { id: 'ingreso', titulo: 'Iniciar sesión', icono: '↪' },
@@ -1037,34 +1094,59 @@ function seleccionarSeccionDeGuia(id: string) {
   else if (id !== 'ayuda' && id !== 'ingreso' && id !== 'invitacion') irA('inicio')
 }
 
+async function buscarObjetivoGuia(selector: string, intentos: number) {
+  for (let intento = 0; intento < intentos; intento++) {
+    const encontrado = Array.from(document.querySelectorAll(selector)).some((elemento) => elemento.getClientRects().length > 0)
+    if (encontrado) return true
+    await espera(150)
+  }
+  return false
+}
+
 async function mostrarPasoDeGuia(indice: number) {
-  pasoActualGuia.value = indice
-  const destino = pasosActivosGuia.value[indice]?.id
-  if (destino) seleccionarSeccionDeGuia(destino)
-  await nextTick()
+  const actual = indice
+  buscandoPasoGuia.value = true
+  while (actual < pasosActivosGuia.value.length) {
+    const paso = pasosActivosGuia.value[actual]!
+    if (paso.preparar) paso.preparar()
+    else if (!guiaTematica.value) seleccionarSeccionDeGuia(paso.id)
+    await nextTick()
+    if (!guiaTematica.value || await buscarObjetivoGuia(paso.objetivo, 14)) break
+    if (paso.alternativo && await buscarObjetivoGuia(paso.alternativo, 4)) {
+      pasosActivosGuia.value = pasosActivosGuia.value.map((item, posicion) => posicion === actual ? { ...item, objetivo: paso.alternativo! } : item)
+      break
+    }
+    pasosActivosGuia.value = pasosActivosGuia.value.filter((_, posicion) => posicion !== actual)
+  }
+  pasoActualGuia.value = actual
+  buscandoPasoGuia.value = false
+  if (actual >= pasosActivosGuia.value.length) terminarGuiaEmprendedora(false)
 }
 
 async function iniciarGuiaEmprendedora(id?: string) {
   ayudaAbierta.value = false
-  pasosActivosGuia.value = pasosGuiaEmprendedora.value
-  guiaIndividual.value = Boolean(id)
+  const tutorial = id ? tutorialesEmprendedora.value[id] : undefined
+  guiaTematica.value = Boolean(tutorial)
+  pasosActivosGuia.value = tutorial ? [...tutorial] : pasosGuiaEmprendedora.value
+  guiaIndividual.value = Boolean(id) && !tutorial
   guiaActiva.value = true
-  const indice = id ? pasosActivosGuia.value.findIndex(item => item.id === id) : 0
+  const indice = id && !tutorial ? pasosActivosGuia.value.findIndex(item => item.id === id) : 0
   if (indice < 0) { guiaActiva.value = false; return }
   await mostrarPasoDeGuia(indice)
 }
 
 function terminarGuiaEmprendedora(completada: boolean) {
   guiaActiva.value = false
-  if (completada && !guiaIndividual.value) {
+  if (completada && !guiaIndividual.value && !guiaTematica.value) {
     try { localStorage.setItem(claveGuiaEmprendedora(), 'completa') } catch { /* La guía puede volver a aparecer en otra visita. */ }
   }
   guiaIndividual.value = false
+  guiaTematica.value = false
 }
 
 async function continuarGuiaEmprendedora() {
   if (guiaIndividual.value) { terminarGuiaEmprendedora(false); return }
-  if (pasoGuiaActual.value?.id === 'ayuda') {
+  if (!guiaTematica.value && pasoGuiaActual.value?.id === 'ayuda') {
     terminarGuiaEmprendedora(true)
     ayudaAbierta.value = true
     return
@@ -1788,7 +1870,7 @@ onMounted(async () => {
     </aside>
 
     <main class="principal" :class="{ 'principal-con-sesion': Boolean(cuenta) }">
-      <header v-if="!cuenta || seccion === 'ventas' || seccion === 'agregar' || (seccion === 'mas' && editandoTienda)" class="barra-superior">
+      <header class="barra-superior">
         <div><span class="punto-marca"></span> RINCÓN AMANCAY <span class="separador">/</span> EMPRENDEDORA</div>
         <NuxtLink to="/comprador" class="volver-catalogo">Volver al catálogo <span aria-hidden="true">↗</span></NuxtLink>
         <button class="ayuda-emprendedora" type="button" data-guia="emprendedora-ayuda" aria-label="Ayuda" title="Ayuda" @click="abrirAyudaEmprendedora">?</button>
@@ -1912,7 +1994,7 @@ onMounted(async () => {
           <div class="encabezado-seccion encabezado-catalogo">
             <span class="sobre-titulo">MI CATÁLOGO</span>
             <div class="acciones-catalogo">
-              <button class="boton-secundario boton-organizar-catalogo" type="button" @click="organizandoCatalogo = true">Organizar catálogo</button>
+              <button class="boton-secundario boton-organizar-catalogo" data-guia="productos-organizar" type="button" @click="organizandoCatalogo = true">Organizar catálogo</button>
               <button class="boton-vino boton-agregar-catalogo" type="button" @click="abrirNuevoProducto">＋ Agregar producto</button>
             </div>
           </div>
@@ -1932,7 +2014,7 @@ onMounted(async () => {
           <p v-if="productosPaginaError" class="mensaje mensaje-error" role="alert">{{ productosPaginaError }} <button type="button" @click="cargarPaginaProductos(true)">Volver a intentar</button></p>
           <div v-if="productosFiltrados.length" class="lista-productos">
             <article v-for="producto in productosFiltrados" :key="producto.id" class="tarjeta-producto">
-              <button class="imagen-producto boton-vista-previa" type="button" :aria-label="`Ver vista previa de ${producto.nombre || 'este producto'}`" title="Ver vista previa" @click="abrirVistaPrevia(producto.id)">
+              <button class="imagen-producto boton-vista-previa" data-guia="productos-vista-previa" type="button" :aria-label="`Ver vista previa de ${producto.nombre || 'este producto'}`" title="Ver vista previa" @click="abrirVistaPrevia(producto.id)">
                 <ImagenPublica v-if="producto.imagenPublica" :ruta="producto.imagenPublica" :alt="producto.nombre" ajuste="contain" :zoom="false" />
                 <span v-else aria-hidden="true">{{ producto.nombre.trim().charAt(0).toUpperCase() || '✿' }}</span>
               </button>
@@ -1993,7 +2075,7 @@ onMounted(async () => {
         <template v-else-if="seccion === 'ventas'">
           <div class="pestanas-ventas" role="tablist" aria-label="Ventas">
             <button type="button" role="tab" :aria-selected="vistaVentas === 'registrar'" :class="{ activa: vistaVentas === 'registrar' }" @click="vistaVentas = 'registrar'">Registrar venta</button>
-            <button type="button" role="tab" :aria-selected="vistaVentas === 'historial'" :class="{ activa: vistaVentas === 'historial' }" @click="vistaVentas = 'historial'">Historial</button>
+            <button type="button" role="tab" data-guia="ventas-historial" :aria-selected="vistaVentas === 'historial'" :class="{ activa: vistaVentas === 'historial' }" @click="vistaVentas = 'historial'">Historial</button>
           </div>
           <EmprendedoraHistorialVentasEmprendedora v-if="vistaVentas === 'historial'" :key="cuenta.tienda.id" :cuenta="cuenta" @configurar="abrirConfiguracionTienda" />
           <div v-else class="escena-ventas">
@@ -2409,10 +2491,10 @@ onMounted(async () => {
     />
     <GuiaSpotlightWeb
       :activo="guiaActiva"
-      :paso="pasoGuiaActual"
+      :paso="buscandoPasoGuia ? null : pasoGuiaActual"
       :numero="guiaIndividual ? 1 : pasoActualGuia + 1"
       :total="guiaIndividual ? 1 : pasosActivosGuia.length"
-      titulo-recorrido="Guía de emprendedora"
+      :titulo-recorrido="guiaTematica ? 'Tutorial' : 'Guía de emprendedora'"
       @continuar="continuarGuiaEmprendedora"
       @cerrar="terminarGuiaEmprendedora(!guiaIndividual)"
     />

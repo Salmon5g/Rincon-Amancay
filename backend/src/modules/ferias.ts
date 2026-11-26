@@ -214,6 +214,11 @@ export function crearFerias(db: Firestore, notificar?: (uid: string, tipo: 'tien
           fechaInicio: fechaIso(feriaData, 'fechaInicio'),
           fechaFin: fechaIso(feriaData, 'fechaFin'),
           organiza: String(feriaData.organizador ?? ''),
+          descripcion: typeof feriaData.descripcion === 'string' ? feriaData.descripcion : '',
+          imagenUrl: typeof feriaData.imagenUrl === 'string' ? feriaData.imagenUrl : '',
+          latitud: typeof feriaData.latitud === 'number' ? feriaData.latitud : null,
+          longitud: typeof feriaData.longitud === 'number' ? feriaData.longitud : null,
+          invitadaEn: fechaIso(data, 'creadoEn'),
           estado: String(data.estado),
         }];
       }).sort((a, b) => (a.fechaInicio ?? '').localeCompare(b.fechaInicio ?? ''));

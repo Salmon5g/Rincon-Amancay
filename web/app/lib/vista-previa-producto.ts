@@ -68,7 +68,7 @@ export function nombreVariantePrevia(variante: VariantePrevia): string {
 export function nombreArchivoQr(nombre: string): string {
   const base = nombre
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')

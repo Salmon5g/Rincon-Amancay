@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="cuerpo">
-      <article class="ficha">
+      <article class="ficha" data-guia="vista-ficha">
         <div class="foto">
           <ImagenPublica v-if="imagen" :key="imagen" :ruta="imagen" :alt="producto.nombre" ajuste="contain" :zoom="true" />
           <div v-else class="sin-foto">
@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
         </div>
       </article>
 
-      <aside class="compartir" aria-labelledby="titulo-compartir">
+      <aside class="compartir" data-guia="vista-compartir" aria-labelledby="titulo-compartir">
         <h3 id="titulo-compartir">Compartir producto</h3>
         <template v-if="!motivo">
           <p>Envía el enlace por WhatsApp o redes, o imprime el código QR para tu puesto en la feria.</p>

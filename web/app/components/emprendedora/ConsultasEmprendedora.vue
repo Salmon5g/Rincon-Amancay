@@ -163,16 +163,16 @@ onMounted(cargar)
 </script>
 
 <template>
-  <section class="consultas" aria-label="Consultas de compradoras">
+  <section class="consultas" data-guia="consultas-seccion" aria-label="Consultas de compradoras">
     <div class="barra">
-      <div class="resumen">
+      <div class="resumen" data-guia="consultas-resumen">
         <strong>{{ nuevas }}</strong>
         <span>{{ nuevas === 1 ? 'consulta nueva' : 'consultas nuevas' }}<template v-if="hayMas"> en las más recientes</template></span>
       </div>
       <button class="boton-claro" type="button" :disabled="cargando" @click="cargar">{{ cargando ? 'Actualizando…' : 'Actualizar' }}</button>
     </div>
 
-    <div class="herramientas">
+    <div class="herramientas" data-guia="consultas-buscar">
       <label class="buscador">
         <span class="sr-only">Buscar consultas</span>
         <input v-model="busqueda" type="search" placeholder="Buscar por nombre, correo, producto o mensaje" />
@@ -185,7 +185,7 @@ onMounted(cargar)
     <p v-if="error" class="mensaje error" role="alert">{{ error }}</p>
 
     <div class="columnas" :class="{ 'con-detalle': seleccionada }">
-      <div class="lista">
+      <div class="lista" data-guia="consultas-lista">
         <p v-if="cargando && !consultas.length" class="estado" role="status">Cargando consultas…</p>
         <div v-else-if="!consultas.length && !error" class="vacio">
           <span aria-hidden="true">✉</span>

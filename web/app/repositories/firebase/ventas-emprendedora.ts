@@ -1,4 +1,4 @@
-import { Timestamp, collection, getDocsFromServer, limit, orderBy, query, startAfter, where } from 'firebase/firestore'
+import { Timestamp, collection, count, getAggregateFromServer, getDocsFromServer, limit, orderBy, query, startAfter, sum, where } from 'firebase/firestore'
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import type { ServiciosCliente } from '~/lib/cliente-base'
 
@@ -81,4 +81,22 @@ export async function listarPaginaVentasEmprendedora(
     cursor: resultado.docs.at(-1) ?? null,
     hayMas: resultado.docs.length === TAMANO_PAGINA_VENTAS,
   }
+}
+
+export type ResumenPeriodoVentas = { ventas: number; unidades: number; total: number }
+
+export async function resumirPeriodoVentasEmprendedora(
+  firebase: ServiciosCliente,
+  tiendaId: string,
+  desde: Date,
+  hasta: Date,
+): Promise<ResumenPeriodoVentas> {
+  const consulta = query(
+    collection(firebase.db, 'tiendasPrivadas', tiendaId, 'ventas'),
+    where('fecha', '>=', Timestamp.fromDate(desde)),
+    where('fecha', '<', Timestamp.fromDate(hasta)),
+  )
+  const resultado = await getAggregateFromServer(consulta, { ventas: count(), unidades: sum('cantidad'), total: sum('total') })
+  const datos = resultado.data()
+  return { ventas: datos.ventas ?? 0, unidades: datos.unidades ?? 0, total: datos.total ?? 0 }
 }
